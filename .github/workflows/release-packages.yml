@@ -137,11 +137,14 @@ jobs:
           npm --version
           node --version
           # OIDC 请求端点是否由 runner 注入（只打印是否存在，不打印值）
-          for v in ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_ID_TOKEN_REQUEST_TOKEN NODE_AUTH_TOKEN NPM_CONFIG_USERCONFIG; do
-            eval "present=\${$v:+yes}"
-            echo "$v=\${present:-<empty>}"
-          done
-          cat "${NPM_CONFIG_USERCONFIG:-/dev/null}" 2>/dev/null || true
+          echo "ACTIONS_ID_TOKEN_REQUEST_URL is ${ACTIONS_ID_TOKEN_REQUEST_URL:+SET}"
+          echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN is ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+SET}"
+          echo "NODE_AUTH_TOKEN is ${NODE_AUTH_TOKEN:+SET}"
+          echo "NPM_CONFIG_USERCONFIG=${NPM_CONFIG_USERCONFIG:-<unset>}"
+          echo "--- NPM_CONFIG_USERCONFIG contents ---"
+          cat "${NPM_CONFIG_USERCONFIG:-/dev/null}" 2>/dev/null || echo "<none>"
+          echo "--- HOME .npmrc ---"
+          cat "$HOME/.npmrc" 2>/dev/null || echo "<none>"
           npm publish --access public
         env:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
