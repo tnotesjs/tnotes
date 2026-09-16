@@ -386,7 +386,11 @@ function configureMindmapFence(md: MarkdownIt) {
       `content="${encoded}"`,
       fenceOptions.initialExpandLevel === undefined
         ? ''
-        : `:initialExpandLevel="${fenceOptions.initialExpandLevel}"`
+        : `:initialExpandLevel="${fenceOptions.initialExpandLevel}"`,
+      // Rendered at build time as well, so the 「层」 control is in the first
+      // paint instead of appearing once the island hydrates (and so the
+      // hydration markup matches what the client mounts).
+      `:expandLevelControl="true"`
     ]
       .filter(Boolean)
       .join(' ')

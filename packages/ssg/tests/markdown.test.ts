@@ -201,6 +201,21 @@ describe('Markdown compatibility helpers', () => {
     expect(html).toContain('data-tn-island="mindmap"')
   })
 
+  it('marks the mindmap island for the level control so the island mounts it too', async () => {
+    const compiler = await createMarkdownCompiler(compilerConfig)
+    await compiler.prepare(['```mindmap\n- 根\n  - 子\n```'])
+    const { html } = compiler.compile(
+      ['```mindmap', '- 根', '  - 子', '```'].join('\n'),
+      'n.md',
+      '/n',
+      'n'
+    )
+
+    // Asserted on the SSR output in site.test.ts; here just pin the host markup
+    // the client island reads.
+    expect(html).toContain(':expandLevelControl="true"')
+  })
+
   it('hides all but the first code-group panel in SSR HTML', async () => {
     const compiler = await createMarkdownCompiler(compilerConfig)
     const source = [
