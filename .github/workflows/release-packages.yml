@@ -131,7 +131,18 @@ jobs:
       # 只有打 tag 的那一个包会发；凭据由 GitHub OIDC 在发布时换取，无需任何 secret
       - name: Publish (OIDC)
         working-directory: ${{ steps.stage.outputs.dir }}
-        run: npm publish --access public
+        run: |
+          set -x
+          which -a npm node
+          npm --version
+          node --version
+          # OIDC 请求端点是否由 runner 注入（只打印是否存在，不打印值）
+          for v in ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_ID_TOKEN_REQUEST_TOKEN NODE_AUTH_TOKEN NPM_CONFIG_USERCONFIG; do
+            eval "present=\${$v:+yes}"
+            echo "$v=\${present:-<empty>}"
+          done
+          cat "${NPM_CONFIG_USERCONFIG:-/dev/null}" 2>/dev/null || true
+          npm publish --access public
         env:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
           NPM_CONFIG_PROVENANCE: 'true'
