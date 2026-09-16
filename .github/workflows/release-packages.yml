@@ -6,15 +6,18 @@
 #
 # 用法：
 #   1) 改 packages/<pkg>/package.json 的 version（以及 CHANGELOG/说明性提交）
-#   2) git tag kb@0.5.2 && git push origin kb@0.5.2
+#   2) git tag kb@0.5.3 && git push origin kb@0.5.3
 #   ui / ssg / mindmap-core 同理。
 #
 # 顺序要求：`@tnotesjs/ssg` 依赖 kb 与 ui（`workspace:^` 在发布时会被改写成实际范围），
 # 所以升级依赖链路时先发 kb/ui，再发 ssg。
 #
-# 前置配置（一次性）：仓库 Settings → Secrets and variables → Actions 增加
-#   NPM_TOKEN = 一个 npm **Automation** token（绕过 2FA，供 CI 使用）
-# 没配这个 secret 时，发布步骤会以清晰的报错失败，不会静默跳过。
+# 认证：**OIDC trusted publishing，没有任何长期 token**。npm 侧需为每个包配一次
+# trusted publisher（Package → Settings → Trusted Publisher）：
+#   Provider: GitHub Actions / Organization: tnotesjs / Repository: tnotes
+#   Workflow filename: release-packages.yml / Environment: 留空
+#   Allowed actions: 必须勾上 "Allow npm publish"
+# 因此本工作流需要 `id-token: write`，也**不需要** NPM_TOKEN secret。
 
 name: Release Packages
 
@@ -28,6 +31,8 @@ on:
 
 permissions:
   contents: read
+  # 申请 OIDC 身份令牌，npm 用它校验「这个工作流有权发布这个包」
+  id-token: write
 
 jobs:
   publish:
@@ -48,6 +53,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          # 写出发布用的 registry 配置；凭据由 OIDC 在发布时换取
           registry-url: https://registry.npmjs.org
 
       - name: Resolve package from tag
@@ -81,17 +87,52 @@ jobs:
       - name: Build packages
         run: pnpm --filter '${{ steps.target.outputs.pkg }}' --if-present run build
 
-      - name: Check publish token
+      # 显式跑一次发布门禁：lint + test + typecheck + build 由各包自己声明。
+      # 必须在这里跑——后面的 `npm publish` 发生在工作区外的临时目录，不会触发
+      # 包里的 `prepublishOnly`（那条脚本是给手工 `pnpm publish` 用的）。
+      - name: Release gate (lint, test, typecheck, build)
+        run: pnpm --filter '${{ steps.target.outputs.pkg }}' run prepublishOnly
+
+      # 为什么要两段式：包用 `workspace:^` 消费同仓依赖，只有 pnpm 会把它重写成
+      # 实际版本范围（`npm publish` 不重写，会把字面量 `workspace:^` 发出去——0.3.0
+      # 那次坏发布就是这么来的）。而 provenance 与 OIDC 由 npm 支持。所以先用
+      # pnpm pack 产出**已重写**的 tarball，解包到工作区外的干净目录，再用 npm 发布。
+      # 解包这一步同时保证了 node_modules 不可能被带进 tarball。
+      - name: Stage publish artifact (pnpm rewrites workspace protocol)
+        id: stage
         run: |
-          if [ -z "${NODE_AUTH_TOKEN}" ]; then
-            echo "::error::缺少 NPM_TOKEN secret。请在仓库 Actions secrets 里配置一个 npm Automation token。"
+          set -euo pipefail
+          PKG_DIR="packages/${{ steps.target.outputs.dir }}"
+          STAGE="$(mktemp -d)"
+          TARBALL="$(cd "$PKG_DIR" && pnpm pack --pack-destination "$STAGE" | tail -n 1)"
+          echo "packed: $TARBALL"
+          mkdir -p "$STAGE/publish"
+          tar -xzf "$TARBALL" -C "$STAGE/publish"
+          PUBLISH_DIR="$STAGE/publish/package"
+          # 让这次发布带上 provenance（可验证地链回本 commit 与工作流）
+          node -e "const fs=require('fs');const f='$PUBLISH_DIR/package.json';const p=JSON.parse(fs.readFileSync(f,'utf8'));p.publishConfig={...(p.publishConfig||{}),provenance:true};fs.writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
+          echo "dir=$PUBLISH_DIR" >> "$GITHUB_OUTPUT"
+          # 自证：不能有 workspace: 泄漏（这正是 0.3.0 坏发布的形式）
+          if node -e "const p=require('$PUBLISH_DIR/package.json');const all={...p.dependencies,...p.devDependencies};process.exit(Object.values(all).some(v=>String(v).includes('workspace:'))?1:0)"; then
+            echo "依赖范围已重写，无 workspace: 泄漏"
+          else
+            echo "::error::发布物里仍有 workspace: 依赖——pnpm pack 没有重写，拒绝发布"
             exit 1
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # 只有打 tag 的那一个包会发；pnpm 会把 workspace:^ 改写成实际版本范围
-      - name: Publish
-        run: pnpm --filter '${{ steps.target.outputs.pkg }}' publish --access public --no-git-checks
+      # 只有打 tag 的那一个包会发；凭据由 GitHub OIDC 在发布时换取，无需任何 secret
+      - name: Publish (OIDC)
+        working-directory: ${{ steps.stage.outputs.dir }}
+        run: npm publish --access public
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'
+
+      - name: Verify on the registry
+        run: |
+          expected='${{ steps.target.outputs.expected }}'
+          actual=$(npm view '${{ steps.target.outputs.pkg }}@'"$expected" version --registry=https://registry.npmjs.org/ || true)
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::发布后校验失败：registry 上没查到 ${{ steps.target.outputs.pkg }}@${expected}"
+            exit 1
+          fi
+          echo "已在 registry 上确认：${{ steps.target.outputs.pkg }}@${expected}"
