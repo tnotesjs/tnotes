@@ -2,7 +2,7 @@ import Badge from '@tnotesjs/ui/badge'
 import CodeBlock from '@tnotesjs/ui/code-block'
 import CodeGroup from '@tnotesjs/ui/code-group'
 import ImagePreview from '@tnotesjs/ui/image-preview'
-import { defineAsyncComponent, defineComponent, h } from 'vue'
+import { defineAsyncComponent } from 'vue'
 import theme from 'virtual:tnotes-theme'
 
 import NotesTableAdapter from './components/NotesTableAdapter'
@@ -12,11 +12,13 @@ import type { App, Component } from 'vue'
 import type { PageData, SiteData } from '../types'
 import { NOTES_DATA_KEY, SITE_BASE_KEY } from './components/NotesTableAdapter'
 
-const Discussions = defineComponent({
-  name: 'Discussions',
-  setup: () => () =>
-    h('p', { class: 'tn-discussions-placeholder' }, '评论请前往 GitHub Discussions。')
-})
+/*
+ * Comments are rendered by the site app — see `components/Discussions.vue`. They
+ * are deliberately *not* available as a markdown component: a note's body is
+ * rendered in its own app and injected as HTML, so nothing inside it hydrates and
+ * a `<Discussions />` in markdown could never load giscus. Leaving the name
+ * unregistered makes such a note say so instead of silently showing nothing.
+ */
 
 function lazyComponent(loader: () => Promise<unknown>) {
   return defineAsyncComponent(async () => {
@@ -43,7 +45,6 @@ export function registerTNotesComponents(
     BilibiliVideo,
     CodeBlock,
     CodeGroup,
-    Discussions,
     Footprints,
     ImagePreview,
     Mermaid,

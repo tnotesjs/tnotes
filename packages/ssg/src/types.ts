@@ -24,9 +24,21 @@ export interface PageData {
   relativePath: string
   title: string
   description: string
+  /**
+   * Frontmatter `id` (a UUID): the note's stable identity, and the key its
+   * comments hang off. Present on every note; absent on generated pages such as
+   * the 404, which have no discussion to map to.
+   */
+  noteId?: string
   headings: PageHeading[]
   text: string
   frontmatter: Record<string, unknown>
+  /**
+   * The note file verbatim, frontmatter included — what the copy button puts on
+   * the clipboard. Present on every page (the 404 is a page too); it is the
+   * toolbar that decides whether a page is a note.
+   */
+  source?: string
 }
 
 export interface MarkdownConfig {
@@ -48,6 +60,10 @@ export interface SsgConfig {
   port?: number
   /** Note index used as the home page; defaults to the first TOC note. */
   home?: string
+  /** Git repository this kb lives in; the site's title links to it. */
+  repositoryUrl?: string
+  /** Site icon the kb declares; rendered as the page's favicon. */
+  icon?: { src: string }
   /** kb-level comments switch (giscus) — reserved, comments ship later. */
   discussions?: boolean
   ignoreDeadLinks?: boolean | string[]
@@ -68,6 +84,8 @@ export interface ResolvedSsgConfig {
   lang: string
   port: number
   home?: string
+  repositoryUrl?: string
+  icon?: { src: string }
   discussions: boolean
   ignoreDeadLinks: boolean | string[]
   head: Array<[string, Record<string, string>, string?]>
@@ -86,6 +104,7 @@ export interface SiteData {
   title: string
   description: string
   lang: string
+  repositoryUrl?: string
   discussions: boolean
   sidebar: SidebarItem[]
   markdown: MarkdownConfig

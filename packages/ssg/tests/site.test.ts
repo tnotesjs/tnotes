@@ -23,7 +23,9 @@ beforeAll(async () => {
       {
         base: '/fixture/',
         title: 'Fixture',
-        description: 'SSG fixture'
+        description: 'SSG fixture',
+        repositoryUrl: 'https://github.com/tnotesjs/TNotes.fixture',
+        icon: { src: 'https://cdn.example.com/icon--fixture.svg' }
       },
       null,
       2
@@ -33,7 +35,8 @@ beforeAll(async () => {
     'TOC.md',
     `- 分组 A
   - [x] 0001. 首页笔记
-  - [ ] 0002. 指南
+  - 分组 A1
+    - [ ] 0002. 指南
 `
   )
   write(
@@ -123,6 +126,20 @@ afterAll(() => {
 const dist = (...segments: string[]) => path.join(root, '.tnotes/dist', ...segments)
 
 describe('static site build', () => {
+  it('renders one note toolbar outside the article and preserves original Markdown', () => {
+    const html = fs.readFileSync(dist('notes/1.html'), 'utf8')
+    expect(html.match(/class="tn-article-tools"/g)).toHaveLength(1)
+    expect(html).toContain(
+      'https://github.com/tnotesjs/TNotes.fixture/blob/main/notes/0001.%20%E9%A6%96%E9%A1%B5%E7%AC%94%E8%AE%B0.md'
+    )
+    expect(html).toContain('aria-label="复制笔记原文"')
+    expect(html).toContain('aria-label="折叠所有标题"')
+    const payload = html.match(/<script[^>]*id="tn-page-data"[^>]*>([\s\S]*?)<\/script>/)![1]!
+    expect(JSON.parse(payload).source).toBe(
+      fs.readFileSync(path.join(root, 'notes/0001. 首页笔记.md'), 'utf8')
+    )
+    expect(fs.readFileSync(dist('404.html'), 'utf8')).not.toContain('class="tn-article-tools"')
+  })
   it('renders the first TOC note as home and every note at its route', () => {
     const home = fs.readFileSync(dist('index.html'), 'utf8')
     expect(home).toContain('Vue SFC works')
@@ -163,17 +180,51 @@ describe('static site build', () => {
     expect(home).not.toContain('⏰')
   })
 
-  it('SSR 出来的目录默认全部展开，且每行都是可折叠的结构', () => {
+  it('SSR 出来的目录只展开当前笔记所在的分支', () => {
     const home = fs.readFileSync(dist('index.html'), 'utf8')
-    // Collapse is a client-side session concern: the server cannot know it, and
-    // rendering anything collapsed would flash before the stored state lands.
-    expect(home).not.toContain('tn-site-sidebar-item is-collapsed')
-    expect(home).toContain('tn-site-sidebar-item')
-    expect(home).toContain('aria-expanded="true"')
+    // The label names the action, so it also names the state: 分组 A wraps the
+    // current note and stays open, its sibling 分组 A1 is folded. Asserting the
+    // class instead would be fragile — the folded class renders *before* the
+    // static one, and `is-collapsed` is shared with the code-block components.
+    expect(home).toContain('aria-label="收起 分组 A"')
+    expect(home).toContain('aria-label="展开 分组 A1"')
     expect(home).toContain('data-tn-key="0"')
     // Chevron and title are separate hit areas: disclosure vs navigation.
     expect(home).toContain('tn-site-sidebar-toggle')
     expect(home).toContain('tn-site-sidebar-link')
+  })
+
+  it('打开另一篇笔记时，展开的是它所在的分支', () => {
+    const note = fs.readFileSync(dist('notes/2.html'), 'utf8')
+    expect(note).toContain('aria-label="收起 分组 A"')
+    expect(note).toContain('aria-label="收起 分组 A1"')
+    expect(note).not.toContain('aria-label="展开 分组')
+  })
+
+  it('每篇笔记末尾都挂上按 id 绑定的评论块', () => {
+    const home = fs.readFileSync(dist('index.html'), 'utf8')
+    // The note's own id is the whole binding: giscus maps one discussion per term.
+    expect(home).toContain('class="tn-discussions"')
+    expect(home).toContain('discussions_q=00000000-0000-4000-8000-000000000001')
+    expect(home).toContain('正在载入评论')
+    // The 404 is generated and has no note identity, so there is no thread to key.
+    expect(fs.readFileSync(dist('404.html'), 'utf8')).not.toContain('class="tn-discussions"')
+  })
+
+  it('每页都带上 kb 声明的站标', () => {
+    // The kb already declares its icon; the site is what has to publish it, and
+    // every page needs it or the tab falls back to a blank favicon.
+    for (const page of ['index.html', 'notes/2.html']) {
+      const html = fs.readFileSync(dist(page), 'utf8')
+      expect(html).toContain('<link rel="icon" type="image/svg+xml"')
+      expect(html).toContain('href="https://cdn.example.com/icon--fixture.svg"')
+    }
+  })
+
+  it('标题链到 kb 的仓库，且走新标签页', () => {
+    const home = fs.readFileSync(dist('index.html'), 'utf8')
+    expect(home).toContain('href="https://github.com/tnotesjs/TNotes.fixture"')
+    expect(home).toContain('rel="noopener noreferrer"')
   })
 
   it('目录高亮跟随规范笔记路由，首页也能点亮当前项', () => {

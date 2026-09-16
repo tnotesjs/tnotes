@@ -116,8 +116,14 @@
 .tn-code-block.has-line-numbers .line::before {
   content: attr(data-line);
   display: inline-block;
-  width: 3ch;
-  padding-right: 16px;
+  /*
+   * Gutter width follows the widest number this block actually prints — the
+   * highlighter sets `--tn-line-digits` per block, so a two-line snippet is not
+   * padded like a thousand-line file. 3ch is the fallback for renderers that
+   * bring their own line numbers.
+   */
+  width: calc(var(--tn-line-digits, 3) * 1ch);
+  padding-right: 12px;
   text-align: right;
   color: var(--tn-c-text-2);
   user-select: none;

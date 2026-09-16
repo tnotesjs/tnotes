@@ -3,8 +3,12 @@
     <li
       v-for="(item, position) in items"
       :key="nodeKey(position)"
+      v-show="!visibleKeys || visibleKeys.has(nodeKey(position))"
       class="tn-site-sidebar-item"
-      :class="{ 'is-collapsed': hasChildren(item) && collapse.collapsed.has(nodeKey(position)) }"
+      :class="{
+        'is-collapsed':
+          !visibleKeys && hasChildren(item) && collapse.collapsed.has(nodeKey(position))
+      }"
       :data-tn-key="nodeKey(position)"
     >
       <div class="tn-site-sidebar-row" :class="{ 'is-active': isActive(item) }">
@@ -12,7 +16,10 @@
           v-if="hasChildren(item)"
           type="button"
           class="tn-site-sidebar-toggle"
-          :aria-expanded="collapse.collapsed.has(nodeKey(position)) ? 'false' : 'true'"
+          :disabled="Boolean(visibleKeys)"
+          :aria-expanded="
+            !visibleKeys && collapse.collapsed.has(nodeKey(position)) ? 'false' : 'true'
+          "
           :aria-label="`${collapse.collapsed.has(nodeKey(position)) ? '展开' : '收起'} ${item.text}`"
           @click="collapse.toggle(nodeKey(position))"
         >
@@ -60,6 +67,7 @@
         :active-route="activeRoute"
         :base="base"
         :prefix="nodeKey(position)"
+        :visible-keys="visibleKeys"
       />
     </li>
   </ul>
@@ -80,6 +88,7 @@
 import { inject } from 'vue'
 
 import { SIDEBAR_COLLAPSE_KEY, createInertCollapseContext } from '../sidebarContext'
+import { normalizeRoute } from '../navigation'
 import { sidebarNodeKey } from '../sidebarState'
 import type { SidebarItem } from '../../types'
 
@@ -94,6 +103,7 @@ const props = withDefaults(
     activeRoute: string
     base: string
     /** Position path of the parent node; "" at the root. */
+    visibleKeys?: Set<string> | null
     prefix?: string
   }>(),
   { prefix: '' }
@@ -105,13 +115,8 @@ const nodeKey = (position: number) => sidebarNodeKey(props.prefix, position)
 
 const hasChildren = (item: SidebarItem) => Boolean(item.items?.length)
 
-const normalize = (value: string) =>
-  decodeURIComponent(value)
-    .replace(/\.(md|html)$/i, '')
-    .replace(/\/$/, '') || '/'
-
 const isActive = (item: SidebarItem) =>
-  Boolean(item.link) && normalize(item.link!) === normalize(props.activeRoute)
+  Boolean(item.link) && normalizeRoute(item.link!) === normalizeRoute(props.activeRoute)
 
 /** Row is truncated to two lines, so the full label stays reachable here. */
 const tooltip = (item: SidebarItem) => (item.index ? `${item.index}. ${item.text}` : item.text)

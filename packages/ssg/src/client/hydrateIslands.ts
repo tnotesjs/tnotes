@@ -1,3 +1,4 @@
+import { copyText } from './clipboard'
 /**
  * Progressive enhancement for SSR article HTML. The client hydrates chrome
  * (search / theme / sidebar) and leaves the article as static markup; these
@@ -32,27 +33,6 @@ export function resolveNoteAssetSrc(src: string, base = '/'): string {
   const suffix = queryAt < 0 ? '' : match[1].slice(queryAt)
   const prefix = base.endsWith('/') ? base : `${base}/`
   return `${prefix}assets/${pathPart}${suffix}`
-}
-
-async function copyText(text: string): Promise<void> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      return
-    }
-  } catch {
-    /* fall through */
-  }
-  const field = document.createElement('textarea')
-  field.value = text
-  field.style.cssText = 'position:fixed;left:-9999px;opacity:0'
-  document.body.append(field)
-  try {
-    field.select()
-    document.execCommand('copy')
-  } finally {
-    field.remove()
-  }
 }
 
 function decodeData(value: string | undefined): string {

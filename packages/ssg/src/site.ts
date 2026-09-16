@@ -17,6 +17,7 @@ import {
 } from 'vite'
 
 import { resolveConfig } from './config'
+import { jsonScript } from './jsonScript'
 import { normalizeSearchTerm, tokenizeSearch } from './client/search'
 import {
   SIDEBAR_RESTORE_CLASS,
@@ -65,10 +66,6 @@ function htmlEscape(value: string) {
   })
 }
 
-function jsonScript(value: unknown) {
-  return JSON.stringify(value).replace(/</g, '\\u003c')
-}
-
 function renderHead(config: ResolvedSsgConfig) {
   return config.head
     .map(([tag, attrs, content = '']) => {
@@ -78,6 +75,24 @@ function renderHead(config: ResolvedSsgConfig) {
       return content ? `<${tag}${serialized}>${content}</${tag}>` : `<${tag}${serialized}>`
     })
     .join('\n')
+}
+
+/** Mime types for the favicon formats a kb realistically declares. */
+const ICON_TYPES: Record<string, string> = {
+  svg: 'image/svg+xml',
+  png: 'image/png',
+  ico: 'image/x-icon',
+  webp: 'image/webp',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg'
+}
+
+/** The favicon a kb declares in `tnotes.json`, typed from its own extension. */
+function iconLink(icon: ResolvedSsgConfig['icon']) {
+  if (!icon?.src) return ''
+  const extension = (icon.src.split(/[?#]/)[0]?.split('.').pop() ?? '').toLowerCase()
+  const type = ICON_TYPES[extension]
+  return `<link rel="icon"${type ? ` type="${type}"` : ''} href="${htmlEscape(icon.src)}">`
 }
 
 /**
@@ -107,6 +122,7 @@ function pageDocument(config: ResolvedSsgConfig, route: string, page: PageData, 
     <meta name="description" content="${htmlEscape(description)}" />
     <title>${htmlEscape(page.title)} | ${htmlEscape(config.title)}</title>
     ${renderHead(config)}
+    ${iconLink(config.icon)}
     <script>try{const t=localStorage.getItem('tnotes-theme');const d=t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',d)}catch{}</script>
     ${sidebarRestoreGate(config.base)}
   </head>

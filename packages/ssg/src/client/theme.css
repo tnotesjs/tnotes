@@ -47,14 +47,37 @@ body {
 .tn-site-actions {
   display: flex;
   gap: 8px;
+  /* The header carries no nav of its own, so its actions belong at the far edge. */
+  margin-left: auto;
 }
+/*
+ * Chrome-less icons: every header control is a glyph on the header surface, not
+ * a chip. The box only added weight to controls that are already unambiguous.
+ */
 .tn-site-actions button {
-  border: 1px solid var(--tn-c-divider);
-  border-radius: 8px;
-  background: var(--tn-c-bg-soft);
-  color: var(--tn-c-text);
-  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tn-c-text-2);
+  font-size: 18px;
   cursor: pointer;
+}
+.tn-site-actions button:hover {
+  color: var(--tn-c-brand);
+}
+/*
+ * Phones only. Hidden by CSS rather than by `v-if`: the server cannot know the
+ * viewport, so a JS-gated button would pop in after hydration, while this one is
+ * already in place on the first paint. (Two classes: the shared rule above sets
+ * `display: inline-flex` and would otherwise win.)
+ */
+.tn-site-actions .tn-site-drawer-button {
+  display: none;
 }
 .tn-site-body {
   display: grid;
@@ -77,6 +100,15 @@ body {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  /*
+   * The scrollbar is drawn at the scroller's own right edge, and the sidebar's
+   * 12px side padding used to push that edge — and the thumb with it — well away
+   * from the border. Pulling the scroller out by exactly that padding and putting
+   * it back as the scroller's own padding moves the thumb to the edge while the
+   * rows keep the same gutter.
+   */
+  margin-right: -12px;
+  padding-right: 12px;
 }
 /* Collapse set and scroll offset are applied on mount. Holding the sidebar
    back until then is what stops it painting fully expanded at offset 0 and
@@ -101,6 +133,12 @@ html.tn-sb-restore .tn-site-sidebar {
   display: flex;
   align-items: flex-start;
   border-radius: 6px;
+  /* Positioning context for the row's visually-hidden status label. Without it
+     that absolutely positioned label skips the scroll container's clipping —
+     `overflow: auto` only clips descendants whose containing block is the
+     scroller or below — and its static position lands at the bottom of the
+     *unclipped* tree, stretching the document by the full tree height. */
+  position: relative;
 }
 .tn-site-sidebar-row:hover {
   background: var(--tn-c-hover);
@@ -148,8 +186,10 @@ html.tn-sb-restore .tn-site-sidebar {
   line-height: 20px;
   text-decoration: none;
 }
+/* No top margin: the group title has to sit on the same centre line as the
+   chevron beside it, and the toggle is a fixed 30px box — the 6px of margin that
+   used to be here pushed the two out of line. */
 .tn-site-sidebar-heading {
-  margin-top: 6px;
   color: var(--tn-c-text);
   font-weight: 500;
 }
@@ -194,34 +234,52 @@ html.tn-sb-restore .tn-site-sidebar {
   color: var(--tn-c-brand);
   font-weight: 500;
 }
-.tn-site-sidebar-locate {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  display: flex;
+/*
+ * Comments. They sit at the end of the article column: the mount reserves the
+ * height the giscus iframe will take, because that iframe only arrives after the
+ * reader's browser has talked to github.com — without the reservation the
+ * article's last line would jump up once it lands.
+ */
+.tn-discussions {
+  margin-top: 48px;
+  border-top: 1px solid var(--tn-c-divider);
+  padding-top: 24px;
+}
+.tn-discussions-title {
+  margin: 0 0 16px;
+  font-size: 1.2rem;
+  font-weight: 500;
+  line-height: 32px;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+.tn-discussions-link {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border: 1px solid var(--tn-c-divider);
-  border-radius: 999px;
-  background: var(--tn-c-bg-elv);
-  box-shadow: var(--tn-shadow-2);
+  gap: 0.5em;
+  color: var(--tn-c-brand);
+  text-decoration: none;
+}
+.tn-discussions-link:hover {
+  opacity: 0.6;
+}
+.tn-discussions-link svg {
+  width: 1em;
+  height: 1em;
+  flex: none;
+}
+.tn-discussions-mount {
+  min-height: 200px;
+}
+.tn-discussions-hint {
+  margin: 0;
   color: var(--tn-c-text-2);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.15s ease;
+  font-size: 13px;
+  text-align: center;
 }
-.tn-site-sidebar-locate.is-visible {
-  opacity: 1;
-  visibility: visible;
-}
-.tn-site-sidebar-locate svg {
-  width: 13px;
-  height: 13px;
-}
+/* Requires a positioned ancestor — see `.tn-site-sidebar-row`. An absolutely
+   positioned box with no offsets uses its static position, so without one it
+   escapes any ancestor scroll container's clipping. */
 .tn-site-visually-hidden {
   position: absolute;
   width: 1px;
@@ -237,7 +295,7 @@ html.tn-sb-restore .tn-site-sidebar {
   min-width: 0;
   width: min(100%, 980px);
   margin: 0 auto;
-  padding: 48px 44px 96px;
+  padding: 8px 44px 96px;
   overflow-wrap: anywhere;
 }
 .tn-site-outline {
@@ -377,6 +435,318 @@ html.tn-sb-restore .tn-site-sidebar {
     display: block;
   }
   .tn-site-main {
-    padding: 28px 20px 72px;
+    padding: 8px 20px 72px;
+  }
+}
+
+/* Navigation layout preferences are applied after hydration. */
+.tn-site-body {
+  grid-template-columns: var(--sidebar-width, 272px) minmax(0, 1fr) 220px;
+}
+.sidebar-hidden .tn-site-body {
+  grid-template-columns: minmax(0, 1fr) 220px;
+}
+.sidebar-hidden .tn-site-sidebar {
+  display: none;
+}
+.tn-sidebar-tools {
+  flex: none;
+  padding-bottom: 12px;
+}
+.tn-sidebar-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.tn-sidebar-tools button,
+.tn-search-close {
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 6px;
+  background: var(--tn-c-bg);
+  color: var(--tn-c-text-2);
+  padding: 5px 8px;
+  cursor: pointer;
+  /*
+   * Labels must not shrink: the filter row now holds the field plus two buttons,
+   * and a squeezed button would wrap "清空" onto two lines. Only the input gives.
+   */
+  flex: none;
+  white-space: nowrap;
+}
+.tn-sidebar-tools button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/*
+ * The fold-all toggle sits inside the filter row, so it drops the button chrome
+ * and reads as part of the field instead of a second control parked beside it.
+ */
+.tn-sidebar-tools .tn-sidebar-icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.tn-sidebar-tools .tn-sidebar-icon-button svg {
+  width: 16px;
+  height: 16px;
+}
+.tn-sidebar-tools .tn-sidebar-icon-button:hover:not(:disabled) {
+  color: var(--tn-c-brand);
+  background: var(--tn-c-hover);
+}
+/*
+ * The sidebar's own border is the control: one handle straddling it, centred on
+ * the viewport. It has to survive the sidebar being hidden — inside the sidebar
+ * it would go with it — so it is a fixed sibling. The chevron is a single shape,
+ * turned to point away from the panel edge still on screen, so direction carries
+ * the action and colour only reinforces it.
+ */
+.tn-sidebar-handle {
+  position: fixed;
+  z-index: 15;
+  top: 50%;
+  left: var(--sidebar-width, 272px);
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 999px;
+  background: var(--tn-c-bg);
+  color: var(--tn-c-text-2);
+  cursor: pointer;
+}
+.tn-sidebar-handle:hover {
+  border-color: var(--tn-c-brand);
+  color: var(--tn-c-brand);
+}
+.tn-sidebar-handle svg {
+  width: 14px;
+  height: 14px;
+}
+/*
+ * Tucked away: it keeps its centring and moves to the viewport edge, so only the
+ * outer half of the pill shows — a collapsed-panel tab rather than a button
+ * floating in the gutter. Half an 18px pill is 9px, which cannot hold a 14px
+ * arrow, so the pill widens and the padding re-centres the smaller chevron in
+ * the half that is still on screen.
+ *
+ * State is read from the root class, never from a convenience class on the
+ * button: this markup has to be right *before* hydration, and the root class
+ * already is — the server renders the sidebar visible, same as this does.
+ */
+.sidebar-hidden .tn-sidebar-handle {
+  left: 0;
+  width: 28px;
+  padding-left: 14px;
+}
+.sidebar-hidden .tn-sidebar-handle svg {
+  width: 12px;
+  height: 12px;
+  transform: rotate(180deg);
+}
+.tn-sidebar-filter input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 6px;
+  color: var(--tn-c-text);
+  background: var(--tn-c-bg);
+  font: inherit;
+  font-size: 13px;
+}
+.tn-sidebar-resizer {
+  position: absolute;
+  width: 8px;
+  right: -4px;
+  top: 0;
+  bottom: 0;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 2;
+}
+.tn-sidebar-resizer:hover,
+.tn-sidebar-resizer:focus-visible {
+  background: var(--tn-c-brand-soft);
+}
+.tn-search-close {
+  display: block;
+  margin: 0 0 8px auto;
+}
+.tn-search-dialog a.is-selected {
+  background: var(--tn-c-brand-soft);
+  outline: 1px solid var(--tn-c-brand);
+}
+.tn-site-sidebar-toggle:disabled {
+  cursor: default;
+}
+@media (max-width: 1100px) {
+  .tn-site-body {
+    grid-template-columns: var(--sidebar-width, 272px) minmax(0, 1fr);
+  }
+  .sidebar-hidden .tn-site-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .tn-site-sidebar.is-drawer-open {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    height: 100dvh;
+    max-height: 100dvh;
+    width: min(340px, 88vw);
+    z-index: 90;
+    background: var(--tn-c-bg);
+    padding: 16px 12px;
+  }
+  .tn-sidebar-mask {
+    position: fixed;
+    inset: 0;
+    z-index: 89;
+    background: rgb(0 0 0 / 45%);
+  }
+  .tn-sidebar-resizer {
+    display: none;
+  }
+  /*
+   * The boundary handle belongs to the desktop column layout. On phones there is
+   * no border for it to sit on, and parked at the screen edge it looked like a
+   * stray control — the header's directory button opens the drawer instead, and
+   * the mask or a picked note puts it away.
+   */
+  .tn-sidebar-handle {
+    display: none;
+  }
+  /* Revealed here; hidden by CSS, so it is in place on the very first paint. */
+  .tn-site-actions .tn-site-drawer-button {
+    display: inline-flex;
+  }
+  .tn-site-actions .tn-site-drawer-button svg {
+    width: 20px;
+    height: 20px;
+  }
+  .tn-site-drawer-button svg {
+    width: 16px;
+    height: 16px;
+  }
+  .tn-site-sidebar-toggle {
+    width: 28px;
+    min-height: 36px;
+  }
+}
+
+/* Note actions share the article column and stay independent of its HTML. */
+.tn-article-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.tn-article-tools-end {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.tn-article-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tn-c-text-2);
+  cursor: pointer;
+}
+.tn-article-tool:hover {
+  color: var(--tn-c-brand);
+  background: var(--tn-c-hover);
+}
+.tn-article-tool svg {
+  width: 18px;
+  height: 18px;
+}
+.tn-article-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 30;
+  margin: 0;
+  padding: 8px 14px;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 8px;
+  background: var(--tn-c-bg);
+  color: var(--tn-c-text);
+  font-size: 13px;
+}
+.tn-site-article .tn-heading-body[hidden] {
+  display: none;
+}
+
+.tn-foldable-heading {
+  position: relative;
+}
+.tn-heading-toggle {
+  position: absolute;
+  right: 100%;
+  top: 0;
+  font: inherit;
+  height: 1lh;
+  opacity: 0;
+  display: inline-flex;
+  vertical-align: middle;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tn-c-text-2);
+  cursor: pointer;
+}
+.tn-heading-toggle:hover {
+  color: var(--tn-c-brand);
+  background: var(--tn-c-hover);
+}
+.tn-heading-toggle svg {
+  width: 12px;
+  height: 12px;
+  transform: rotate(90deg);
+}
+.tn-heading-toggle[aria-expanded='false'] svg {
+  transform: none;
+}
+.tn-heading-toggle:focus-visible {
+  outline: 2px solid var(--tn-c-brand);
+  outline-offset: 2px;
+}
+
+.tn-heading-toggle[aria-expanded='false'],
+.tn-foldable-heading:hover > .tn-heading-toggle,
+.tn-foldable-heading:focus-within > .tn-heading-toggle {
+  opacity: 1;
+}
+@media (hover: none) {
+  .tn-heading-toggle {
+    opacity: 1;
   }
 }

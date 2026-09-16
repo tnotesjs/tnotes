@@ -4,7 +4,8 @@ import {
   collectCodeLanguages,
   createMarkdownCompiler,
   escapeVueMustaches,
-  extractMarkdownLinks
+  extractMarkdownLinks,
+  extractPageData
 } from '../src/markdown'
 
 const compilerConfig = {
@@ -22,6 +23,77 @@ const compilerConfig = {
   head: [] as Array<[string, Record<string, string>, string?]>,
   markdown: { lineNumbers: false, math: false, imageLazyLoading: false }
 }
+
+describe('note identity for the comments component', () => {
+  const note = (body: string) =>
+    extractPageData(compilerConfig, body, '/kb/notes/0001.md', '/notes/1')
+
+  it('carries the frontmatter id into the page data', () => {
+    const data = note('---\nid: 11111111-2222-4333-8444-555555555555\n---\n\n# 标题\n')
+    expect(data.noteId).toBe('11111111-2222-4333-8444-555555555555')
+  })
+
+  it('leaves it out when the note has no id', () => {
+    expect(note('---\nid: "  "\n---\n\n# 标题\n').noteId).toBeUndefined()
+    expect(note('# 标题\n').noteId).toBeUndefined()
+  })
+
+  it('carries the note verbatim for the copy button', () => {
+    const raw = '---\nid: 11111111-2222-4333-8444-555555555555\n---\n\n# 标题\n\n正文\n'
+    expect(note(raw).source).toBe(raw)
+  })
+})
+
+describe('heading sections for the fold-all control', () => {
+  const render = async (body: string) => {
+    const compiler = await createMarkdownCompiler(compilerConfig)
+    return compiler.compile(body, 'n.md', '/n', 'n').html
+  }
+  /** One open tag per section; the matching `</div>` carries no marker of its own. */
+  const sections = (html: string) => (html.match(/<div class="tn-heading-body">/g) ?? []).length
+
+  it('wraps each heading section, nested by level', async () => {
+    const html = await render('## A\n\ntext\n\n### A.1\n\nsub\n\n## B\n\nb\n')
+    expect(html.replace(/>\s+</g, '><').trim()).toBe(
+      [
+        '<h2 id="a" tabindex="-1">A</h2>',
+        '<div class="tn-heading-body">',
+        '<p>text</p>',
+        '<h3 id="a1" tabindex="-1">A.1</h3>',
+        '<div class="tn-heading-body"><p>sub</p></div>',
+        '</div>',
+        '<h2 id="b" tabindex="-1">B</h2>',
+        '<div class="tn-heading-body"><p>b</p></div>'
+      ].join('')
+    )
+  })
+
+  it('supports all six heading levels', async () => {
+    for (let level = 1; level <= 6; level += 1) {
+      const html = await render(`${'#'.repeat(level)} Title\n\nbody\n`)
+      expect(sections(html)).toBe(1)
+      expect(html).toContain(`</h${level}>`)
+    }
+  })
+
+  it('leaves a heading with nothing under it unwrapped', async () => {
+    const html = await render('## 空章节\n\n## 有内容\n\ntext\n')
+    expect(sections(html)).toBe(1)
+    expect(html).not.toContain('空章节</h2><div')
+  })
+
+  it('keeps container headings with the section around them', async () => {
+    // 容器里的标题不是章节：它跟着外层章节一起折叠，所以只有外层那一个包裹。
+    expect(sections(await render('## A\n\n> ## 引用标题\n'))).toBe(1)
+    expect(sections(await render('## A\n\n::: details\n\n### 里层\n\nx\n\n:::\n'))).toBe(1)
+  })
+
+  it('folds a section that runs to the end of the note', async () => {
+    const html = await render('# 标题\n\n正文\n')
+    expect(sections(html)).toBe(1)
+    expect(html.trimEnd().endsWith('</div>')).toBe(true)
+  })
+})
 
 describe('Markdown compatibility helpers', () => {
   it('collects only fenced-code languages needed by a site', () => {

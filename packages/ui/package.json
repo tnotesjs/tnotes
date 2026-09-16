@@ -1,6 +1,6 @@
 {
   "name": "@tnotesjs/ui",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Shared Vue UI for TNotes built-in blocks — consumed by the TNotes SSG and Desk.",
   "type": "module",
   "exports": {

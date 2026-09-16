@@ -12,6 +12,7 @@ const serializeSite = (site: ResolvedSsgConfig, store: PageSourceStore) => ({
   title: site.title,
   description: site.description,
   lang: site.lang,
+  repositoryUrl: site.repositoryUrl,
   discussions: site.discussions,
   sidebar: store.sidebar,
   notes: store.notes,

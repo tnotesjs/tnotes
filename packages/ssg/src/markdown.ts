@@ -23,6 +23,7 @@ import { full as emoji } from 'markdown-it-emoji'
 import markdownItMathjax from 'markdown-it-mathjax3'
 import markdownItTaskLists from 'markdown-it-task-lists'
 
+import { jsonScript } from './jsonScript'
 import { resolveNoteSlug, type NoteRef } from './noteRoute'
 import type { PageData, ResolvedSsgConfig } from './types'
 
@@ -402,6 +403,75 @@ function configureMindmapFence(md: MarkdownIt) {
   }
 }
 
+/* -------------------------------- sections ------------------------------- */
+
+/** Heading level of a top-level heading token, or 0 for anything else. */
+function sectionLevel(token: { type: string; level: number; tag: string }): number {
+  return token.type === 'heading_open' && token.level === 0 ? Number(token.tag.slice(1)) : 0
+}
+
+/**
+ * Wraps every heading's section in a `<div class="tn-heading-body">`, nested by
+ * heading level.
+ *
+ * The site's article is static markup, so 折叠所有标题 has to work on HTML that
+ * was rendered here at build time: wrapping at render gives the client stable section boundaries for individual
+ * and bulk folding,
+ * and the first paint cannot disagree with the markup — nothing is folded until
+ * the reader asks for it.
+ *
+ * Nesting is the outline's: an `h3` body sits inside the `h2` body around it, so
+ * hiding a section hides its subsections with it, and a heading with nothing
+ * under it gets no wrapper at all. Headings inside a container (blockquote,
+ * `::: details`) are left alone: the section enclosing them carries them along.
+ */
+function configureHeadingSections(md: MarkdownIt) {
+  md.core.ruler.push('tn-heading-sections', (state) => {
+    const tokens = state.tokens
+    const wrapped: typeof tokens = []
+    /** Levels with an open body, outermost first. */
+    const open: number[] = []
+    const bodyToken = (content: string) => {
+      const token = new state.Token('html_block', '', 0)
+      token.content = content
+      token.block = true
+      return token
+    }
+
+    for (let index = 0; index < tokens.length; index += 1) {
+      const token = tokens[index]!
+      const level = sectionLevel(token)
+      if (level < 1) {
+        wrapped.push(token)
+        continue
+      }
+      // A heading closes every section it is not nested under.
+      while (open.length > 0 && open[open.length - 1]! >= level) {
+        wrapped.push(bodyToken('</div>'))
+        open.pop()
+      }
+      const inline = tokens[index + 1]
+      const headingClose = tokens[index + 2]
+      wrapped.push(token)
+      if (inline && headingClose) {
+        wrapped.push(inline, headingClose)
+        index += 2
+      }
+      const next = tokens[index + 1]
+      if (next && sectionLevel(next) === 0) {
+        wrapped.push(bodyToken('<div class="tn-heading-body">'))
+        open.push(level)
+      }
+    }
+    while (open.length > 0) {
+      wrapped.push(bodyToken('</div>'))
+      open.pop()
+    }
+    state.tokens = wrapped
+    return true
+  })
+}
+
 /* ------------------------------ links/images ----------------------------- */
 
 /** `../assets/x.png` / `./assets/x.png` → `<base>assets/x.png` (copied verbatim). */
@@ -553,11 +623,17 @@ export function extractPageData(
     .replace(/\s+/g, ' ')
     .trim()
   const relativePath = path.relative(config.root, file).replaceAll('\\', '/')
+  const noteId = typeof parsed.data.id === 'string' ? parsed.data.id.trim() || undefined : undefined
+  // The note exactly as it is written, for the copy button. The article HTML is
+  // a rendering of this, and nothing downstream can put the source back together.
+  const source = raw.trim() ? raw : undefined
   return {
     route,
     relativePath,
     title,
     description,
+    noteId,
+    source,
     headings,
     text,
     frontmatter: parsed.data
@@ -591,6 +667,7 @@ export async function createMarkdownCompiler(
   configureCodeBlocks(md, config.markdown.lineNumbers)
   configureMermaidFence(md)
   configureMindmapFence(md)
+  configureHeadingSections(md)
 
   return {
     async prepare(sources: string[]) {
@@ -616,7 +693,9 @@ export async function createMarkdownCompiler(
       const hasUserSfc = scripts.length > 0 || styles.length > 0 || customBlocks.length > 0
       const vueSource = hasUserSfc
         ? [
-            `<script>export const __pageData = ${JSON.stringify(data)}; export default { name: ${JSON.stringify(data.relativePath)} }</script>`,
+            // jsonScript, not JSON.stringify: `data` now carries the note's own
+            // text, and a note may well contain `</script>`.
+            `<script>export const __pageData = ${jsonScript(data)}; export default { name: ${JSON.stringify(data.relativePath)} }</script>`,
             ...scripts,
             `<template><div class="tn-prose">${html}</div></template>`,
             ...styles,

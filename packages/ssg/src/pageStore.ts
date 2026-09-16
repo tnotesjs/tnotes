@@ -101,6 +101,12 @@ export function slimPageData(data: PageData): PageData {
     relativePath: data.relativePath,
     title: data.title,
     description: data.description,
+    // Kept, unlike the rest of the frontmatter: the comments component keys its
+    // discussion off this, and it is the only frontmatter field the browser needs.
+    noteId: data.noteId,
+    // The copy button needs the note itself; the rendered HTML cannot stand in
+    // for it.
+    source: data.source,
     headings: data.headings,
     text: '',
     frontmatter: {}

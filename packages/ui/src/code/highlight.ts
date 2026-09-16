@@ -127,7 +127,18 @@ export async function prepareCodeHighlighter(languages: string[] = []): Promise<
   return highlighter
 }
 
-function transformers(meta: CodeMeta): ShikiTransformer[] {
+/**
+ * How many characters the line-number gutter has to hold.
+ *
+ * Counted from the source up front because the width belongs on the root `<pre>`
+ * and has to be set before Shiki visits the lines: sizing each `::before` from
+ * its own number would let the code text jump between lines.
+ */
+function lineNumberDigits(source: string, meta: CodeMeta): number {
+  return String(meta.startLine + source.split('\n').length - 1).length
+}
+
+function transformers(meta: CodeMeta, gutterDigits: number): ShikiTransformer[] {
   // Fence `{N}` line highlights only — match Desk CodeMirror. No Shiki
   // notation transformers (`[!code ++]` etc.); Desk has no write path for them.
   return [
@@ -136,6 +147,8 @@ function transformers(meta: CodeMeta): ShikiTransformer[] {
       pre(node) {
         this.addClassToHast(node, 'tn-code-highlight')
         node.properties.tabindex = 0
+        // Inherited by every line's `::before`, which is what sizes the gutter.
+        node.properties.style = `--tn-line-digits: ${gutterDigits}`
       },
       line(node, line) {
         node.properties['data-line'] = String(meta.startLine + line - 1)
@@ -149,15 +162,16 @@ function transformers(meta: CodeMeta): ShikiTransformer[] {
 export function highlightCodeSync(code: string, info = ''): string {
   if (!ready) throw new Error('Call prepareCodeHighlighter before rendering Markdown')
   const meta = parseCodeMeta(info)
+  const source = code.replace(/\n$/, '')
   const normalizedLanguage = normalizeCodeLanguage(meta.language)
   const language = ready.getLoadedLanguages().includes(normalizedLanguage)
     ? normalizedLanguage
     : 'text'
-  return ready.codeToHtml(code.replace(/\n$/, ''), {
+  return ready.codeToHtml(source, {
     lang: language,
     themes: { light: 'github-light', dark: 'github-dark' },
     defaultColor: false,
-    transformers: transformers(meta)
+    transformers: transformers(meta, lineNumberDigits(source, meta))
   })
 }
 
