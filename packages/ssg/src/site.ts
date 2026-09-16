@@ -18,6 +18,11 @@ import {
 
 import { resolveConfig } from './config'
 import { normalizeSearchTerm, tokenizeSearch } from './client/search'
+import {
+  SIDEBAR_RESTORE_CLASS,
+  SIDEBAR_RESTORE_TIMEOUT_MS,
+  sidebarStorageKey
+} from './client/sidebarState'
 import { createMarkdownCompiler, extractMarkdownLinks, extractPageData } from './markdown'
 import { resolveNotePath, resolveNoteSlug, stripBase, type NoteRef } from './noteRoute'
 import { collectSite, routeToOutput, type SourcePage } from './pages'
@@ -75,6 +80,23 @@ function renderHead(config: ResolvedSsgConfig) {
     .join('\n')
 }
 
+/**
+ * The sidebar's collapse set and scroll offset live in sessionStorage, but the
+ * client bundle only runs after first paint — applying them on mount would show
+ * a fully expanded tree at offset 0 and then jump. Flag the document before
+ * paint instead, and let CSS keep the sidebar out of sight until the state has
+ * landed. The timeout is the no-JS / failed-bundle fallback: navigation must
+ * never stay invisible because a script never arrived.
+ *
+ * The key comes from `sidebarStorageKey` so this inline script and the client
+ * cannot drift apart.
+ */
+function sidebarRestoreGate(base: string) {
+  const key = JSON.stringify(sidebarStorageKey(base))
+  const name = SIDEBAR_RESTORE_CLASS
+  return `<script>try{if(sessionStorage.getItem(${key})){var e=document.documentElement;e.classList.add('${name}');setTimeout(function(){e.classList.remove('${name}')},${SIDEBAR_RESTORE_TIMEOUT_MS})}}catch(_){}</script>`
+}
+
 function pageDocument(config: ResolvedSsgConfig, route: string, page: PageData, appHtml: string) {
   const description = page.description || config.description
   return `<!doctype html>
@@ -86,6 +108,7 @@ function pageDocument(config: ResolvedSsgConfig, route: string, page: PageData, 
     <title>${htmlEscape(page.title)} | ${htmlEscape(config.title)}</title>
     ${renderHead(config)}
     <script>try{const t=localStorage.getItem('tnotes-theme');const d=t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',d)}catch{}</script>
+    ${sidebarRestoreGate(config.base)}
   </head>
   <body>
     <div id="app" data-route="${htmlEscape(route)}">${appHtml}</div>

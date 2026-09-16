@@ -47,7 +47,6 @@ function toSidebarItems(
     if (node.kind === 'group') {
       items.push({
         text: node.title,
-        collapsed: true,
         items: toSidebarItems(node.children, noteByIndex)
       })
       continue
@@ -55,7 +54,9 @@ function toSidebarItems(
     const note = noteByIndex.get(node.index)
     if (!note) continue
     items.push({
-      text: `${node.done ? '✅' : '⏰'} ${node.index}. ${note.title}`,
+      text: note.title,
+      index: node.index,
+      done: node.done,
       link: noteRoute(node.index),
       items: toSidebarItems(node.children, noteByIndex)
     })

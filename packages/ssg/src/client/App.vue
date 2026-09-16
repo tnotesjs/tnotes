@@ -9,9 +9,7 @@
     </header>
 
     <div class="tn-site-body">
-      <aside class="tn-site-sidebar">
-        <SidebarTree :items="site.sidebar" :route="route" :base="site.base" />
-      </aside>
+      <SidebarNav :items="site.sidebar" :active-route="activeRoute" :base="site.base" />
       <main class="tn-site-main" v-html="articleHtml"></main>
       <aside v-if="outlineHeadings.length" class="tn-site-outline">
         <strong>本页目录</strong>
@@ -54,7 +52,8 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import ImagePreview from '@tnotesjs/ui/image-preview'
 import site from 'virtual:tnotes-site'
 
-import SidebarTree from './components/SidebarTree.vue'
+import SidebarNav from './components/SidebarNav.vue'
+import { canonicalNoteRoute, parseNoteSlug } from './noteRoute'
 import { normalizeSearchTerm, tokenizeSearch } from './search'
 import type { PageData, PageHeading } from '../types'
 
@@ -65,6 +64,19 @@ const props = defineProps<{
 }>()
 
 type SearchResult = Pick<PageData, 'route' | 'title' | 'text'>
+
+/**
+ * The sidebar highlights by note, but the home page (and 404) are synthesized
+ * routes that reuse a note's body — comparing the raw route left `/` with
+ * nothing highlighted at all. Resolve back to the canonical note route so the
+ * entry the reader is actually on stays lit.
+ */
+const activeRoute = computed(() => {
+  if (props.route.startsWith('/notes/')) return props.route
+  const slug = props.data.relativePath.split('/').pop()?.replace(/\.md$/i, '') ?? ''
+  const parsed = parseNoteSlug(slug)
+  return parsed?.kind === 'index' ? canonicalNoteRoute(parsed.index) : props.route
+})
 
 const outlineHeadings = computed<PageHeading[]>(() => props.data.headings)
 

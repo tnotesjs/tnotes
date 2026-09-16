@@ -1,8 +1,16 @@
+/**
+ * One row of the TOC sidebar. Notes carry `index`/`done` as separate fields
+ * rather than being baked into `text`: the row renders them as a status dot
+ * and a muted index, so the title stays the primary visual element.
+ */
 export interface SidebarItem {
   text: string
   link?: string
   items?: SidebarItem[]
-  collapsed?: boolean
+  /** 4-digit note index ("0001"); absent on TOC group headings. */
+  index?: string
+  /** TOC checkbox state; absent on TOC group headings. */
+  done?: boolean
 }
 
 export interface PageHeading {

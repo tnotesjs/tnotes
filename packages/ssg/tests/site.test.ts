@@ -149,11 +149,52 @@ describe('static site build', () => {
     expect(guide).not.toContain('tn-code-block is-collapsed')
   })
 
-  it('renders the TOC sidebar with done markers', () => {
+  it('renders the TOC sidebar with status dots and note indices', () => {
     const home = fs.readFileSync(dist('index.html'), 'utf8')
     expect(home).toContain('分组 A')
-    expect(home).toContain('✅ 0001. 首页笔记')
-    expect(home).toContain('⏰ 0002. 指南')
+    // Status is a coloured dot, not an emoji; the title stays the headline.
+    expect(home).toContain('tn-site-sidebar-status')
+    expect(home).toContain('data-done="true"')
+    expect(home).toContain('data-done="false"')
+    expect(home).toContain('>0001<')
+    expect(home).toContain('>首页笔记<')
+    expect(home).toContain('>指南<')
+    expect(home).not.toContain('✅')
+    expect(home).not.toContain('⏰')
+  })
+
+  it('SSR 出来的目录默认全部展开，且每行都是可折叠的结构', () => {
+    const home = fs.readFileSync(dist('index.html'), 'utf8')
+    // Collapse is a client-side session concern: the server cannot know it, and
+    // rendering anything collapsed would flash before the stored state lands.
+    expect(home).not.toContain('tn-site-sidebar-item is-collapsed')
+    expect(home).toContain('tn-site-sidebar-item')
+    expect(home).toContain('aria-expanded="true"')
+    expect(home).toContain('data-tn-key="0"')
+    // Chevron and title are separate hit areas: disclosure vs navigation.
+    expect(home).toContain('tn-site-sidebar-toggle')
+    expect(home).toContain('tn-site-sidebar-link')
+  })
+
+  it('目录高亮跟随规范笔记路由，首页也能点亮当前项', () => {
+    const home = fs.readFileSync(dist('index.html'), 'utf8')
+    // `/` reuses note 0001's body; highlighting by raw route left the sidebar
+    // with nothing marked on the site's default entry point.
+    expect(home).toContain('aria-current="page"')
+    const note = fs.readFileSync(dist('notes/2.html'), 'utf8')
+    expect(note).toContain('aria-current="page"')
+  })
+
+  it('首屏状态闸门脚本只在存在会话状态时生效', () => {
+    const home = fs.readFileSync(dist('index.html'), 'utf8')
+    // Key carries the site base: storage is per-origin and every TNotes KB
+    // shares one origin.
+    expect(home).toContain('tnotes-sidebar:1:/fixture/')
+    expect(home).toContain('tn-sb-restore')
+    // Fallback so a bundle that never arrives cannot hide navigation forever.
+    expect(home).toMatch(
+      /setTimeout\(function\(\)\{e\.classList\.remove\('tn-sb-restore'\)\},\d+\)/
+    )
   })
 
   it('renders the TNotes block set', () => {
