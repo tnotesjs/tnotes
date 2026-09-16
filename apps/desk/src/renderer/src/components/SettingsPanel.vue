@@ -79,8 +79,6 @@ const groupDefaults: Record<string, Partial<AppSettings>> = {
     toc: {
       showNoteIndex: true,
       showNoteStatus: true,
-      doneEmoji: '✅',
-      undoneEmoji: '⏰',
       changesCollapsedByDefault: true
     }
   },

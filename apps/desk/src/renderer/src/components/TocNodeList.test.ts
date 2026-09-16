@@ -74,6 +74,22 @@ function dataTransferStub(): {
 }
 
 describe('TocNodeList', () => {
+  it('marks completion with the shared dot, not an emoji', () => {
+    const wrapper = mountList()
+    const toggles = wrapper.findAll('.done-toggle')
+    expect(toggles).toHaveLength(2)
+    // Shape carries the state (hollow ring vs filled dot) — see the styles.
+    expect(toggles[0]!.classes()).not.toContain('done')
+    expect(toggles[1]!.classes()).toContain('done')
+    // Every toggle carries the dot element and its own accessible label.
+    expect(wrapper.findAll('.done-dot')).toHaveLength(2)
+    expect(toggles[0]!.attributes('aria-label')).toBe('标记为完成')
+    expect(toggles[1]!.attributes('aria-label')).toBe('标记为未完成')
+    // No emoji text is rendered anywhere in the list.
+    expect(wrapper.text()).not.toMatch(/[✅⏰]/)
+    wrapper.unmount()
+  })
+
   it('keeps only the add-child control beside a row', () => {
     const wrapper = mountList()
     const firstRow = wrapper.findAll('.toc-row')[0]

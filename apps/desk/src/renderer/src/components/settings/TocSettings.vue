@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import EmojiInput from '../EmojiInput.vue'
-
 import type { AppSettings } from '../../../../shared/contracts'
 
 defineProps<{ draft: AppSettings }>()
@@ -31,24 +29,6 @@ const emit = defineEmits<{ reset: [] }>()
       <label class="switch-field">
         <input v-model="draft.toc.showNoteStatus" type="checkbox" />
         <span>显示完成状态标识</span>
-      </label>
-    </div>
-    <div class="field-grid cols-2">
-      <label class="field">
-        <span>已完成 emoji</span>
-        <EmojiInput
-          v-model="draft.toc.doneEmoji"
-          :disabled="!draft.toc.showNoteStatus"
-          placeholder="✅（留空不显示）"
-        />
-      </label>
-      <label class="field">
-        <span>未完成 emoji</span>
-        <EmojiInput
-          v-model="draft.toc.undoneEmoji"
-          :disabled="!draft.toc.showNoteStatus"
-          placeholder="⏰（留空不显示）"
-        />
       </label>
     </div>
     <div class="settings-row">

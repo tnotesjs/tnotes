@@ -598,8 +598,6 @@ export interface AppSettings {
   toc: {
     showNoteIndex: boolean
     showNoteStatus: boolean
-    doneEmoji: string
-    undoneEmoji: string
     changesCollapsedByDefault: boolean
   }
   imageUpload: ImageUploadSettings

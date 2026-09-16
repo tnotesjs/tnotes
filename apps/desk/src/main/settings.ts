@@ -62,15 +62,11 @@ const settingsSchema = z.object({
     .object({
       showNoteIndex: z.boolean().default(true),
       showNoteStatus: z.boolean().default(true),
-      doneEmoji: z.string().default('✅'),
-      undoneEmoji: z.string().default('⏰'),
       changesCollapsedByDefault: z.boolean().default(true)
     })
     .default({
       showNoteIndex: true,
       showNoteStatus: true,
-      doneEmoji: '✅',
-      undoneEmoji: '⏰',
       changesCollapsedByDefault: true
     }),
   imageUpload: z

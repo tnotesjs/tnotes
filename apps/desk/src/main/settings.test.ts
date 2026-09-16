@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -69,13 +69,30 @@ describe('配置文件字段级容错', () => {
   it('整个分组非法时只回退该分组', () => {
     writeFileSync(
       path(),
-      JSON.stringify({ theme: 'light', autosave: 'nonsense', toc: { doneEmoji: '✅' } })
+      JSON.stringify({ theme: 'light', autosave: 'nonsense', toc: { showNoteIndex: 'oops' } })
     )
     const settings = loadSettings()
 
     expect(settings.theme).toBe('light')
     expect(settings.autosave).toEqual({ enabled: true, delayMs: 1000 })
-    expect(settings.toc.doneEmoji).toBe('✅')
+    expect(settings.toc.showNoteIndex).toBe(true)
+  })
+
+  it('丢弃历史 emoji 配置：不再有这两个字段，也不当作非法配置', () => {
+    writeFileSync(
+      path(),
+      JSON.stringify({ theme: 'light', toc: { doneEmoji: '✅', undoneEmoji: '⏰' } })
+    )
+    const settings = loadSettings()
+
+    expect(settings.theme).toBe('light')
+    expect(settings.toc).toEqual({
+      showNoteIndex: true,
+      showNoteStatus: true,
+      changesCollapsedByDefault: true
+    })
+    // 未知键由 schema 剥掉，不算「非法字段」，所以不会留下 .invalid.bak
+    expect(existsSync(`${path()}.invalid.bak`)).toBe(false)
   })
 
   it('顶层无法解析的 JSON 仍回默认值', () => {

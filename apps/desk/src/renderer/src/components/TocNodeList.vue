@@ -41,8 +41,6 @@ const store = useWorkspaceStore()
 const editor = useEditorStore()
 const tocShowIndex = computed(() => store.settings?.toc?.showNoteIndex !== false)
 const tocShowStatus = computed(() => store.settings?.toc?.showNoteStatus !== false)
-const tocDoneEmoji = computed(() => store.settings?.toc?.doneEmoji ?? '✅')
-const tocUndoneEmoji = computed(() => store.settings?.toc?.undoneEmoji ?? '⏰')
 
 function findNoteTab(knowledgeBaseId: string, noteUuid: string): EditorTab | null {
   return (
@@ -349,7 +347,7 @@ defineExpose({ toggleAllCollapsed })
             :aria-label="node.completed ? '标记为未完成' : '标记为完成'"
             @click="emit('toggleDone', node)"
           >
-            {{ node.completed ? tocDoneEmoji : tocUndoneEmoji }}
+            <span class="done-dot" aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -507,22 +505,33 @@ defineExpose({ toggleAllCollapsed })
   display: inline-block;
 }
 
+/*
+ * 完成状态用「形状优先」的圆点表达，和站点侧栏（`.tn-site-sidebar-status`）同一套：
+ * 空心环 = 待完成，实心 = 已完成；颜色只是强化，不是唯一信号。按钮本身只做点击
+ * 目标与无障碍标签，视觉全交给里面那颗点。
+ */
 .done-toggle {
   width: 14px;
   height: 14px;
   flex: none;
   display: grid;
   place-items: center;
-  border: 1px solid var(--muted);
-  border-radius: 4px;
+  border: 0;
+  background: transparent;
   padding: 0;
-  color: var(--success);
-  font-size: 10px;
 }
 
-.done-toggle.done {
+.done-dot {
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--warning);
+  border-radius: 50%;
+  background: transparent;
+}
+
+.done-toggle.done .done-dot {
   border-color: var(--success);
-  background: var(--success-soft);
+  background: var(--success);
 }
 
 .node-label {

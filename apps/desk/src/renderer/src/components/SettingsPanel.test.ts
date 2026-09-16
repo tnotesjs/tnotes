@@ -30,8 +30,6 @@ const settings: AppSettings = {
   toc: {
     showNoteIndex: true,
     showNoteStatus: true,
-    doneEmoji: '✅',
-    undoneEmoji: '⏰',
     changesCollapsedByDefault: true
   },
   imageUpload: {
@@ -157,6 +155,23 @@ describe('SettingsPanel live app zoom', () => {
     expect(store.settings?.appZoomPercent).toBe(100)
     expect(input.element.value).toBe('100')
     wrapper.unmount()
+  })
+})
+
+describe('SettingsPanel 目录管理', () => {
+  it('不再提供 emoji 配置，只保留完成状态开关', async () => {
+    const wrapper = mount(SettingsPanel)
+    // 目录管理是第三个分组；分组是 v-if 渲染的，激活后直接断言 DOM。
+    const tocNav = wrapper
+      .findAll('button.nav-item')
+      .find((item) => item.text().includes('目录管理'))
+    expect(tocNav).toBeTruthy()
+    await tocNav!.trigger('click')
+
+    const text = wrapper.text()
+    expect(text).not.toContain('已完成 emoji')
+    expect(text).not.toContain('未完成 emoji')
+    expect(text).toContain('显示完成状态标识')
   })
 })
 
