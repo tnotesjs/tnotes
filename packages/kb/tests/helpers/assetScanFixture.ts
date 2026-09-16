@@ -21,7 +21,7 @@ export async function writeAssetScanFixture(root: string): Promise<void> {
     JSON.stringify(
       {
         title: 'asset-scan-fixture',
-        icon: { src: '../assets/.tn-kb-icon.png' }
+        icon: { src: '../assets/kb-icon.png' }
       },
       null,
       2
@@ -105,7 +105,7 @@ id: note-orphan
 ![游离](../assets/orphan-note.png)
 `
   )
-  await write(root, 'assets/.tn-kb-icon.png', PNG_1X1)
+  await write(root, 'assets/kb-icon.png', PNG_1X1)
   await write(root, 'assets/used.png', PNG_1X1)
   await write(root, 'assets/nested/deep.png', PNG_1X1)
   await write(root, 'assets/中文 (1).png', PNG_1X1)

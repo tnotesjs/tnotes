@@ -5,7 +5,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
 
-import { ASSETS_DIR, KB_ICON_BASENAME } from '../constants'
+import { ASSETS_DIR, isKbIconFileName } from '../constants'
 import {
   EXCALIDRAW_DERIVED_EXTENSION,
   EXCALIDRAW_EXTENSION,
@@ -65,7 +65,7 @@ function validateDestRelPath(destRelPath: string): string | null {
   if (!base || base.startsWith('.') || WINDOWS_RESERVED.test(base)) {
     return '目标文件名不合法'
   }
-  if (base.startsWith(KB_ICON_BASENAME)) return '不能使用知识库图标保留名'
+  if (isKbIconFileName(base)) return '不能使用知识库图标保留名'
   return null
 }
 

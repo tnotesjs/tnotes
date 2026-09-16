@@ -5,7 +5,7 @@
 
 import path from 'node:path'
 
-import { KB_ICON_BASENAME } from '../constants'
+import { isKbIconFileName } from '../constants'
 
 const OWNER_PREFIX = /^(\d{4})-/
 const REUSE_EXT = new Set([
@@ -31,7 +31,7 @@ export function normalizeAssetExt(fileName: string): string {
 }
 
 export function isContentReusableAsset(fileName: string): boolean {
-  if (fileName.startsWith(KB_ICON_BASENAME)) return false
+  if (isKbIconFileName(fileName)) return false
   if (fileName.toLowerCase().endsWith('.excalidraw')) return false
   return REUSE_EXT.has(path.posix.extname(fileName).toLowerCase())
 }

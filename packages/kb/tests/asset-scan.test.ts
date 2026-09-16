@@ -150,7 +150,7 @@ describe('scanAssets', () => {
     expect(byPath['assets/mindmap.png']?.status).toBe('referenced')
     expect(byPath['assets/orphan-note.png']?.status).toBe('referenced')
     expect(byPath['assets/readme-cover.png']?.status).toBe('referenced')
-    expect(byPath['assets/.tn-kb-icon.png']?.status).toBe('protected')
+    expect(byPath['assets/kb-icon.png']?.status).toBe('protected')
     expect(byPath['assets/fenced-only.png']?.status).toBe('uncertain-affected')
     expect(byPath['assets/comment-only.png']?.status).toBe('uncertain-affected')
     expect(byPath['assets/srcset.png']?.status).toBe('referenced')

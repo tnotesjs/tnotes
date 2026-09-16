@@ -11,7 +11,7 @@ import { setImmediate as yieldEventLoop } from 'node:timers/promises'
 import {
   ASSETS_DIR,
   CONFIG_FILE,
-  KB_ICON_BASENAME,
+  isKbIconFileName,
   NOTE_FILE_REGEX,
   NOTES_DIR,
   TOC_FILE
@@ -111,7 +111,9 @@ async function walkAssetFiles(
   const result: ListedAsset[] = []
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (SKIP_DIR_NAMES.has(entry.name)) continue
-    if (entry.name.startsWith('.') && !entry.name.startsWith(KB_ICON_BASENAME)) continue
+    // Hidden files are the kb's own bookkeeping (and, before 0.5.2, the icon).
+    // The icon is a visible file now, so a dot is enough to skip an entry.
+    if (entry.name.startsWith('.')) continue
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) {
@@ -502,7 +504,7 @@ export async function scanAssets(
 
   const records: AssetRecord[] = assets.map((asset) => {
     const protection: string[] = []
-    if (asset.name.startsWith(KB_ICON_BASENAME)) protection.push('kb-icon')
+    if (isKbIconFileName(asset.name)) protection.push('kb-icon')
     if (asset.escaped) protection.push('symlink-escape')
     // `.excalidraw` is the editable drawing source of truth. Companion SVG/PNG
     // files are historical derivatives. Desk + SSG will share one UI component

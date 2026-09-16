@@ -90,17 +90,32 @@ describe('kb name helpers', () => {
 describe('kb icon fixed filename', () => {
   it('replaces prior extensions and clears on demand', async () => {
     const first = await replaceKbIcon(root, 'png', new Uint8Array([1, 2, 3]))
-    expect(first.relPath).toBe('assets/.tn-kb-icon.png')
-    expect(first.icon).toEqual({ src: '../assets/.tn-kb-icon.png' })
+    expect(first.relPath).toBe('assets/kb-icon.png')
+    expect(first.icon).toEqual({ src: '../assets/kb-icon.png' })
 
     const second = await replaceKbIcon(root, '.svg', new TextEncoder().encode('<svg/>'))
-    expect(second.deleted).toContain('assets/.tn-kb-icon.png')
-    expect(second.relPath).toBe('assets/.tn-kb-icon.svg')
-    expect(await fs.readdir(path.join(root, 'assets'))).toEqual(['.tn-kb-icon.svg'])
+    expect(second.deleted).toContain('assets/kb-icon.png')
+    expect(second.relPath).toBe('assets/kb-icon.svg')
+    expect(await fs.readdir(path.join(root, 'assets'))).toEqual(['kb-icon.svg'])
 
     const cleared = await clearKbIcon(root)
-    expect(cleared.deleted).toEqual(['assets/.tn-kb-icon.svg'])
+    expect(cleared.deleted).toEqual(['assets/kb-icon.svg'])
     expect(await fs.readdir(path.join(root, 'assets'))).toEqual([])
+  })
+
+  it('writes a name a static host can serve', async () => {
+    // GitHub Pages answers a dotfile path with 404 while serving the same
+    // directory's ordinary files, and the SSG copies this asset verbatim into
+    // the site, so the icon must not be hidden.
+    const written = await replaceKbIcon(root, 'svg', new TextEncoder().encode('<svg/>'))
+    expect(path.posix.basename(written.relPath).startsWith('.')).toBe(false)
+  })
+
+  it('cleans up the pre-0.5.2 hidden icon on the next upload', async () => {
+    await write('assets/.tn-kb-icon.png', new Uint8Array([1]))
+    const replaced = await replaceKbIcon(root, 'svg', new TextEncoder().encode('<svg/>'))
+    expect(replaced.deleted).toContain('assets/.tn-kb-icon.png')
+    expect(await fs.readdir(path.join(root, 'assets'))).toEqual(['kb-icon.svg'])
   })
 
   it('does not let gc delete the kb icon', async () => {

@@ -9,8 +9,27 @@ export const ASSETS_DIR = 'assets'
 export const TOC_FILE = 'TOC.md'
 export const CONFIG_FILE = 'tnotes.json'
 
-/** Fixed basename for the knowledge-base icon (extension varies). */
-export const KB_ICON_BASENAME = '.tn-kb-icon'
+/**
+ * Fixed basename for the knowledge-base icon (extension varies).
+ *
+ * Deliberately not a dotfile: this file is written to `assets/`, which the SSG
+ * copies verbatim into the site, and a leading dot is not served by every static
+ * host — GitHub Pages answers such a path with 404 while serving the same
+ * directory's ordinary files, which would leave the site's favicon broken.
+ */
+export const KB_ICON_FILE_BASENAME = 'kb-icon'
+
+/**
+ * Basenames the knowledge-base icon has used. `.tn-kb-icon` is the pre-0.5.2
+ * spelling; it stays listed so old icons are still recognised as the kb icon
+ * (and cleaned up) after an upgrade.
+ */
+export const KB_ICON_BASENAMES = [KB_ICON_FILE_BASENAME, '.tn-kb-icon'] as const
+
+/** True when `fileName` is the knowledge-base icon rather than a normal asset. */
+export function isKbIconFileName(fileName: string): boolean {
+  return KB_ICON_BASENAMES.some((basename) => fileName.startsWith(basename))
+}
 
 /** Allowed extensions for knowledge-base icon uploads. */
 export const KB_ICON_EXTENSIONS = ['.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif'] as const

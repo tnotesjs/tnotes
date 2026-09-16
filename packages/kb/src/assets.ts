@@ -8,7 +8,13 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
-import { ASSETS_DIR, KB_ICON_BASENAME, KB_ICON_EXTENSIONS, NOTES_DIR } from './constants'
+import {
+  ASSETS_DIR,
+  KB_ICON_EXTENSIONS,
+  KB_ICON_FILE_BASENAME,
+  isKbIconFileName,
+  NOTES_DIR
+} from './constants'
 import { writeFileAtomic } from './atomic'
 import { findReusableAsset } from './asset-scan/dedupe'
 import { ownerNoteIndexFromName } from './asset-scan/owner'
@@ -50,7 +56,9 @@ async function walkAssets(dir: string, prefix: string): Promise<AssetEntry[]> {
   }
   const result: AssetEntry[] = []
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (entry.name.startsWith('.') && !entry.name.startsWith(KB_ICON_BASENAME)) continue
+    // Hidden files are the kb's own bookkeeping (and, before 0.5.2, the icon).
+    // The icon is a visible file now, so a dot is enough to skip an entry.
+    if (entry.name.startsWith('.')) continue
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) {
@@ -106,7 +114,11 @@ function normalizeIconExt(ext: string): string {
   return withDot
 }
 
-/** Delete every `assets/.tn-kb-icon.*` file. */
+/**
+ * Delete every knowledge-base icon file — the current name and the pre-0.5.2
+ * `.tn-kb-icon.*` spelling, so an upgrade does not leave the old hidden file
+ * behind (nothing serves it, but it would sit in `assets/` forever).
+ */
 export async function clearKbIcon(rootPath: string): Promise<{ deleted: string[] }> {
   const assetsDir = path.join(rootPath, ASSETS_DIR)
   const deleted: string[] = []
@@ -117,7 +129,7 @@ export async function clearKbIcon(rootPath: string): Promise<{ deleted: string[]
     return { deleted }
   }
   for (const name of entries) {
-    if (!name.startsWith(KB_ICON_BASENAME)) continue
+    if (!isKbIconFileName(name)) continue
     const relPath = `${ASSETS_DIR}/${name}`
     await fs.rm(path.join(rootPath, relPath), { force: true })
     deleted.push(relPath)
@@ -142,7 +154,7 @@ export async function replaceKbIcon(
   const { deleted } = await clearKbIcon(rootPath)
   const assetsDir = path.join(rootPath, ASSETS_DIR)
   await fs.mkdir(assetsDir, { recursive: true })
-  const fileName = `${KB_ICON_BASENAME}${writeExt}`
+  const fileName = `${KB_ICON_FILE_BASENAME}${writeExt}`
   const relPath = `${ASSETS_DIR}/${fileName}`
   await writeFileAtomic(path.join(rootPath, relPath), data)
   const markdownPath = `../${relPath}`
@@ -194,7 +206,7 @@ export async function gcAssets(
   const unreferenced = assets
     .map((a) => a.relPath)
     .filter((relPath) => {
-      if (path.posix.basename(relPath).startsWith(KB_ICON_BASENAME)) return false
+      if (isKbIconFileName(path.posix.basename(relPath))) return false
       return !refs.has(relPath)
     })
   const deleted: string[] = []

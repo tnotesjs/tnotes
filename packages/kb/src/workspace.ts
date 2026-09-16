@@ -254,12 +254,12 @@ export interface TNotesKbWorkspace {
       fileName: string
       data: Uint8Array
     }): Promise<{ relPath: string; markdownPath: string; reused: boolean }>
-    /** Replace KB icon with fixed `assets/.tn-kb-icon.<ext>` (deletes prior icons). */
+    /** Replace KB icon with fixed `assets/kb-icon.<ext>` (deletes prior icons). */
     replaceIcon(input: {
       ext: string
       data: Uint8Array
     }): Promise<{ relPath: string; markdownPath: string; icon: KbIcon; deleted: string[] }>
-    /** Delete all `assets/.tn-kb-icon.*` files. */
+    /** Delete every KB icon file, current name and legacy `.tn-kb-icon.*`. */
     clearIcon(): Promise<{ deleted: string[] }>
     gc(options?: { delete?: boolean }): Promise<{ unreferenced: string[]; deleted: string[] }>
   }

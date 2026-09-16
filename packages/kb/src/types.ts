@@ -53,7 +53,7 @@ export interface TocNoteNode {
 
 /** Knowledge-base icon. Prefer at most one of src / svg / letter. */
 export interface KbIcon {
-  /** Markdown- or kb-relative image path, e.g. `../assets/.tn-kb-icon.png`. */
+  /** Markdown- or kb-relative image path, e.g. `../assets/kb-icon.png`. */
   src?: string
   /** Inline SVG markup. */
   svg?: string

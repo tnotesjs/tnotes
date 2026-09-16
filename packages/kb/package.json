@@ -1,6 +1,6 @@
 {
   "name": "@tnotesjs/kb",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Workspace layer for TNotes single-file knowledge bases (notes/, TOC.md, assets/, tnotes.json).",
   "type": "module",
   "main": "./dist/index.cjs",
