@@ -53,8 +53,6 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          # 写出发布用的 registry 配置；凭据由 OIDC 在发布时换取
-          registry-url: https://registry.npmjs.org
 
       - name: Resolve package from tag
         id: target
@@ -128,7 +126,10 @@ jobs:
         working-directory: ${{ steps.stage.outputs.dir }}
         run: npm publish --access public
         env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
           NPM_CONFIG_PROVENANCE: 'true'
+          # 临时：确认 npm 是否真的做了 OIDC 凭据交换
+          NPM_CONFIG_LOGLEVEL: silly
 
       - name: Verify on the registry
         run: |
