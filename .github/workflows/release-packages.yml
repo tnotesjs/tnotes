@@ -132,23 +132,11 @@ jobs:
       - name: Publish (OIDC)
         working-directory: ${{ steps.stage.outputs.dir }}
         run: |
-          set -x
-          which -a npm node
           npm --version
-          node --version
-          # OIDC 请求端点是否由 runner 注入（只打印是否存在，不打印值）
-          echo "ACTIONS_ID_TOKEN_REQUEST_URL is ${ACTIONS_ID_TOKEN_REQUEST_URL:+SET}"
-          echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN is ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+SET}"
-          echo "NODE_AUTH_TOKEN is ${NODE_AUTH_TOKEN:+SET}"
-          echo "NPM_CONFIG_USERCONFIG=${NPM_CONFIG_USERCONFIG:-<unset>}"
-          echo "--- NPM_CONFIG_USERCONFIG contents ---"
-          cat "${NPM_CONFIG_USERCONFIG:-/dev/null}" 2>/dev/null || echo "<none>"
-          echo "--- HOME .npmrc ---"
-          cat "$HOME/.npmrc" 2>/dev/null || echo "<none>"
-          npm publish --access public
+          # verbose：npm 的 OIDC 失败会静默退回未登录，只在 verbose/silly 级别说明原因
+          npm publish --access public --loglevel verbose
         env:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
-          NPM_CONFIG_PROVENANCE: 'true'
 
       - name: Verify on the registry
         run: |
