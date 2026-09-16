@@ -2,7 +2,16 @@
 import { CanvasEditor, CanvasViewer, MindmapSession } from '@tnotesjs/mindmap-core'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
-import { applyInitialExpandLevel, normalizeExpandLevel } from './expandLevel'
+import {
+  MAX_EXPAND_LEVEL,
+  MIN_EXPAND_LEVEL,
+  acceptsExpandLevelEdit,
+  applyInitialExpandLevel,
+  normalizeExpandLevel,
+  resolvedExpandLevel,
+  stepExpandLevel
+} from './expandLevel'
+import { FORCE_EXIT_FULLSCREEN_EVENT, reconcileMindmapFullscreen } from './fullscreenFlag'
 import { normalizeMindmapMarkdown } from './markdown'
 import MindmapOutlineNode from './MindmapOutlineNode.vue'
 import MindmapViewIcon from './MindmapViewIcon.vue'
@@ -20,8 +29,6 @@ type PreviewView = 'mindmap' | 'outline' | 'source'
 
 /** One fullscreen mindmap at a time across preview instances on the page. */
 const FS_GATE_KEY = '__tnotesjs_mindmap_fullscreen_gate__'
-const FS_BODY_ATTR = 'tnMindmapFs'
-const FORCE_EXIT_FULLSCREEN_EVENT = 'tnotes-mindmap-force-exit-fullscreen'
 
 type FsGateState = { owners: Map<symbol, () => void> }
 
@@ -52,15 +59,7 @@ function claimMindmapFullscreen(id: symbol): void {
 
 function syncBodyFullscreenAttr(activeRoot: HTMLElement | null): void {
   if (typeof document === 'undefined') return
-  if (activeRoot?.classList.contains('is-fullscreen')) {
-    document.body.dataset[FS_BODY_ATTR] = '1'
-    document.documentElement.dataset[FS_BODY_ATTR] = '1'
-    return
-  }
-  if (!document.querySelector('.mindmap-preview.is-fullscreen')) {
-    delete document.body.dataset[FS_BODY_ATTR]
-    delete document.documentElement.dataset[FS_BODY_ATTR]
-  }
+  reconcileMindmapFullscreen(activeRoot, document.querySelectorAll<HTMLElement>('.mindmap-preview'))
 }
 
 function forceExitPeerFullscreen(activeRoot: HTMLElement | null): void {
@@ -274,9 +273,127 @@ function setExpandLevel(raw: number): void {
   emit('expandLevelChange', level)
 }
 
+/** The value the field held when it was focused — what ESC / an empty blur restores. */
+let expandLevelBeforeFocus: number | null = null
+
+/**
+ * Refuse a non-digit before it ever reaches the field. Cancelling `beforeinput`
+ * leaves the value and the selection untouched, which is what keeps the field
+ * usable after a rejected key — restoring `input.value` after the fact leaves
+ * the browser's editing state wedged, and nothing types into the field again.
+ *
+ * The first character cannot be `0` (the range starts at 1); a second character
+ * completes a 1–99 number, so `0` is allowed there (`10`, `20`, …).
+ */
+function onExpandLevelBeforeInput(event: InputEvent): void {
+  // Only text being inserted is judged; deletions and history carry no `data`.
+  if (event.data === null) return
+  if (event.inputType !== 'insertText') return
+  if (!/^\d+$/.test(event.data)) {
+    event.preventDefault()
+    return
+  }
+  const input = event.target as HTMLInputElement
+  const replacingAll = input.selectionStart === 0 && input.selectionEnd === input.value.length
+  const next = replacingAll
+    ? event.data
+    : input.value.slice(0, input.selectionStart ?? input.value.length) +
+      event.data +
+      input.value.slice(input.selectionEnd ?? input.value.length)
+  if (!acceptsExpandLevelEdit(next)) event.preventDefault()
+}
+
 function onExpandLevelInput(event: Event): void {
-  const value = Number((event.target as HTMLInputElement).value)
-  setExpandLevel(value)
+  const input = event.target as HTMLInputElement
+  // Safety net for input that skips `beforeinput` (paste, IME, drag-and-drop, a
+  // programmatic value): anything that cannot be a 1–99 number is dropped.
+  if (!acceptsExpandLevelEdit(input.value)) {
+    input.value = String(expandLevel.value)
+    input.select()
+    return
+  }
+  if (input.value === '') return
+  const typed = Number(input.value)
+  // `0` (and anything above the cap) stays in the field uncommitted; blur clamps it.
+  if (typed >= MIN_EXPAND_LEVEL && typed <= MAX_EXPAND_LEVEL) setExpandLevel(typed)
+}
+
+/**
+ * Editing ends: an empty field means "no input", so the pre-focus value comes
+ * back; otherwise whatever was typed is clamped into 1–99 and committed.
+ */
+function onExpandLevelBlur(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const restore = expandLevelBeforeFocus
+  expandLevelBeforeFocus = null
+  const level = resolvedExpandLevel(input.value, restore ?? expandLevel.value)
+  input.value = String(level)
+  setExpandLevel(level)
+}
+
+/** ESC abandons the edit outright, wherever the field happens to be. */
+function onExpandLevelEscape(event: KeyboardEvent): boolean {
+  if (event.key !== 'Escape') return false
+  const restore = expandLevelBeforeFocus ?? expandLevel.value
+  event.preventDefault()
+  event.stopPropagation()
+  const input = event.target as HTMLInputElement
+  input.value = String(restore)
+  setExpandLevel(restore)
+  input.blur()
+  return true
+}
+
+/**
+ * Backspace clears the field in one press. Editing a single number digit by digit
+ * has no use: an empty field here means "no input" — it shows the hint, and blur
+ * puts the pre-focus value back.
+ */
+function onExpandLevelClearKey(event: KeyboardEvent): boolean {
+  if (event.key !== 'Backspace' && event.key !== 'Delete') return false
+  const input = event.target as HTMLInputElement
+  if (input.value === '') return false
+  event.preventDefault()
+  input.value = ''
+  return true
+}
+
+/**
+ * All four arrows step the level. The field is a text input (see
+ * `onExpandLevelFocus`), so ↑/↓ no longer come free from the number input and
+ * have to be handled here alongside ←/→ — either hand stays on the arrows.
+ * A caret inside one number has nothing to scroll, which is what leaves the
+ * horizontal arrows free to take.
+ */
+function onExpandLevelKeydown(event: KeyboardEvent): void {
+  if (onExpandLevelEscape(event)) return
+  if (onExpandLevelClearKey(event)) return
+  const step = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1 }[event.key]
+  if (step === undefined) return
+  // Leave modifiers alone: Cmd/Alt+← are word-jump / back shortcuts.
+  if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return
+  const input = event.target as HTMLInputElement
+  const current = Number(input.value)
+  const base = /^\d{1,2}$/.test(input.value) ? current : expandLevel.value
+  // Clamp rather than lean on `setExpandLevel`: a clamped step is still a step,
+  // and the value stays inside the documented 1–99.
+  const bounded = stepExpandLevel(base, step as -1 | 1)
+  event.preventDefault()
+  input.value = String(bounded)
+  setExpandLevel(bounded)
+}
+
+/**
+ * Two digits mean "type the level, not append to it": select the current value on
+ * focus so a keystroke replaces it. This is also why the field is a `text` input
+ * with `inputmode="numeric"` rather than `type=number` — selection APIs are not
+ * available on the latter (the digit would be appended, giving `39`).
+ * The pre-focus value is remembered for ESC and for an empty blur.
+ */
+function onExpandLevelFocus(event: FocusEvent): void {
+  const input = event.target as HTMLInputElement
+  expandLevelBeforeFocus = expandLevel.value
+  input.select()
 }
 
 function setView(view: PreviewView): void {
@@ -378,6 +495,9 @@ function handleFullscreenChange(): void {
   } else if (fullscreenMode === 'native') {
     fullscreenMode = null
     isFullscreen.value = false
+    // `syncBodyFullscreenAttr` also drops the stale `is-fullscreen` class, so
+    // ESC (which only fires `fullscreenchange`) lands in the same state as the
+    // button path and the toolbar comes back.
     syncBodyFullscreenAttr(null)
   }
   if (activeView.value === 'mindmap') void nextTick(() => zoomToFit())
@@ -637,16 +757,24 @@ onBeforeUnmount(() => {
         </button>
       </nav>
       <span class="mindmap-preview-action-divider" aria-hidden="true" />
-      <label v-if="expandLevelControl" class="mindmap-preview-expand" title="默认展开层级">
-        <span class="mindmap-preview-expand-label">层</span>
+      <label
+        v-if="expandLevelControl"
+        class="mindmap-preview-expand"
+        :title="`默认展开层级（${MIN_EXPAND_LEVEL}～${MAX_EXPAND_LEVEL}）`"
+      >
         <input
           class="mindmap-preview-expand-input"
-          type="number"
-          min="1"
-          max="20"
+          type="text"
+          inputmode="numeric"
+          maxlength="2"
+          :placeholder="`${MIN_EXPAND_LEVEL}～${MAX_EXPAND_LEVEL}`"
           :value="expandLevel"
-          aria-label="默认展开层级"
-          @change="onExpandLevelInput"
+          :aria-label="`默认展开层级，${MIN_EXPAND_LEVEL} 到 ${MAX_EXPAND_LEVEL}`"
+          @focus="onExpandLevelFocus"
+          @beforeinput="onExpandLevelBeforeInput"
+          @input="onExpandLevelInput"
+          @blur="onExpandLevelBlur"
+          @keydown="onExpandLevelKeydown"
         />
       </label>
       <button
@@ -865,20 +993,47 @@ onBeforeUnmount(() => {
   cursor: default;
 }
 
-.mindmap-preview-expand-label {
-  opacity: 0.85;
-}
-
+/*
+ * Just the number: no label, no box, no fill — an underline is enough to say
+ * "you can type here". The field is as wide as its placeholder (`1～99`) needs,
+ * so the hint is never clipped, and the value is centred so the caret and the
+ * number do not jump as it changes.
+ */
 .mindmap-preview-expand-input {
-  width: 2.4rem;
-  height: 22px;
-  padding: 0 4px;
-  border: 1px solid var(--tn-c-divider);
-  border-radius: 4px;
-  background: var(--tn-c-bg);
-  color: var(--tn-c-text);
-  font-size: 12px;
-  line-height: 22px;
+  width: 2.9rem;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--tn-c-divider);
+  border-radius: 0;
+  background: transparent;
+  color: var(--tn-c-brand);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+  cursor: text;
+  appearance: textfield;
+  -moz-appearance: textfield;
+
+  &::placeholder {
+    color: var(--tn-c-text-3, var(--tn-c-text-2));
+    font-weight: 400;
+    opacity: 0.75;
+  }
+
+  &:focus {
+    border-bottom-color: var(--tn-c-brand);
+    outline: none;
+  }
+
+  /* Chromium keeps a spinner on text-ish numeric fields; we step via keys. */
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button {
+    margin: 0;
+    appearance: none;
+    -webkit-appearance: none;
+  }
 }
 
 .mindmap-canvas-host {
@@ -886,7 +1041,13 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 440px;
   overflow: hidden;
-  background: var(--tn-c-bg);
+  /*
+   * No background of its own: the canvas is cleared to transparent, and the
+   * container above (`.mindmap-preview`) already paints `--tn-c-bg` with the
+   * panel border. Painting it again here only made the canvas read as a second,
+   * inset panel inside the editor.
+   */
+  background: transparent;
   touch-action: none;
   user-select: none;
 
@@ -1105,9 +1266,28 @@ onBeforeUnmount(() => {
 
 .mindmap-outline :deep(.mindmap-outline-toggle),
 .mindmap-outline :deep(.mindmap-outline-leaf) {
+  display: flex;
   flex: 0 0 18px;
+  align-items: center;
+  justify-content: center;
   width: 18px;
+  height: 24px;
   color: var(--tn-c-text-2);
+  /*
+   * The toggle is a real `<button>`, so it arrives with the browser's default
+   * chrome — 2px outset border, button-face background, 1px 6px padding and a
+   * 13.33px font. Desk never saw it because the preview renders inside
+   * `.milkdown`, whose theme reset (`.milkdown button { border/background: none }`)
+   * swallowed it; the SSG site has no such ancestor, so the box showed up and
+   * the chevron read as a filled square next to the plain `•` leaf. Reset it
+   * here so the outline looks the same wherever the component is mounted.
+   */
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  font: inherit;
+  line-height: inherit;
   text-align: center;
 }
 

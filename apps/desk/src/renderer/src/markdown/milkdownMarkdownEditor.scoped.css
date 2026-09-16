@@ -1386,12 +1386,20 @@
 }
 
 /* ProseMirror virtual-cursor sets caret-color: transparent on the whole doc —
-   restore carets inside the mindmap island (canvas / outline / source). */
+   restore carets inside the mindmap island (canvas / outline / source).
+   Plain `input` belongs in the list too: the chrome's native fields (the
+   expand-level box, outline search/replace, link input) are not covered by the
+   class list below, and a transparent caret there reads as "the field cannot be
+   typed into" even though the arrow keys still work. */
 .milkdown-markdown-editor :deep(.desk-raw-block--mindmap .mm-edit-input),
 .milkdown-markdown-editor :deep(.desk-raw-block--mindmap .rich-inline-editor),
 .milkdown-markdown-editor :deep(.desk-raw-block--mindmap .md-textarea),
 .milkdown-markdown-editor :deep(.desk-raw-block--mindmap .markdown-view textarea),
-.milkdown-markdown-editor :deep(.desk-raw-block--mindmap [contenteditable='true']) {
+.milkdown-markdown-editor :deep(.desk-raw-block--mindmap [contenteditable='true']),
+.milkdown-markdown-editor
+  :deep(
+    .desk-raw-block--mindmap input:not([type='checkbox']):not([type='radio']):not([type='file'])
+  ) {
   caret-color: var(--accent-strong, #3b82f6) !important;
 }
 
