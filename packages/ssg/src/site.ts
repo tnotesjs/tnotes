@@ -87,12 +87,32 @@ const ICON_TYPES: Record<string, string> = {
   jpeg: 'image/jpeg'
 }
 
+/**
+ * Turn a kb-declared icon path into a site-absolute href.
+ *
+ * `tnotes.json` declares the icon the way a note references an asset — relative
+ * to the file that mentions it (`../assets/kb-icon.svg`). Emitted as-is that
+ * resolves against *the page's own depth*: on a note page (`/kb/notes/1`) it
+ * lands on `/kb/assets/…`, but on the home page (`/kb/`) the parent is `/`, so
+ * the same href asks for `/assets/…` and 404s. Rebasing onto `base` makes every
+ * page agree, which matters most for the entry point.
+ *
+ * Absolute URLs and `data:` URIs are the kb's own business and pass through.
+ */
+export function resolveIconHref(src: string, base: string): string {
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(src)) return src
+  const prefix = base.endsWith('/') ? base : `${base}/`
+  const relative = src.replace(/^(?:\.\.?\/)+/, '').replace(/^\/+/, '')
+  return `${prefix}${relative}`
+}
+
 /** The favicon a kb declares in `tnotes.json`, typed from its own extension. */
-function iconLink(icon: ResolvedSsgConfig['icon']) {
+function iconLink(icon: ResolvedSsgConfig['icon'], base: string) {
   if (!icon?.src) return ''
   const extension = (icon.src.split(/[?#]/)[0]?.split('.').pop() ?? '').toLowerCase()
   const type = ICON_TYPES[extension]
-  return `<link rel="icon"${type ? ` type="${type}"` : ''} href="${htmlEscape(icon.src)}">`
+  const href = resolveIconHref(icon.src, base)
+  return `<link rel="icon"${type ? ` type="${type}"` : ''} href="${htmlEscape(href)}">`
 }
 
 /**
@@ -122,7 +142,7 @@ function pageDocument(config: ResolvedSsgConfig, route: string, page: PageData, 
     <meta name="description" content="${htmlEscape(description)}" />
     <title>${htmlEscape(page.title)} | ${htmlEscape(config.title)}</title>
     ${renderHead(config)}
-    ${iconLink(config.icon)}
+    ${iconLink(config.icon, config.base)}
     <script>try{const t=localStorage.getItem('tnotes-theme');const d=t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',d)}catch{}</script>
     ${sidebarRestoreGate(config.base)}
   </head>
