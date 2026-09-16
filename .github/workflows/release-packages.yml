@@ -78,6 +78,13 @@ jobs:
           fi
           echo "版本一致：${{ steps.target.outputs.pkg }}@${actual}"
 
+      # OIDC trusted publishing 需要 npm >= 11.5.1，而 Node 22 自带 npm 10.x——
+      # 旧版 CLI 不认识 OIDC，会直接报 ENEEDAUTH「需要登录」。
+      - name: Upgrade npm for OIDC trusted publishing
+        run: |
+          npm install -g npm@^11.5.1
+          npm --version
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -128,8 +135,6 @@ jobs:
         env:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
           NPM_CONFIG_PROVENANCE: 'true'
-          # 临时：确认 npm 是否真的做了 OIDC 凭据交换
-          NPM_CONFIG_LOGLEVEL: silly
 
       - name: Verify on the registry
         run: |
