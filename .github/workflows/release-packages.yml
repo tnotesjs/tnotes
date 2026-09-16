@@ -1,0 +1,97 @@
+# 发布 npm 包（kb / ui / ssg / mindmap-core）到 registry.npmjs.org
+#
+# 为什么需要它：包一直是手工发布的，结果出现过「仓库改了一堆、版本号没动、npm 上还是
+# 09-11 的 tarball」——KB 站点因此拿不到修复。这个工作流把「打 tag」与「发版」绑在一起：
+# 版本号必须先进 package.json，再打同名 tag，CI 校验一致后发布。
+#
+# 用法：
+#   1) 改 packages/<pkg>/package.json 的 version（以及 CHANGELOG/说明性提交）
+#   2) git tag kb@0.5.2 && git push origin kb@0.5.2
+#   ui / ssg / mindmap-core 同理。
+#
+# 顺序要求：`@tnotesjs/ssg` 依赖 kb 与 ui（`workspace:^` 在发布时会被改写成实际范围），
+# 所以升级依赖链路时先发 kb/ui，再发 ssg。
+#
+# 前置配置（一次性）：仓库 Settings → Secrets and variables → Actions 增加
+#   NPM_TOKEN = 一个 npm **Automation** token（绕过 2FA，供 CI 使用）
+# 没配这个 secret 时，发布步骤会以清晰的报错失败，不会静默跳过。
+
+name: Release Packages
+
+on:
+  push:
+    tags:
+      - 'kb@*'
+      - 'ui@*'
+      - 'ssg@*'
+      - 'mindmap-core@*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out monorepo
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.10.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve package from tag
+        id: target
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            kb@*) dir=kb; pkg='@tnotesjs/kb' ;;
+            ui@*) dir=ui; pkg='@tnotesjs/ui' ;;
+            ssg@*) dir=ssg; pkg='@tnotesjs/ssg' ;;
+            mindmap-core@*) dir=mindmap-core; pkg='@tnotesjs/mindmap-core' ;;
+            *) echo "::error::无法从 tag 解析包名：${GITHUB_REF_NAME}"; exit 1 ;;
+          esac
+          echo "dir=${dir}" >> "$GITHUB_OUTPUT"
+          echo "pkg=${pkg}" >> "$GITHUB_OUTPUT"
+          echo "expected=${GITHUB_REF_NAME#*@}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches package version
+        run: |
+          actual=$(node -p "require('./packages/${{ steps.target.outputs.dir }}/package.json').version")
+          expected='${{ steps.target.outputs.expected }}'
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::tag 是 ${expected}，但 packages/${{ steps.target.outputs.dir }}/package.json 是 ${actual}——先改版本号再打 tag"
+            exit 1
+          fi
+          echo "版本一致：${{ steps.target.outputs.pkg }}@${actual}"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # 发布物是 dist/，必须先在干净环境构建（本地 dist 不进 git）
+      - name: Build packages
+        run: pnpm --filter '${{ steps.target.outputs.pkg }}' --if-present run build
+
+      - name: Check publish token
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo "::error::缺少 NPM_TOKEN secret。请在仓库 Actions secrets 里配置一个 npm Automation token。"
+            exit 1
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # 只有打 tag 的那一个包会发；pnpm 会把 workspace:^ 改写成实际版本范围
+      - name: Publish
+        run: pnpm --filter '${{ steps.target.outputs.pkg }}' publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
