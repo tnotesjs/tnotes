@@ -295,9 +295,11 @@ describe('static site build', () => {
   it('ships the mindmap level control in the server-rendered page', () => {
     // Readers get the same 「层」 control the editor has, and it has to be in the
     // SSR markup — an island-only control would flash in after hydration.
+    // Asserted structurally: the label copy carries the range and changes with it.
     const guide = fs.readFileSync(dist('notes/2.html'), 'utf8')
     expect(guide).toContain('class="mindmap-preview-expand')
-    expect(guide).toContain('aria-label="默认展开层级"')
+    expect(guide).toContain('class="mindmap-preview-expand-input')
+    expect(guide).toMatch(/aria-label="默认展开层级[^"]*"/)
   })
 
   it('does not compile note bodies into the shared client bundle', () => {
