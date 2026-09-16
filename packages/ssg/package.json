@@ -1,6 +1,6 @@
 {
   "name": "@tnotesjs/ssg",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A small static-site generator built for TNotes knowledge bases.",
   "type": "module",
   "bin": {
