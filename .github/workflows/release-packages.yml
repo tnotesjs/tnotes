@@ -83,13 +83,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # 发布物是 dist/，必须先在干净环境构建（本地 dist 不进 git）
-      - name: Build packages
-        run: pnpm --filter '${{ steps.target.outputs.pkg }}' --if-present run build
+      # 先构建被依赖的 workspace 包：ssg 的 dts 构建要读 `@tnotesjs/kb` 的
+      # `dist/*.d.ts`，ui 要读 mindmap-core 的——干净检出里没有 dist，只构建目标包
+      # 会在 dts 阶段报 `Cannot find module '@tnotesjs/kb'`。
+      # （desk 的发布工作流一直有这一步 `desk^...`，这条漏了。）
+      - name: Build workspace dependencies
+        run: pnpm --filter '${{ steps.target.outputs.pkg }}^...' --if-present run build
 
-      # 显式跑一次发布门禁：lint + test + typecheck + build 由各包自己声明。
-      # 必须在这里跑——后面的 `npm publish` 发生在工作区外的临时目录，不会触发
-      # 包里的 `prepublishOnly`（那条脚本是给手工 `pnpm publish` 用的）。
+      # 发布门禁：各包自己声明的 lint + test + typecheck + build（发布物就是这里产出的
+      # dist/）。必须显式跑一次——后面的 `npm publish` 发生在工作区外的临时目录，不会
+      # 触发包里的 `prepublishOnly`（那条脚本是给手工 `pnpm publish` 用的）。
       - name: Release gate (lint, test, typecheck, build)
         run: pnpm --filter '${{ steps.target.outputs.pkg }}' run prepublishOnly
 
