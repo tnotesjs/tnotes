@@ -1,4 +1,10 @@
-import { applyFenceTitle, parseFenceTitleFromMeta } from './fenceInfo'
+import {
+  applyFenceLevel,
+  applyFenceTitle,
+  isMindmapFenceOpening,
+  parseFenceLevelFromMeta,
+  parseFenceTitleFromMeta
+} from './fenceInfo'
 
 export type MarkdownSourceBlockKind =
   | 'heading'
@@ -763,6 +769,22 @@ function reconcileChangedFence(
     // meta must not strip titles preserved on the original opening line.
     if ((baselineTitle || currentTitle) && currentTitle !== originalTitle) {
       opening = applyFenceTitle(opening, currentTitle)
+    }
+    /*
+     * The mindmap expand level is a channel of its own, for the same reason the
+     * title is: Desk's 「层」 control edits it, so reconciliation has to carry the
+     * editor's value onto the opening line it rebuilt from the original bytes.
+     * Guarded the same way — when neither the baseline nor the current dump
+     * participates in the channel the original line stays authoritative, and a
+     * level that did not change is left byte-identical.
+     */
+    if (isMindmapFenceOpening(opening)) {
+      const baselineLevel = parseFenceLevelFromMeta(fenceOpeningInfo(baselineFence?.opening ?? ''))
+      const currentLevel = parseFenceLevelFromMeta(fenceOpeningInfo(currentFence.opening))
+      const originalLevel = parseFenceLevelFromMeta(fenceOpeningInfo(originalFence.opening))
+      if ((baselineLevel !== null || currentLevel !== null) && currentLevel !== originalLevel) {
+        opening = applyFenceLevel(opening, currentLevel)
+      }
     }
   }
 
