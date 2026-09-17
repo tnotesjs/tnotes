@@ -133,8 +133,7 @@ jobs:
         working-directory: ${{ steps.stage.outputs.dir }}
         run: |
           npm --version
-          # verbose：npm 的 OIDC 失败会静默退回未登录，只在 verbose/silly 级别说明原因
-          npm publish --access public --loglevel verbose
+          npm publish --access public
         env:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
 
