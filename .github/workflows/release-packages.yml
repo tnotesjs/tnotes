@@ -131,9 +131,7 @@ jobs:
       # 只有打 tag 的那一个包会发；凭据由 GitHub OIDC 在发布时换取，无需任何 secret
       - name: Publish (OIDC)
         working-directory: ${{ steps.stage.outputs.dir }}
-        run: |
-          npm --version
-          npm publish --access public
+        run: npm publish --access public
         env:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
 
