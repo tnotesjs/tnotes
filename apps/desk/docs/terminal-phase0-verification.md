@@ -88,8 +88,8 @@
 | Windows 10/11                                           | **未实测**。node-pty 包内有 `win32-x64` / `win32-arm64` 预构建；但 Windows 编译需要 Spectre-mitigated 库，且 ConPTY/winpty 行为未验证 |
 | Linux（x64/arm64）                                      | **未实测**。仅有 `darwin-*` 与 `win32-*` 预构建（无 `linux-*`），若在 Linux 上安装**会走 node-gyp 编译**，需确认构建镜像具备工具链    |
 | 系统自带的正式安装版（`/Applications/TNotes Desk.app`） | 未在其上验证终端（那是既有安装，不属于本次改动）                                                                                      |
-| 真正的 Finder 双击启动                                  | 本阶段用 `env -i` 最小环境**近似**验证（从终端调用 `open` 会继承父进程环境，不能代表 Finder）。P4 的结论基于最小环境，不是真实双击    |
-| 渲染端渲染/流控                                         | 本阶段只验证主进程 PTY 数据链路，**未接入 xterm.js**；流控（水位线 + IPC 在途）是阶段 1 的实现内容                                    |
+| 真正的 Finder 双击启动                                  | 用 `env -i` 最小环境**近似**验证（从终端调用 `open` 会继承父进程环境，不能代表 Finder）。**至今仍未做真实双击验证**，需人工确认一次   |
+| 渲染端渲染/流控                                         | 阶段 0 只验证主进程 PTY 数据链路；xterm 接入与水位线流控已在**阶段 1 实现并验收**，见 `terminal-phase1-verification.md`               |
 
 ## 八、本阶段落下的改动
 
