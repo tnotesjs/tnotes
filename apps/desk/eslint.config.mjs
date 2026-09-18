@@ -154,9 +154,15 @@ export default defineConfig(
     }
   },
   {
+    // 开发/验收脚本跑在 Node 或 Electron 主进程里，不是产品代码：
+    // - 不要求返回类型标注（脚本里大量一次性小函数）；
+    // - 允许 `require()`：`.cjs` 探针只能走 CommonJS（Electron 以 CJS 加载主进程脚本）；
+    // - 允许正则里的控制字符：解析 PTY 输出要去掉 ANSI 转义序列。
     files: ['**/*.{test,spec}.{ts,mts,tsx}', 'scripts/**/*.{js,mjs,cjs}'],
     rules: {
-      '@typescript-eslint/explicit-function-return-type': 'off'
+      '@typescript-eslint/explicit-function-return-type': 'off',
+      '@typescript-eslint/no-require-imports': 'off',
+      'no-control-regex': 'off'
     }
   },
   eslintConfigPrettier

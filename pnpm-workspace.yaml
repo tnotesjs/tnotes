@@ -14,6 +14,7 @@ allowBuilds:
   '@vscode/vsce-sign': true
   keytar: true
   sharp: true
+  node-pty: true
 
 # 本组织包刚发布就要能被装到，跳过 minimumReleaseAge 冷却
 minimumReleaseAgeExclude:
