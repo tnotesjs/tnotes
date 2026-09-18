@@ -6,7 +6,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createWorkspace } from '@tnotesjs/kb'
 
-import { backfillMissingNoteIds, markInternalWrites, type WorkspaceScanState } from './scan'
+import {
+  backfillMissingNoteIds,
+  handleWatchedPath,
+  markInternalWrites,
+  type WorkspaceScanState
+} from './scan'
 import type { KnowledgeBaseHandle } from './types'
 
 const cleanups: Array<() => Promise<void>> = []
@@ -87,5 +92,44 @@ describe('内部写入标记的过期清理', () => {
     markInternalWrites(state, '/kb', [{ path: 'notes/a.md' }])
     const second = state.internalWriteUntil.get(path.normalize('/kb/notes/a.md')) ?? 0
     expect(second).toBeGreaterThan(first)
+  })
+})
+
+describe('终端写入磁盘笔记（外部变更）', () => {
+  function makeEventState(): { state: WorkspaceScanState; events: Array<Record<string, unknown>> } {
+    const events: Array<Record<string, unknown>> = []
+    const state = {
+      internalWriteUntil: new Map<string, number>(),
+      // 只用到 events / refresh 调度相关字段，其余按需替换
+      refreshTimer: null,
+      events: {
+        emit: (name: string, payload: Record<string, unknown>) => events.push({ name, ...payload })
+      },
+      scanTail: Promise.resolve()
+    } as unknown as WorkspaceScanState
+    return { state, events }
+  }
+
+  it('终端直接改笔记 → 必须发出 noteExternalChanged（不能因为没有写入门禁记录就被忽略）', async () => {
+    const handle = await makeHandleWithoutNoteId()
+    const { state, events } = makeEventState()
+    const changedNote = path.join(handle.rootPath, 'notes', '0001. 手写笔记.md')
+
+    handleWatchedPath(state, handle, changedNote)
+
+    const external = events.find((event) => event.name === 'noteExternalChanged')
+    expect(external).toBeDefined()
+    expect(external?.knowledgeBaseId).toBe(handle.id)
+  })
+
+  it('Desk 自己刚写过的路径被忽略（内部写入不当作外部变更）', async () => {
+    const handle = await makeHandleWithoutNoteId()
+    const { state, events } = makeEventState()
+    const changedNote = path.join(handle.rootPath, 'notes', '0001. 手写笔记.md')
+    markInternalWrites(state, handle.rootPath, [{ path: 'notes/0001. 手写笔记.md' }])
+
+    handleWatchedPath(state, handle, changedNote)
+
+    expect(events.find((event) => event.name === 'noteExternalChanged')).toBeUndefined()
   })
 })

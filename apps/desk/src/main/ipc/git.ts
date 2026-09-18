@@ -65,7 +65,16 @@ export function registerGit(getWindow: GetWindow): () => void {
       if (targetPath !== rootPath && !targetPath.startsWith(`${rootPath}${path.sep}`)) {
         throw new Error('变更路径超出知识库')
       }
-      showIdeContextMenu(window, targetPath)
+      // 目录/文件右键都走这里：额外给一个「在终端中打开」，由渲染端建会话。
+      // 顺序固定为最相关 → 最通用，终端排在 IDE 之前（终端是本应用内的动作）。
+      showIdeContextMenu(window, targetPath, undefined, {
+        onOpenTerminal: () => {
+          window.webContents.send(IPC_CHANNELS.terminalOpenAt, {
+            knowledgeBaseId,
+            cwd: targetPath
+          })
+        }
+      })
     }
   )
   handle(IPC_CHANNELS.ideOpenKnowledgeBase, getWindow, z.string().min(1), (knowledgeBaseId) =>

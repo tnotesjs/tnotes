@@ -250,7 +250,14 @@ function shouldIgnoreKnowledgeBasePath(relativePath: string): boolean {
   })
 }
 
-function handleWatchedPath(
+/**
+ * 磁盘上某个被监听的路径发生变化时的处理。
+ *
+ * 关键不变量：**只有 Desk 自己刚写过的路径才被忽略**。终端里跑脚本 `git checkout`
+ * 或直接改笔记，对这里来说就是普通的外部变更——必须发事件，让渲染端去刷新或提示
+ * 冲突（终端不受 Desk 的写入门禁约束，不能拿门禁当保护）。
+ */
+export function handleWatchedPath(
   state: WorkspaceScanState,
   handle: KnowledgeBaseHandle,
   changedPath: string

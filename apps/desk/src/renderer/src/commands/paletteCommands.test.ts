@@ -12,7 +12,8 @@ const commands = createPaletteCommands({
   openSettings: () => undefined,
   openKbSettings: () => undefined,
   openKbAssets: () => undefined,
-  hasSelectedKnowledgeBase: () => true
+  hasSelectedKnowledgeBase: () => true,
+  toggleTerminal: () => {}
 })
 
 describe('palette commands', () => {

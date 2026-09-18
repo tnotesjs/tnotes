@@ -38,7 +38,11 @@ export function showIdeContextMenu(
   window: BrowserWindow,
   targetPath: string,
   links?: { repositoryUrl?: string; pageUrl?: string },
-  options?: { onOpenSettings?: () => void; onOpenAssets?: () => void }
+  options?: {
+    onOpenSettings?: () => void
+    onOpenAssets?: () => void
+    onOpenTerminal?: () => void
+  }
 ): void {
   const template: MenuItemConstructorOptions[] = []
   if (options?.onOpenSettings || options?.onOpenAssets) {
@@ -57,6 +61,11 @@ export function showIdeContextMenu(
     template.push({ type: 'separator' })
   }
   template.push(
+    {
+      label: '在终端中打开',
+      enabled: Boolean(options?.onOpenTerminal),
+      click: () => options?.onOpenTerminal?.()
+    },
     {
       label: `在 ${ideLabel()} 中打开`,
       click: () => void openInConfiguredIde(targetPath)

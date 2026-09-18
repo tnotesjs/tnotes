@@ -13,6 +13,7 @@ import {
 } from './closeGuards'
 import { gitManager } from './gitManager'
 import { registerIpc } from './ipc'
+import { terminalManager } from './terminalManager'
 import { deskLog } from './log'
 import { loadSettings } from './settings'
 import { updateManager } from './updateManager'
@@ -277,6 +278,9 @@ app.on('will-quit', () => {
   void searchManager.dispose()
   void gitManager.dispose()
   webContentsManager.dispose()
+  // 终端会话持有真实 shell 进程：退出时必须一起结束，否则会把预览服务之类的
+  // 子进程留成孤儿
+  terminalManager.dispose()
 })
 
 app.on('window-all-closed', () => {

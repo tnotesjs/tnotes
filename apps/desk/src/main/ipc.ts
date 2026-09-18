@@ -9,6 +9,7 @@ import { registerKbFiles } from './ipc/kbFiles'
 import { registerHistory } from './ipc/history'
 import { registerRecovery } from './ipc/recovery'
 import { registerSettings } from './ipc/settings'
+import { registerTerminal } from './ipc/terminal'
 import { registerUpdate } from './ipc/update'
 import { registerWeb } from './ipc/web'
 import { registerWorkspace } from './ipc/workspace'
@@ -25,6 +26,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): () => void {
   registerRecovery(getWindow)
   const offWeb = registerWeb(getWindow)
   const offUpdate = registerUpdate(getWindow)
+  const offTerminal = registerTerminal(getWindow)
 
   return () => {
     offWorkspace()
@@ -35,6 +37,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): () => void {
     offKbFiles()
     offHistory()
     offUpdate()
+    offTerminal()
     for (const channel of Object.values(IPC_CHANNELS)) {
       ipcMain.removeHandler(channel)
     }

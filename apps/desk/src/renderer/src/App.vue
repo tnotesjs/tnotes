@@ -9,6 +9,7 @@ import SettingsPanel from './components/SettingsPanel.vue'
 import ToastHost from './components/ToastHost.vue'
 import AppZoomFeedback from './components/AppZoomFeedback.vue'
 import CommandPalette from './commands/CommandPalette.vue'
+import TerminalPanel from './terminal/TerminalPanel.vue'
 import { useEditorStore } from './stores/editor'
 import { findTab, tabAtNumber } from './editor-groups/layoutModel'
 import {
@@ -25,6 +26,7 @@ import {
   openReleasePage,
   updateBanner
 } from './stores/update'
+import { useTerminalStore } from './stores/terminal'
 import { useWorkspaceStore } from './stores/workspace'
 import { selectAllInRenderer } from './selectAll'
 import { APP_ZOOM_DEFAULT } from '../../shared/appZoom'
@@ -40,6 +42,7 @@ import { focusDialogInput } from './dialogInputFocus'
 
 const store = useWorkspaceStore()
 const editor = useEditorStore()
+const terminalStore = useTerminalStore()
 const createDialogOpen = ref(false)
 const createKbDialogOpen = ref(false)
 const createKbFolderName = ref('')
@@ -53,6 +56,11 @@ const paletteOpen = ref(false)
 const commandPalette = ref<{
   openSearch: () => Promise<void>
   openCommands: () => Promise<void>
+} | null>(null)
+const terminalPanel = ref<{
+  createOrFocus: () => Promise<void>
+  openForKnowledgeBase: (knowledgeBaseId: string, cwd?: string) => Promise<void>
+  focusActive: () => void
 } | null>(null)
 const createTitle = ref('')
 const createPlacement = ref<NoteCreateRequest['placement']>({ type: 'root', placement: 'end' })
@@ -71,6 +79,8 @@ const dialogBusy = ref(false)
 let sessionTimer: ReturnType<typeof setTimeout> | null = null
 let statusTimer: ReturnType<typeof setTimeout> | null = null
 let systemTheme: MediaQueryList | null = null
+let unsubscribeTerminal: (() => void) | null = null
+let unsubscribeTerminalOpen: (() => void) | null = null
 let unsubscribeTabShortcut: (() => void) | null = null
 let unsubscribeBeforeClose: (() => void) | null = null
 let unsubscribeUpdates: (() => void) | null = null
@@ -144,12 +154,26 @@ function onKeydown(event: KeyboardEvent): void {
     void store.saveCurrentDocument().catch(() => undefined)
     return
   }
+  if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'j') {
+    // 面板获得焦点时它自己的 capture 处理器已经处理过（并阻止了冒泡）
+    event.preventDefault()
+    terminalStore.toggle()
+    if (terminalStore.open) void terminalPanel.value?.createOrFocus()
+    return
+  }
   if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'p') {
     event.preventDefault()
     void (event.shiftKey
       ? commandPalette.value?.openCommands()
       : commandPalette.value?.openSearch())
   }
+}
+
+/** 面板开关：展开时确保有一个会话并聚焦，收起只隐藏（不结束进程）。 */
+function toggleTerminalPanel(): void {
+  terminalStore.toggle()
+  if (terminalStore.open) void terminalPanel.value?.createOrFocus()
+  else terminalPanel.value?.focusActive()
 }
 
 async function changeAppZoom(action: 'increase' | 'decrease' | 'reset'): Promise<void> {
@@ -516,16 +540,27 @@ onMounted(async () => {
       await window.desk.app.confirmCloseReady(proceed)
     })()
   })
+  unsubscribeTerminal = terminalStore.subscribe()
+  unsubscribeTerminalOpen = window.desk.terminal.onOpenAt((event) => {
+    // 目录右键「在终端中打开」：路径已在主进程校验在库内，这里只负责建会话
+    void terminalPanel.value?.openForKnowledgeBase(event.knowledgeBaseId, event.cwd)
+  })
   unsubscribeUpdates = initUpdateWatcher()
   systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
   systemTheme.addEventListener('change', applyAppearance)
   await store.initialize()
+  // 已有会话由主进程持有：收起面板/刷新渲染端之后仍然在跑，这里恢复列表
+  await terminalStore.load()
   applyAppearance()
   await persistSession()
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  unsubscribeTerminal?.()
+  unsubscribeTerminal = null
+  unsubscribeTerminalOpen?.()
+  unsubscribeTerminalOpen = null
   unsubscribeTabShortcut?.()
   unsubscribeTabShortcut = null
   unsubscribeBeforeClose?.()
@@ -552,11 +587,33 @@ onUnmounted(() => {
           ref="commandPalette"
           v-model:open="paletteOpen"
           @open-settings="settingsOpen = true"
+          @toggle-terminal="toggleTerminalPanel"
         />
       </div>
       <div class="titlebar-actions">
         <span v-if="store.saving" class="sync-state">正在保存</span>
         <span v-else-if="store.dirty" class="sync-state dirty">未保存</span>
+        <button
+          type="button"
+          class="terminal-toggle"
+          :class="{ active: terminalStore.open }"
+          aria-label="切换终端面板"
+          :data-tooltip="`终端面板（${terminalStore.runningCount} 个运行中）`"
+          @click="toggleTerminalPanel"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="1em"
+            height="1em"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+          >
+            <path
+              fill="currentColor"
+              d="M2 2.5A1.5 1.5 0 0 1 3.5 1h9A1.5 1.5 0 0 1 14 2.5v11a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 13.5zm1.5-.5a.5.5 0 0 0-.5.5v11a.5.5 0 0 0 .5.5h9a.5.5 0 0 0 .5-.5v-11a.5.5 0 0 0-.5-.5zM4.6 4.4a.75.75 0 0 1 1.06 0L7.9 6.63a.75.75 0 0 1 0 1.06L5.66 9.93A.75.75 0 0 1 4.6 8.87l1.7-1.7-1.7-1.7a.75.75 0 0 1 0-1.07M8 10.75a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75"
+            />
+          </svg>
+        </button>
         <button
           type="button"
           aria-label="打开设置"
@@ -621,6 +678,8 @@ onUnmounted(() => {
       />
       <EditorPane style="grid-area: i5" />
     </main>
+
+    <TerminalPanel v-if="store.hasWorkspace" ref="terminalPanel" />
 
     <main v-else class="welcome">
       <div class="welcome-card">
@@ -991,6 +1050,10 @@ onUnmounted(() => {
   font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1.55;
+}
+
+.titlebar .terminal-toggle.active {
+  color: var(--accent);
 }
 
 .titlebar {

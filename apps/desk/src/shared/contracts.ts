@@ -113,6 +113,17 @@ export const IPC_CHANNELS = {
   webStateChanged: 'web:state-changed',
   webOpenRequested: 'web:open-requested',
   previewChanged: 'preview:changed',
+  terminalCreate: 'terminal:create',
+  terminalList: 'terminal:list',
+  terminalRestart: 'terminal:restart',
+  terminalRename: 'terminal:rename',
+  terminalClose: 'terminal:close',
+  terminalWrite: 'terminal:write',
+  terminalResize: 'terminal:resize',
+  terminalAck: 'terminal:ack',
+  terminalChanged: 'terminal:changed',
+  terminalData: 'terminal:data',
+  terminalOpenAt: 'terminal:open-at',
   gitStateChanged: 'git:state-changed',
   updateStatus: 'update:status',
   updateCheck: 'update:check',
@@ -992,6 +1003,56 @@ export interface PreviewStartResult {
   url: string | null
 }
 
+/**
+ * 一个终端会话。`status` 是进程状态，`title` 是用户可改的标签名。
+ *
+ * 目录归属（`cwd`）在会话创建时就固定：切换知识库**不会**改变已有会话的工作目录，
+ * 避免命令跑到别的库里执行；新会话才用当前库的根目录。
+ */
+export interface TerminalSessionDto {
+  id: string
+  /** 创建时的所属知识库；仅用于归属展示与退出清理，切换库不改它 */
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  title: string
+  /** 会话创建时固定的工作目录 */
+  cwd: string
+  shell: string
+  status: 'running' | 'exited'
+  pid: number | null
+  cols: number
+  rows: number
+  exitCode: number | null
+  exitSignal: number | null
+  /** 创建失败或进程异常时的原因，供标签页展示 */
+  error: string | null
+  createdAt: number
+}
+
+export interface TerminalCreateRequest {
+  knowledgeBaseId: string
+  /** 不传则用该知识库根目录 */
+  cwd?: string
+  cols?: number
+  rows?: number
+}
+
+/**
+ * 主进程请求「在这个目录开一个终端」（来自目录右键菜单）。
+ * 渲染端只负责建会话，不参与路径解析——路径在主进程已经校验过在库内。
+ */
+export interface TerminalOpenAtEvent {
+  knowledgeBaseId: string
+  cwd: string
+}
+
+/** PTY 输出分片。`bytes` 是 `data` 的 UTF-8 字节数，渲染端按此累加回执。 */
+export interface TerminalDataEvent {
+  sessionId: string
+  data: string
+  bytes: number
+}
+
 export interface NoteDocumentDto {
   knowledgeBaseId: string
   uuid: string
@@ -1581,6 +1642,23 @@ export interface DeskApi {
     stop(knowledgeBaseId: string): Promise<DeskResult<PreviewStateDto>>
     list(): Promise<DeskResult<PreviewStateDto[]>>
     onChanged(callback: (state: PreviewStateDto) => void): () => void
+  }
+  terminal: {
+    create(request: TerminalCreateRequest): Promise<DeskResult<TerminalSessionDto>>
+    list(): Promise<DeskResult<TerminalSessionDto[]>>
+    restart(sessionId: string): Promise<DeskResult<TerminalSessionDto>>
+    rename(sessionId: string, title: string): Promise<DeskResult<TerminalSessionDto>>
+    close(sessionId: string): Promise<DeskResult<void>>
+    write(sessionId: string, data: string): Promise<DeskResult<void>>
+    resize(sessionId: string, cols: number, rows: number): Promise<DeskResult<void>>
+    /**
+     * 流控回执：渲染端已经消费掉 n 字节。主进程据此在高低水位之间 pause/resume
+     * PTY，避免 xterm 的写入缓冲被高速输出打爆（xterm 有 50MB 硬上限，超出即丢数据）。
+     */
+    ack(sessionId: string, bytes: number): Promise<DeskResult<void>>
+    onChanged(callback: (state: TerminalSessionDto) => void): () => void
+    onData(callback: (event: TerminalDataEvent) => void): () => void
+    onOpenAt(callback: (event: TerminalOpenAtEvent) => void): () => void
   }
   onLog(callback: (line: string) => void): () => void
 }

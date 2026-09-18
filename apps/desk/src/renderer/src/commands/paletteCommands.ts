@@ -17,6 +17,7 @@ export interface PaletteCommandContext {
   openKbSettings: () => void
   openKbAssets: () => void
   hasSelectedKnowledgeBase: () => boolean
+  toggleTerminal: () => void
 }
 
 export function createPaletteCommands(context: PaletteCommandContext): PaletteCommand[] {
@@ -94,6 +95,16 @@ export function createPaletteCommands(context: PaletteCommandContext): PaletteCo
       keywords: ['kb', 'settings', 'config', '配置', '知识库'],
       enabled: () => context.hasSelectedKnowledgeBase(),
       run: () => context.openKbSettings()
+    },
+    {
+      id: 'toggle-terminal',
+      title: '切换终端面板',
+      category: '终端',
+      hint: 'Toggle Terminal',
+      keywords: ['terminal', 'shell', 'console', '终端', '命令行'],
+      shortcut: '⌘J',
+      enabled: () => true,
+      run: () => context.toggleTerminal()
     },
     {
       id: 'open-settings',

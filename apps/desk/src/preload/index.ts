@@ -56,6 +56,10 @@ import type {
   NoteUpdateConfigRequest,
   PreviewStartResult,
   PreviewStateDto,
+  TerminalCreateRequest,
+  TerminalDataEvent,
+  TerminalOpenAtEvent,
+  TerminalSessionDto,
   RecoveryDeleteRequest,
   RecoveryWriteRequest,
   SearchResultDto,
@@ -392,6 +396,40 @@ const api: DeskApi = {
         callback(state)
       ipcRenderer.on(IPC_CHANNELS.previewChanged, listener)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.previewChanged, listener)
+    }
+  },
+  terminal: {
+    create: (request: TerminalCreateRequest) =>
+      invoke<TerminalSessionDto>(IPC_CHANNELS.terminalCreate, request),
+    list: () => invoke<TerminalSessionDto[]>(IPC_CHANNELS.terminalList),
+    restart: (sessionId: string) =>
+      invoke<TerminalSessionDto>(IPC_CHANNELS.terminalRestart, { sessionId }),
+    rename: (sessionId: string, title: string) =>
+      invoke<TerminalSessionDto>(IPC_CHANNELS.terminalRename, { sessionId, title }),
+    close: (sessionId: string) => invoke<void>(IPC_CHANNELS.terminalClose, { sessionId }),
+    write: (sessionId: string, data: string) =>
+      invoke<void>(IPC_CHANNELS.terminalWrite, { sessionId, data }),
+    resize: (sessionId: string, cols: number, rows: number) =>
+      invoke<void>(IPC_CHANNELS.terminalResize, { sessionId, cols, rows }),
+    ack: (sessionId: string, bytes: number) =>
+      invoke<void>(IPC_CHANNELS.terminalAck, { sessionId, bytes }),
+    onChanged: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: TerminalSessionDto): void =>
+        callback(state)
+      ipcRenderer.on(IPC_CHANNELS.terminalChanged, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.terminalChanged, listener)
+    },
+    onData: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, event: TerminalDataEvent): void =>
+        callback(event)
+      ipcRenderer.on(IPC_CHANNELS.terminalData, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.terminalData, listener)
+    },
+    onOpenAt: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, event: TerminalOpenAtEvent): void =>
+        callback(event)
+      ipcRenderer.on(IPC_CHANNELS.terminalOpenAt, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.terminalOpenAt, listener)
     }
   },
   onLog: (callback) => {

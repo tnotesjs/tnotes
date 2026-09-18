@@ -16,6 +16,7 @@ import {
 const emit = defineEmits<{
   'update:open': [value: boolean]
   openSettings: []
+  toggleTerminal: []
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
@@ -41,7 +42,8 @@ const commands = computed(() =>
     openKbAssets: () => {
       if (workspace.knowledgeBase) editor.openKbAssets(workspace.knowledgeBase)
     },
-    hasSelectedKnowledgeBase: () => Boolean(workspace.knowledgeBase)
+    hasSelectedKnowledgeBase: () => Boolean(workspace.knowledgeBase),
+    toggleTerminal: () => emit('toggleTerminal')
   })
 )
 
