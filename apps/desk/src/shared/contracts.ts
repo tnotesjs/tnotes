@@ -124,6 +124,16 @@ export const IPC_CHANNELS = {
   terminalChanged: 'terminal:changed',
   terminalData: 'terminal:data',
   terminalOpenAt: 'terminal:open-at',
+  commandTaskClaim: 'command-task:claim',
+  commandTaskList: 'command-task:list',
+  commandTaskClose: 'command-task:close',
+  commandTaskCancel: 'command-task:cancel',
+  commandTaskRetry: 'command-task:retry',
+  commandTaskStage: 'command-task:stage',
+  commandTaskFinish: 'command-task:finish',
+  commandTaskChanged: 'command-task:changed',
+  commandTaskLog: 'command-task:log',
+  commandTaskReveal: 'command-task:reveal',
   gitStateChanged: 'git:state-changed',
   updateStatus: 'update:status',
   updateCheck: 'update:check',
@@ -1049,6 +1059,63 @@ export interface TerminalCreateRequest {
  * 主进程请求「在这个目录开一个终端」（来自目录右键菜单）。
  * 渲染端只负责建会话，不参与路径解析——路径在主进程已经校验过在库内。
  */
+/**
+ * 命令任务的种类。
+ * `launch-*` 只管理**启动器**，不代表 IDE 本身的生命周期。
+ */
+export type CommandTaskKind = 'git-pull' | 'git-push' | 'git-fetch' | 'launch-ide'
+
+/**
+ * 执行阶段。`queued` 起就有反馈——不等真正的子进程启动才显示。
+ * `saving` 是推送前的受控保存，`precheck` 是门禁/业务检查。
+ */
+export type CommandTaskStage = 'queued' | 'saving' | 'precheck' | 'running' | 'finished'
+
+export type CommandTaskStatus =
+  'queued' | 'saving' | 'precheck' | 'running' | 'done' | 'failed' | 'timeout' | 'canceled'
+
+export interface CommandTaskDto {
+  id: string
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  kind: CommandTaskKind
+  title: string
+  /** 工作目录（知识库根或启动器目标路径） */
+  cwd: string
+  /** 实际执行的命令行；启动器场景是启动命令 */
+  command: string
+  status: CommandTaskStatus
+  stage: CommandTaskStage
+  stageLabel: string
+  /** 每次运行自增：界面据此丢弃上一轮的迟到输出 */
+  run: number
+  startedAt: number
+  finishedAt: number | null
+  /** 失败/超时/取消的原因；与已保留的输出并存，不覆盖输出 */
+  error: string | null
+  /** 已推送的日志字节数 */
+  logBytes: number
+  /** 因上限被丢弃的字节数（>0 时界面显示截断提示） */
+  truncatedBytes: number
+}
+
+/** 分批推送的日志片段。`data` 里 `\u0000stderr\u0001` 前缀标记 stderr。 */
+export interface CommandTaskLogEvent {
+  taskId: string
+  run: number
+  data: string
+  bytes: number
+  truncatedBytes: number
+}
+
+export interface CommandTaskClaimRequest {
+  knowledgeBaseId: string
+  kind: CommandTaskKind
+  title: string
+  cwd: string
+  command?: string
+}
+
 export interface TerminalOpenAtEvent {
   knowledgeBaseId: string
   cwd: string
@@ -1596,9 +1663,10 @@ export interface DeskApi {
   git: {
     list(): Promise<DeskResult<GitRepositoryStateDto[]>>
     refresh(knowledgeBaseId?: string): Promise<DeskResult<GitRepositoryStateDto[]>>
-    fetch(knowledgeBaseId: string): Promise<DeskResult<GitOperationResult>>
-    pull(knowledgeBaseId: string): Promise<DeskResult<GitOperationResult>>
-    publish(knowledgeBaseId: string): Promise<DeskResult<GitOperationResult>>
+    /** 带 taskId 时由命令任务处理器执行：面板能拿到实时输出与取消能力 */
+    fetch(knowledgeBaseId: string, taskId?: string): Promise<DeskResult<GitOperationResult>>
+    pull(knowledgeBaseId: string, taskId?: string): Promise<DeskResult<GitOperationResult>>
+    publish(knowledgeBaseId: string, taskId?: string): Promise<DeskResult<GitOperationResult>>
     onStateChanged(callback: (state: GitRepositoryStateDto) => void): () => void
   }
   ide: {
@@ -1652,6 +1720,35 @@ export interface DeskApi {
     stop(knowledgeBaseId: string): Promise<DeskResult<PreviewStateDto>>
     list(): Promise<DeskResult<PreviewStateDto[]>>
     onChanged(callback: (state: PreviewStateDto) => void): () => void
+  }
+  commandTask: {
+    /** 认领任务：同一 (知识库, 种类) 已有运行中的任务时返回它本身（不重复提交） */
+    claim(request: CommandTaskClaimRequest): Promise<DeskResult<CommandTaskDto>>
+    list(): Promise<DeskResult<CommandTaskDto[]>>
+    /** 关闭输出标签（只关视图，不取消运行） */
+    close(taskId: string): Promise<DeskResult<void>>
+    /** 停止任务：排队中的直接取消，运行中的终止子进程 */
+    cancel(taskId: string): Promise<DeskResult<void>>
+    /** 重试：重新走既有业务检查（不机械重放上一条命令） */
+    retry(taskId: string): Promise<DeskResult<void>>
+    /** 渲染端在调用 Git 前报告自己的阶段（如推送前的保存） */
+    reportStage(
+      taskId: string,
+      run: number,
+      stage: CommandTaskStage,
+      label: string
+    ): Promise<DeskResult<void>>
+    /** 渲染端因前置失败结束任务（如保存失败、检查不通过） */
+    finish(
+      taskId: string,
+      run: number,
+      status: 'done' | 'failed' | 'timeout' | 'canceled',
+      error: string | null
+    ): Promise<DeskResult<void>>
+    onChanged(callback: (state: CommandTaskDto) => void): () => void
+    onLog(callback: (event: CommandTaskLogEvent) => void): () => void
+    /** 主进程请求「展开面板并定位到这个任务」（手动 Git 操作、后台失败入口） */
+    onReveal(callback: (taskId: string) => void): () => void
   }
   terminal: {
     create(request: TerminalCreateRequest): Promise<DeskResult<TerminalSessionDto>>

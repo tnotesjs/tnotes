@@ -56,6 +56,10 @@ import type {
   NoteUpdateConfigRequest,
   PreviewStartResult,
   PreviewStateDto,
+  CommandTaskClaimRequest,
+  CommandTaskDto,
+  CommandTaskLogEvent,
+  CommandTaskStage,
   TerminalCreateRequest,
   TerminalDataEvent,
   TerminalOpenAtEvent,
@@ -314,10 +318,12 @@ const api: DeskApi = {
     list: () => invoke<GitRepositoryStateDto[]>(IPC_CHANNELS.gitList),
     refresh: (knowledgeBaseId) =>
       invoke<GitRepositoryStateDto[]>(IPC_CHANNELS.gitRefresh, knowledgeBaseId),
-    fetch: (knowledgeBaseId) => invoke<GitOperationResult>(IPC_CHANNELS.gitFetch, knowledgeBaseId),
-    pull: (knowledgeBaseId) => invoke<GitOperationResult>(IPC_CHANNELS.gitPull, knowledgeBaseId),
-    publish: (knowledgeBaseId) =>
-      invoke<GitOperationResult>(IPC_CHANNELS.gitPublish, knowledgeBaseId),
+    fetch: (knowledgeBaseId, taskId) =>
+      invoke<GitOperationResult>(IPC_CHANNELS.gitFetch, { knowledgeBaseId, taskId }),
+    pull: (knowledgeBaseId, taskId) =>
+      invoke<GitOperationResult>(IPC_CHANNELS.gitPull, { knowledgeBaseId, taskId }),
+    publish: (knowledgeBaseId, taskId) =>
+      invoke<GitOperationResult>(IPC_CHANNELS.gitPublish, { knowledgeBaseId, taskId }),
     onStateChanged: (callback) => {
       const listener = (_event: Electron.IpcRendererEvent, state: GitRepositoryStateDto): void =>
         callback(state)
@@ -396,6 +402,39 @@ const api: DeskApi = {
         callback(state)
       ipcRenderer.on(IPC_CHANNELS.previewChanged, listener)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.previewChanged, listener)
+    }
+  },
+  commandTask: {
+    claim: (request: CommandTaskClaimRequest) =>
+      invoke<CommandTaskDto>(IPC_CHANNELS.commandTaskClaim, request),
+    list: () => invoke<CommandTaskDto[]>(IPC_CHANNELS.commandTaskList),
+    close: (taskId: string) => invoke<void>(IPC_CHANNELS.commandTaskClose, { taskId }),
+    cancel: (taskId: string) => invoke<void>(IPC_CHANNELS.commandTaskCancel, { taskId }),
+    retry: (taskId: string) => invoke<void>(IPC_CHANNELS.commandTaskRetry, { taskId }),
+    reportStage: (taskId: string, run: number, stage: CommandTaskStage, label: string) =>
+      invoke<void>(IPC_CHANNELS.commandTaskStage, { taskId, run, stage, label }),
+    finish: (
+      taskId: string,
+      run: number,
+      status: 'done' | 'failed' | 'timeout' | 'canceled',
+      error: string | null
+    ) => invoke<void>(IPC_CHANNELS.commandTaskFinish, { taskId, run, status, error }),
+    onChanged: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, state: CommandTaskDto): void =>
+        callback(state)
+      ipcRenderer.on(IPC_CHANNELS.commandTaskChanged, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.commandTaskChanged, listener)
+    },
+    onLog: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, event: CommandTaskLogEvent): void =>
+        callback(event)
+      ipcRenderer.on(IPC_CHANNELS.commandTaskLog, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.commandTaskLog, listener)
+    },
+    onReveal: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, taskId: string): void => callback(taskId)
+      ipcRenderer.on(IPC_CHANNELS.commandTaskReveal, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.commandTaskReveal, listener)
     }
   },
   terminal: {

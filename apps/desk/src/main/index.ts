@@ -13,6 +13,7 @@ import {
 } from './closeGuards'
 import { gitManager } from './gitManager'
 import { registerIpc } from './ipc'
+import { commandTaskManager } from './commandTaskManager'
 import { terminalManager } from './terminalManager'
 import { deskLog } from './log'
 import { loadSettings } from './settings'
@@ -281,6 +282,8 @@ app.on('will-quit', () => {
   // 终端会话持有真实 shell 进程：退出时必须一起结束，否则会把预览服务之类的
   // 子进程留成孤儿
   terminalManager.dispose()
+  // 命令任务只持有视图状态：正在跑的 Git 子进程由 gitManager 收尾，这里清掉记录即可
+  commandTaskManager.dispose()
 })
 
 app.on('window-all-closed', () => {

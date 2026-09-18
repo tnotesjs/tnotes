@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
+import CommandTaskPane from './CommandTaskPane.vue'
 import TerminalPane from './TerminalPane.vue'
+import { useCommandTaskStore } from '../stores/commandTask'
 import { useTerminalStore } from '../stores/terminal'
 import { useWorkspaceStore } from '../stores/workspace'
 
@@ -17,6 +19,7 @@ interface TerminalPaneHandle {
 }
 
 const store = useTerminalStore()
+const commandTasks = useCommandTaskStore()
 const workspace = useWorkspaceStore()
 const panes = ref<Record<string, TerminalPaneHandle | null>>({})
 const renamingId = ref<string | null>(null)
@@ -38,6 +41,18 @@ function setPaneRef(sessionId: string, instance: unknown): void {
   else delete panes.value[sessionId]
 }
 
+/** 面板当前展示的是命令任务还是交互式 Shell */
+const showingTask = computed(() => Boolean(commandTasks.activeTaskId))
+
+function selectTask(taskId: string): void {
+  commandTasks.select(taskId)
+}
+
+function selectShell(): void {
+  commandTasks.select(null)
+  focusActive()
+}
+
 function focusActive(): void {
   const id = store.activeSessionId
   if (!id) return
@@ -47,6 +62,7 @@ function focusActive(): void {
 async function createSession(): Promise<void> {
   const knowledgeBaseId = activeKnowledgeBaseId.value
   if (!knowledgeBaseId) return
+  commandTasks.select(null)
   await store.createSession(knowledgeBaseId)
   focusActive()
 }
@@ -188,6 +204,13 @@ function onKeydownCapture(event: KeyboardEvent): void {
     store.resetFontSize()
     return
   }
+  if (key === 'w' && commandTasks.activeTaskId) {
+    // 关闭输出标签 ≠ 停止任务：只收起视图，任务继续跑
+    event.preventDefault()
+    event.stopPropagation()
+    void commandTasks.closeTask(commandTasks.activeTaskId)
+    return
+  }
   if (key === 'w' && store.sessions.length > 1 && store.activeSessionId) {
     // Cmd/Ctrl+W 在终端聚焦时关掉当前会话；只有一个会话时交回默认行为
     const target = store.sessions.find((session) => session.id === store.activeSessionId)
@@ -202,10 +225,20 @@ function onKeydownCapture(event: KeyboardEvent): void {
 /** 展开面板：有会话就聚焦，没有就建一个。 */
 async function createOrFocus(): Promise<void> {
   if (store.sessions.length === 0) await createSession()
+  else if (commandTasks.activeTaskId) commandTasks.select(commandTasks.activeTaskId)
   else focusActive()
 }
 
+/**
+ * 定位/展示某个命令任务（手动 Git 操作与后台失败入口都用它）。
+ * 已存在的运行中任务只做定位，不重复提交命令。
+ */
+function showTask(taskId: string): void {
+  commandTasks.select(taskId)
+}
+
 async function openForKnowledgeBase(knowledgeBaseId: string, cwd?: string): Promise<void> {
+  commandTasks.select(null)
   await store.createSession(knowledgeBaseId, cwd)
   focusActive()
 }
@@ -217,7 +250,7 @@ watch(
   () => focusActive()
 )
 
-defineExpose({ createSession, createOrFocus, openForKnowledgeBase, focusActive })
+defineExpose({ createSession, createOrFocus, openForKnowledgeBase, focusActive, showTask })
 </script>
 
 <template>
@@ -241,6 +274,39 @@ defineExpose({ createSession, createOrFocus, openForKnowledgeBase, focusActive }
 
     <header class="terminal-tabs">
       <div class="terminal-tab-list" role="tablist">
+        <div
+          v-for="task in commandTasks.tasks"
+          :key="task.id"
+          class="terminal-tab command-tab"
+          :class="{ active: task.id === commandTasks.activeTaskId }"
+          role="tab"
+          :aria-selected="task.id === commandTasks.activeTaskId"
+          :title="`${task.title} — ${task.cwd}`"
+          @click="selectTask(task.id)"
+        >
+          <span class="command-tab-dot" :data-status="task.status" aria-hidden="true" />
+          <span class="terminal-tab-title">{{ task.title }}</span>
+          <span class="terminal-tab-kb">{{ task.knowledgeBaseName }}</span>
+          <button
+            type="button"
+            class="terminal-tab-close"
+            :aria-label="`关闭 ${task.title} 的输出`"
+            @click.stop="commandTasks.closeTask(task.id)"
+          >
+            ×
+          </button>
+        </div>
+        <button
+          v-if="commandTasks.tasks.length > 0"
+          type="button"
+          class="terminal-tab shell-tab"
+          :class="{ active: !showingTask }"
+          aria-label="切回交互式终端"
+          title="交互式终端"
+          @click="selectShell"
+        >
+          &gt;_
+        </button>
         <div
           v-for="session in store.sessions"
           :key="session.id"
@@ -351,9 +417,12 @@ defineExpose({ createSession, createOrFocus, openForKnowledgeBase, focusActive }
     </header>
 
     <div class="terminal-bodies">
+      <div v-if="commandTasks.active" class="terminal-body">
+        <CommandTaskPane :task="commandTasks.active" />
+      </div>
       <div
         v-for="session in store.sessions"
-        v-show="session.id === store.activeSessionId"
+        v-show="!showingTask && session.id === store.activeSessionId"
         :key="session.id"
         class="terminal-body"
       >
@@ -377,7 +446,10 @@ defineExpose({ createSession, createOrFocus, openForKnowledgeBase, focusActive }
           </button>
         </div>
       </div>
-      <p v-if="store.sessions.length === 0" class="terminal-empty">
+      <p
+        v-if="store.sessions.length === 0 && commandTasks.tasks.length === 0"
+        class="terminal-empty"
+      >
         还没有终端会话。点「+」在当前知识库根目录新建一个。
       </p>
     </div>
@@ -473,6 +545,39 @@ body.is-resizing .terminal-resize-handle::before {
 
 .terminal-tab.exited .terminal-tab-title {
   opacity: 0.6;
+}
+
+.command-tab-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--muted);
+}
+
+.command-tab-dot[data-status='queued'],
+.command-tab-dot[data-status='saving'],
+.command-tab-dot[data-status='precheck'],
+.command-tab-dot[data-status='running'] {
+  background: var(--accent);
+}
+
+.command-tab-dot[data-status='done'] {
+  background: var(--success, #98c379);
+}
+
+.command-tab-dot[data-status='failed'] {
+  background: var(--danger, #e06c75);
+}
+
+.command-tab-dot[data-status='timeout'],
+.command-tab-dot[data-status='canceled'] {
+  background: var(--warning, #e5c07b);
+}
+
+.shell-tab {
+  font-family: var(--font-mono);
+  padding: 2px 8px;
 }
 
 .terminal-tab-kb {

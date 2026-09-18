@@ -1,25 +1,40 @@
 import path from 'node:path'
 import { z } from 'zod'
 
+import { commandTaskManager } from '../commandTaskManager'
 import { gitManager } from '../gitManager'
-import { openInConfiguredIde, showIdeContextMenu } from '../ide'
+import { launchIde, showIdeContextMenu } from '../ide'
+
+import type { IdeLaunchResult } from '../ide'
 import { workspaceManager } from '../workspaceManager'
 import { IPC_CHANNELS } from '../../shared/contracts'
 import { handle, noInputSchema, type GetWindow } from './shared'
+import { runGitTaskFor } from './commandTask'
 
 export function registerGit(getWindow: GetWindow): () => void {
   handle(IPC_CHANNELS.gitList, getWindow, noInputSchema, () => gitManager.list())
   handle(IPC_CHANNELS.gitRefresh, getWindow, z.string().min(1).optional(), (knowledgeBaseId) =>
     gitManager.refresh(knowledgeBaseId)
   )
-  handle(IPC_CHANNELS.gitFetch, getWindow, z.string().min(1), (knowledgeBaseId) =>
-    gitManager.fetch(knowledgeBaseId)
+  // 带 taskId 时（手动操作）由命令任务处理器执行：它把实时输出与取消信号接进
+  // 既有 Git 流程；不带 taskId 时（后台定时 fetch 等）行为与以前完全一致。
+  handle(
+    IPC_CHANNELS.gitFetch,
+    getWindow,
+    z.object({ knowledgeBaseId: z.string().min(1), taskId: z.string().min(1).optional() }),
+    (input) => runGitTaskFor(input.knowledgeBaseId, 'git-fetch', input.taskId, getWindow)
   )
-  handle(IPC_CHANNELS.gitPull, getWindow, z.string().min(1), (knowledgeBaseId) =>
-    gitManager.pull(knowledgeBaseId)
+  handle(
+    IPC_CHANNELS.gitPull,
+    getWindow,
+    z.object({ knowledgeBaseId: z.string().min(1), taskId: z.string().min(1).optional() }),
+    (input) => runGitTaskFor(input.knowledgeBaseId, 'git-pull', input.taskId, getWindow)
   )
-  handle(IPC_CHANNELS.gitPublish, getWindow, z.string().min(1), (knowledgeBaseId) =>
-    gitManager.publish(knowledgeBaseId)
+  handle(
+    IPC_CHANNELS.gitPublish,
+    getWindow,
+    z.object({ knowledgeBaseId: z.string().min(1), taskId: z.string().min(1).optional() }),
+    (input) => runGitTaskFor(input.knowledgeBaseId, 'git-push', input.taskId, getWindow)
   )
   handle(IPC_CHANNELS.ideShowKnowledgeBaseMenu, getWindow, z.string().min(1), (knowledgeBaseId) => {
     const window = getWindow()
@@ -77,15 +92,68 @@ export function registerGit(getWindow: GetWindow): () => void {
       })
     }
   )
-  handle(IPC_CHANNELS.ideOpenKnowledgeBase, getWindow, z.string().min(1), (knowledgeBaseId) =>
-    openInConfiguredIde(workspaceManager.getLocation(knowledgeBaseId).rootPath)
+  /**
+   * 启动 IDE 并把**启动器**的过程做成命令任务。
+   *
+   * 正常打开时只创建任务、不请求展开面板（不抢焦点）；失败才请求展开，
+   * 让用户直接看到命令、目标路径与错误。
+   */
+  const launchIdeTask = async (
+    knowledgeBaseId: string,
+    targetPath: string
+  ): Promise<IdeLaunchResult> => {
+    const location = workspaceManager.getLocation(knowledgeBaseId)
+    const { handle: task } = commandTaskManager.claimHandle({
+      knowledgeBaseId,
+      knowledgeBaseName: location.name,
+      kind: 'launch-ide',
+      title: '启动 IDE',
+      cwd: targetPath
+    })
+    task.stage('running', '启动 IDE')
+    const result = await launchIde(targetPath, (stream, chunk) => task.write(stream, chunk))
+    task.command(result.command)
+    if (result.ok) {
+      commandTaskManager.finishRun(task.id, task.run, 'done', null)
+      return result
+    }
+    commandTaskManager.finishRun(
+      task.id,
+      task.run,
+      'failed',
+      [result.error, result.stderr.trim()].filter(Boolean).join('\n')
+    )
+    const window = getWindow()
+    if (window && !window.isDestroyed()) {
+      // 失败才抢一次注意力：展开面板并定位到这条任务
+      window.webContents.send(IPC_CHANNELS.commandTaskReveal, task.id)
+    }
+    return result
+  }
+
+  handle(
+    IPC_CHANNELS.ideOpenKnowledgeBase,
+    getWindow,
+    z.string().min(1),
+    async (knowledgeBaseId) => {
+      const result = await launchIdeTask(
+        knowledgeBaseId,
+        workspaceManager.getLocation(knowledgeBaseId).rootPath
+      )
+      if (!result.ok) throw new Error(result.error ?? '启动 IDE 失败')
+    }
   )
   handle(
     IPC_CHANNELS.ideOpenNote,
     getWindow,
     z.object({ knowledgeBaseId: z.string().min(1), noteUuid: z.string().min(1) }),
-    ({ knowledgeBaseId, noteUuid }) =>
-      openInConfiguredIde(workspaceManager.getNoteLocation(knowledgeBaseId, noteUuid))
+    async ({ knowledgeBaseId, noteUuid }) => {
+      const result = await launchIdeTask(
+        knowledgeBaseId,
+        workspaceManager.getNoteLocation(knowledgeBaseId, noteUuid)
+      )
+      if (!result.ok) throw new Error(result.error ?? '启动 IDE 失败')
+    }
   )
 
   const offGitChanged = gitManager.onChanged((state) => {

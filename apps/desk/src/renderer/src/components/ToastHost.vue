@@ -9,6 +9,9 @@ const toasts = useToasts()
     <TransitionGroup name="toast" tag="div" class="toast-stack">
       <div v-for="toast in toasts" :key="toast.id" class="toast" :class="toast.kind">
         <span>{{ toast.message }}</span>
+        <button v-if="toast.action" type="button" class="toast-action" @click="toast.action.run()">
+          {{ toast.action.label }}
+        </button>
         <button type="button" aria-label="关闭通知" @click="dismissToast(toast.id)">×</button>
       </div>
     </TransitionGroup>
@@ -64,6 +67,14 @@ const toasts = useToasts()
 
 .toast button:hover {
   color: var(--text);
+}
+
+.toast-action {
+  flex: none;
+  border: 1px solid currentColor !important;
+  border-radius: 4px;
+  padding: 1px 6px !important;
+  font-size: 11px !important;
 }
 
 .toast.info {

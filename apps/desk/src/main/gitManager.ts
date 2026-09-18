@@ -29,7 +29,33 @@ function gitExecutable(): string {
   return loadSettings().gitPath || 'git'
 }
 
-function runGit(rootPath: string, args: string[], timeoutMs = 30_000): Promise<CommandResult> {
+/** 让调用方能在退出时终止正在跑的子进程。 */
+export interface GitRunSpawnRegistry {
+  register(kill: () => void): void
+  unregister(): void
+}
+
+/** 命令任务的观察者：只用于展示实际执行过程，不参与业务判断。 */
+export interface GitRunObserver {
+  /** 实际执行的命令行（展示用，不重放） */
+  commandLine?(line: string): void
+  output(stream: 'stdout' | 'stderr', chunk: string): void
+}
+
+export interface GitRunExtras {
+  observer?: GitRunObserver
+  signal?: AbortSignal
+  onSpawn?: GitRunSpawnRegistry
+}
+
+function runGit(
+  rootPath: string,
+  args: string[],
+  timeoutMs = 30_000,
+  extras: GitRunExtras = {}
+): Promise<CommandResult> {
+  const { observer, signal, onSpawn } = extras
+  observer?.commandLine?.(formatCommandLine(args))
   return new Promise((resolve, reject) => {
     const child = spawn(gitExecutable(), args, {
       cwd: rootPath,
@@ -46,34 +72,108 @@ function runGit(rootPath: string, args: string[], timeoutMs = 30_000): Promise<C
     // main process for seconds.
     const stdoutChunks: Buffer[] = []
     const stderrChunks: Buffer[] = []
+    const cap = (text: string): string => text.slice(-2 * 1024 * 1024)
+
+    let stopReason: 'timeout' | 'canceled' | null = null
+    let settled = false
+    let forceTimer: NodeJS.Timeout | null = null
+
+    const cleanup = (): void => {
+      clearTimeout(timer)
+      if (forceTimer) clearTimeout(forceTimer)
+      signal?.removeEventListener('abort', onAbort)
+      onSpawn?.unregister?.()
+    }
+
+    const terminate = (): void => {
+      try {
+        child.kill('SIGTERM')
+      } catch {
+        /* 已退出 */
+      }
+      // 强杀兜底：不能因为子进程赖着不走而卡住整个操作队列
+      forceTimer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL')
+        } catch {
+          /* 已退出 */
+        }
+      }, 3000)
+    }
+
+    const onAbort = (): void => {
+      if (settled || stopReason) return
+      stopReason = 'canceled'
+      terminate()
+    }
+
+    if (signal) {
+      if (signal.aborted) {
+        stopReason = 'canceled'
+        terminate()
+      } else {
+        signal.addEventListener('abort', onAbort, { once: true })
+      }
+    }
+
     child.stdout.on('data', (chunk: Buffer) => {
       stdoutChunks.push(chunk)
+      observer?.output('stdout', chunk.toString('utf8'))
     })
     child.stderr.on('data', (chunk: Buffer) => {
       stderrChunks.push(chunk)
+      observer?.output('stderr', chunk.toString('utf8'))
     })
-    const cap = (text: string): string => text.slice(-2 * 1024 * 1024)
+
     const timer = setTimeout(() => {
-      child.kill('SIGTERM')
-      resolve({
-        code: 124,
-        stdout: cap(Buffer.concat(stdoutChunks).toString('utf8')),
-        stderr: `Git 操作超时：git ${args[0]}`
-      })
+      if (settled || stopReason) return
+      stopReason = 'timeout'
+      terminate()
     }, timeoutMs)
+
     child.on('error', (error) => {
-      clearTimeout(timer)
+      if (settled) return
+      settled = true
+      cleanup()
       reject(error)
     })
+
+    // 以 close 为准：确保子进程**真的退出**（信号发出不等于结束）后才解除忙碌
     child.on('close', (code) => {
-      clearTimeout(timer)
-      resolve({
-        code: code ?? 1,
-        stdout: cap(Buffer.concat(stdoutChunks).toString('utf8')),
-        stderr: cap(Buffer.concat(stderrChunks).toString('utf8'))
-      })
+      if (settled) return
+      settled = true
+      cleanup()
+      const stdout = cap(Buffer.concat(stdoutChunks).toString('utf8'))
+      const stderr = cap(Buffer.concat(stderrChunks).toString('utf8'))
+      if (stopReason === 'timeout') {
+        // 超时：保留此前输出，把原因**追加**在既有 stderr 之后（不覆盖原始错误）
+        resolve({
+          code: 124,
+          stdout,
+          stderr: [stderr.trim(), `Git 操作超时：git ${args[0]}（${timeoutMs}ms）`]
+            .filter(Boolean)
+            .join('\n')
+        })
+        return
+      }
+      if (stopReason === 'canceled') {
+        resolve({
+          code: 130,
+          stdout,
+          stderr: [stderr.trim(), 'Git 操作已取消'].filter(Boolean).join('\n')
+        })
+        return
+      }
+      resolve({ code: code ?? 1, stdout, stderr })
     })
   })
+}
+
+/** 展示用命令行（含空格参数加引号）。 */
+function formatCommandLine(args: string[]): string {
+  return [gitExecutable(), ...args]
+    .map((part) => (/[\s"']/.test(part) ? `"${part.replace(/"/g, '\\"')}"` : part))
+    .join(' ')
 }
 
 function commandError(result: CommandResult, fallback: string): Error {
@@ -168,6 +268,21 @@ export class GitManager {
   private repositories = new Map<string, GitRepositoryDescriptor>()
   private states = new Map<string, GitRepositoryStateDto>()
   private operationTails = new Map<string, Promise<void>>()
+  /**
+   * 正在跑的 git 子进程的终止器。
+   *
+   * 退出应用时必须把它们全部结束：否则一个挂住的 `git fetch`（例如需要凭证或
+   * 网络不可达）会把退出流程一起拖住，还会留下受我们管理的孤儿进程。
+   */
+  private activeKills = new Set<() => void>()
+  /**
+   * 每个知识库当前**正在执行**的操作的终止器。
+   *
+   * 队列是串行的：一个卡住的后台 fetch（例如远端不可达）会把后面的手动操作一起
+   * 堵住。用户对手动任务点「停止」时，真正需要终止的往往是这个占住队列的操作——
+   * 否则取消没有任何效果，任务会一直停在运行中。
+   */
+  private activeOperationKill = new Map<string, () => void>()
   private autoPushTimers = new Map<string, NodeJS.Timeout>()
   private periodicFetchTimer: NodeJS.Timeout | null = null
   private assetWritePaused = new Set<string>()
@@ -230,63 +345,86 @@ export class GitManager {
     return this.list()
   }
 
-  fetch(knowledgeBaseId: string, background = false): Promise<GitOperationResult> {
-    return this.enqueue(knowledgeBaseId, async (repository) => {
-      if (!background) this.setBusy(knowledgeBaseId, 'fetch')
-      const result = await runGit(
-        repository.rootPath,
-        ['fetch', '--prune'],
-        background ? 15_000 : 60_000
-      )
-      if (result.code !== 0) {
-        const message = operationMessage(commandError(result, 'Git fetch 失败'))
-        if (!background) {
-          await this.refreshRepository(repository, message)
-          throw new Error(message)
+  fetch(
+    knowledgeBaseId: string,
+    background = false,
+    extras: GitRunExtras = {}
+  ): Promise<GitOperationResult> {
+    return this.enqueue(
+      knowledgeBaseId,
+      async (repository, runExtras) => {
+        if (!background) this.setBusy(knowledgeBaseId, 'fetch')
+        const result = await runGit(
+          repository.rootPath,
+          ['fetch', '--prune'],
+          background ? 15_000 : 60_000,
+          runExtras
+        )
+        if (result.code !== 0) {
+          const message = operationMessage(commandError(result, 'Git fetch 失败'))
+          if (!background) {
+            await this.refreshRepository(repository, message)
+            throw new Error(message)
+          }
+          deskLog('git:fetch', 'background fetch failed', {
+            knowledgeBaseId,
+            message
+          })
+          const state = await this.refreshRepository(repository)
+          return {
+            state,
+            message,
+            conflict: false
+          }
         }
-        deskLog('git:fetch', 'background fetch failed', {
-          knowledgeBaseId,
-          message
-        })
+        const state = await this.refreshRepository(repository, null, new Date().toISOString())
+        return { state, message: '已获取远端最新状态', conflict: false }
+      },
+      extras
+    )
+  }
+
+  pull(knowledgeBaseId: string, extras: GitRunExtras = {}): Promise<GitOperationResult> {
+    return this.enqueue(
+      knowledgeBaseId,
+      async (repository, runExtras) => {
+        this.setBusy(knowledgeBaseId, 'pull')
+        const fetchResult = await runGit(
+          repository.rootPath,
+          ['fetch', '--prune'],
+          60_000,
+          runExtras
+        )
+        if (fetchResult.code !== 0) throw commandError(fetchResult, '无法获取远端状态')
+        const before = await this.readState(repository, new Date().toISOString())
+        if (before.conflict || (before.behind > 0 && before.changes.length > 0)) {
+          const state = this.storeState({
+            ...before,
+            busy: null,
+            error: '本地存在未提交变更，无法安全快进；请在 IDE 中处理后重试'
+          })
+          return { state, message: state.error!, conflict: true }
+        }
+        const result = await runGit(repository.rootPath, ['pull', '--ff-only'], 90_000, runExtras)
+        if (result.code !== 0) {
+          const message = operationMessage(commandError(result, 'Git pull 失败'))
+          const state = await this.refreshRepository(repository, message)
+          return { state, message, conflict: true }
+        }
         const state = await this.refreshRepository(repository)
-        return {
-          state,
-          message,
-          conflict: false
-        }
-      }
-      const state = await this.refreshRepository(repository, null, new Date().toISOString())
-      return { state, message: '已获取远端最新状态', conflict: false }
-    })
+        return { state, message: '已快进到远端最新版本', conflict: false }
+      },
+      // 工厂：真正开始执行时才读观察者与取消信号
+      () => extras
+    )
   }
 
-  pull(knowledgeBaseId: string): Promise<GitOperationResult> {
-    return this.enqueue(knowledgeBaseId, async (repository) => {
-      this.setBusy(knowledgeBaseId, 'pull')
-      const fetchResult = await runGit(repository.rootPath, ['fetch', '--prune'], 60_000)
-      if (fetchResult.code !== 0) throw commandError(fetchResult, '无法获取远端状态')
-      const before = await this.readState(repository, new Date().toISOString())
-      if (before.conflict || (before.behind > 0 && before.changes.length > 0)) {
-        const state = this.storeState({
-          ...before,
-          busy: null,
-          error: '本地存在未提交变更，无法安全快进；请在 IDE 中处理后重试'
-        })
-        return { state, message: state.error!, conflict: true }
-      }
-      const result = await runGit(repository.rootPath, ['pull', '--ff-only'], 90_000)
-      if (result.code !== 0) {
-        const message = operationMessage(commandError(result, 'Git pull 失败'))
-        const state = await this.refreshRepository(repository, message)
-        return { state, message, conflict: true }
-      }
-      const state = await this.refreshRepository(repository)
-      return { state, message: '已快进到远端最新版本', conflict: false }
-    })
-  }
-
-  publish(knowledgeBaseId: string): Promise<GitOperationResult> {
-    return this.enqueue(knowledgeBaseId, (repository) => this.publishRepository(repository))
+  publish(knowledgeBaseId: string, extras: GitRunExtras = {}): Promise<GitOperationResult> {
+    return this.enqueue(
+      knowledgeBaseId,
+      (repository, runExtras) => this.publishRepository(repository, runExtras),
+      extras
+    )
   }
 
   /**
@@ -388,25 +526,48 @@ export class GitManager {
     if (tail) await tail.catch(() => undefined)
   }
 
+  /**
+   * 终止某个知识库当前正在执行的操作（以及它派生的子进程）。
+   *
+   * 用于「取消排队中的任务」：此时真正占住队列的是前一个操作。
+   * 返回是否确实终止了什么，便于调用方决定是标记取消还是继续等待。
+   */
+  abortActiveOperation(knowledgeBaseId: string): boolean {
+    const kill = this.activeOperationKill.get(knowledgeBaseId)
+    if (!kill) return false
+    this.activeOperationKill.delete(knowledgeBaseId)
+    kill()
+    return true
+  }
+
   async dispose(): Promise<void> {
     if (this.periodicFetchTimer) clearInterval(this.periodicFetchTimer)
     this.periodicFetchTimer = null
     for (const timer of this.autoPushTimers.values()) clearTimeout(timer)
     this.autoPushTimers.clear()
+    // 先终止所有在跑的 git 子进程，再等队列收敛：不这么做，一个挂住的 fetch 会让
+    // dispose 永久等待（也会把退出流程拖死）
+    for (const kill of [...this.activeKills]) kill()
     await Promise.allSettled(this.operationTails.values())
     this.events.removeAllListeners()
   }
 
   private async publishRepository(
-    repository: GitRepositoryDescriptor
+    repository: GitRepositoryDescriptor,
+    extras: GitRunExtras = {}
   ): Promise<GitOperationResult> {
     this.setBusy(repository.knowledgeBaseId, 'publish')
     const current = await this.readState(repository)
     if (current.conflict) throw new Error('仓库存在冲突，请先在 IDE 中处理')
     if (current.behind > 0) throw new Error('本地版本落后于远端，请先拉取最新版本')
-    const add = await runGit(repository.rootPath, ['add', '-A'])
+    const add = await runGit(repository.rootPath, ['add', '-A'], 30_000, extras)
     if (add.code !== 0) throw commandError(add, 'Git 暂存失败')
-    const staged = await runGit(repository.rootPath, ['diff', '--cached', '--quiet'])
+    const staged = await runGit(
+      repository.rootPath,
+      ['diff', '--cached', '--quiet'],
+      30_000,
+      extras
+    )
     let committed = false
     if (staged.code === 1) {
       const timestamp = new Intl.DateTimeFormat('sv-SE', {
@@ -430,7 +591,7 @@ export class GitManager {
       const state = this.storeState({ ...stateBeforePush, busy: null, error: null })
       return { state, message: '没有需要提交或推送的变更', conflict: false }
     }
-    const push = await runGit(repository.rootPath, ['push'], 120_000)
+    const push = await runGit(repository.rootPath, ['push'], 120_000, extras)
     if (push.code !== 0) throw commandError(push, 'Git push 失败')
     const state = await this.refreshRepository(repository)
     return { state, message: '变更已提交并推送到远端', conflict: false }
@@ -538,7 +699,16 @@ export class GitManager {
 
   private enqueue(
     knowledgeBaseId: string,
-    operation: (repository: GitRepositoryDescriptor) => Promise<GitOperationResult>
+    operation: (
+      repository: GitRepositoryDescriptor,
+      extras: GitRunExtras
+    ) => Promise<GitOperationResult>,
+    /**
+     * 运行参数。**允许传工厂函数**：操作可能在队列里等很久，而观察者与取消信号是
+     * 调用方在入队之后才准备好的（命令任务面板就是先认领标签、再开始执行）。
+     * 入队时固化会让整条操作丢失实时输出与取消能力——实测踩过。
+     */
+    extras: GitRunExtras | (() => GitRunExtras) = {}
   ): Promise<GitOperationResult> {
     if (this.assetWritePaused.has(knowledgeBaseId)) {
       throw new Error('资源整理进行中，Git 操作已暂停')
@@ -549,7 +719,36 @@ export class GitManager {
       if (this.assetWritePaused.has(knowledgeBaseId)) {
         throw new Error('资源整理进行中，Git 操作已暂停')
       }
-      return operation(repository)
+      // 本次操作产生的子进程都登记进来，退出时统一终止
+      let currentKill: (() => void) | null = null
+      const registry: GitRunSpawnRegistry = {
+        register: (kill) => {
+          currentKill = kill
+          this.activeKills.add(kill)
+        },
+        unregister: () => {
+          if (currentKill) this.activeKills.delete(currentKill)
+          currentKill = null
+        }
+      }
+      // 执行时再求值：见上面关于工厂函数的说明
+      const resolved = typeof extras === 'function' ? extras() : extras
+      const killThisOperation = (): void => {
+        for (const kill of [...this.activeKills]) kill()
+        resolved.signal?.dispatchEvent?.(new Event('abort'))
+      }
+      this.activeOperationKill.set(knowledgeBaseId, killThisOperation)
+      if (resolved.signal) {
+        if (resolved.signal.aborted) killThisOperation()
+        else resolved.signal.addEventListener('abort', killThisOperation, { once: true })
+      }
+      try {
+        return await operation(repository, { ...resolved, onSpawn: registry })
+      } finally {
+        if (this.activeOperationKill.get(knowledgeBaseId) === killThisOperation) {
+          this.activeOperationKill.delete(knowledgeBaseId)
+        }
+      }
     })
     const tail = result.then(
       () => undefined,

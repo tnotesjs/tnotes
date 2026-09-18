@@ -298,18 +298,25 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     error
   })
 
-  const { refreshGit, fetchGit, pullGit, requestGitPublish, publishGit, openKnowledgeBaseInIde } =
-    createGit({
-      gitStates,
-      gitAttention,
-      pendingGitPublishId,
-      overview,
-      settings,
-      error,
-      status,
-      saveAllDocuments,
-      refreshWorkspace
-    })
+  const {
+    refreshGit,
+    fetchGit,
+    pullGit,
+    confirmPull,
+    requestGitPublish,
+    publishGit,
+    openKnowledgeBaseInIde
+  } = createGit({
+    gitStates,
+    gitAttention,
+    pendingGitPublishId,
+    overview,
+    settings,
+    error,
+    status,
+    saveAllDocuments,
+    refreshWorkspace
+  })
 
   const {
     createNote,
@@ -668,6 +675,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     refreshGit,
     fetchGit,
     pullGit,
+    confirmPull,
     requestGitPublish,
     publishGit,
     openKnowledgeBaseInIde,

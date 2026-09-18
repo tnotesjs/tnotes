@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import ImagePreview from '@tnotesjs/ui/image-preview'
 
 import EditorPane from './components/EditorPane.vue'
@@ -19,13 +19,14 @@ import {
   NAVIGATOR_SIDEBAR_MAX,
   NAVIGATOR_SIDEBAR_MIN
 } from './stores/editor'
-import { pushToast } from './stores/toast'
+import { pushActionToast, pushToast } from './stores/toast'
 import {
   dismissUpdateBanner,
   initUpdateWatcher,
   openReleasePage,
   updateBanner
 } from './stores/update'
+import { useCommandTaskStore } from './stores/commandTask'
 import { useTerminalStore } from './stores/terminal'
 import { useWorkspaceStore } from './stores/workspace'
 import { selectAllInRenderer } from './selectAll'
@@ -43,6 +44,7 @@ import { focusDialogInput } from './dialogInputFocus'
 const store = useWorkspaceStore()
 const editor = useEditorStore()
 const terminalStore = useTerminalStore()
+const commandTaskStore = useCommandTaskStore()
 const createDialogOpen = ref(false)
 const createKbDialogOpen = ref(false)
 const createKbFolderName = ref('')
@@ -61,6 +63,7 @@ const terminalPanel = ref<{
   createOrFocus: () => Promise<void>
   openForKnowledgeBase: (knowledgeBaseId: string, cwd?: string) => Promise<void>
   focusActive: () => void
+  showTask: (taskId: string) => void
 } | null>(null)
 const createTitle = ref('')
 const createPlacement = ref<NoteCreateRequest['placement']>({ type: 'root', placement: 'end' })
@@ -81,6 +84,10 @@ let statusTimer: ReturnType<typeof setTimeout> | null = null
 let systemTheme: MediaQueryList | null = null
 let unsubscribeTerminal: (() => void) | null = null
 let unsubscribeTerminalOpen: (() => void) | null = null
+let unsubscribeCommandTask: (() => void) | null = null
+/** 已经通知过的运行，避免同类失败反复弹通知 */
+const notifiedTaskRuns = new Set<string>()
+let unsubscribeCommandTaskReveal: (() => void) | null = null
 let unsubscribeTabShortcut: (() => void) | null = null
 let unsubscribeBeforeClose: (() => void) | null = null
 let unsubscribeUpdates: (() => void) | null = null
@@ -518,6 +525,35 @@ watch(
   }
 )
 
+/**
+ * 命令任务收尾时的反馈。
+ *
+ * - **手动**操作已经在开始时展开面板，这里不再打扰；
+ * - **后台**操作（定时 fetch、自动推送）失败才通知，并给「查看输出」入口，
+ *   避免同类重复失败不停新增标签（同一 (库, 种类) 只有一个标签）。
+ */
+watch(
+  () => commandTaskStore.tasks.map((task) => `${task.id}:${task.run}:${task.status}`).join('|'),
+  () => {
+    for (const task of commandTaskStore.tasks) {
+      if (task.status === 'failed' || task.status === 'timeout') {
+        const key = `${task.id}:${task.run}`
+        if (notifiedTaskRuns.has(key)) continue
+        notifiedTaskRuns.add(key)
+        pushActionToast(
+          `${task.title}失败：${task.knowledgeBaseName}`,
+          '查看输出',
+          () => {
+            terminalStore.toggle(true)
+            void nextTick(() => terminalPanel.value?.showTask(task.id))
+          },
+          'error'
+        )
+      }
+    }
+  }
+)
+
 watch(
   () => store.error,
   (error) => {
@@ -541,6 +577,12 @@ onMounted(async () => {
     })()
   })
   unsubscribeTerminal = terminalStore.subscribe()
+  unsubscribeCommandTask = commandTaskStore.subscribe()
+  unsubscribeCommandTaskReveal = window.desk.commandTask.onReveal((taskId) => {
+    // 手动 Git 操作：立即展开面板并定位到该任务
+    terminalStore.toggle(true)
+    void nextTick(() => terminalPanel.value?.showTask(taskId))
+  })
   unsubscribeTerminalOpen = window.desk.terminal.onOpenAt((event) => {
     // 目录右键「在终端中打开」：路径已在主进程校验在库内，这里只负责建会话
     void terminalPanel.value?.openForKnowledgeBase(event.knowledgeBaseId, event.cwd)
@@ -551,6 +593,7 @@ onMounted(async () => {
   await store.initialize()
   // 已有会话由主进程持有：收起面板/刷新渲染端之后仍然在跑，这里恢复列表
   await terminalStore.load()
+  await commandTaskStore.load()
   applyAppearance()
   await persistSession()
 })
@@ -561,6 +604,10 @@ onUnmounted(() => {
   unsubscribeTerminal = null
   unsubscribeTerminalOpen?.()
   unsubscribeTerminalOpen = null
+  unsubscribeCommandTask?.()
+  unsubscribeCommandTask = null
+  unsubscribeCommandTaskReveal?.()
+  unsubscribeCommandTaskReveal = null
   unsubscribeTabShortcut?.()
   unsubscribeTabShortcut = null
   unsubscribeBeforeClose?.()
@@ -963,7 +1010,7 @@ onUnmounted(() => {
             v-else
             type="button"
             class="primary"
-            @click="store.pullGit(store.gitAttention!.knowledgeBaseId)"
+            @click="store.confirmPull(store.gitAttention!.knowledgeBaseId)"
           >
             拉取最新版本
           </button>

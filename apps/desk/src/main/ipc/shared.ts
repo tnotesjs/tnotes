@@ -20,11 +20,21 @@ export function assertSender(
 export function toDeskError(error: unknown): DeskError {
   const diagnosticId = randomUUID()
   if (error instanceof z.ZodError) {
+    // zod 的 issue 里带着 schema 实例（`ZodString` 内含 `RegExp`），
+    // **structured clone 克隆不了**：IPC 会以
+    // 「An object could not be cloned.」失败，连"请求参数无效"都传不回渲染端，
+    // 调用方只会看到一个看不懂的克隆错误。只回传纯数据。
     return {
       code: 'INVALID_REQUEST',
       message: '请求参数无效',
       diagnosticId,
-      details: { issues: error.issues }
+      details: {
+        issues: error.issues.map((issue) => ({
+          code: issue.code,
+          path: issue.path.map((segment) => String(segment)),
+          message: issue.message
+        }))
+      }
     }
   }
 
