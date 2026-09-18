@@ -34,7 +34,14 @@ let disposed = false
  * 攒到 ~50ms 或 256KB 再报一次，主进程据此在高低水位之间 pause/resume PTY。
  */
 const ACK_INTERVAL_MS = 50
-let pendingAckBytes = 0
+/**
+ * 待回执字节，**按代次分组**。
+ *
+ * 不能只攒一个总数、到点再用"当前代次"发出去：xterm 的 write 回调是异步的，
+ * 重启之后旧代次的回调仍会触发，那时按当前代次回执就会把旧账记到新进程头上
+ * （主进程按代次过滤会忽略，等于这笔账没结算）。每笔回执必须带着**产出时的代次**。
+ */
+let pendingAckByGeneration = new Map<number, number>()
 
 /**
  * 单次 IPC 写入的字符上限（与主进程 `WRITE_CHUNK_LIMIT` 对应，留一半余量）。
@@ -78,18 +85,24 @@ function createWriteQueue(sessionId: string, generation: number) {
 let writeQueue: (data: string) => void = () => {}
 let currentGeneration = 0
 
-function scheduleAck(bytes: number): void {
-  pendingAckBytes += bytes
+function scheduleAck(bytes: number, generation: number): void {
+  pendingAckByGeneration.set(generation, (pendingAckByGeneration.get(generation) ?? 0) + bytes)
   if (flushTimer !== null) return
   flushTimer = window.setTimeout(() => {
     flushTimer = null
-    const bytes = pendingAckBytes
-    pendingAckBytes = 0
-    if (bytes > 0 && !disposed) {
-      // 回执必须带代次：旧运行的延迟回执不能被算到新进程头上
-      void window.desk.terminal.ack(props.session.id, bytes, currentGeneration)
-    }
+    flushPendingAcks()
   }, ACK_INTERVAL_MS)
+}
+
+/** 把按代次攒下的回执逐笔发出去，每笔用各自的代次。 */
+function flushPendingAcks(): void {
+  if (disposed) return
+  const pending = pendingAckByGeneration
+  pendingAckByGeneration = new Map()
+  for (const [generation, bytes] of pending) {
+    // 走 store 的显式入口：每笔回执携带**产出时的**代次，不查当前代次
+    store.ackWithGeneration(props.session.id, bytes, generation)
+  }
 }
 
 /** 主题跟随应用：颜色都取应用已有的 CSS 变量，避免终端里出现第二套配色。 */
@@ -170,9 +183,10 @@ function mount(): void {
   // 收到过输出就把提示符位置当作"已就绪"，焦点交给终端
   terminal.onResize(() => scheduleFit())
 
-  unregister = store.registerHandler(props.session.id, (data, bytes) => {
+  unregister = store.registerHandler(props.session.id, (data, bytes, generation) => {
     if (!terminal) return
-    terminal.write(data, () => scheduleAck(bytes))
+    // 回执闭包里捕获**这一块**的代次：回调可能在重启之后才触发
+    terminal.write(data, () => scheduleAck(bytes, generation))
   })
 
   scheduleFit()
@@ -238,11 +252,16 @@ watch(
   () => props.session.generation,
   (generation, previous) => {
     if (previous === undefined || generation === previous) return
-    pendingAckBytes = 0
+    // 先把旧代次攒下的回执按**旧代次**发掉（主进程会按代次忽略，
+    // 但账目不能挂在待发状态里永远留着）
+    flushPendingAcks()
     if (flushTimer !== null) {
       window.clearTimeout(flushTimer)
       flushTimer = null
     }
+    pendingAckByGeneration = new Map()
+    // 隔离旧代次缓冲：重启后不得把上一个进程的输出回放进新终端
+    store.dropBufferedBefore(props.session.id, generation)
     currentGeneration = generation
     writeQueue = createWriteQueue(props.session.id, generation)
     writeErrorShown = false

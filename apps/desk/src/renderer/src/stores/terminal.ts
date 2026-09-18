@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import type { TerminalSessionDto } from '../../../shared/contracts'
+import type { TerminalDataEvent, TerminalSessionDto } from '../../../shared/contracts'
 
 /**
  * 底部终端面板的状态。视图相关的量（是否展开、面板高度、最大化、当前标签）都在
@@ -15,8 +15,15 @@ const MAX_FONT_SIZE = 24
 const FONT_SIZE_KEY = 'desk.terminal.fontSize'
 
 /** 消费者就绪前暂存的输出分片。 */
+interface BufferedChunk {
+  data: string
+  bytes: number
+  /** 这段输出**产生时**的代次：回执必须原样带回，不能查"当前代次"顶替 */
+  generation: number
+}
+
 interface BufferedOutput {
-  chunks: Array<{ data: string; bytes: number }>
+  chunks: BufferedChunk[]
   bytes: number
 }
 
@@ -87,7 +94,8 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 数据不放进 pinia 状态——高速输出每秒几十 MB，进响应式系统会把 UI 拖死；
    * 这里只做「按会话转发」。
    */
-  const terminalHandlers = new Map<string, (data: string, bytes: number) => void>()
+  type TerminalConsumer = (data: string, bytes: number, generation: number) => void
+  const terminalHandlers = new Map<string, TerminalConsumer>()
 
   /**
    * 消费者就绪前（或卸载后短暂窗口内）到达的数据。
@@ -106,41 +114,42 @@ export const useTerminalStore = defineStore('terminal', () => {
   /** 因缓冲溢出被丢弃的字节数（观测用；溢出意味着渲染端跟不上） */
   const droppedBytes = ref(0)
 
-  function enqueue(event: { sessionId: string; data: string; bytes: number }): void {
+  function enqueue(event: TerminalDataEvent): void {
     const handler = terminalHandlers.get(event.sessionId)
     if (!handler) {
-      bufferFor(event.sessionId, event.data, event.bytes)
+      bufferFor(event)
       return
     }
-    // 顺序与回执都由 handler（xterm 写队列）自己保证
-    handler(event.data, event.bytes)
+    // 顺序与回执都由 handler（xterm 写队列）自己保证；代次随数据一起交给它
+    handler(event.data, event.bytes, event.generation)
   }
 
-  function bufferFor(sessionId: string, data: string, bytes: number): void {
-    const entry: BufferedOutput = buffered.get(sessionId) ?? { chunks: [], bytes: 0 }
-    entry.chunks.push({ data, bytes })
-    entry.bytes += bytes
+  function bufferFor(event: TerminalDataEvent): void {
+    const entry: BufferedOutput = buffered.get(event.sessionId) ?? { chunks: [], bytes: 0 }
+    entry.chunks.push({ data: event.data, bytes: event.bytes, generation: event.generation })
+    entry.bytes += event.bytes
     // 上限对**总字节数**有效：单块自己就超过上限时也要丢掉，否则上限形同虚设
-    let droppedNow = 0
+    // 被丢掉的块可能来自不同代次：按 (代次 → 字节) 分别记账，回执时不丢代次
+    const droppedByGeneration = new Map<number, number>()
     while (entry.bytes > MAX_BUFFERED_BYTES && entry.chunks.length > 0) {
       const dropped = entry.chunks.shift()
       if (dropped) {
         entry.bytes -= dropped.bytes
         droppedBytes.value += dropped.bytes
-        droppedNow += dropped.bytes
+        droppedByGeneration.set(
+          dropped.generation,
+          (droppedByGeneration.get(dropped.generation) ?? 0) + dropped.bytes
+        )
       }
     }
-    buffered.set(sessionId, entry)
-    // 这一瞬间还没有消费者，被丢弃的字节不会有回执——当场补上，账立刻平掉。
-    // （不做这一步，未确认量会永远多出这些字节，最终把会话压死在暂停状态。）
-    ackWithoutConsumer(sessionId, droppedNow)
+    buffered.set(event.sessionId, entry)
+    // 这一瞬间还没有消费者，被丢弃的字节不会有回执——当场按**它们自己的代次**补上。
+    // 不能用"当前代次"：跨代次时会变成给新进程发旧账（主进程会忽略，等于没结算）。
+    for (const [generation, bytes] of droppedByGeneration) {
+      ackWithoutConsumer(event.sessionId, bytes, generation)
+    }
   }
 
-  /**
-   * 结算被丢弃的字节：它们**到不了 xterm，也就不会有 write 回调**，如果不回执，
-   * 主进程那边的未确认量永远扣不掉，会话会被背压永久暂停。丢弃是有界缓冲的
-   * 代价，但账必须平。
-   */
   /**
    * 回执「到不了 xterm 的字节」。
    *
@@ -153,21 +162,39 @@ export const useTerminalStore = defineStore('terminal', () => {
     if (bytes <= 0) return
     const target = generation ?? generationById.get(sessionId)
     if (target === undefined) return
-    void window.desk.terminal.ack(sessionId, bytes, target)
+    ackWithGeneration(sessionId, bytes, target)
   }
 
-  function registerHandler(
-    sessionId: string,
-    handler: (data: string, bytes: number) => void
-  ): () => void {
+  /**
+   * 回执的唯一出口：**必须显式给出字节产出时的代次**。
+   *
+   * 单独抽出来是为了让"延迟回执仍带旧代次"可以被确定性测试 —— 回执路径上不允许
+   * 再去查"当前代次"。
+   */
+  function ackWithGeneration(sessionId: string, bytes: number, generation: number): void {
+    if (bytes <= 0) return
+    void window.desk.terminal.ack(sessionId, bytes, generation)
+  }
+
+  function registerHandler(sessionId: string, handler: TerminalConsumer): () => void {
     terminalHandlers.set(sessionId, handler)
     // 先把缓冲取出来（并从表里移除，避免回放期间又被写回），再按序回放。
-    // 回放的字节由消费端（xterm 的 write 回调）回执；被丢弃的字节在丢弃那一刻
-    // 就已经结算过了，这里不重复回执。
+    // 回放的字节由消费端（xterm 的 write 回调）回执，且必须带上**各自的**代次；
+    // 被丢弃的字节在丢弃那一刻就已经结算过了，这里不重复回执。
     const entry = buffered.get(sessionId)
     if (entry) {
       buffered.delete(sessionId)
-      for (const chunk of entry.chunks) handler(chunk.data, chunk.bytes)
+      const current = generationById.get(sessionId)
+      for (const chunk of entry.chunks) {
+        // 换代后旧代次的缓冲不回放：那些输出属于已经结束的进程，
+        // 打进新终端只会让人误读。同时把它们的字节按旧代次结算掉（主进程忽略，
+        // 但账目自洽；新代次的未确认量也不会被误扣）。
+        if (current !== undefined && chunk.generation !== current) {
+          ackWithoutConsumer(sessionId, chunk.bytes, chunk.generation)
+          continue
+        }
+        handler(chunk.data, chunk.bytes, chunk.generation)
+      }
     }
     return () => {
       if (terminalHandlers.get(sessionId) === handler) terminalHandlers.delete(sessionId)
@@ -177,6 +204,38 @@ export const useTerminalStore = defineStore('terminal', () => {
   function clearBuffered(sessionId: string): void {
     buffered.delete(sessionId)
     generationById.delete(sessionId)
+  }
+
+  /**
+   * 运行代次变化：丢掉**旧代次**还留在缓冲里的输出，并按旧代次结算它们的字节。
+   *
+   * 不能留在缓冲里等消费者注册——那时回放会把上一个进程的输出打进新终端。
+   */
+  function dropBufferedBefore(sessionId: string, currentGeneration: number): void {
+    const entry = buffered.get(sessionId)
+    if (!entry) return
+    const keep: BufferedChunk[] = []
+    let keptBytes = 0
+    // 按**被丢弃块自己的**代次分组结算，不能用当前代次顶替：
+    // 否则等于给新进程发旧账（主进程会按代次忽略，实际就没结算）。
+    const droppedByGeneration = new Map<number, number>()
+    for (const chunk of entry.chunks) {
+      if (chunk.generation === currentGeneration) {
+        keep.push(chunk)
+        keptBytes += chunk.bytes
+      } else {
+        droppedByGeneration.set(
+          chunk.generation,
+          (droppedByGeneration.get(chunk.generation) ?? 0) + chunk.bytes
+        )
+      }
+    }
+    if (droppedByGeneration.size === 0) return
+    if (keep.length === 0) buffered.delete(sessionId)
+    else buffered.set(sessionId, { chunks: keep, bytes: keptBytes })
+    for (const [generation, bytes] of droppedByGeneration) {
+      ackWithoutConsumer(sessionId, bytes, generation)
+    }
   }
 
   async function createSession(knowledgeBaseId: string, cwd?: string): Promise<void> {
@@ -267,7 +326,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     subscribe,
     droppedBytes,
     registerHandler,
+    ackWithGeneration,
     clearBuffered,
+    dropBufferedBefore,
     load,
     createSession,
     restart,
