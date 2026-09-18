@@ -9,6 +9,10 @@ import type { TerminalSessionDto } from '../../../shared/contracts'
  */
 const DEFAULT_PANEL_HEIGHT = 280
 const MIN_PANEL_HEIGHT = 120
+const DEFAULT_FONT_SIZE = 12
+const MIN_FONT_SIZE = 8
+const MAX_FONT_SIZE = 24
+const FONT_SIZE_KEY = 'desk.terminal.fontSize'
 
 export const useTerminalStore = defineStore('terminal', () => {
   const sessions = ref<TerminalSessionDto[]>([])
@@ -19,6 +23,8 @@ export const useTerminalStore = defineStore('terminal', () => {
   const height = ref(DEFAULT_PANEL_HEIGHT)
   const heightBeforeMaximize = ref(DEFAULT_PANEL_HEIGHT)
   const creating = ref(false)
+  /** 终端字号：视图偏好，存 localStorage（不进 WorkspaceSession，与面板高度同层） */
+  const fontSize = ref(Number(localStorage.getItem(FONT_SIZE_KEY)) || DEFAULT_FONT_SIZE)
   const lastError = ref<string | null>(null)
 
   const activeSession = computed(
@@ -139,6 +145,19 @@ export const useTerminalStore = defineStore('terminal', () => {
     maximized.value = true
   }
 
+  function setFontSize(next: number): void {
+    fontSize.value = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, Math.round(next)))
+    localStorage.setItem(FONT_SIZE_KEY, String(fontSize.value))
+  }
+
+  function adjustFontSize(delta: number): void {
+    setFontSize(fontSize.value + delta)
+  }
+
+  function resetFontSize(): void {
+    setFontSize(DEFAULT_FONT_SIZE)
+  }
+
   function setHeight(next: number): void {
     height.value = Math.max(MIN_PANEL_HEIGHT, Math.round(next))
     maximized.value = false
@@ -162,9 +181,13 @@ export const useTerminalStore = defineStore('terminal', () => {
     renameSession,
     closeSession,
     closeAll,
+    fontSize,
     toggle,
     toggleMaximize,
-    setHeight
+    setHeight,
+    setFontSize,
+    adjustFontSize,
+    resetFontSize
   }
 })
 

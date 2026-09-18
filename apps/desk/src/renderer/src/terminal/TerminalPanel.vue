@@ -13,6 +13,7 @@ interface TerminalPaneHandle {
   selectAll: () => void
   paste: (text: string) => void
   getSelection: () => string
+  search: (term: string, direction: 'next' | 'prev') => boolean
 }
 
 const store = useTerminalStore()
@@ -20,7 +21,9 @@ const workspace = useWorkspaceStore()
 const panes = ref<Record<string, TerminalPaneHandle | null>>({})
 const renamingId = ref<string | null>(null)
 const renameDraft = ref('')
-const menuOpenId = ref<string | null>(null)
+const searchOpen = ref(false)
+const searchTerm = ref('')
+const searchInput = ref<HTMLInputElement | null>(null)
 const root = ref<HTMLElement | null>(null)
 
 const heightStyle = computed(() =>
@@ -83,9 +86,32 @@ function cancelRename(): void {
   focusActive()
 }
 
+function activePane(): TerminalPaneHandle | null {
+  const id = store.activeSessionId
+  return id ? (panes.value[id] ?? null) : null
+}
+
+function openSearch(): void {
+  searchOpen.value = true
+  void nextTick(() => {
+    searchInput.value?.focus()
+    searchInput.value?.select()
+  })
+}
+
+function closeSearch(): void {
+  searchOpen.value = false
+  searchTerm.value = ''
+  focusActive()
+}
+
+function runSearch(direction: 'next' | 'prev'): void {
+  const term = searchTerm.value
+  if (term) activePane()?.search(term, direction)
+}
+
 function selectSession(sessionId: string): void {
   store.activeSessionId = sessionId
-  menuOpenId.value = null
   focusActive()
 }
 
@@ -132,6 +158,31 @@ function onKeydownCapture(event: KeyboardEvent): void {
     event.stopPropagation()
     store.toggle()
     if (store.open) void nextTick().then(createOrFocus)
+    return
+  }
+  if (key === 'f') {
+    // 终端里的查找：只在面板聚焦时接管，避免抢走编辑器/网页的 Cmd+F
+    event.preventDefault()
+    event.stopPropagation()
+    openSearch()
+    return
+  }
+  if (key === '=' || key === '+') {
+    event.preventDefault()
+    event.stopPropagation()
+    store.adjustFontSize(1)
+    return
+  }
+  if (key === '-') {
+    event.preventDefault()
+    event.stopPropagation()
+    store.adjustFontSize(-1)
+    return
+  }
+  if (key === '0') {
+    event.preventDefault()
+    event.stopPropagation()
+    store.resetFontSize()
     return
   }
   if (key === 'w' && store.sessions.length > 1 && store.activeSessionId) {
@@ -235,6 +286,21 @@ defineExpose({ createSession, createOrFocus, openForKnowledgeBase, focusActive }
         </button>
       </div>
 
+      <div v-if="searchOpen" class="terminal-search">
+        <input
+          ref="searchInput"
+          v-model="searchTerm"
+          placeholder="在输出中查找"
+          @input="runSearch('next')"
+          @keydown.enter.exact.prevent="runSearch('next')"
+          @keydown.shift.enter.prevent="runSearch('prev')"
+          @keydown.esc.prevent="closeSearch"
+        />
+        <button type="button" data-tooltip="上一个" @click="runSearch('prev')">↑</button>
+        <button type="button" data-tooltip="下一个" @click="runSearch('next')">↓</button>
+        <button type="button" aria-label="关闭查找" @click="closeSearch">×</button>
+      </div>
+
       <div class="terminal-actions">
         <span v-if="store.activeSession?.status === 'exited'" class="terminal-exited-hint">
           进程已退出（{{ store.activeSession.exitCode ?? '—' }}）
@@ -247,13 +313,20 @@ defineExpose({ createSession, createOrFocus, openForKnowledgeBase, focusActive }
         >
           重启
         </button>
+        <button type="button" data-tooltip="在输出中查找（⌘F）" @click="openSearch">查找</button>
         <button
           type="button"
           data-tooltip="清屏"
           :disabled="!store.activeSession"
-          @click="store.activeSessionId && panes[store.activeSessionId]?.clear()"
+          @click="activePane()?.clear()"
         >
           清屏
+        </button>
+        <button type="button" data-tooltip="缩小字号（⌘-）" @click="store.adjustFontSize(-1)">
+          A−
+        </button>
+        <button type="button" data-tooltip="放大字号（⌘+）" @click="store.adjustFontSize(1)">
+          A+
         </button>
         <button
           type="button"
@@ -430,6 +503,33 @@ body.is-resizing .terminal-resize-handle::before {
 .terminal-tab-new:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.terminal-search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.terminal-search input {
+  width: 150px;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.terminal-search button {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.terminal-search button:hover {
+  color: var(--text);
+  background: var(--tn-c-bg-soft);
 }
 
 .terminal-actions {

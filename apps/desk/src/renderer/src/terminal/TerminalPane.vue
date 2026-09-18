@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 
 import { useTerminalStore } from '../stores/terminal'
@@ -15,6 +16,7 @@ const host = ref<HTMLDivElement | null>(null)
 
 let terminal: Terminal | null = null
 let fit: FitAddon | null = null
+let search: SearchAddon | null = null
 let resizeObserver: ResizeObserver | null = null
 let themeObserver: MutationObserver | null = null
 /** 窗口尺寸变化也要重新 fit：面板高度不变时 ResizeObserver 不触发，但终端宽度会变。 */
@@ -106,8 +108,11 @@ function mount(): void {
     theme: readTheme()
   })
   fit = new FitAddon()
+  search = new SearchAddon()
   terminal.loadAddon(fit)
+  terminal.loadAddon(search)
   terminal.open(el)
+  terminal.options.fontSize = store.fontSize
 
   terminal.onData((data) => {
     void window.desk.terminal.write(props.session.id, data)
@@ -152,6 +157,7 @@ function unmount(): void {
   terminal?.dispose()
   terminal = null
   fit = null
+  search = null
 }
 
 onMounted(() => {
@@ -172,8 +178,21 @@ watch(
 
 onBeforeUnmount(unmount)
 
+watch(
+  () => store.fontSize,
+  (size) => {
+    if (!terminal) return
+    terminal.options.fontSize = size
+    scheduleFit()
+  }
+)
+
 defineExpose({
   focus: () => terminal?.focus(),
+  search: (term: string, direction: 'next' | 'prev') =>
+    direction === 'next'
+      ? (search?.findNext(term) ?? false)
+      : (search?.findPrevious(term) ?? false),
   clear: () => terminal?.clear(),
   selectAll: () => terminal?.selectAll(),
   paste: (text: string) => terminal?.paste(text),
