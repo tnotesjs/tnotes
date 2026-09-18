@@ -58,6 +58,9 @@ async function closeSession(session: TerminalSessionDto): Promise<void> {
 }
 
 async function restartSession(sessionId: string): Promise<void> {
+  // 先清掉旧输出再重启：否则新 shell 的提示符会接在旧内容同一行上。
+  // 清屏是用户可预期的（旧输出在退出时已经看过），比混在一起更不易误读。
+  panes.value[sessionId]?.clear()
   await store.restart(sessionId)
   focusActive()
 }
@@ -354,18 +357,25 @@ defineExpose({ createSession, createOrFocus, openForKnowledgeBase, focusActive }
         :key="session.id"
         class="terminal-body"
       >
-        <div v-if="session.status === 'exited'" class="terminal-exited">
-          <p>进程已退出（退出码 {{ session.exitCode ?? '未知' }}）。会话输出已保留。</p>
-          <button type="button" class="primary" @click="restartSession(session.id)">
-            重新启动
-          </button>
-        </div>
+        <!--
+          退出后**不卸载** TerminalPane：卸载会销毁 xterm 与它的回滚缓冲，
+          「输出已保留」就成了假话。改为在上面叠一条退出提示，终端内容照旧可见。
+        -->
         <TerminalPane
-          v-else
           :ref="(instance) => setPaneRef(session.id, instance)"
           :session="session"
           :active="session.id === store.activeSessionId"
         />
+        <div v-if="session.status === 'exited'" class="terminal-exited-bar">
+          <span>
+            进程已退出（退出码 {{ session.exitCode ?? '未知'
+            }}<template v-if="session.exitSignal">，信号 {{ session.exitSignal }}</template
+            >）。上方保留了退出前的输出。
+          </span>
+          <button type="button" class="primary" @click="restartSession(session.id)">
+            重新启动
+          </button>
+        </div>
       </div>
       <p v-if="store.sessions.length === 0" class="terminal-empty">
         还没有终端会话。点「+」在当前知识库根目录新建一个。
@@ -570,15 +580,20 @@ body.is-resizing .terminal-resize-handle::before {
   inset: 0;
 }
 
-.terminal-exited {
+.terminal-exited-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 10px;
-  height: 100%;
+  padding: 4px 10px;
+  font-size: 11px;
   color: var(--muted);
-  font-size: 12px;
+  background: color-mix(in srgb, var(--tn-c-bg) 88%, transparent);
+  border-top: 1px solid var(--border);
 }
 
 .terminal-empty {

@@ -63,9 +63,7 @@ export const useTerminalStore = defineStore('terminal', () => {
 
   function subscribe(): () => void {
     const offChanged = window.desk.terminal.onChanged((state) => applyState(state))
-    const offData = window.desk.terminal.onData((event) => {
-      terminalHandlers.get(event.sessionId)?.(event.data, event.bytes)
-    })
+    const offData = window.desk.terminal.onData((event) => enqueue(event))
     return () => {
       offChanged()
       offData()
@@ -76,18 +74,67 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 输出分片的消费者登记表：xterm 实例挂载/卸载时登记。
    *
    * 数据不放进 pinia 状态——高速输出每秒几十 MB，进响应式系统会把 UI 拖死；
-   * 这里只做「按会话转发」，缓冲与流控都在各自 xterm 实例上。
+   * 这里只做「按会话转发」。
    */
   const terminalHandlers = new Map<string, (data: string, bytes: number) => void>()
+
+  /**
+   * 消费者就绪前（或卸载后短暂窗口内）到达的数据。
+   *
+   * 不能丢：这些字节主进程已经算进「已发送未回执」，直接忽略会让未确认量只增不减，
+   * 会话最终被背压永久暂停。所以按会话缓冲，等 xterm 挂上来再按序回放。
+   * 缓冲有界——渲染端如果真的卡死，宁可丢最旧的并计数，也不能无限吃内存。
+   */
+  const MAX_BUFFERED_BYTES = 4 * 1024 * 1024
+  const buffered = new Map<
+    string,
+    { chunks: Array<{ data: string; bytes: number }>; bytes: number }
+  >()
+  /** 因缓冲溢出被丢弃的字节数（观测用；溢出意味着渲染端跟不上） */
+  const droppedBytes = ref(0)
+
+  function enqueue(event: { sessionId: string; data: string; bytes: number }): void {
+    const handler = terminalHandlers.get(event.sessionId)
+    if (!handler) {
+      bufferFor(event.sessionId, event.data, event.bytes)
+      return
+    }
+    // 顺序与回执都由 handler（xterm 写队列）自己保证
+    handler(event.data, event.bytes)
+  }
+
+  function bufferFor(sessionId: string, data: string, bytes: number): void {
+    const entry = buffered.get(sessionId) ?? { chunks: [], bytes: 0 }
+    entry.chunks.push({ data, bytes })
+    entry.bytes += bytes
+    while (entry.bytes > MAX_BUFFERED_BYTES && entry.chunks.length > 1) {
+      const dropped = entry.chunks.shift()
+      if (dropped) {
+        entry.bytes -= dropped.bytes
+        droppedBytes.value += dropped.bytes
+      }
+    }
+    buffered.set(sessionId, entry)
+  }
 
   function registerHandler(
     sessionId: string,
     handler: (data: string, bytes: number) => void
   ): () => void {
     terminalHandlers.set(sessionId, handler)
+    // 回放缓冲：按到达顺序补齐，字节数照常回执
+    const entry = buffered.get(sessionId)
+    if (entry) {
+      buffered.delete(sessionId)
+      for (const chunk of entry.chunks) handler(chunk.data, chunk.bytes)
+    }
     return () => {
       if (terminalHandlers.get(sessionId) === handler) terminalHandlers.delete(sessionId)
     }
+  }
+
+  function clearBuffered(sessionId: string): void {
+    buffered.delete(sessionId)
   }
 
   async function createSession(knowledgeBaseId: string, cwd?: string): Promise<void> {
@@ -120,6 +167,7 @@ export const useTerminalStore = defineStore('terminal', () => {
 
   async function closeSession(sessionId: string): Promise<void> {
     await window.desk.terminal.close(sessionId)
+    clearBuffered(sessionId)
     removeState(sessionId)
   }
 
@@ -127,6 +175,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     const ids = sessions.value.map((session) => session.id)
     for (const id of ids) {
       await window.desk.terminal.close(id)
+      clearBuffered(id)
       removeState(id)
     }
   }
@@ -174,7 +223,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     creating,
     lastError,
     subscribe,
+    droppedBytes,
     registerHandler,
+    clearBuffered,
     load,
     createSession,
     restart,

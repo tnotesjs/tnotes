@@ -5,6 +5,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 
+import { pushToast } from '../stores/toast'
 import { useTerminalStore } from '../stores/terminal'
 
 import type { TerminalSessionDto } from '../../../shared/contracts'
@@ -34,6 +35,41 @@ let disposed = false
  */
 const ACK_INTERVAL_MS = 50
 let pendingAckBytes = 0
+
+/**
+ * 单次 IPC 写入的字符上限（与主进程 `WRITE_CHUNK_LIMIT` 对应，留一半余量）。
+ * 大段粘贴必须分片，否则超过上限的整段输入会被主进程的 zod 直接拒掉。
+ *
+ * 分片按**码点**切，不能按 UTF-16 下标切：否则会在代理对（emoji）或组合字符
+ * 中间断开。括号粘贴模式（`\x1b[200~…\x1b[201~`）的定界符与内容同属一次
+ * onData，按序分片后依然保持顺序，shell 侧仍是一个完整的粘贴。
+ */
+const WRITE_CHUNK_CHARS = 32 * 1024
+/** 写入失败时只提示一次，避免粘贴期间刷屏 */
+let writeErrorShown = false
+
+/**
+ * 串行写队列：分片必须**按序**到达 PTY，且要等前一片的 IPC 回来再发下一片，
+ * 否则大量并发 invoke 会打乱顺序。失败明确提示，不再静默丢弃。
+ */
+function createWriteQueue(sessionId: string) {
+  let tail: Promise<void> = Promise.resolve()
+  return (data: string): void => {
+    const points = Array.from(data)
+    for (let index = 0; index < points.length; index += WRITE_CHUNK_CHARS) {
+      const chunk = points.slice(index, index + WRITE_CHUNK_CHARS).join('')
+      tail = tail.then(async () => {
+        const result = await window.desk.terminal.write(sessionId, chunk)
+        if (!result.ok) {
+          if (!writeErrorShown) {
+            writeErrorShown = true
+            pushToast(`终端输入未能送达：${result.error.message}`, 'error')
+          }
+        }
+      })
+    }
+  }
+}
 
 function scheduleAck(bytes: number): void {
   pendingAckBytes += bytes
@@ -83,6 +119,10 @@ function scheduleFit(): void {
   fitTimer = window.setTimeout(() => {
     fitTimer = null
     if (disposed || !fit || !terminal) return
+    // 会话被 v-show 隐藏时容器是 0 尺寸：此时 fit 会算出一个无效列数并推给主进程，
+    // 等它重新可见时再 fit（ResizeObserver 会再触发一次）。
+    const box = host.value?.getBoundingClientRect()
+    if (!box || box.width < 40 || box.height < 20) return
     try {
       fit.fit()
     } catch {
@@ -114,9 +154,8 @@ function mount(): void {
   terminal.open(el)
   terminal.options.fontSize = store.fontSize
 
-  terminal.onData((data) => {
-    void window.desk.terminal.write(props.session.id, data)
-  })
+  const writeQueue = createWriteQueue(props.session.id)
+  terminal.onData((data) => writeQueue(data))
   // 收到过输出就把提示符位置当作"已就绪"，焦点交给终端
   terminal.onResize(() => scheduleFit())
 
@@ -161,15 +200,19 @@ function unmount(): void {
 }
 
 onMounted(() => {
-  // 只渲染当前激活的会话：非激活会话由隐藏容器保留 DOM（见父组件的 v-show）
-  if (props.active) mount()
+  // **所有会话都挂载**，不只是激活的那个：xterm 实例同时充当输出的消费者，
+  // 非激活会话如果没消费者，它的输出就会落到 store 的缓冲里迟迟不回执。
+  mount()
+  if (props.active) {
+    scheduleFit()
+    terminal?.focus()
+  }
 })
 
 watch(
   () => props.active,
   (active) => {
     if (active) {
-      mount()
       scheduleFit()
       terminal?.focus()
     }

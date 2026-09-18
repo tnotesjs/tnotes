@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { accessSync, constants } from 'node:fs'
 import { basename } from 'node:path'
 
 import { deskLog } from './log'
@@ -7,7 +7,7 @@ import { deskLog } from './log'
 import type { TerminalDataEvent, TerminalSessionDto } from '../shared/contracts'
 
 /** 最小结构类型：避免把 node-pty 的类型拖进主进程的编译面。 */
-interface PtyProcess {
+export interface PtyProcess {
   pid: number
   write(data: string): void
   resize(cols: number, rows: number): void
@@ -18,18 +18,16 @@ interface PtyProcess {
   onExit(listener: (event: { exitCode: number; signal?: number }) => void): { dispose(): void }
 }
 
-interface PtyModule {
-  spawn(
-    file: string,
-    args: string[],
-    options: {
-      name: string
-      cols: number
-      rows: number
-      cwd: string
-      env: Record<string, string | undefined>
-    }
-  ): PtyProcess
+export interface PtySpawnOptions {
+  name: string
+  cols: number
+  rows: number
+  cwd: string
+  env: Record<string, string | undefined>
+}
+
+export interface PtyModule {
+  spawn(file: string, args: string[], options: PtySpawnOptions): PtyProcess
 }
 
 interface TerminalSession {
@@ -37,12 +35,14 @@ interface TerminalSession {
   pty: PtyProcess | null
   dataSub: { dispose(): void } | null
   exitSub: { dispose(): void } | null
-  /** 尚未推送给渲染端的输出，按 flush 间隔合并发送 */
+  /** 还没合批推送的输出 */
   pending: string[]
   pendingBytes: number
-  /** 已推送但渲染端还没回执的字节数——流控的水位就看它 */
+  /** 已推送但渲染端还没回执的字节数 */
   unackedBytes: number
   flushTimer: NodeJS.Timeout | null
+  /** 是否已因背压暂停 PTY，避免重复调用 pause/resume */
+  paused: boolean
   /** 用户主动关闭时不要再往外推 exited 状态 */
   closed: boolean
 }
@@ -55,14 +55,27 @@ export interface TerminalCreateInput {
   rows?: number
 }
 
+export interface TerminalManagerOptions {
+  /** 注入 PTY 实现，默认延迟 require('node-pty')；测试用假实现 */
+  loadPty?: () => PtyModule
+  /** 背压上限，测试里调小以便触发 */
+  highWatermark?: number
+  lowWatermark?: number
+  flushIntervalMs?: number
+}
+
 /**
  * 输出推送的批量间隔。逐块推送会让 IPC 成为瓶颈（`yes` 每秒能产出几百 MB），
- * 合并到 ~1 帧再发，配合水位线流控。
+ * 合并到 ~1 帧再发。
  */
-const FLUSH_INTERVAL_MS = 16
-/** 已推送未回执字节超过高水位就暂停 PTY；回落到低水位再恢复。 */
-const HIGH_WATERMARK = 512 * 1024
-const LOW_WATERMARK = 128 * 1024
+const DEFAULT_FLUSH_INTERVAL_MS = 16
+/**
+ * 背压水位，**按整条链路**算：`待发送(pending) + 已发送未回执(unacked)`。
+ * 只算 unacked 的话，一个不消费的渲染端会让我们在两次 flush 之间无限堆 pending，
+ * 512KB 就不是链路上限了。
+ */
+const DEFAULT_HIGH_WATERMARK = 512 * 1024
+const DEFAULT_LOW_WATERMARK = 128 * 1024
 /** 允许的终端尺寸范围，挡掉渲染端传来的异常值。 */
 const MIN_COLS = 2
 const MAX_COLS = 1000
@@ -72,6 +85,16 @@ const MAX_ROWS = 500
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min
   return Math.min(max, Math.max(min, Math.trunc(value)))
+}
+
+/** 文件存在**且可执行候选**才算数：只看存在会把不可执行的路径选成 shell。 */
+function isExecutable(file: string): boolean {
+  try {
+    accessSync(file, constants.X_OK)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -90,7 +113,7 @@ export function detectShell(
       `${env.SystemRoot ?? 'C:\\Windows'}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
     ]
     for (const candidate of candidates) {
-      if (existsSync(candidate)) return { shell: candidate, args: [] }
+      if (isExecutable(candidate)) return { shell: candidate, args: [] }
     }
     return { shell: env.ComSpec ?? 'cmd.exe', args: [] }
   }
@@ -99,7 +122,7 @@ export function detectShell(
     (value): value is string => Boolean(value)
   )
   for (const candidate of candidates) {
-    if (existsSync(candidate)) return { shell: candidate, args: ['-l'] }
+    if (isExecutable(candidate)) return { shell: candidate, args: ['-l'] }
   }
   return { shell: '/bin/sh', args: ['-l'] }
 }
@@ -123,7 +146,12 @@ export function buildTerminalEnv(env: Record<string, string | undefined> = proce
       filled.push(key)
     }
   }
-  fill('TERM', 'xterm-256color')
+  // `TERM=dumb` 对终端来说是「不可用值」而不是用户偏好：它会让颜色与 TUI 程序
+  // 直接降级（Finder 启动的打包应用、部分 CI 都会带着它）。这里升级掉。
+  if (!next.TERM || next.TERM === 'dumb') {
+    next.TERM = 'xterm-256color'
+    filled.push('TERM')
+  }
   fill('COLORTERM', 'truecolor')
   fill('LANG', process.platform === 'win32' ? 'zh_CN.UTF-8' : 'en_US.UTF-8')
   return { env: next, filled }
@@ -136,12 +164,28 @@ export function buildTerminalEnv(env: Record<string, string | undefined> = proce
  *  - **收起面板 ≠ 结束进程**：面板只是视图，会话由本管理器持有；
  *  - **切换知识库不改变已有会话的 cwd**；新会话才用传入的 cwd；
  *  - 退出应用时 `dispose()` 结束所有会话，避免预览服务之类的残留。
+ *
+ * 背压不变量：`pendingBytes + unackedBytes > highWatermark` 时暂停 PTY 读取，
+ * 回落到 lowWatermark 以下再恢复——两个量都必须参与，否则队列上限形同虚设。
  */
 export class TerminalManager {
   private sessions = new Map<string, TerminalSession>()
   private listener: ((state: TerminalSessionDto) => void) | null = null
   private dataListener: ((event: TerminalDataEvent) => void) | null = null
   private disposed = false
+  private readonly ptyLoader: () => PtyModule
+  private readonly highWatermark: number
+  private readonly lowWatermark: number
+  private readonly flushIntervalMs: number
+  /** 便于测试观察背压行为：当前暂停中的会话数量 */
+  private pausedSessions = 0
+
+  constructor(options: TerminalManagerOptions = {}) {
+    this.ptyLoader = options.loadPty ?? (() => this.requirePty())
+    this.highWatermark = options.highWatermark ?? DEFAULT_HIGH_WATERMARK
+    this.lowWatermark = options.lowWatermark ?? DEFAULT_LOW_WATERMARK
+    this.flushIntervalMs = options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS
+  }
 
   onChanged(listener: (state: TerminalSessionDto) => void): () => void {
     this.listener = listener
@@ -164,7 +208,6 @@ export class TerminalManager {
   create(input: TerminalCreateInput): TerminalSessionDto {
     if (this.disposed) throw new Error('终端管理器已释放')
     const id = randomUUID()
-    const { shell, args } = detectShell()
     const cols = clamp(input.cols ?? 80, MIN_COLS, MAX_COLS)
     const rows = clamp(input.rows ?? 24, MIN_ROWS, MAX_ROWS)
 
@@ -173,9 +216,9 @@ export class TerminalManager {
         id,
         knowledgeBaseId: input.knowledgeBaseId,
         knowledgeBaseName: input.knowledgeBaseName,
-        title: basename(shell),
+        title: basename(input.cwd),
         cwd: input.cwd,
-        shell,
+        shell: '',
         status: 'running',
         pid: null,
         cols,
@@ -192,31 +235,11 @@ export class TerminalManager {
       pendingBytes: 0,
       unackedBytes: 0,
       flushTimer: null,
+      paused: false,
       closed: false
     }
     this.sessions.set(id, session)
-
-    try {
-      const pty = this.loadPty()
-      const { env } = buildTerminalEnv()
-      const child = pty.spawn(shell, args, {
-        name: 'xterm-256color',
-        cols,
-        rows,
-        cwd: input.cwd,
-        env
-      })
-      session.pty = child
-      session.dto.pid = child.pid
-      session.dto.title = this.uniqueTitle(basename(shell))
-      session.dataSub = child.onData((data) => this.push(session, data))
-      session.exitSub = child.onExit((event) => this.handleExit(session, event))
-      deskLog('terminal:create', id, { shell, cwd: input.cwd, pid: child.pid })
-    } catch (error) {
-      session.dto.status = 'exited'
-      session.dto.error = error instanceof Error ? error.message : '终端启动失败'
-      deskLog('terminal:create-failed', id, { message: session.dto.error })
-    }
+    this.spawn(session, input.cwd, true)
 
     const dto = { ...session.dto }
     this.emit(dto)
@@ -232,6 +255,7 @@ export class TerminalManager {
     session.pending = []
     session.pendingBytes = 0
     session.unackedBytes = 0
+    session.paused = false
     session.dto = {
       ...session.dto,
       status: 'running',
@@ -240,27 +264,7 @@ export class TerminalManager {
       exitSignal: null,
       error: null
     }
-
-    try {
-      const pty = this.loadPty()
-      const { shell, args } = detectShell()
-      const { env } = buildTerminalEnv()
-      const child = pty.spawn(shell, args, {
-        name: 'xterm-256color',
-        cols: session.dto.cols,
-        rows: session.dto.rows,
-        cwd: session.dto.cwd,
-        env
-      })
-      session.pty = child
-      session.dto.pid = child.pid
-      session.dto.shell = shell
-      session.dataSub = child.onData((data) => this.push(session, data))
-      session.exitSub = child.onExit((event) => this.handleExit(session, event))
-    } catch (error) {
-      session.dto.status = 'exited'
-      session.dto.error = error instanceof Error ? error.message : '终端重启失败'
-    }
+    this.spawn(session, session.dto.cwd)
 
     const dto = { ...session.dto }
     this.emit(dto)
@@ -310,16 +314,25 @@ export class TerminalManager {
   /** 渲染端消费回执：只在高低水位之间切换，避免每块数据都 pause/resume。 */
   ack(sessionId: string, bytes: number): void {
     const session = this.sessions.get(sessionId)
-    if (!session?.pty) return
+    if (!session) return
     if (!Number.isFinite(bytes) || bytes <= 0) return
     session.unackedBytes = Math.max(0, session.unackedBytes - Math.trunc(bytes))
-    if (session.unackedBytes <= LOW_WATERMARK) {
-      try {
-        session.pty.resume()
-      } catch {
-        /* 进程可能恰好退出，忽略 */
-      }
-    }
+    this.settleBackpressure(session)
+  }
+
+  /** 观测用：当前被背压暂停的会话数与各会话链路字节数。 */
+  backpressureSnapshot(): Array<{
+    sessionId: string
+    pending: number
+    unacked: number
+    paused: boolean
+  }> {
+    return [...this.sessions.values()].map((session) => ({
+      sessionId: session.dto.id,
+      pending: session.pendingBytes,
+      unacked: session.unackedBytes,
+      paused: session.paused
+    }))
   }
 
   /** 退出应用时结束所有会话；不 await 任何可能挂住的东西。 */
@@ -332,9 +345,39 @@ export class TerminalManager {
     this.sessions.clear()
     this.listener = null
     this.dataListener = null
+    this.pausedSessions = 0
   }
 
-  private loadPty(): PtyModule {
+  /** 起一个 PTY 挂到会话上；失败落到 dto.error，不让调用方抛出。 */
+  private spawn(session: TerminalSession, cwd: string, nameFromShell = false): void {
+    try {
+      const pty = this.ptyLoader()
+      const { shell, args } = detectShell()
+      const { env } = buildTerminalEnv()
+      const child = pty.spawn(shell, args, {
+        name: 'xterm-256color',
+        cols: session.dto.cols,
+        rows: session.dto.rows,
+        cwd,
+        env
+      })
+      session.pty = child
+      session.dto.pid = child.pid
+      session.dto.shell = shell
+      // 只有首次创建用 shell 名当标题：重启不该把用户改过的标签覆盖掉
+      if (nameFromShell) session.dto.title = this.uniqueTitle(basename(shell))
+      session.dto.error = null
+      session.dataSub = child.onData((data) => this.push(session, data))
+      session.exitSub = child.onExit((event) => this.handleExit(session, event))
+      deskLog('terminal:create', session.dto.id, { shell, cwd, pid: child.pid })
+    } catch (error) {
+      session.dto.status = 'exited'
+      session.dto.error = error instanceof Error ? error.message : '终端启动失败'
+      deskLog('terminal:create-failed', session.dto.id, { message: session.dto.error })
+    }
+  }
+
+  private requirePty(): PtyModule {
     // 延迟到真正建会话时再 require：node-pty 是原生模块，加载失败要能落到
     // 「会话创建失败」而不是让整个主进程起不来。
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -353,8 +396,10 @@ export class TerminalManager {
     if (session.closed || !data) return
     session.pending.push(data)
     session.pendingBytes += Buffer.byteLength(data)
+    // 队列本身也要参与背压：否则两次 flush 之间就能堆出任意大小的 pending
+    this.applyBackpressure(session)
     if (!session.flushTimer) {
-      session.flushTimer = setTimeout(() => this.flush(session), FLUSH_INTERVAL_MS)
+      session.flushTimer = setTimeout(() => this.flush(session), this.flushIntervalMs)
     }
   }
 
@@ -367,14 +412,33 @@ export class TerminalManager {
     session.pendingBytes = 0
     session.unackedBytes += bytes
     this.dataListener?.({ sessionId: session.dto.id, data, bytes })
-    // 高水位：暂停 PTY 让内核管道背压到子进程，等回执降到低水位再恢复
-    if (session.unackedBytes > HIGH_WATERMARK) {
-      try {
-        session.pty?.pause()
-      } catch {
-        /* 忽略：进程可能已退出 */
-      }
+    this.applyBackpressure(session)
+  }
+
+  /** 超过高水位就暂停 PTY 读取，让内核管道把背压传回子进程。 */
+  private applyBackpressure(session: TerminalSession): void {
+    if (session.paused || !session.pty) return
+    if (session.pendingBytes + session.unackedBytes <= this.highWatermark) return
+    try {
+      session.pty.pause()
+      session.paused = true
+      this.pausedSessions += 1
+    } catch {
+      /* 进程可能恰好退出，忽略 */
     }
+  }
+
+  /** 回执之后尝试恢复；只有回落到低水位以下才 resume。 */
+  private settleBackpressure(session: TerminalSession): void {
+    if (!session.paused) return
+    if (session.pendingBytes + session.unackedBytes > this.lowWatermark) return
+    try {
+      session.pty?.resume()
+    } catch {
+      /* 忽略：进程可能已退出 */
+    }
+    session.paused = false
+    this.pausedSessions = Math.max(0, this.pausedSessions - 1)
   }
 
   private handleExit(session: TerminalSession, event: { exitCode: number; signal?: number }): void {
@@ -382,12 +446,14 @@ export class TerminalManager {
       clearTimeout(session.flushTimer)
       session.flushTimer = null
     }
+    // 退出前把残留输出送出去，保证渲染端能看到最后几行
     this.flush(session)
     session.pty = null
     session.dataSub?.dispose()
     session.exitSub?.dispose()
     session.dataSub = null
     session.exitSub = null
+    session.paused = false
     session.dto.status = 'exited'
     session.dto.pid = null
     session.dto.exitCode = event.exitCode ?? null
@@ -408,6 +474,13 @@ export class TerminalManager {
     session.exitSub?.dispose()
     session.dataSub = null
     session.exitSub = null
+    session.pending = []
+    session.pendingBytes = 0
+    session.unackedBytes = 0
+    if (session.paused) {
+      session.paused = false
+      this.pausedSessions = Math.max(0, this.pausedSessions - 1)
+    }
     const child = session.pty
     session.pty = null
     if (!child) return
