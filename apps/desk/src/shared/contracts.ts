@@ -1011,6 +1011,14 @@ export interface PreviewStartResult {
  */
 export interface TerminalSessionDto {
   id: string
+  /**
+   * 运行代次：每次 spawn（含重启）自增。
+   *
+   * 重启会复用 sessionId，但**旧进程的输入、输出与回执都不能作用于新进程**：
+   * 渲染端用 `sessionId + generation` 做消费端归属，主进程按代次校验 write/ack，
+   * 于是 50ms 延迟回执、未发完的粘贴、以及残留的 xterm 写回调都会被自然丢弃。
+   */
+  generation: number
   /** 创建时的所属知识库；仅用于归属展示与退出清理，切换库不改它 */
   knowledgeBaseId: string
   knowledgeBaseName: string
@@ -1049,6 +1057,8 @@ export interface TerminalOpenAtEvent {
 /** PTY 输出分片。`bytes` 是 `data` 的 UTF-8 字节数，渲染端按此累加回执。 */
 export interface TerminalDataEvent {
   sessionId: string
+  /** 产出这段数据的运行代次；渲染端回执时必须原样带回 */
+  generation: number
   data: string
   bytes: number
 }
@@ -1649,13 +1659,15 @@ export interface DeskApi {
     restart(sessionId: string): Promise<DeskResult<TerminalSessionDto>>
     rename(sessionId: string, title: string): Promise<DeskResult<TerminalSessionDto>>
     close(sessionId: string): Promise<DeskResult<void>>
-    write(sessionId: string, data: string): Promise<DeskResult<void>>
+    /** generation 不符时拒绝：旧代次残留的输入不得进入新进程 */
+    write(sessionId: string, data: string, generation: number): Promise<DeskResult<void>>
     resize(sessionId: string, cols: number, rows: number): Promise<DeskResult<void>>
     /**
      * 流控回执：渲染端已经消费掉 n 字节。主进程据此在高低水位之间 pause/resume
      * PTY，避免 xterm 的写入缓冲被高速输出打爆（xterm 有 50MB 硬上限，超出即丢数据）。
      */
-    ack(sessionId: string, bytes: number): Promise<DeskResult<void>>
+    /** generation 不符时**静默忽略**：延迟回执属于旧代次，扣到新进程上会毁掉背压 */
+    ack(sessionId: string, bytes: number, generation: number): Promise<DeskResult<void>>
     onChanged(callback: (state: TerminalSessionDto) => void): () => void
     onData(callback: (event: TerminalDataEvent) => void): () => void
     onOpenAt(callback: (event: TerminalOpenAtEvent) => void): () => void

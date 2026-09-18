@@ -51,15 +51,18 @@ let writeErrorShown = false
 /**
  * 串行写队列：分片必须**按序**到达 PTY，且要等前一片的 IPC 回来再发下一片，
  * 否则大量并发 invoke 会打乱顺序。失败明确提示，不再静默丢弃。
+ *
+ * 队列绑定 `sessionId + generation`：重启后旧队列即使还有没发完的分片，也会因为
+ * 代次不符被主进程拒绝，不会打进新 shell。
  */
-function createWriteQueue(sessionId: string) {
+function createWriteQueue(sessionId: string, generation: number) {
   let tail: Promise<void> = Promise.resolve()
   return (data: string): void => {
     const points = Array.from(data)
     for (let index = 0; index < points.length; index += WRITE_CHUNK_CHARS) {
       const chunk = points.slice(index, index + WRITE_CHUNK_CHARS).join('')
       tail = tail.then(async () => {
-        const result = await window.desk.terminal.write(sessionId, chunk)
+        const result = await window.desk.terminal.write(sessionId, chunk, generation)
         if (!result.ok) {
           if (!writeErrorShown) {
             writeErrorShown = true
@@ -71,6 +74,10 @@ function createWriteQueue(sessionId: string) {
   }
 }
 
+/** 当前写队列；挂载与重启时重建，避免旧运行的分片继续排队 */
+let writeQueue: (data: string) => void = () => {}
+let currentGeneration = 0
+
 function scheduleAck(bytes: number): void {
   pendingAckBytes += bytes
   if (flushTimer !== null) return
@@ -78,7 +85,10 @@ function scheduleAck(bytes: number): void {
     flushTimer = null
     const bytes = pendingAckBytes
     pendingAckBytes = 0
-    if (bytes > 0 && !disposed) void window.desk.terminal.ack(props.session.id, bytes)
+    if (bytes > 0 && !disposed) {
+      // 回执必须带代次：旧运行的延迟回执不能被算到新进程头上
+      void window.desk.terminal.ack(props.session.id, bytes, currentGeneration)
+    }
   }, ACK_INTERVAL_MS)
 }
 
@@ -154,7 +164,8 @@ function mount(): void {
   terminal.open(el)
   terminal.options.fontSize = store.fontSize
 
-  const writeQueue = createWriteQueue(props.session.id)
+  currentGeneration = props.session.generation
+  writeQueue = createWriteQueue(props.session.id, currentGeneration)
   terminal.onData((data) => writeQueue(data))
   // 收到过输出就把提示符位置当作"已就绪"，焦点交给终端
   terminal.onResize(() => scheduleFit())
@@ -216,6 +227,27 @@ watch(
       scheduleFit()
       terminal?.focus()
     }
+  }
+)
+
+/**
+ * 重启（代次变化）时的隔离：丢掉旧运行的待回执字节、清空屏幕与回滚缓冲、
+ * 重建写队列。不做这一步，旧粘贴会打进新 shell、旧回执会扣新进程的账。
+ */
+watch(
+  () => props.session.generation,
+  (generation, previous) => {
+    if (previous === undefined || generation === previous) return
+    pendingAckBytes = 0
+    if (flushTimer !== null) {
+      window.clearTimeout(flushTimer)
+      flushTimer = null
+    }
+    currentGeneration = generation
+    writeQueue = createWriteQueue(props.session.id, generation)
+    writeErrorShown = false
+    terminal?.reset()
+    scheduleFit()
   }
 )
 

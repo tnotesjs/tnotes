@@ -72,9 +72,11 @@ function setup(options: SetupOptions = {}) {
   const pty = createFakePty()
   const manager = new TerminalManager({ loadPty: () => pty.module, ...options })
   const states: string[] = []
-  const data: Array<{ data: string; bytes: number }> = []
+  const data: Array<{ data: string; bytes: number; generation: number }> = []
   manager.onChanged((state) => states.push(`${state.status}:${state.title}`))
-  manager.onData((event) => data.push({ data: event.data, bytes: event.bytes }))
+  manager.onData((event) =>
+    data.push({ data: event.data, bytes: event.bytes, generation: event.generation })
+  )
   return { pty, manager, states, data }
 }
 
@@ -281,7 +283,7 @@ describe('会话生命周期', () => {
   it('write 把数据转给 PTY', () => {
     const { manager, pty } = setup()
     const created = manager.create(input)
-    manager.write(created.id, 'ls\r')
+    manager.write(created.id, 'ls\r', created.generation)
     expect(pty.writes).toEqual(['ls\r'])
   })
 
@@ -317,11 +319,11 @@ describe('流控（背压）', () => {
       expect(data[0].data).toHaveLength(20 * 1024)
 
       // 只回执一半：仍在低水位之上，保持暂停
-      manager.ack(created.id, 10 * 1024)
+      manager.ack(created.id, 10 * 1024, created.generation)
       expect(pty.isPaused()).toBe(true)
 
       // 回执清空：恢复
-      manager.ack(created.id, 10 * 1024)
+      manager.ack(created.id, 10 * 1024, created.generation)
       expect(pty.isPaused()).toBe(false)
       expect(pty.resumeCount()).toBe(1)
 
@@ -332,7 +334,7 @@ describe('流控（背压）', () => {
       await vi.advanceTimersByTimeAsync(10)
       const delivered = data.map((item) => item.data).join('')
       expect(delivered).toHaveLength(20 * 1024 + 16 * 1024)
-      manager.ack(created.id, 16 * 1024)
+      manager.ack(created.id, 16 * 1024, created.generation)
       expect(pty.isPaused()).toBe(false)
     } finally {
       vi.useRealTimers()
@@ -360,7 +362,7 @@ describe('流控（背压）', () => {
       expect(pty.pauseCount()).toBe(1)
       expect(data.length).toBeGreaterThan(0)
 
-      manager.ack(created.id, snapshot.unacked)
+      manager.ack(created.id, snapshot.unacked, created.generation)
       expect(pty.isPaused()).toBe(false)
     } finally {
       vi.useRealTimers()
@@ -378,7 +380,7 @@ describe('流控（背压）', () => {
       expect(data).toHaveLength(1)
       expect(data[0].data).toBe('第一段第二段')
       expect(data[0].bytes).toBe(Buffer.byteLength('第一段第二段'))
-      manager.ack(created.id, data[0].bytes)
+      manager.ack(created.id, data[0].bytes, created.generation)
     } finally {
       vi.useRealTimers()
     }
@@ -417,7 +419,7 @@ describe('PTY 回调不许把异常抛回原生层（会 abort 整个应用）',
       await vi.advanceTimersByTimeAsync(10)
       // 会话仍然可用：还能继续收数据、还能写
       expect(manager.list()[0].status).toBe('running')
-      manager.write(created.id, 'ls\r')
+      manager.write(created.id, 'ls\r', created.generation)
       expect(fake.writes).toEqual(['ls\r'])
     } finally {
       vi.useRealTimers()
@@ -461,5 +463,86 @@ describe('PTY 回调不许把异常抛回原生层（会 abort 整个应用）',
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('重启的运行代次隔离（新旧进程不许互相影响）', () => {
+  const input = { knowledgeBaseId: 'kb-1', knowledgeBaseName: 'TNotes.kb', cwd: '/kb' }
+
+  it('重启后代次自增，并写进 dto 与数据事件', async () => {
+    vi.useFakeTimers()
+    try {
+      const { manager, pty, data } = setup({ flushIntervalMs: 5 })
+      const first = manager.create(input)
+      expect(first.generation).toBe(1)
+      pty.emitExit(0)
+
+      const second = manager.restart(first.id)
+      expect(second.generation).toBe(2)
+      expect(manager.list()[0].generation).toBe(2)
+
+      pty.emitData('新进程的输出')
+      await vi.advanceTimersByTimeAsync(10)
+      expect(data.at(-1)?.generation).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('旧代次的延迟回执被忽略，绝不扣减新进程的未确认量', async () => {
+    vi.useFakeTimers()
+    try {
+      const { manager, pty } = setup({
+        highWatermark: 8 * 1024,
+        lowWatermark: 1024,
+        flushIntervalMs: 5
+      })
+      const first = manager.create(input)
+      // 旧进程推一批数据（已发送未回执）
+      pty.emitData('x'.repeat(8 * 1024))
+      await vi.advanceTimersByTimeAsync(10)
+      const oldGeneration = first.generation
+
+      pty.emitExit(0)
+      manager.restart(first.id)
+      // 新进程再推一批
+      pty.emitData('y'.repeat(8 * 1024))
+      await vi.advanceTimersByTimeAsync(10)
+      const beforeAck = manager.backpressureSnapshot()[0]
+      expect(beforeAck.unacked).toBeGreaterThan(0)
+
+      // 旧代次的延迟回执：必须被忽略
+      manager.ack(first.id, 8 * 1024, oldGeneration)
+      expect(manager.backpressureSnapshot()[0].unacked).toBe(beforeAck.unacked)
+
+      // 新代次的回执才生效
+      manager.ack(first.id, 8 * 1024, 2)
+      expect(manager.backpressureSnapshot()[0].unacked).toBeLessThan(beforeAck.unacked)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('重启后旧代次的输入被拒绝，不会打进新 shell（粘贴发到一半就重启）', () => {
+    const { manager, pty } = setup()
+    const first = manager.create(input)
+    const oldGeneration = first.generation
+    manager.write(first.id, 'OLD_CHUNK', oldGeneration)
+
+    pty.emitExit(0)
+    manager.restart(first.id)
+    const writesBefore = pty.writes.length
+
+    expect(() => manager.write(first.id, 'STALE_PASTE', oldGeneration)).toThrow(/上一次终端运行/)
+    expect(pty.writes.length).toBe(writesBefore)
+
+    // 新代次的输入正常
+    manager.write(first.id, 'NEW_INPUT', 2)
+    expect(pty.writes.at(-1)).toBe('NEW_INPUT')
+  })
+
+  it('写入不存在的会话会报错，而不是静默丢弃', () => {
+    const { manager } = setup()
+    expect(() => manager.write('no-such-session', 'x', 1)).toThrow(/不存在/)
   })
 })

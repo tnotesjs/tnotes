@@ -32,6 +32,14 @@ export interface PtyModule {
 
 interface TerminalSession {
   dto: TerminalSessionDto
+  /**
+   * 运行代次：每次 spawn 自增，并写进 dto 与数据事件。
+   *
+   * 重启复用 sessionId，但旧运行的延迟回执、未发完的输入、残留的 xterm 回调都不能
+   * 作用于新进程，否则未确认量会被错误扣减、旧粘贴会进新 shell。所有 write/ack 都按
+   * 这个代次校验。
+   */
+  generation: number
   pty: PtyProcess | null
   dataSub: { dispose(): void } | null
   exitSub: { dispose(): void } | null
@@ -212,8 +220,10 @@ export class TerminalManager {
     const rows = clamp(input.rows ?? 24, MIN_ROWS, MAX_ROWS)
 
     const session: TerminalSession = {
+      generation: 1,
       dto: {
         id,
+        generation: 1,
         knowledgeBaseId: input.knowledgeBaseId,
         knowledgeBaseName: input.knowledgeBaseName,
         title: basename(input.cwd),
@@ -256,8 +266,11 @@ export class TerminalManager {
     session.pendingBytes = 0
     session.unackedBytes = 0
     session.paused = false
+    // 代次 +1：新进程与旧进程的回执/输入从此对不上号
+    session.generation += 1
     session.dto = {
       ...session.dto,
+      generation: session.generation,
       status: 'running',
       pid: null,
       exitCode: null,
@@ -290,8 +303,17 @@ export class TerminalManager {
     deskLog('terminal:close', sessionId)
   }
 
-  write(sessionId: string, data: string): void {
-    this.sessions.get(sessionId)?.pty?.write(data)
+  /**
+   * 写入终端。`generation` 与当前运行不符时抛错——那是上一次运行残留的输入
+   * （例如粘贴发到一半时进程退出并重启），不能送进新 shell。
+   */
+  write(sessionId: string, data: string, generation: number): void {
+    const session = this.sessions.get(sessionId)
+    if (!session) throw new Error('终端会话不存在')
+    if (generation !== session.generation) {
+      throw new Error('该输入属于上一次终端运行，已丢弃')
+    }
+    session.pty?.write(data)
   }
 
   resize(sessionId: string, cols: number, rows: number): void {
@@ -311,10 +333,17 @@ export class TerminalManager {
     }
   }
 
-  /** 渲染端消费回执：只在高低水位之间切换，避免每块数据都 pause/resume。 */
-  ack(sessionId: string, bytes: number): void {
+  /**
+   * 渲染端消费回执：只在高低水位之间切换，避免每块数据都 pause/resume。
+   *
+   * **必须按代次过滤**：延迟回执属于旧运行，直接扣减会凭空抹掉新进程的未确认量，
+   * 让背压彻底失效（新进程变成永不暂停）。代次不符就静默忽略——这是预期内的竞态，
+   * 不该报错打扰调用方。
+   */
+  ack(sessionId: string, bytes: number, generation: number): void {
     const session = this.sessions.get(sessionId)
     if (!session) return
+    if (generation !== session.generation) return
     if (!Number.isFinite(bytes) || bytes <= 0) return
     session.unackedBytes = Math.max(0, session.unackedBytes - Math.trunc(bytes))
     this.settleBackpressure(session)
@@ -419,7 +448,12 @@ export class TerminalManager {
     session.pending = []
     session.pendingBytes = 0
     session.unackedBytes += bytes
-    this.safeSendData({ sessionId: session.dto.id, data, bytes })
+    this.safeSendData({
+      sessionId: session.dto.id,
+      generation: session.generation,
+      data,
+      bytes
+    })
     this.applyBackpressure(session)
   }
 

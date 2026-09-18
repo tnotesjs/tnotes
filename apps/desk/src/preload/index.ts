@@ -407,12 +407,12 @@ const api: DeskApi = {
     rename: (sessionId: string, title: string) =>
       invoke<TerminalSessionDto>(IPC_CHANNELS.terminalRename, { sessionId, title }),
     close: (sessionId: string) => invoke<void>(IPC_CHANNELS.terminalClose, { sessionId }),
-    write: (sessionId: string, data: string) =>
-      invoke<void>(IPC_CHANNELS.terminalWrite, { sessionId, data }),
+    write: (sessionId: string, data: string, generation: number) =>
+      invoke<void>(IPC_CHANNELS.terminalWrite, { sessionId, data, generation }),
     resize: (sessionId: string, cols: number, rows: number) =>
       invoke<void>(IPC_CHANNELS.terminalResize, { sessionId, cols, rows }),
-    ack: (sessionId: string, bytes: number) =>
-      invoke<void>(IPC_CHANNELS.terminalAck, { sessionId, bytes }),
+    ack: (sessionId: string, bytes: number, generation: number) =>
+      invoke<void>(IPC_CHANNELS.terminalAck, { sessionId, bytes, generation }),
     onChanged: (callback) => {
       const listener = (_event: Electron.IpcRendererEvent, state: TerminalSessionDto): void =>
         callback(state)

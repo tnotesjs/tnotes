@@ -69,9 +69,13 @@ export function registerTerminal(getWindow: GetWindow): () => void {
     getWindow,
     // 渲染端按 32K 字符分片（见 TerminalPane 的写队列），所以这里留出余量；
     // 超限会返回错误而不是被静默截断，渲染端负责提示。
-    z.object({ sessionId: z.string().min(1), data: z.string().max(WRITE_CHUNK_LIMIT) }),
+    z.object({
+      sessionId: z.string().min(1),
+      data: z.string().max(WRITE_CHUNK_LIMIT),
+      generation: z.number().int().min(1)
+    }),
     (input) => {
-      terminalManager.write(input.sessionId, input.data)
+      terminalManager.write(input.sessionId, input.data, input.generation)
     }
   )
 
@@ -84,6 +88,7 @@ export function registerTerminal(getWindow: GetWindow): () => void {
     getWindow,
     z.object({
       sessionId: z.string().min(1),
+      generation: z.number().int().min(1),
       bytes: z
         .number()
         .int()
@@ -91,7 +96,7 @@ export function registerTerminal(getWindow: GetWindow): () => void {
         .max(64 * 1024 * 1024)
     }),
     (input) => {
-      terminalManager.ack(input.sessionId, input.bytes)
+      terminalManager.ack(input.sessionId, input.bytes, input.generation)
     }
   )
 

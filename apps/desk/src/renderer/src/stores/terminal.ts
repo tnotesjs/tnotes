@@ -14,6 +14,12 @@ const MIN_FONT_SIZE = 8
 const MAX_FONT_SIZE = 24
 const FONT_SIZE_KEY = 'desk.terminal.fontSize'
 
+/** 消费者就绪前暂存的输出分片。 */
+interface BufferedOutput {
+  chunks: Array<{ data: string; bytes: number }>
+  bytes: number
+}
+
 export const useTerminalStore = defineStore('terminal', () => {
   const sessions = ref<TerminalSessionDto[]>([])
   const activeSessionId = ref<string | null>(null)
@@ -35,6 +41,7 @@ export const useTerminalStore = defineStore('terminal', () => {
   )
 
   function applyState(state: TerminalSessionDto): void {
+    generationById.set(state.id, state.generation)
     const index = sessions.value.findIndex((session) => session.id === state.id)
     if (index === -1) sessions.value = [...sessions.value, state]
     else sessions.value = sessions.value.map((item) => (item.id === state.id ? state : item))
@@ -47,6 +54,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     if (activeSessionId.value === sessionId) {
       activeSessionId.value = next.length > 0 ? next[next.length - 1].id : null
     }
+    // 代次记录保留到缓冲也清干净之后（先清缓冲再删记录，见 closeSession）
   }
 
   async function load(): Promise<void> {
@@ -55,7 +63,10 @@ export const useTerminalStore = defineStore('terminal', () => {
       lastError.value = result.error.message
       return
     }
-    sessions.value = result.value
+    // 走 applyState 而不是直接赋值：它会登记每个会话的代次，而代次是回执结算的前提。
+    // 直接覆盖 sessions.value 会让首次加载进来的会话没有代次记录，
+    // 于是它们的丢弃字节永远平不了账。
+    for (const session of result.value) applyState(session)
     if (!activeSessionId.value && result.value.length > 0) {
       activeSessionId.value = result.value[0].id
     }
@@ -86,10 +97,12 @@ export const useTerminalStore = defineStore('terminal', () => {
    * 缓冲有界——渲染端如果真的卡死，宁可丢最旧的并计数，也不能无限吃内存。
    */
   const MAX_BUFFERED_BYTES = 4 * 1024 * 1024
-  const buffered = new Map<
-    string,
-    { chunks: Array<{ data: string; bytes: number }>; bytes: number }
-  >()
+  const buffered = new Map<string, BufferedOutput>()
+  /**
+   * 每个会话当前的运行代次。**不能只从 `sessions.value` 里查**：会话被关闭移出列表后
+   * 仍可能有已缓冲/已丢弃的字节要结算，查不到代次就等于这笔账永远平不了。
+   */
+  const generationById = new Map<string, number>()
   /** 因缓冲溢出被丢弃的字节数（观测用；溢出意味着渲染端跟不上） */
   const droppedBytes = ref(0)
 
@@ -104,17 +117,43 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   function bufferFor(sessionId: string, data: string, bytes: number): void {
-    const entry = buffered.get(sessionId) ?? { chunks: [], bytes: 0 }
+    const entry: BufferedOutput = buffered.get(sessionId) ?? { chunks: [], bytes: 0 }
     entry.chunks.push({ data, bytes })
     entry.bytes += bytes
-    while (entry.bytes > MAX_BUFFERED_BYTES && entry.chunks.length > 1) {
+    // 上限对**总字节数**有效：单块自己就超过上限时也要丢掉，否则上限形同虚设
+    let droppedNow = 0
+    while (entry.bytes > MAX_BUFFERED_BYTES && entry.chunks.length > 0) {
       const dropped = entry.chunks.shift()
       if (dropped) {
         entry.bytes -= dropped.bytes
         droppedBytes.value += dropped.bytes
+        droppedNow += dropped.bytes
       }
     }
     buffered.set(sessionId, entry)
+    // 这一瞬间还没有消费者，被丢弃的字节不会有回执——当场补上，账立刻平掉。
+    // （不做这一步，未确认量会永远多出这些字节，最终把会话压死在暂停状态。）
+    ackWithoutConsumer(sessionId, droppedNow)
+  }
+
+  /**
+   * 结算被丢弃的字节：它们**到不了 xterm，也就不会有 write 回调**，如果不回执，
+   * 主进程那边的未确认量永远扣不掉，会话会被背压永久暂停。丢弃是有界缓冲的
+   * 代价，但账必须平。
+   */
+  /**
+   * 回执「到不了 xterm 的字节」。
+   *
+   * 这些字节主进程已经算进「已发送未回执」，而它们不会有 xterm 的 write 回调，
+   * 不同步回执就永远扣不掉，会话会被背压永久暂停。丢弃是有界缓冲的代价，但账必须平。
+   *
+   * `generation` 缺省取当前代次；重启场景由调用方显式传入旧代次（主进程会按代次忽略）。
+   */
+  function ackWithoutConsumer(sessionId: string, bytes: number, generation?: number): void {
+    if (bytes <= 0) return
+    const target = generation ?? generationById.get(sessionId)
+    if (target === undefined) return
+    void window.desk.terminal.ack(sessionId, bytes, target)
   }
 
   function registerHandler(
@@ -122,7 +161,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     handler: (data: string, bytes: number) => void
   ): () => void {
     terminalHandlers.set(sessionId, handler)
-    // 回放缓冲：按到达顺序补齐，字节数照常回执
+    // 先把缓冲取出来（并从表里移除，避免回放期间又被写回），再按序回放。
+    // 回放的字节由消费端（xterm 的 write 回调）回执；被丢弃的字节在丢弃那一刻
+    // 就已经结算过了，这里不重复回执。
     const entry = buffered.get(sessionId)
     if (entry) {
       buffered.delete(sessionId)
@@ -135,6 +176,7 @@ export const useTerminalStore = defineStore('terminal', () => {
 
   function clearBuffered(sessionId: string): void {
     buffered.delete(sessionId)
+    generationById.delete(sessionId)
   }
 
   async function createSession(knowledgeBaseId: string, cwd?: string): Promise<void> {
