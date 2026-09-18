@@ -367,8 +367,16 @@ export class TerminalManager {
       // 只有首次创建用 shell 名当标题：重启不该把用户改过的标签覆盖掉
       if (nameFromShell) session.dto.title = this.uniqueTitle(basename(shell))
       session.dto.error = null
-      session.dataSub = child.onData((data) => this.push(session, data))
-      session.exitSub = child.onExit((event) => this.handleExit(session, event))
+      session.dataSub = child.onData(
+        this.guardPtyCallback('onData', session.dto.id, (data: string) => this.push(session, data))
+      )
+      session.exitSub = child.onExit(
+        this.guardPtyCallback(
+          'onExit',
+          session.dto.id,
+          (event: { exitCode: number; signal?: number }) => this.handleExit(session, event)
+        )
+      )
       deskLog('terminal:create', session.dto.id, { shell, cwd, pid: child.pid })
     } catch (error) {
       session.dto.status = 'exited'
@@ -411,7 +419,7 @@ export class TerminalManager {
     session.pending = []
     session.pendingBytes = 0
     session.unackedBytes += bytes
-    this.dataListener?.({ sessionId: session.dto.id, data, bytes })
+    this.safeSendData({ sessionId: session.dto.id, data, bytes })
     this.applyBackpressure(session)
   }
 
@@ -502,8 +510,50 @@ export class TerminalManager {
     }
   }
 
+  /**
+   * 通知渲染端状态变化。
+   *
+   * **异常绝不能逃出去**：`onExit` 回调由 node-pty 的线程安全函数调用，而
+   * `Napi::ThreadSafeFunction::CallJS` 不捕获宿主回调抛出的异常——一旦抛出就会变成
+   * 未捕获的 C++ 异常并 `abort()` 整个应用（实测崩溃栈：pty.node → CallJS →
+   * __cxa_throw → abort）。窗口正在销毁时 `webContents.send` 正好会抛。
+   */
   private emit(dto: TerminalSessionDto): void {
-    this.listener?.({ ...dto })
+    try {
+      this.listener?.({ ...dto })
+    } catch (error) {
+      deskLog('terminal:emit-failed', dto.id, {
+        message: error instanceof Error ? error.message : String(error)
+      })
+    }
+  }
+
+  /** 同 emit：推数据也在 PTY 的回调栈里，失败只能记日志，不能向上抛。 */
+  private safeSendData(event: TerminalDataEvent): void {
+    try {
+      this.dataListener?.(event)
+    } catch (error) {
+      deskLog('terminal:data-failed', event.sessionId, {
+        message: error instanceof Error ? error.message : String(error)
+      })
+    }
+  }
+
+  /** 包装 PTY 回调：订阅方与原生回调之间必须有一层兜底。 */
+  private guardPtyCallback<T extends unknown[]>(
+    label: string,
+    sessionId: string,
+    handler: (...args: T) => void
+  ): (...args: T) => void {
+    return (...args: T): void => {
+      try {
+        handler(...args)
+      } catch (error) {
+        deskLog(`terminal:${label}-failed`, sessionId, {
+          message: error instanceof Error ? error.message : String(error)
+        })
+      }
+    }
   }
 }
 

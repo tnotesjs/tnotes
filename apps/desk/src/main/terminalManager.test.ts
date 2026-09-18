@@ -397,3 +397,69 @@ describe('流控（背压）', () => {
     }
   })
 })
+
+describe('PTY 回调不许把异常抛回原生层（会 abort 整个应用）', () => {
+  const input = { knowledgeBaseId: 'kb-1', knowledgeBaseName: 'TNotes.kb', cwd: '/kb' }
+
+  // 真实崩溃栈：pty.node → Napi::ThreadSafeFunction::CallJS → __cxa_throw → abort。
+  // 窗口销毁时 webContents.send 会抛，如果异常穿过 onData/onExit 回调就会崩进程。
+  it('数据监听器抛异常：被吞掉、记日志，会话继续工作', async () => {
+    vi.useFakeTimers()
+    try {
+      const fake = createFakePty()
+      const manager = new TerminalManager({ loadPty: () => fake.module, flushIntervalMs: 5 })
+      const created = manager.create(input)
+      manager.onData(() => {
+        throw new Error('webContents 已销毁')
+      })
+
+      expect(() => fake.emitData('boom')).not.toThrow()
+      await vi.advanceTimersByTimeAsync(10)
+      // 会话仍然可用：还能继续收数据、还能写
+      expect(manager.list()[0].status).toBe('running')
+      manager.write(created.id, 'ls\r')
+      expect(fake.writes).toEqual(['ls\r'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('状态监听器抛异常：onExit 回调不崩，退出状态照常记录', () => {
+    const fake = createFakePty()
+    const manager = new TerminalManager({ loadPty: () => fake.module })
+    manager.create(input)
+    manager.onChanged(() => {
+      throw new Error('窗口已关闭')
+    })
+
+    expect(() => fake.emitExit(0)).not.toThrow()
+    expect(manager.list()[0].status).toBe('exited')
+    expect(manager.list()[0].exitCode).toBe(0)
+  })
+
+  it('onData 订阅方抛异常不影响后续输出', async () => {
+    vi.useFakeTimers()
+    try {
+      const fake = createFakePty()
+      const manager = new TerminalManager({ loadPty: () => fake.module, flushIntervalMs: 5 })
+      const seen: string[] = []
+      let throwOnce = true
+      manager.onData((event) => {
+        if (throwOnce) {
+          throwOnce = false
+          throw new Error('第一次就炸')
+        }
+        seen.push(event.data)
+      })
+      manager.create(input)
+
+      fake.emitData('第一段')
+      await vi.advanceTimersByTimeAsync(10)
+      fake.emitData('第二段')
+      await vi.advanceTimersByTimeAsync(10)
+      expect(seen).toEqual(['第二段'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
