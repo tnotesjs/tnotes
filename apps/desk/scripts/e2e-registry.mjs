@@ -45,6 +45,20 @@ export const SUITES = [
     note: '资源验收：盘点/合并/压缩/转格式/断链 + SSG 产物资源完整性（sharp/oxipng、系统剪贴板、固定端口 8123）'
   },
   {
+    name: 'e2e-external-change.mjs',
+    area: 'notes',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/renderer/src/stores/workspace/documents.ts',
+      'apps/desk/src/renderer/src/editor-groups/NoteTabPane.vue',
+      'apps/desk/src/main/workspace/noteIo.ts',
+      'packages/kb/src/workspace.ts'
+    ],
+    serial: false,
+    smoke: false,
+    note: '外部修改与未保存冲突：外部改盘后在 Desk 保存会弹冲突横幅、不覆盖磁盘、不丢本地编辑，载入磁盘可恢复'
+  },
+  {
     name: 'e2e-terminal.mjs',
     area: 'terminal',
     tier: 'regression',

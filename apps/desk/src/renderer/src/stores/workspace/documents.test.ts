@@ -172,6 +172,61 @@ describe('未 emit 的草稿状态', () => {
   })
 })
 
+describe('外部修改与未保存冲突', () => {
+  it('磁盘上被外部改过时保存会检测到冲突：标冲突、保留本地编辑、不改 revision', async () => {
+    const session = makeSession({ content: '# 本地编辑\n', dirty: true })
+    const { ctx, documents, error } = makeContext(session)
+    const notesSave = vi.fn(async () => ({
+      ok: false as const,
+      error: {
+        code: 'REVISION_CONFLICT',
+        message: '磁盘上的笔记已被其他程序修改',
+        diagnosticId: 'd1'
+      }
+    }))
+    Object.defineProperty(window, 'desk', {
+      configurable: true,
+      value: {
+        recovery: { delete: vi.fn(async () => ({ ok: true, value: undefined })) },
+        notes: {
+          read: vi.fn(async () => ({ ok: true, value: { content: '# 磁盘内容\n' } })),
+          save: notesSave
+        }
+      }
+    })
+    const store = createDocuments(ctx)
+
+    await expect(store.saveDocument('kb:note-1')).rejects.toThrow(/其他程序修改/)
+    // 保存用的是**打开时拿到的** revision：外部改动就是靠它被检测出来的
+    expect(notesSave).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedRevision: 'r1', content: '# 本地编辑\n' })
+    )
+    // 冲突标记供界面弹横幅；本地编辑不能被丢掉（用户还没选保留还是载入磁盘）
+    expect(documents.value['kb:note-1']?.externalConflict).toBe(true)
+    expect(documents.value['kb:note-1']?.content).toBe('# 本地编辑\n')
+    expect(documents.value['kb:note-1']?.dirty).toBe(true)
+    expect(String(error.value)).toContain('其他程序修改')
+  })
+
+  it('冲突标记不会被后续输入清掉，也不会误判成已保存', async () => {
+    const session = makeSession({ content: '# 本地编辑\n', dirty: true, externalConflict: true })
+    const { ctx, documents } = makeContext(session)
+    Object.defineProperty(window, 'desk', {
+      configurable: true,
+      value: {
+        recovery: { delete: vi.fn(async () => ({ ok: true, value: undefined })) },
+        notes: { save: vi.fn(), read: vi.fn() }
+      }
+    })
+    const store = createDocuments(ctx)
+
+    store.updateDocumentContent('kb:note-1', '# 本地编辑\n继续写\n', true)
+
+    expect(documents.value['kb:note-1']?.externalConflict).toBe(true)
+    expect(documents.value['kb:note-1']?.dirty).toBe(true)
+  })
+})
+
 describe('保存入口与受阻草稿（P1-1 回归）', () => {
   it('有未 emit 草稿时拒绝写盘：不保存旧内容，保持 dirty', async () => {
     const session = makeSession({ content: '# 旧内容\n', dirty: true, unsavedDraft: true })
