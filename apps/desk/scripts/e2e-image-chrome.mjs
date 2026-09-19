@@ -77,7 +77,6 @@ const app = await _electron.launch({
   env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true' }
 })
 
-
 async function visible(locator) {
   if ((await locator.count()) === 0) return false
   return locator.evaluate((element) => {
