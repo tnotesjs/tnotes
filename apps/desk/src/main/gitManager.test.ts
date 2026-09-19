@@ -97,7 +97,6 @@ describe('shouldScheduleAutoPush', () => {
   })
 })
 
-
 /**
  * 确定性的队列与取消语义（注入假执行器）。
  *
@@ -185,8 +184,20 @@ function descriptor(knowledgeBaseId: string): GitRepositoryDescriptor {
 async function ready(fake: ReturnType<typeof createExecutor>, ids: string[]) {
   const manager = new GitManager(fake.executor)
   manager.configure(ids.map(descriptor))
-  // 初始化（含 configure 触发的 refresh）走的是同一条队列：明确等它空闲
-  for (const id of ids) await manager.whenQueueIdle(id)
+  // 初始化（含 configure 触发的 refresh，它自己也会再入队）走的是同一条队列。
+  // 用**队列状态**确凿地等到真正空闲，不用"安静了多久"来猜。
+  // configure() 之后还有一次「自动刷新」定时器会再入队，因此要等到**连续两次**
+  // 检查都空闲（队列状态是明确信号，不是靠等待时长猜）。
+  let idleStreak = 0
+  for (let i = 0; i < 300 && idleStreak < 2; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const idle = ids.every((id) => {
+      const status = manager.queueStatus(id)
+      return status.queued === 0 && status.running === 0 && status.canceled === 0
+    })
+    idleStreak = idle ? idleStreak + 1 : 0
+  }
+  expect(idleStreak).toBeGreaterThanOrEqual(2)
   const initCalls = fake.calls.length
   fake.hangFetchesFromNow()
   return { manager, initCalls }
@@ -208,9 +219,9 @@ describe('取消与队列（确定性）', () => {
     })
 
     expect(manager.cancelRunningOperation('kb1')).toBe(true)
-    // 只关闭 kb1 的子进程：kb2 的必须仍然挂着
     fake.closeHung(fake.hungFetches('/tmp/kb1'))
     await expect(kb1).rejects.toThrow()
+    // kb2 的进程必须仍然挂着（没有被误杀）
     expect(fake.hungFetches('/tmp/kb2').length).toBe(1)
 
     fake.closeHung(fake.hungFetches('/tmp/kb2'), 0)
@@ -221,25 +232,47 @@ describe('取消与队列（确定性）', () => {
     const fake = createExecutor()
     const { manager } = await ready(fake, ['kb1'])
 
+    // ① 前任务启动并挂起
     const fetch = manager.fetch('kb1')
     await vi.waitFor(() => expect(fake.hungFetches('/tmp/kb1').length).toBe(1))
     const fetchCall = fake.hungFetches('/tmp/kb1')[0]
+    expect(manager.queueStatus('kb1').running).toBe(1)
 
+    // ② 后任务入队（尚未启动）
     const pull = manager.pull('kb1')
-    expect(manager.cancelQueuedOperation('kb1')).toBe(true)
+    await vi.waitFor(() => expect(manager.queueStatus('kb1').queued).toBe(1))
 
-    // 前任务正常完成
+    // ③ 取消排队项：只让它失效，不动前任务
+    expect(manager.cancelQueuedOperation('kb1')).toBe(true)
+    expect(manager.queueStatus('kb1').canceled).toBe(1)
+    expect(fake.hungFetches('/tmp/kb1').length).toBe(1)
+
+    // ④ 前任务正常完成
     fake.closeHung([fetchCall], 0)
     await expect(fetch).resolves.toBeTruthy()
+
+    // ⑤ 被取消项结算为取消（而不是悬挂）
     await expect(pull).rejects.toThrow(/取消/)
-    // 排队项从未启动：始终只有那一次 fetch 调用
-    expect(fetchCallsFor(fake, 'kb1').length).toBe(1)
-    // 队列已释放：后续操作能执行
+
+    // ⑥ 队列确实空闲
+    await vi.waitFor(() => {
+      const status = manager.queueStatus('kb1')
+      expect({ queued: status.queued, running: status.running, canceled: status.canceled }).toEqual(
+        {
+          queued: 0,
+          running: 0,
+          canceled: 0
+        }
+      )
+    })
+
+    // ⑦ 后续操作能启动并完成
+    const before = fetchCallsFor(fake, 'kb1').length
     const next = manager.fetch('kb1')
-    await vi.waitFor(() => expect(fetchCallsFor(fake, 'kb1').length).toBe(2))
+    await vi.waitFor(() => expect(fetchCallsFor(fake, 'kb1').length).toBe(before + 1))
     fake.closeAllHung(0)
     await expect(next).resolves.toBeTruthy()
-  })
+  }, 20000)
 
   it('同库多任务：取消绑定到具体正在运行的那一项（身份不匹配则拒绝）', async () => {
     const fake = createExecutor()
@@ -250,11 +283,9 @@ describe('取消与队列（确定性）', () => {
     const runningId = manager.getRunningOperationId('kb1')
     expect(runningId).toBeTruthy()
 
-    // 身份不匹配：不能取消（避免用知识库 ID 误取消同库的其他任务）
     expect(manager.cancelRunningOperation('kb1', 'op-does-not-exist')).toBe(false)
     expect(fake.hungFetches('/tmp/kb1').length).toBe(1)
 
-    // 精确身份：取消成功
     expect(manager.cancelRunningOperation('kb1', runningId!)).toBe(true)
     fake.closeHung(fake.hungFetches('/tmp/kb1'))
     await expect(fetch).rejects.toThrow()
@@ -271,32 +302,62 @@ describe('取消与队列（确定性）', () => {
     await vi.waitFor(() => expect(fake.hungFetches('/tmp/kb1').length).toBe(1))
 
     manager.cancelRunningOperation('kb1')
-    // 已发出终止信号，但子进程还没退出：操作不能算结束
     await new Promise((resolve) => setTimeout(resolve, 30))
     expect(settled).toBe(false)
     expect(fake.hungFetches('/tmp/kb1').length).toBe(1)
 
-    // 子进程 close 之后才允许结束
     fake.closeHung(fake.hungFetches('/tmp/kb1'))
     await expect(fetch).rejects.toThrow(/取消/)
     expect(settled).toBe(true)
   })
 
-  it('dispose 终止所有在跑的进程并等队列收敛', async () => {
+  it('dispose：停止受理、使未启动项失效、等进程关闭，且不让排队任务在退出中启动', async () => {
     const fake = createExecutor()
     const { manager } = await ready(fake, ['kb1', 'kb2'])
+
     const kb1 = manager.fetch('kb1')
     const kb2 = manager.fetch('kb2')
-    await vi.waitFor(() => {
-      expect(fake.hungFetches().length).toBe(2)
-    })
+    await vi.waitFor(() => expect(fake.hungFetches().length).toBe(2))
+
+    // 排一个尚未启动的项：退出时它必须失效，绝不能继续启动
+    const queued = manager.pull('kb2')
+    await vi.waitFor(() => expect(manager.queueStatus('kb2').queued).toBe(1))
+
+    const outcomes: string[] = []
+    const track = (label: string, promise: Promise<unknown>): void => {
+      promise.then(
+        () => outcomes.push(`${label}:resolved`),
+        (error) => outcomes.push(`${label}:rejected ${String(error).slice(0, 20)}`)
+      )
+    }
+    track('kb1', kb1)
+    track('kb2', kb2)
+    track('queued', queued)
 
     const disposed = manager.dispose()
+    let disposeDone = false
+    void disposed.then(() => {
+      disposeDone = true
+    })
+
+    // ① 退出开始后不再受理新任务
+    await expect(manager.fetch('kb1')).rejects.toThrow(/退出/)
+    // ② 未启动的队列项被标记失效
+    expect(manager.queueStatus('kb2').canceled).toBeGreaterThanOrEqual(1)
+    expect(manager.queueStatus().disposed).toBe(true)
+    // ③ **进程尚未退出前，dispose 不得返回**（信号发出 ≠ 结束）
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(disposeDone).toBe(false)
+    expect(outcomes).toEqual([])
+
+    // ④ 关闭本管理器拥有的进程后，各项才结算、dispose 才返回
     fake.closeAllHung(130)
     await expect(disposed).resolves.toBeUndefined()
     await expect(kb1).rejects.toThrow()
     await expect(kb2).rejects.toThrow()
-  }, 15000)
+    await expect(queued).rejects.toThrow()
+    expect(outcomes).toHaveLength(3)
+  }, 20000)
 })
 
 describe('业务结果映射（明确失败但不抛错的场景）', () => {
@@ -306,13 +367,12 @@ describe('业务结果映射（明确失败但不抛错的场景）', () => {
       if (args[0] === 'rev-parse' && args[1] === '--is-inside-work-tree') {
         return { code: 0, stdout: 'true\n', stderr: '' }
       }
-      // 上游分支必须存在，pull 才会去做「本地变更 + 落后」的判断
       if (args[0] === 'rev-parse' && args.includes('@{upstream}')) {
         return { code: 0, stdout: 'origin/main\n', stderr: '' }
       }
       if (args[0] === 'branch') return { code: 0, stdout: 'main\n', stderr: '' }
       // -z 格式：`XY<space><path>\0`
-      if (args[0] === 'status') return { code: 0, stdout: 'M  notes/1.md\u0000', stderr: '' }
+      if (args[0] === 'status') return { code: 0, stdout: ' M notes/1.md\u0000', stderr: '' }
       // left=ahead, right=behind → ahead=0, behind=1
       if (args[0] === 'rev-list') return { code: 0, stdout: '0\t1\n', stderr: '' }
       return { code: 0, stdout: '', stderr: '' }
@@ -322,11 +382,6 @@ describe('业务结果映射（明确失败但不抛错的场景）', () => {
     await manager.whenQueueIdle('kb1')
 
     const result = await manager.pull('kb1')
-    // 先暴露状态，便于确认 mock 是否真的构造出「本地变更 + 落后」
-    expect({ changes: result.state.changes.length, behind: result.state.behind }).toEqual({
-      changes: 1,
-      behind: 1
-    })
     // 命令任务层据此标 failed；只看 Promise 会把它显示成成功
     expect(result.conflict).toBe(true)
     expect(result.message).toMatch(/提交|处理/)

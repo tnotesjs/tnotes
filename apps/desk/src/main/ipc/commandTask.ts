@@ -209,6 +209,14 @@ export async function runGitTask(
       canceled ? 'canceled' : /超时/.test(message) ? 'timeout' : 'failed',
       canceled ? '任务已取消' : message
     )
+  } finally {
+    // 取消失败/被取消之后，仓库状态可能已经变了（暂存区、甚至已经产生提交），
+    // 而 gitManager 对取消**不做自动刷新**（避免一次挂住的刷新把队列拖住）。
+    // 这里在任务收尾后补一次尽力而为的刷新，让界面重新拿到真实状态，
+    // 而不是以永久保留旧状态换取队列收敛。
+    if (!handleRef.isCurrent() || handleRef.canceled()) {
+      void gitManager.refresh(knowledgeBaseId).catch(() => undefined)
+    }
   }
 }
 

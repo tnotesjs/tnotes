@@ -287,6 +287,8 @@ export class GitManager {
    */
   private queueNodes = new Map<string, QueueNode[]>()
   private operationSeq = 0
+  /** 已开始退出：不再接收新任务，未启动的队列项一律失效 */
+  private disposed = false
   /** 每个知识库当前正在执行的那一项（用于「运行中取消」精确定位） */
   private runningNode = new Map<string, QueueNode>()
   /** 进程级退出：所有在跑子进程的终止器（只用于 dispose，不参与单任务取消） */
@@ -548,14 +550,33 @@ export class GitManager {
   }
 
   async dispose(): Promise<void> {
+    // 1) 退出开始：不再接收新任务，并停掉后台调度
+    this.disposed = true
     if (this.periodicFetchTimer) clearInterval(this.periodicFetchTimer)
     this.periodicFetchTimer = null
     for (const timer of this.autoPushTimers.values()) clearTimeout(timer)
     this.autoPushTimers.clear()
-    // 先终止所有在跑的 git 子进程，再等队列收敛：不这么做，一个挂住的 fetch 会让
-    // dispose 永久等待（也会把退出流程拖死）
-    for (const kill of [...this.disposeKills]) kill()
-    await Promise.allSettled(this.operationTails.values())
+
+    // 2) 让未启动的队列项失效，并**迭代**到队列排空：
+    //    一个 pending 队列项会串在 operationTails 上；它结算后其后继才轮到执行，
+    //    因此单次快照会漏掉链式后继——那些项的 promise 会永远挂着。
+    for (let pass = 0; pass < 50; pass += 1) {
+      let touched = false
+      for (const nodes of this.queueNodes.values()) {
+        for (const node of nodes) {
+          if (!node.running && !node.canceled) {
+            node.canceled = true
+            touched = true
+          }
+        }
+      }
+      // 3) 终止正在跑的 git 子进程（等 close 的那一套由 runGit 负责）
+      for (const kill of [...this.disposeKills]) kill()
+      await Promise.allSettled([...this.operationTails.values()])
+      const pending = [...this.queueNodes.values()].flat().filter((node) => !node.canceled)
+      if (pending.length === 0) break
+      if (!touched && pending.every((node) => node.running)) break
+    }
     this.events.removeAllListeners()
   }
 
@@ -728,6 +749,12 @@ export class GitManager {
     ) => Promise<GitOperationResult>,
     extras: GitRunExtras | (() => GitRunExtras) = {}
   ): { result: Promise<GitOperationResult>; node: QueueNode } {
+    if (this.disposed) {
+      return {
+        result: Promise.reject(new Error('Desk 正在退出，Git 操作不再受理')),
+        node: { id: 'rejected', canceled: true, running: false, killSpawns: () => {} }
+      }
+    }
     if (this.assetWritePaused.has(knowledgeBaseId)) {
       return {
         result: Promise.reject(new Error('资源整理进行中，Git 操作已暂停')),
@@ -874,6 +901,33 @@ export class GitManager {
   /** 等该知识库的队列推进到空闲（初始化 refresh 也走这条队列）。 */
   async whenQueueIdle(knowledgeBaseId: string): Promise<void> {
     await this.waitForIdle(knowledgeBaseId)
+  }
+
+  /**
+   * 队列状态快照：明确表达「有多少项在排队 / 正在跑 / 已失效」。
+   *
+   * 供调用方（含测试）确定性判断队列是否空闲，不需要去猜"安静了多久"。
+   */
+  queueStatus(knowledgeBaseId?: string): {
+    queued: number
+    running: number
+    canceled: number
+    disposed: boolean
+  } {
+    const groups = knowledgeBaseId
+      ? [[knowledgeBaseId, this.queueNodes.get(knowledgeBaseId) ?? []] as const]
+      : [...this.queueNodes.entries()]
+    let queued = 0
+    let running = 0
+    let canceled = 0
+    for (const [, nodes] of groups) {
+      for (const node of nodes) {
+        if (node.canceled) canceled += 1
+        else if (node.running) running += 1
+        else queued += 1
+      }
+    }
+    return { queued, running, canceled, disposed: this.disposed }
   }
 
   private setBusy(knowledgeBaseId: string, busy: GitRepositoryStateDto['busy']): void {

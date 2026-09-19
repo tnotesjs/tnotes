@@ -1,14 +1,16 @@
 # 命令任务修复 · 交接记录（状态：**修复待验证**）
 
-> **当前状态：修复待验证。** 源码改动已完成并通过 typecheck，但确定性回归 **9/11 通过、2 条红**，
-> 因此**不能**声明"源码修复完成"。下列"已确认事实"与"待验证假设"严格区分。
+> **当前状态：确定性回归已全绿（11/11 + 7/7），E2E 与原功能回归待完成。**
+> 源码改动 + 测试替身都已修正；下列"已确认事实"与"待验证假设"仍严格区分。
 
 ## 一、复现命令
 
 ```bash
 cd /Users/huyouda/tnotesjs/tnotes
-pnpm --filter desk exec vitest run src/main/gitManager.test.ts      # 9 passed / 2 failed
-pnpm --filter desk run typecheck                                   # 通过
+pnpm --filter desk exec vitest run src/main/gitManager.test.ts        # 11 passed
+pnpm --filter desk exec vitest run src/main/ipc/commandTask.test.ts   # 7 passed
+pnpm --filter desk exec vitest run                                    # 1445 passed / 165 files
+pnpm --filter desk run lint && pnpm --filter desk run typecheck       # 0 error / 通过
 ```
 
 ## 二、红测（2 条）
@@ -60,15 +62,17 @@ pnpm --filter desk run typecheck                                   # 通过
 
 测试：`main/gitManager.test.ts`（新增 6 条确定性用例，9/11 通过）。
 
-## 六、剩余验收项（全部未完成）
+## 六、剩余验收项
 
-1. 让上述 2 条红测变绿（装置问题按"下一步"定位；若暴露源码问题则修源码）。
-2. `commandTask.ts` 的确定性回归：**保存失败后重试推送会重新保存；保存仍失败则不得执行 Git 写操作**。
-3. **连续点击同一操作，实际执行次数为一次**（`ensureExecution` 的行为断言）。
-4. **commit 阶段的输出与取消正常工作**（`publishRepository` 的 `add`/`commit`/`push` 已接 extras，未验证）。
-5. E2E（既未完成、也不作为遗留项）：超时端到端、推送全流程、重试、后台失败入口。
-6. 原有功能回归：交互式终端、文件外部修改、未保存冲突处理。
-7. 仓库门禁与提交（`gitManager.test.ts` 修绿后跑 lint/typecheck/prettier）。
+已完成：确定性回归（`gitManager.test.ts` 11 + `commandTask.test.ts` 7）、门禁（1445 tests / 0 lint / typecheck / prettier）。
+
+仍待完成：
+
+1. **保存失败后的推送重试**：渲染端 `publishWithSave` 已实现"保存失败 → 结束任务、不执行 Git"，但**未端到端验证**；"保存仍失败不得写 Git" 需一条断言（可在 `commandTask.test.ts` 里对 `publish` 是否被调用做断言）。
+2. **重复点击只执行一次**：已由 `ensureExecution` 的并发断言覆盖（3 次并发 → 1 次调用）；UI 层"连续点击"未端到端跑。
+3. **commit 阶段的输出与取消**：`publishRepository` 的 `add`/`commit`/`push` 已接 extras，**未验证**。
+4. E2E：超时端到端、推送全流程、重试、后台失败入口。
+5. 原有功能回归：交互式终端、文件外部修改、未保存冲突处理。
 
 ## 七、下一步（按顺序，避免再绕）
 
