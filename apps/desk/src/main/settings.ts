@@ -13,6 +13,10 @@ import { z } from 'zod'
 import { deskLog } from './log'
 import { clampAppZoom, APP_ZOOM_DEFAULT } from '../shared/appZoom'
 import {
+  BOTTOM_PANEL_TABS_DEFAULT_MAX,
+  BOTTOM_PANEL_TABS_MAX_LIMIT
+} from '../shared/bottomPanelTabs'
+import {
   clampHeadingNumberMaxDepth,
   HEADING_NUMBER_DEFAULT_MAX_DEPTH
 } from '../shared/headingNumbering'
@@ -65,6 +69,19 @@ const settingsSchema = z.object({
       changesCollapsedByDefault: z.boolean().default(true)
     })
     .default({
+  // 底部面板（终端会话 + 命令任务标签）的上限：两类**合计**计数，上限单独存在这里。
+  // 默认 10，合法区间 1-30（上界与 shared/bottomPanelTabs 的常量一致）；
+  // 老配置文件没有这个分组，靠分组级 `.default({ maxTabs: 10 })` 补默认值。
+  bottomPanel: z
+    .object({
+      maxTabs: z
+        .number()
+        .int()
+        .min(1)
+        .max(BOTTOM_PANEL_TABS_MAX_LIMIT)
+        .default(BOTTOM_PANEL_TABS_DEFAULT_MAX)
+    })
+    .default({ maxTabs: BOTTOM_PANEL_TABS_DEFAULT_MAX }),
       showNoteIndex: true,
       showNoteStatus: true,
       changesCollapsedByDefault: true
@@ -328,6 +345,7 @@ export function saveSettings(next: Partial<AppSettings>): AppSettings {
       optimize: { ...current.imageUpload.optimize, ...next.imageUpload?.optimize }
     },
     knowledgeBases: { ...current.knowledgeBases, ...next.knowledgeBases }
+    bottomPanel: { ...current.bottomPanel, ...next.bottomPanel },
   })
   return writeSettingsFile(merged)
 }

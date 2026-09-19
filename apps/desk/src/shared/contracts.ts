@@ -123,6 +123,7 @@ export const IPC_CHANNELS = {
   terminalAck: 'terminal:ack',
   terminalChanged: 'terminal:changed',
   terminalData: 'terminal:data',
+  terminalClosed: 'terminal:closed',
   terminalOpenAt: 'terminal:open-at',
   commandTaskClaim: 'command-task:claim',
   commandTaskList: 'command-task:list',
@@ -134,6 +135,7 @@ export const IPC_CHANNELS = {
   commandTaskStage: 'command-task:stage',
   commandTaskFinish: 'command-task:finish',
   commandTaskChanged: 'command-task:changed',
+  commandTaskClosed: 'command-task:closed',
   commandTaskLog: 'command-task:log',
   commandTaskReveal: 'command-task:reveal',
   gitStateChanged: 'git:state-changed',
@@ -630,6 +632,15 @@ export interface AppSettings {
   /** 编辑器行为。`selectionToolbar` 默认关闭（选中文字不弹浮动格式条）。 */
   editor: {
     selectionToolbar: boolean
+  }
+  /**
+   * 底部面板（终端会话 + 命令任务标签）的容量。
+   *
+   * 上限是**两类标签的合计**；默认 10，上界 30（见 `main/settings.ts` 的 zod schema）。
+   * 判定规则收在 `shared/bottomPanelTabs.ts`，主进程与渲染端共用。
+   */
+  bottomPanel: {
+    maxTabs: number
   }
   imageUpload: ImageUploadSettings
   updates: {
@@ -1827,7 +1838,17 @@ export interface DeskApi {
     ack(sessionId: string, bytes: number, generation: number): Promise<DeskResult<void>>
     onChanged(callback: (state: TerminalSessionDto) => void): () => void
     onData(callback: (event: TerminalDataEvent) => void): () => void
+    /**
+     * 主进程移除了某个任务标签（用户关闭，或达到上限时被容量回收）。
+     * 界面据此清掉本地残留的标签与日志，避免留下点不动的空标签。
+     */
+    onClosed(callback: (taskId: string) => void): () => void
     onOpenAt(callback: (event: TerminalOpenAtEvent) => void): () => void
   }
   onLog(callback: (line: string) => void): () => void
 }
+    /**
+     * 主进程移除了某个会话（用户关闭，或达到上限时被容量回收）。
+     * 界面据此清掉本地残留的标签，避免 xterm 还挂着一个主进程已经不存在的会话。
+     */
+    onClosed(callback: (sessionId: string) => void): () => void

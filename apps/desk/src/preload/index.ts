@@ -435,6 +435,11 @@ const api: DeskApi = {
       ipcRenderer.on(IPC_CHANNELS.commandTaskLog, listener)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.commandTaskLog, listener)
     },
+    onClosed: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, taskId: string): void => callback(taskId)
+      ipcRenderer.on(IPC_CHANNELS.commandTaskClosed, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.commandTaskClosed, listener)
+    },
     onReveal: (callback) => {
       const listener = (_event: Electron.IpcRendererEvent, taskId: string): void => callback(taskId)
       ipcRenderer.on(IPC_CHANNELS.commandTaskReveal, listener)
@@ -472,6 +477,12 @@ const api: DeskApi = {
         callback(event)
       ipcRenderer.on(IPC_CHANNELS.terminalData, listener)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.terminalData, listener)
+    },
+    onClosed: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, sessionId: string): void =>
+        callback(sessionId)
+      ipcRenderer.on(IPC_CHANNELS.terminalClosed, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.terminalClosed, listener)
     },
     onOpenAt: (callback) => {
       const listener = (_event: Electron.IpcRendererEvent, event: TerminalOpenAtEvent): void =>

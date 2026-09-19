@@ -36,6 +36,7 @@ function makeSession(id: string, generation = 1): TerminalSessionDto {
 
 let emitData: ((event: TerminalDataEvent) => void) | null
 let emitState: ((state: TerminalSessionDto) => void) | null
+let emitClosed: ((sessionId: string) => void) | null
 let ackSpy: ReturnType<typeof vi.fn>
 let ackCalls: AckCall[]
 let listSessions: TerminalSessionDto[]
@@ -43,6 +44,7 @@ let listSessions: TerminalSessionDto[]
 beforeEach(() => {
   emitData = null
   emitState = null
+  emitClosed = null
   listSessions = [makeSession('s1')]
   ackCalls = []
   ackSpy = vi.fn(async (sessionId: string, bytes: number, generation: number) => {
@@ -59,6 +61,10 @@ beforeEach(() => {
         },
         onData: (callback: (event: TerminalDataEvent) => void) => {
           emitData = callback
+          return () => {}
+        },
+        onClosed: (callback: (sessionId: string) => void) => {
+          emitClosed = callback
           return () => {}
         },
         ack: ackSpy,
@@ -284,5 +290,27 @@ describe('输出侧的代次贯通（跨代次交错）', () => {
       { data: 'A', generation: 1 },
       { data: 'B', generation: 1 }
     ])
+  })
+})
+
+/**
+ * 容量回收由主进程发起：它关掉一个已退出会话腾位置时，渲染端必须同步移除标签，
+ * 否则会留下一个点不动的空标签（主进程里那个会话已经不存在了）。
+ */
+describe('主进程移除会话的通知（容量回收 / 关闭）', () => {
+  it('收到 onClosed 后移除本地标签并清掉缓冲', async () => {
+    const store = await setup()
+    // 消费者没挂上：输出进缓冲，回收时缓冲必须一起清掉
+    emitData?.({ sessionId: 's1', generation: 1, data: '缓冲内容', bytes: 12 })
+
+    emitClosed?.('s1')
+
+    expect(store.sessions).toHaveLength(0)
+    expect(store.activeSessionId).toBeNull()
+
+    // 缓冲已清：事后注册消费者不会被回放旧输出
+    const received: string[] = []
+    store.registerHandler('s1', (data) => received.push(data))
+    expect(received).toEqual([])
   })
 })

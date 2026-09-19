@@ -12,6 +12,7 @@ import {
   unregisterWindowGuard
 } from './closeGuards'
 import { reportBackgroundGitFailure } from './backgroundGitFailure'
+import { configureBottomPanelMaxTabs } from './bottomPanelTabs'
 import { gitManager } from './gitManager'
 import { registerIpc } from './ipc'
 import { commandTaskManager } from './commandTaskManager'
@@ -230,6 +231,8 @@ if (!hasSingleInstanceLock) {
     scheduleSearchRefresh()
     handleAssetProtocol()
     unregisterIpc = registerIpc(() => mainWindow)
+    // 底部面板（终端/命令任务）的容量上限来自设置，惰性读取：改设置后下一次新建即生效
+    configureBottomPanelMaxTabs(() => loadSettings().bottomPanel.maxTabs)
     updateManager.configure(loadSettings().updates.autoCheck)
     updateManager.start()
     mainWindow = createWindow()

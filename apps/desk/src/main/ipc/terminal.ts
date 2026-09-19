@@ -31,6 +31,10 @@ export function registerTerminal(getWindow: GetWindow): () => void {
   const offData = terminalManager.onData((event) => {
     getWindow()?.webContents.send(IPC_CHANNELS.terminalData, event)
   })
+  // 会话被移除（用户关闭 / 容量回收）时通知界面，避免留下点不动的空标签
+  const offRemoved = terminalManager.onRemoved((sessionId) => {
+    getWindow()?.webContents.send(IPC_CHANNELS.terminalClosed, sessionId)
+  })
 
   handle(IPC_CHANNELS.terminalCreate, getWindow, createSchema, (input) => {
     // 目录归属在创建时定死：cwd 缺省用当前知识库根目录。
@@ -103,6 +107,7 @@ export function registerTerminal(getWindow: GetWindow): () => void {
   return () => {
     offChanged()
     offData()
+    offRemoved()
   }
 }
 

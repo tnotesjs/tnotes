@@ -1,5 +1,10 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import {
+  configureBottomPanelMaxTabs,
+  resetBottomPanelMaxTabs,
+  resetBottomPanelTabProviders
+} from './bottomPanelTabs'
 import { TerminalManager, buildTerminalEnv, detectShell } from './terminalManager'
 
 import type { PtyModule, PtyProcess, PtySpawnOptions } from './terminalManager'
@@ -544,5 +549,72 @@ describe('重启的运行代次隔离（新旧进程不许互相影响）', () =
   it('写入不存在的会话会报错，而不是静默丢弃', () => {
     const { manager } = setup()
     expect(() => manager.write('no-such-session', 'x', 1)).toThrow(/不存在/)
+  })
+})
+
+/**
+ * 管理器必须在**真正 spawn 之前**走统一容量检查（shared/bottomPanelTabs 的规则）：
+ * 达到上限时优先回收已退出会话，全部在运行则直接抛错拦住创建。
+ */
+describe('底部面板容量（管理器接入统一检查入口）', () => {
+  const input = { knowledgeBaseId: 'kb-1', knowledgeBaseName: 'TNotes.kb', cwd: '/kb' }
+
+  afterEach(() => {
+    resetBottomPanelMaxTabs()
+    resetBottomPanelTabProviders()
+  })
+
+  it('达到上限且全部在运行：创建被拦，不会多起进程，也不会 kill 任何会话', () => {
+    const { manager, pty } = setup()
+    configureBottomPanelMaxTabs(() => 2)
+    const first = manager.create(input)
+    const second = manager.create(input)
+
+    expect(() => manager.create(input)).toThrow(/全部在运行/)
+    expect(manager.list().map((session) => session.id)).toEqual([first.id, second.id])
+    expect(pty.kills).toEqual([])
+  })
+
+  it('达到上限但有已退出会话：回收最老的已退出会话，运行中的原样保留', () => {
+    const { manager, pty } = setup()
+    configureBottomPanelMaxTabs(() => 2)
+    const first = manager.create(input)
+    const second = manager.create(input)
+    // 假 PTY 的退出监听器属于最后 spawn 的会话（第二个）
+    pty.emitExit(0)
+    expect(manager.list().find((session) => session.id === second.id)?.status).toBe('exited')
+
+    const third = manager.create(input)
+    const ids = manager.list().map((session) => session.id)
+
+    expect(ids).not.toContain(second.id)
+    expect(ids).toContain(first.id)
+    expect(ids).toContain(third.id)
+    expect(manager.list()).toHaveLength(2)
+    expect(manager.list().find((session) => session.id === first.id)?.status).toBe('running')
+  })
+
+  it('调低上限不杀进程：超限时只是不能再新建', () => {
+    const { manager, pty } = setup()
+    const first = manager.create(input)
+    const second = manager.create(input)
+    configureBottomPanelMaxTabs(() => 1)
+
+    expect(() => manager.create(input)).toThrow(/上限已调低为 1/)
+    expect(manager.list().map((session) => session.id)).toEqual([first.id, second.id])
+    expect(pty.kills).toEqual([])
+  })
+
+  it('关闭会话会通知渲染端（容量回收 / 用户关闭都走同一条通知）', () => {
+    const { manager } = setup()
+    const removed: string[] = []
+    manager.onRemoved((sessionId) => removed.push(sessionId))
+    const created = manager.create(input)
+
+    manager.close(created.id)
+    expect(removed).toEqual([created.id])
+    // 已经不在的会话不会重复通知
+    manager.close(created.id)
+    expect(removed).toEqual([created.id])
   })
 })

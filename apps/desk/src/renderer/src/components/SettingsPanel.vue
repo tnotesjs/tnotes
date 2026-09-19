@@ -81,7 +81,8 @@ const groupDefaults: Record<string, Partial<AppSettings>> = {
     editor: { selectionToolbar: false }
   },
   tabs: {
-    tabs: { maxOpenCount: 10, wrap: true, autoRevealInToc: true }
+    tabs: { maxOpenCount: 10, wrap: true, autoRevealInToc: true },
+    bottomPanel: { maxTabs: 10 }
   },
   toc: {
     createNotePosition: 'top',

@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { accessSync, constants } from 'node:fs'
 import { basename } from 'node:path'
 
+import { ensureBottomPanelCapacity, registerBottomPanelTabProvider } from './bottomPanelTabs'
 import { deskLog } from './log'
 
+import type { BottomPanelTabSnapshot } from '../shared/bottomPanelTabs'
 import type { TerminalDataEvent, TerminalSessionDto } from '../shared/contracts'
 
 /** 最小结构类型：避免把 node-pty 的类型拖进主进程的编译面。 */
@@ -180,6 +182,8 @@ export class TerminalManager {
   private sessions = new Map<string, TerminalSession>()
   private listener: ((state: TerminalSessionDto) => void) | null = null
   private dataListener: ((event: TerminalDataEvent) => void) | null = null
+  /** 会话被移除（用户关闭 / 容量回收）时通知渲染端，避免界面留下已经不存在的标签 */
+  private removedListener: ((sessionId: string) => void) | null = null
   private disposed = false
   private readonly ptyLoader: () => PtyModule
   private readonly highWatermark: number
@@ -193,6 +197,13 @@ export class TerminalManager {
     this.highWatermark = options.highWatermark ?? DEFAULT_HIGH_WATERMARK
     this.lowWatermark = options.lowWatermark ?? DEFAULT_LOW_WATERMARK
     this.flushIntervalMs = options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS
+    // 底部面板的统一容量检查要把终端会话算进去：本管理器只提供「有哪些标签 / 怎么回收」，
+    // 判定规则在 shared/bottomPanelTabs（主进程与渲染端共用一份）。
+    registerBottomPanelTabProvider({
+      kind: 'terminal',
+      listTabs: () => this.bottomPanelTabs(),
+      closeTab: (sessionId) => this.close(sessionId)
+    })
   }
 
   onChanged(listener: (state: TerminalSessionDto) => void): () => void {
@@ -209,12 +220,38 @@ export class TerminalManager {
     }
   }
 
+  /** 会话被移除时回调（用户关闭或容量回收都会走这里）。 */
+  onRemoved(listener: (sessionId: string) => void): () => void {
+    this.removedListener = listener
+    return () => {
+      if (this.removedListener === listener) this.removedListener = null
+    }
+  }
+
   list(): TerminalSessionDto[] {
     return [...this.sessions.values()].map((session) => ({ ...session.dto }))
   }
 
+  /**
+   * 容量检查用的标签快照。
+   *
+   * 只有**仍在运行**的会话不可回收；已退出的会话是回收候选（回收它不会结束任何进程）。
+   * 这里用 `status` 判定，而不是「有没有 pty」——spawn 失败的会话也是 exited，同样可回收。
+   */
+  bottomPanelTabs(): BottomPanelTabSnapshot[] {
+    return [...this.sessions.values()].map((session) => ({
+      id: session.dto.id,
+      kind: 'terminal' as const,
+      active: session.dto.status === 'running',
+      createdAt: session.dto.createdAt
+    }))
+  }
+
   create(input: TerminalCreateInput): TerminalSessionDto {
     if (this.disposed) throw new Error('终端管理器已释放')
+    // 统一容量检查：达到上限时优先回收最老的已退出会话；全部在运行则抛错拦住创建。
+    // 必须在这里（真正 spawn 之前）判，不能先起进程再报错。
+    ensureBottomPanelCapacity({ kind: 'terminal' })
     const id = randomUUID()
     const cols = clamp(input.cols ?? 80, MIN_COLS, MAX_COLS)
     const rows = clamp(input.rows ?? 24, MIN_ROWS, MAX_ROWS)
@@ -301,6 +338,7 @@ export class TerminalManager {
     this.kill(session)
     this.sessions.delete(sessionId)
     deskLog('terminal:close', sessionId)
+    this.emitRemoved(sessionId)
   }
 
   /**
@@ -374,7 +412,19 @@ export class TerminalManager {
     this.sessions.clear()
     this.listener = null
     this.dataListener = null
+    this.removedListener = null
     this.pausedSessions = 0
+  }
+
+  /** 通知渲染端某个会话已经不在注册表里了（关闭或容量回收）。异常不能逃出去。 */
+  private emitRemoved(sessionId: string): void {
+    try {
+      this.removedListener?.(sessionId)
+    } catch (error) {
+      deskLog('terminal:removed-failed', sessionId, {
+        message: error instanceof Error ? error.message : String(error)
+      })
+    }
   }
 
   /** 起一个 PTY 挂到会话上；失败落到 dto.error，不让调用方抛出。 */

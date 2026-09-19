@@ -17,6 +17,11 @@ const emit = defineEmits<{ reset: []; 'open-shortcuts': [] }>()
         <span>最多打开标签数</span>
         <input v-model.number="draft.tabs.maxOpenCount" type="number" min="1" max="30" />
       </label>
+      <label class="field">
+        <span>底部面板标签上限</span>
+        <input v-model.number="draft.bottomPanel.maxTabs" type="number" min="1" max="30" />
+        <small>终端会话与命令任务合计；默认 10，最大 30</small>
+      </label>
       <label class="card-toggle">
         <input v-model="draft.tabs.wrap" type="checkbox" />
         <span><strong>标签自动换行</strong><small>横向空间不足时显示为多行</small></span>

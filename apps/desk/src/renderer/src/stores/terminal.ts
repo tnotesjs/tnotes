@@ -1,6 +1,8 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
+import { pushToast } from './toast'
+
 import type { TerminalDataEvent, TerminalSessionDto } from '../../../shared/contracts'
 
 /**
@@ -82,9 +84,16 @@ export const useTerminalStore = defineStore('terminal', () => {
   function subscribe(): () => void {
     const offChanged = window.desk.terminal.onChanged((state) => applyState(state))
     const offData = window.desk.terminal.onData((event) => enqueue(event))
+    // 主进程移除了会话（用户关闭，或达到上限时被容量回收）：清掉本地标签与缓冲。
+    // 少了这条，被回收的会话会留下一个点不动的空标签。
+    const offClosed = window.desk.terminal.onClosed((sessionId) => {
+      clearBuffered(sessionId)
+      removeState(sessionId)
+    })
     return () => {
       offChanged()
       offData()
+      offClosed()
     }
   }
 
@@ -244,7 +253,10 @@ export const useTerminalStore = defineStore('terminal', () => {
     try {
       const result = await window.desk.terminal.create({ knowledgeBaseId, cwd })
       if (!result.ok) {
+        // 容量被占满时主进程会拒绝并给出中文原因（见 shared/bottomPanelTabs）：
+        // 这里必须直接提示用户，否则「点了没反应」看起来像卡死
         lastError.value = result.error.message
+        pushToast(result.error.message, 'error')
         return
       }
       applyState(result.value)

@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto'
 
+import { ensureBottomPanelCapacity, registerBottomPanelTabProvider } from './bottomPanelTabs'
 import { deskLog } from './log'
 
+import type { BottomPanelTabSnapshot } from '../shared/bottomPanelTabs'
 import type {
   CommandTaskDto,
   CommandTaskLogEvent,
@@ -110,6 +112,13 @@ export class CommandTaskManager {
     this.flushIntervalMs = options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS
   }
 
+    // 底部面板的统一容量检查要把命令任务算进去：这里只提供「有哪些标签 / 怎么回收」，
+    // 判定规则在 shared/bottomPanelTabs（与终端会话合并计数）。
+    registerBottomPanelTabProvider({
+      kind: 'command-task',
+      listTabs: () => this.bottomPanelTabs(),
+      closeTab: (taskId) => this.close(taskId)
+    })
   onChanged(listener: (state: CommandTaskDto) => void): () => void {
     this.listener = listener
     return () => {
@@ -126,10 +135,33 @@ export class CommandTaskManager {
 
   list(): CommandTaskDto[] {
     return [...this.tasks.values()].map((task) => ({ ...task.dto }))
+  /** 任务标签被移除时回调（用户关闭或容量回收都会走这里）。 */
+  onClosed(listener: (taskId: string) => void): () => void {
+    this.closedListener = listener
+    return () => {
+      if (this.closedListener === listener) this.closedListener = null
+    }
+  }
+
   }
 
   /** 定位已有任务（「查看输出」用）；没有则 null。 */
   find(knowledgeBaseId: string, kind: CommandTaskDto['kind']): CommandTaskDto | null {
+  /**
+   * 容量检查用的标签快照。
+   *
+   * 仍在 `queued/saving/precheck/running/canceling` 的任务不可回收（回收会打断正在跑的命令）；
+   * 已结束（done/failed/timeout/canceled）的是回收候选。
+   */
+  bottomPanelTabs(): BottomPanelTabSnapshot[] {
+    return [...this.tasks.values()].map((record) => ({
+      id: record.dto.id,
+      kind: 'command-task' as const,
+      active: this.isActiveInternal(record.dto.status),
+      createdAt: record.dto.startedAt
+    }))
+  }
+
     const id = this.byKey.get(`${knowledgeBaseId}::${kind}`)
     const record = id ? this.tasks.get(id) : undefined
     return record ? { ...record.dto } : null
@@ -180,6 +212,11 @@ export class CommandTaskManager {
       // 任务会永远停在「已排队」。只有真正开始新一轮运行才允许自增。
       const handle = this.handleFor(existing)
       return { handle, dto: { ...existing.dto } }
+    // 统一容量检查：复用已有标签（运行中复用 / 已结束重跑）不占新名额，直接放行；
+    // 新建才参与合并计数（终端会话 + 命令任务）。必须在这里判——调用方随后就可能
+    // 进入保存 / Git 写操作，先执行再报错是不允许的。
+    ensureBottomPanelCapacity({ kind: 'command-task', reuse: Boolean(existing) })
+
     }
 
     const record = existing ?? this.createRecord(input)
@@ -307,6 +344,18 @@ export class CommandTaskManager {
         knowledgeBaseId: input.knowledgeBaseId,
         knowledgeBaseName: input.knowledgeBaseName,
         kind: input.kind,
+    this.closedListener = null
+  }
+
+  /** 通知渲染端某个任务标签已被移除（关闭或容量回收）。异常不能逃出去。 */
+  private emitClosed(taskId: string): void {
+    try {
+      this.closedListener?.(taskId)
+    } catch (error) {
+      deskLog('command-task:closed-failed', taskId, {
+        message: error instanceof Error ? error.message : String(error)
+      })
+    }
         title: input.title.slice(0, 80),
         cwd: input.cwd,
         command: input.command ?? '',
