@@ -284,6 +284,10 @@ export async function runGitTask(
         // 执行层为限制内存丢弃了输出：把丢弃量告诉面板，用户能看到"有输出被丢"
         outputTruncated: (droppedBytes: number): void => handleRef.addTruncated(droppedBytes)
       },
+      // 清理超时仍未确认进程组消失：如实告知（不是失败，仍在收尾）
+      onCleanupUnconfirmed: (): void => {
+        handleRef.stage('canceling', '进程组仍在收尾（清理未确认）')
+      },
       // 一入队就拿到身份：排队中被取消时只让这一项失效，不碰正在跑的另一项
       onEnqueued: (id: string, cancel: () => void) => {
         execution?.attachOperation(id, cancel)

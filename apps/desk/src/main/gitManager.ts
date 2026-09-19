@@ -17,6 +17,13 @@ export interface CommandResult {
   code: number
   stdout: string
   stderr: string
+  /**
+   * 所属进程组是否**已确认**清理完成。
+   *
+   * 正常情况为 true；只有在"清理超时仍探测到进程组存在"时才是 false ——
+   * 这是如实标记，便于上层区分"没确认"与"没清理"。
+   */
+  cleanupConfirmed?: boolean
 }
 
 interface GitManagerEvents {
@@ -71,6 +78,20 @@ export interface GitRunExtras {
    * `cancel` 只让这一项失效，不碰任何进程。
    */
   onEnqueued?: (operationId: string, cancel: () => void) => void
+  /**
+   * 判断"所属进程组是否还有存活成员"（默认用 `kill(-pgid, 0)`）。
+   *
+   * 抽出来是为了让测试能确定性地控制进程组的存活状态：真实进程组什么时候消失
+   * 取决于操作系统，而"清理未确认时绝不能结算"这条约定必须可复现地钉住。
+   */
+  probeProcessGroup?: () => boolean
+  /**
+   * 清理超时（`CLEANUP_GRACE_MS` 到点）但仍未确认进程组消失时上报。
+   *
+   * 这不是错误终态：调用方据此提示"进程还在收尾"，同时这一轮仍被跟踪、
+   * **不会**被重试重复启动。
+   */
+  onCleanupUnconfirmed?: () => void
 }
 
 export function runGit(
@@ -161,6 +182,7 @@ export function runGit(
      * stdout/stderr 关掉却仍在跑），所以清理确认要看进程组本身。
      */
     const processGroupAlive = (): boolean => {
+      if (extras.probeProcessGroup) return extras.probeProcessGroup()
       if (!detached || !child.pid) return false
       try {
         process.kill(-child.pid, 0)
@@ -190,7 +212,8 @@ export function runGit(
           stdout,
           stderr: [stderr.trim(), `Git 操作超时：git ${args[0]}（${timeoutMs}ms）`]
             .filter(Boolean)
-            .join('\n')
+            .join('\n'),
+          cleanupConfirmed
         })
         return
       }
@@ -198,21 +221,26 @@ export function runGit(
         resolve({
           code: 130,
           stdout,
-          stderr: [stderr.trim(), 'Git 操作已取消'].filter(Boolean).join('\n')
+          stderr: [stderr.trim(), 'Git 操作已取消'].filter(Boolean).join('\n'),
+          cleanupConfirmed
         })
         return
       }
-      resolve({ code: exitCode ?? 1, stdout, stderr })
+      resolve({
+        code: exitCode ?? 1,
+        stdout,
+        stderr,
+        cleanupConfirmed
+      })
     }
 
     /**
-     * 等**所属进程组清理完成**。
+     * 确认**所属进程组**是否已清理完成。
      *
-     * 判据有两条，任一成立即可：
-     *  - 输出管道关闭了（`close`，正常完成的自然终点）；
-     *  - 进程组里已经没有成员（`kill(-pid, 0)` 得到 ESRCH）——这条能覆盖
-     *    "主进程还活着但已经关掉输出流"的情况。
-     * 空转几次之后就用探测确认，避免管道一直不关时白等。
+     * 唯一判据是进程组里**已经没有成员**（探测得到 ESRCH）。管道关闭、`close`、
+     * `stopReason`、以及"已发出 SIGKILL"都**不算**：孙进程可能已经关掉输出流
+     * 却仍在跑（真实 git 的传输子进程就是这样），那时结算就是提前解除占用。
+     * 未自成进程组（Windows / 未 detached）没有独立的组要收，只认主进程退出。
      */
     let cleanupPoll: NodeJS.Timeout | null = null
     const checkCleanup = (): void => {
@@ -261,18 +289,23 @@ export function runGit(
       settle()
     }
 
-    /** 终止之后必须有个收尾上限，否则一个赖着不走的进程会把队列永远挂着 */
+    /**
+     * 清理超时提示（**不是**完成信号）。
+     *
+     * 到点仍未确认进程组消失时，只记下"清理未确认"并通知调用方，然后继续按
+     * `probeProcessGroup` 轮询——**绝不**把"时间到了"当成"清理完成"：
+     * 那会提前结算、注销进程登记、释放队列，而进程还在跑。
+     * 保留跟踪也就意味着这一轮不会被重试重复启动。
+     */
     const bumpCleanupWatchdog = (): void => {
       if (cleanupTimer) return
       cleanupTimer = setTimeout(() => {
-        // 到点仍未确认清理：已经尽力（SIGTERM + SIGKILL 都发过），
-        // 按已终止结算，不再无限等。这是兜底，不是正常路径。
-        cleanupConfirmed = true
-        if (cleanupPoll) {
-          clearTimeout(cleanupPoll)
-          cleanupPoll = null
-        }
-        maybeSettle()
+        cleanupTimer = null
+        if (cleanupConfirmed || settled) return
+        // 只上报"清理仍未确认"，**不**改任何完成状态：时间到了不等于清理成功
+        extras.onCleanupUnconfirmed?.()
+        // 继续等进程组真的消失；强杀兜底仍在（未被取消），必要时再确认一次
+        checkCleanup()
       }, CLEANUP_GRACE_MS)
     }
 

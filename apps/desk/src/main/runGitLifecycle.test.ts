@@ -377,6 +377,57 @@ describe('runGit 生命周期（可控子进程）', () => {
     expect(beatOf(mark)).toBe(beatAtSettle)
   }, 90000)
 
+  it('清理超时到点但进程组探测仍存在：不得结算、不得注销登记，也不得伪造清理成功', async () => {
+    const mark = `U${Date.now()}`
+    const controller = new AbortController()
+    const chunks: string[] = []
+    let groupAlive = true
+    let unconfirmed = 0
+    let unregistered = false
+
+    const running = runGit(fixture, [SUBPROCESS, 'normal-exit', mark, '50'], 120000, {
+      signal: controller.signal,
+      // 确定性装置：进程组"是否还在"由测试说了算（真实进程组何时消失取决于系统）
+      probeProcessGroup: () => groupAlive,
+      onCleanupUnconfirmed: () => {
+        unconfirmed += 1
+      },
+      onSpawn: {
+        register: () => {},
+        unregister: () => {
+          unregistered = true
+        }
+      },
+      observer: { output: (_stream, chunk) => chunks.push(chunk) }
+    })
+
+    let settled = false
+    void running.then(() => {
+      settled = true
+    })
+
+    // 主进程跑完就退出了，输出也收尾了 —— 两个条件都满足
+    expect(await waitUntil(() => chunks.join('').includes(`END_${mark}`))).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    // 触发终止流程：清理超时（兜底）只在终止流程里才有意义
+    controller.abort()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(settled).toBe(false)
+
+    // 但进程组探测持续说"还在"：推进时间**超过**清理超时（3500ms）
+    await new Promise((resolve) => setTimeout(resolve, 4000))
+    expect(unconfirmed).toBeGreaterThan(0) // 如实上报了"清理未确认"
+    expect(settled).toBe(false) // 关键：不得因为时间到了就结算
+    expect(unregistered).toBe(false) // 进程跟踪必须保留（这一轮不会被重试重复启动）
+
+    // 让探测返回 ESRCH：这时才允许完成
+    groupAlive = false
+    const result = await running
+    expect(result.cleanupConfirmed).toBe(true)
+    expect(unregistered).toBe(true)
+    expect(settled).toBe(true)
+  }, 90000)
+
   it('正常退出时注册的终止器也会被注销（不留悬挂的 kill 引用）', async () => {
     let registered = false
     let unregistered = false
