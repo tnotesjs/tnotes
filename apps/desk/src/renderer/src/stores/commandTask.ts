@@ -33,6 +33,11 @@ export const useCommandTaskStore = defineStore('commandTask', () => {
   /** 面板当前展示的任务：null 表示展示交互式 Shell */
   const activeTaskId = ref<string | null>(null)
   const retrying = ref<Record<string, boolean>>({})
+  /**
+   * 最近一次认领失败的原因（例如底部面板标签已达上限被拦）。
+   * 调用方据此把主进程给出的中文原因展示给用户，而不是只说「无法创建命令任务」。
+   */
+  const lastError = ref<string | null>(null)
 
   const active = computed(() => tasks.value.find((task) => task.id === activeTaskId.value) ?? null)
   const runningCount = computed(
@@ -149,9 +154,18 @@ export const useCommandTaskStore = defineStore('commandTask', () => {
   function subscribe(): () => void {
     const offChanged = window.desk.commandTask.onChanged((state) => applyState(state))
     const offLog = window.desk.commandTask.onLog((event) => appendLog(event))
+    // 主进程移除了任务标签（用户关闭，或达到上限时被容量回收）：同步清掉本地标签与日志
+    const offClosed = window.desk.commandTask.onClosed((taskId) => {
+      tasks.value = tasks.value.filter((task) => task.id !== taskId)
+      const nextLogs = { ...logs.value }
+      delete nextLogs[taskId]
+      logs.value = nextLogs
+      if (activeTaskId.value === taskId) activeTaskId.value = null
+    })
     return () => {
       offChanged()
       offLog()
+      offClosed()
     }
   }
 
@@ -164,7 +178,12 @@ export const useCommandTaskStore = defineStore('commandTask', () => {
     command?: string
   }): Promise<CommandTaskDto | null> {
     const result = await window.desk.commandTask.claim(input)
-    if (!result.ok) return null
+    if (!result.ok) {
+      // 主进程的统一容量检查会在这里给出中文原因（标签达上限 / 上限调低等）
+      lastError.value = result.error.message
+      return null
+    }
+    lastError.value = null
     applyState(result.value)
     return result.value
   }
@@ -267,6 +286,7 @@ export const useCommandTaskStore = defineStore('commandTask', () => {
     active,
     runningCount,
     retrying,
+    lastError,
     subscribe,
     load,
     claim,

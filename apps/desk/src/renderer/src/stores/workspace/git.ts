@@ -68,7 +68,9 @@ export function createGit(ctx: GitContext) {
       return
     }
     if (!task) {
-      ctx.error.value = '无法创建命令任务'
+      // 认领失败时把主进程给的中文原因带上（例如「底部面板标签已达上限」），
+      // 否则用户只看到一句没有信息量的“无法创建命令任务”
+      ctx.error.value = commandTasks.lastError ?? '无法创建命令任务'
       return
     }
     try {
@@ -137,7 +139,8 @@ export function createGit(ctx: GitContext) {
       cwd: commandTaskCwd(knowledgeBaseId)
     })
     if (!task) {
-      ctx.error.value = '无法创建命令任务'
+      // 容量被拦时，这里必须在**保存与 Git 写操作之前**返回，并把原因展示出来
+      ctx.error.value = commandTasks.lastError ?? '无法创建命令任务'
       return
     }
     // 先声明「本轮开始执行」，否则保存期间收到的取消没有归属：任务还没进 Git 队列，

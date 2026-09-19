@@ -385,6 +385,10 @@ export function registerCommandTask(getWindow: () => BrowserWindow | null): () =
   const offLog = commandTaskManager.onLog((event) => {
     getWindow()?.webContents.send(IPC_CHANNELS.commandTaskLog, event)
   })
+  // 任务标签被移除（用户关闭 / 容量回收）时通知界面，避免留下点不动的空标签
+  const offClosed = commandTaskManager.onClosed((taskId) => {
+    getWindow()?.webContents.send(IPC_CHANNELS.commandTaskClosed, taskId)
+  })
 
   handle(IPC_CHANNELS.commandTaskClaim, getWindow, claimSchema, (input) => {
     const location = workspaceManager.getLocation(input.knowledgeBaseId)
@@ -484,5 +488,6 @@ export function registerCommandTask(getWindow: () => BrowserWindow | null): () =
   return () => {
     offChanged()
     offLog()
+    offClosed()
   }
 }

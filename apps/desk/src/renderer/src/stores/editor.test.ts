@@ -24,6 +24,7 @@ const settings: AppSettings = {
   nodePath: null,
   confirmBeforeCommit: false,
   tabs: { maxOpenCount: 10, wrap: true, autoRevealInToc: true },
+  bottomPanel: { maxTabs: 10 },
   toc: {
     showNoteIndex: true,
     showNoteStatus: true,

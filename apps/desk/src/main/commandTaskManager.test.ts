@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import {
+  configureBottomPanelMaxTabs,
+  resetBottomPanelMaxTabs,
+  resetBottomPanelTabProviders
+} from './bottomPanelTabs'
 import { CommandTaskManager } from './commandTaskManager'
 
 import type { CommandTaskDto, CommandTaskLogEvent } from '../shared/contracts'
@@ -236,5 +241,76 @@ describe('推送阶段与取消', () => {
     expect(manager.list()[0].status).toBe('queued')
     manager.reportStage(second.id, second.run, 'saving', '保存未提交的更改')
     expect(manager.list()[0].status).toBe('saving')
+  })
+})
+
+/**
+ * 命令任务标签与终端会话**合并计数**，容量检查必须在认领（真正执行 / 进入 Git 之前）
+ * 就完成：达到上限时回收已结束任务，复用已有标签不占名额，其余情况直接拦住。
+ */
+describe('底部面板容量（管理器接入统一检查入口）', () => {
+  afterEach(() => {
+    resetBottomPanelMaxTabs()
+    resetBottomPanelTabProviders()
+  })
+
+  it('达到上限且任务都在活动：新任务被拦，已有标签一个不动', () => {
+    const { manager } = setup()
+    configureBottomPanelMaxTabs(() => 2)
+    const pull = claim(manager, 'git-pull')
+    const push = claim(manager, 'git-push')
+
+    expect(() => claim(manager, 'git-fetch')).toThrow(/全部在运行/)
+    expect(manager.list().map((task) => task.id)).toEqual([pull.id, push.id])
+  })
+
+  it('复用已有 (知识库, 种类) 不占名额：达到上限仍放行', () => {
+    const { manager } = setup()
+    configureBottomPanelMaxTabs(() => 2)
+    const pull = claim(manager, 'git-pull')
+    claim(manager, 'git-push')
+
+    const again = claim(manager, 'git-pull')
+    expect(again.id).toBe(pull.id)
+    expect(manager.list()).toHaveLength(2)
+  })
+
+  it('达到上限但有已结束任务：回收它再用这个名额', () => {
+    const { manager } = setup()
+    configureBottomPanelMaxTabs(() => 2)
+    const pull = claim(manager, 'git-pull')
+    const push = claim(manager, 'git-push')
+    push.stage('running')
+    manager.finishRun(push.id, push.run, 'done', null)
+
+    const fetch = claim(manager, 'git-fetch')
+    const ids = manager.list().map((task) => task.id)
+    expect(ids).toContain(pull.id)
+    expect(ids).toContain(fetch.id)
+    expect(ids).not.toContain(push.id)
+    expect(manager.list()).toHaveLength(2)
+  })
+
+  it('调低上限不打断运行中的任务：超限时只是不能再新建', () => {
+    const { manager } = setup()
+    const pull = claim(manager, 'git-pull')
+    const push = claim(manager, 'git-push')
+    configureBottomPanelMaxTabs(() => 1)
+
+    expect(() => claim(manager, 'git-fetch')).toThrow(/上限已调低为 1/)
+    expect(manager.list().map((task) => task.id)).toEqual([pull.id, push.id])
+    expect(manager.list().every((task) => task.status === 'queued')).toBe(true)
+  })
+
+  it('关闭任务会通知渲染端（容量回收 / 用户关闭都走同一条通知）', () => {
+    const { manager } = setup()
+    const closed: string[] = []
+    manager.onClosed((taskId) => closed.push(taskId))
+    const task = claim(manager)
+
+    manager.close(task.id)
+    expect(closed).toEqual([task.id])
+    manager.close(task.id)
+    expect(closed).toEqual([task.id])
   })
 })
