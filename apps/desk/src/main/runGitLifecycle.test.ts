@@ -47,6 +47,43 @@ if (mode === 'normal-exit') {
   process.stdout.write('HEAD\\n')
   process.stdout.write('y'.repeat(Number(bytes)))
   process.stdout.write('\\nTAIL_OK\\n', () => process.exit(0))
+} else if (mode === 'close-streams-but-alive') {
+  // 主进程：**先关掉输出流但继续运行**，并忽略 SIGTERM。
+  // 用来验证"管道关了 ≠ 进程结束了"，以及继续写心跳证明它还活着。
+  const live = setInterval(() => {
+    try { writeFileSync(process.env.DESK_TEST_DIR + '/' + process.env.DESK_BEAT_NAME + '.beat', String(Date.now())) } catch {}
+  }, 50)
+  process.stdout.write('BEFORE_CLOSE_' + mark + '\\n', () => {
+    process.stdout.end()
+    process.stderr.end()
+    void live
+  })
+  process.on('SIGTERM', () => {})
+  setInterval(() => {}, 1000)
+} else if (mode === 'parent-exits-grandchild-closes-streams') {
+  // 父进程退出；孙进程**关掉自己的输出流但继续写心跳**。
+  // 用来验证"管道关了"不能当成"所属进程组清理完成"。
+  const source = [
+    'const fs = require("node:fs")',
+    'process.on("SIGTERM", () => {})',
+    'setInterval(() => { try { fs.writeFileSync(process.env.DESK_TEST_DIR + "/" + process.env.DESK_BEAT_NAME + ".beat", String(Date.now())) } catch {} }, 50)',
+    'process.stdout.end()',
+    'process.stderr.end()',
+    'setInterval(() => {}, 1000)'
+  ].join(';')
+  // 注意不要 unref：父进程要一直活着等取消（它为子进程保留一个 ref，
+  // 否则子进程一被回收、事件循环就空了，父进程会自己退出）。
+  spawn(process.execPath, ['-e', source], {
+    stdio: ['ignore', 'inherit', 'inherit'],
+    env: process.env
+  })
+  process.on('SIGTERM', () => process.exit(0))
+  process.stdout.write('PARENT_' + mark + '\\n')
+  // 父进程自己也写心跳：测试据此确认"父进程还活着"这个前提
+  setInterval(() => {
+    try { writeFileSync(process.env.DESK_TEST_DIR + '/' + process.env.DESK_BEAT_NAME + '.parent.beat', String(Date.now())) } catch {}
+  }, 50)
+  setInterval(() => {}, 1000)
 } else {
   // 孙进程：留在父进程的进程组里（真实 git 的 git-remote-http 就是这样），
   // 忽略 SIGTERM，持续持有 stdout 管道；心跳文件用来判定它何时才真的消亡
@@ -240,6 +277,104 @@ describe('runGit 生命周期（可控子进程）', () => {
     expect(result.stderr).toContain('已取消')
     // 同样不早于强杀兜底：孙进程忽略 SIGTERM，必须等 SIGKILL 才可能真正收尾
     expect(Date.now() - abortedAt).toBeGreaterThanOrEqual(3000)
+  }, 90000)
+
+  it('主进程先关闭输出流但仍存活并忽略 SIGTERM：取消后不得提前结算', async () => {
+    const mark = `S${Date.now()}`
+    process.env.DESK_BEAT_NAME = mark
+    const controller = new AbortController()
+    const chunks: string[] = []
+    const running = runGit(fixture, [SUBPROCESS, 'close-streams-but-alive', mark], 120000, {
+      signal: controller.signal,
+      observer: { output: (_stream, chunk) => chunks.push(chunk) }
+    })
+
+    let settled = false
+    void running.then(() => {
+      settled = true
+    })
+
+    // 输出流已经关了（能看到关闭前写的内容），但进程还活着（心跳在更新）
+    expect(await waitUntil(() => chunks.join('').includes(`BEFORE_CLOSE_${mark}`))).toBe(true)
+    expect(await waitUntil(() => beatOf(mark) > 0)).toBe(true)
+    const beat1 = beatOf(mark)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(beatOf(mark)).toBeGreaterThan(beat1)
+    // 管道关了但进程没退出：这时**不能**结算（这正是本用例要钉的）
+    expect(settled).toBe(false)
+
+    const abortedAt = Date.now()
+    controller.abort()
+
+    // 取消之后进程仍忽略 SIGTERM 并继续跑：不得因为"已发出终止 / 管道已关"就结算
+    await new Promise((resolve) => setTimeout(resolve, 800))
+    expect(settled).toBe(false)
+    const beatAfterAbort = beatOf(mark)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(beatOf(mark)).toBeGreaterThan(beatAfterAbort)
+
+    // 直到强杀兜底真的把进程收掉，才进入终态
+    const result = await running
+    expect(result.code).toBe(130)
+    expect(result.stderr).toContain('已取消')
+    expect(Date.now() - abortedAt).toBeGreaterThanOrEqual(3000)
+    // 保留关闭输出流之前的内容
+    expect(chunks.join('')).toContain(`BEFORE_CLOSE_${mark}`)
+    // 无残留：心跳停止
+    const beatAtSettle = beatOf(mark)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(beatOf(mark)).toBe(beatAtSettle)
+  }, 90000)
+
+  it('父进程退出、孙进程关闭输出流但仍写心跳：不得因管道关闭就解除占用，清理完成才进终态', async () => {
+    const mark = `G${Date.now()}`
+    process.env.DESK_BEAT_NAME = mark
+    const controller = new AbortController()
+    const chunks: string[] = []
+    const running = runGit(
+      fixture,
+      [SUBPROCESS, 'parent-exits-grandchild-closes-streams', mark],
+      120000,
+      {
+        signal: controller.signal,
+        observer: { output: (_stream, chunk) => chunks.push(chunk) }
+      }
+    )
+
+    let settled = false
+    void running.then(() => {
+      settled = true
+    })
+
+    expect(await waitUntil(() => chunks.join('').includes(`PARENT_${mark}`))).toBe(true)
+    // 孙进程活着（心跳在跳），但它已经关掉了自己的输出流
+    expect(await waitUntil(() => beatOf(mark) > 0)).toBe(true)
+    const beat1 = beatOf(mark)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(beatOf(mark)).toBeGreaterThan(beat1)
+    // 管道关了、主进程也会在取消后退出，但进程组里还有孙进程：
+    // 这时候结算就是"因管道关闭而解除占用"
+    expect(settled).toBe(false)
+
+    // 用取消信号触发终止（同时验证取消语义；dispose 路径另有专门用例）
+    const terminatedAt = Date.now()
+    controller.abort()
+
+    await new Promise((resolve) => setTimeout(resolve, 800))
+    expect(settled).toBe(false)
+    // 孙进程必须还在（忽略 SIGTERM），证明"管道关了 ≠ 清理完成"
+    const beatAt800 = beatOf(mark)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(beatOf(mark)).toBeGreaterThan(beatAt800)
+
+    const result = await running
+    expect(Date.now() - terminatedAt).toBeGreaterThanOrEqual(3000)
+    expect(result.code).toBe(130)
+    expect(result.stderr).toContain('已取消')
+    // 清理完成后才进终态，且无残留
+    const beatAtSettle = beatOf(mark)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(beatOf(mark)).toBe(beatAtSettle)
   }, 90000)
 
   it('正常退出时注册的终止器也会被注销（不留悬挂的 kill 引用）', async () => {

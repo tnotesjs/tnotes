@@ -123,20 +123,25 @@ export function runGit(
     }
 
     // ── 三个必须分开处理的状态 ──
-    /** 主进程（直接子进程）是否已退出：它自己不再持有管道 */
+    // ── 完成条件的三个独立事实（不能用其中一个代替另一个）──
+    /** 主进程（直接子进程）是否已退出 */
     let childExited = false
+    /** **进程组是否已确认清理完成**（不是"已发出 SIGKILL"） */
+    let cleanupConfirmed = false
+    /** 输出是否已收尾（stdout 与 stderr 都 end） */
+    let streamsEnded = false
     /** 停止原因（取消/超时）；null 表示正常完成 */
     let stopReason: 'timeout' | 'canceled' | null = null
     let settled = false
     let terminated = false
     let exitCode: number | null = null
     let timer: NodeJS.Timeout | null = null
-    let drainTimer: NodeJS.Timeout | null = null
-    /** 强杀兜底发出的时间（毫秒）；0 = 还没发出。兜底窗口从这一刻才开始算 */
-    let forceKilledAt = 0
+    let cleanupTimer: NodeJS.Timeout | null = null
+    /** 强杀兜底定时器；确认清理完成就取消，仍有存活成员才保留 */
+    let forceTimer: NodeJS.Timeout | null = null
 
-    /** 主进程退出后仍要等输出收尾，但不能无限等：强杀之后再给一个窗口 */
-    const DRAIN_GRACE_MS = 2000
+    /** 终止之后等所属进程组清理完成的上限（SIGTERM→强杀→再给一点时间） */
+    const CLEANUP_GRACE_MS = 3500
     /** SIGTERM 之后多久强杀整个进程组 */
     const FORCE_KILL_MS = 3000
 
@@ -150,37 +155,30 @@ export function runGit(
     }
 
     /**
-     * 终止这一轮：SIGTERM → （FORCE_KILL_MS 后）SIGKILL。
+     * 所属进程组是否还有存活成员。
      *
-     * 幂等；而且**main 进程先退出也不会取消强杀兜底**——孙子进程可能还活着并占着
-     * 管道，那正是需要 SIGKILL 的时候。
+     * 与"管道是否关闭"是两件事：管道关了不等于成员都没了（成员可能已把
+     * stdout/stderr 关掉却仍在跑），所以清理确认要看进程组本身。
      */
-    const terminate = (): void => {
-      if (terminated) return
-      terminated = true
-      killProcessGroup('SIGTERM')
-      // 幂等：只会排一个强杀兜底。句柄不用存——它到点执行，进程组没了就抛 ESRCH。
-      setTimeout(() => {
-        killProcessGroup('SIGKILL')
-        // 兜底窗口从**强杀发出**之后算起：否则会在 SIGKILL 之前就结算，
-        // 留下还在跑的孙进程（它忽略 SIGTERM，正等着被强杀）。
-        if (settled || forceKilledAt) return
-        forceKilledAt = Date.now()
-        drainTimer = setTimeout(settle, DRAIN_GRACE_MS)
-      }, FORCE_KILL_MS)
-    }
-
-    const clearTimersOnSettle = (): void => {
-      if (timer) clearTimeout(timer)
-      if (drainTimer) clearTimeout(drainTimer)
-      // 注意：强杀兜底**不在这里取消**。主进程先退出时孙子进程可能仍在，
-      // 那正是需要 SIGKILL 的时候；让它到点执行（进程组没了就抛 ESRCH，被吞掉）。
+    const processGroupAlive = (): boolean => {
+      if (!detached || !child.pid) return false
+      try {
+        process.kill(-child.pid, 0)
+        return true
+      } catch (error) {
+        // ESRCH = 没有成员了；EPERM = 有成员但不属于我们（仍然算活着）
+        return (error as { code?: string }).code !== 'ESRCH'
+      }
     }
 
     const settle = (): void => {
       if (settled) return
       settled = true
-      clearTimersOnSettle()
+      if (timer) clearTimeout(timer)
+      if (cleanupTimer) clearTimeout(cleanupTimer)
+      if (cleanupPoll) clearTimeout(cleanupPoll)
+      // 确认结束之后才取消强杀兜底：否则会无条件向原来那个进程组 ID 发 SIGKILL
+      if (forceTimer) clearTimeout(forceTimer)
       signal?.removeEventListener('abort', onAbort)
       onSpawn?.unregister?.()
       const stdout = Buffer.concat(stdoutChunks).toString('utf8')
@@ -208,33 +206,101 @@ export function runGit(
     }
 
     /**
-     * 只有「输出收尾」满足时才结算。
+     * 等**所属进程组清理完成**。
      *
-     * 正常完成必须等 stdout/stderr 都结束，否则会丢掉尾部输出；
-     * 终止场景下若孙子进程赖着不走（管道不关），等 DRAIN_GRACE_MS 就结算
-     * ——强杀已经发出，不能把队列永远挂着。
-     *
-     * 注意这里**不能**用"检查过就不再进来"的守卫：'end' 可能先到（此时进程还没
-     * 退出）、'exit' 后到，第二次进来才是真正该结算的时刻。`settle` 自身幂等。
+     * 判据有两条，任一成立即可：
+     *  - 输出管道关闭了（`close`，正常完成的自然终点）；
+     *  - 进程组里已经没有成员（`kill(-pid, 0)` 得到 ESRCH）——这条能覆盖
+     *    "主进程还活着但已经关掉输出流"的情况。
+     * 空转几次之后就用探测确认，避免管道一直不关时白等。
      */
-    const checkDrain = (): void => {
-      if (settled) return
-      const bothEnded = Boolean(child.stdout.readableEnded && child.stderr.readableEnded)
-      if (!bothEnded) {
-        // 只有强杀兜底已经发出之后才有必要限时；否则会早于 SIGKILL 结算，
-        // 把忽略 SIGTERM 的孙进程留成孤儿。
-        if (forceKilledAt && !drainTimer) drainTimer = setTimeout(settle, DRAIN_GRACE_MS)
+    let cleanupPoll: NodeJS.Timeout | null = null
+    const checkCleanup = (): void => {
+      if (cleanupConfirmed || settled) return
+      // 清理确认看**进程组本身**，不是管道是否关闭，也不是"已发出 SIGKILL"：
+      // 孙进程可能已经关掉输出流却仍在跑（真实 git 的传输子进程就是这样）。
+      // 未自成进程组（Windows / 未 detached）没有独立的组要收，就只认主进程退出。
+      const reaped = !detached || !processGroupAlive()
+      if (reaped) {
+        cleanupConfirmed = true
+        if (cleanupPoll) {
+          clearTimeout(cleanupPoll)
+          cleanupPoll = null
+        }
+        maybeSettle()
         return
       }
-      // exit 或终止之后才结算；否则等 'close'（正常完成的最后一步）
-      if (childExited || stopReason) settle()
+      // 还有成员活着：低频轮询继续确认（不能自旋——自旋会占住事件循环，
+      // 连强杀定时器都跑不到）。组可能晚于主进程才消失，所以必须一直等它。
+      if (!cleanupPoll) {
+        cleanupPoll = setTimeout(() => {
+          cleanupPoll = null
+          checkCleanup()
+        }, 50)
+      }
+    }
+
+    /** 输出收尾检查：只负责"读到尾巴了"，不负责清理确认 */
+    const checkDrain = (): void => {
+      if (settled || streamsEnded) return
+      if (!child.stdout.readableEnded || !child.stderr.readableEnded) return
+      streamsEnded = true
+      checkCleanup()
+    }
+
+    /**
+     * 三个事实**都**成立才结算：主进程已退出、所属进程组清理完成、输出已收尾。
+     *
+     * 不能用 `stopReason` 或"已发出 SIGKILL"代替退出确认：取消/超时只说明我们
+     * 发出了终止请求，进程可能还在跑（忽略 SIGTERM）——那时结算就是提前解除占用、
+     * 把还在跑的进程留成孤儿。
+     */
+    function maybeSettle(): void {
+      if (settled) return
+      if (!childExited || !cleanupConfirmed || !streamsEnded) return
+      settle()
+    }
+
+    /** 终止之后必须有个收尾上限，否则一个赖着不走的进程会把队列永远挂着 */
+    const bumpCleanupWatchdog = (): void => {
+      if (cleanupTimer) return
+      cleanupTimer = setTimeout(() => {
+        // 到点仍未确认清理：已经尽力（SIGTERM + SIGKILL 都发过），
+        // 按已终止结算，不再无限等。这是兜底，不是正常路径。
+        cleanupConfirmed = true
+        if (cleanupPoll) {
+          clearTimeout(cleanupPoll)
+          cleanupPoll = null
+        }
+        maybeSettle()
+      }, CLEANUP_GRACE_MS)
+    }
+
+    /**
+     * 终止这一轮：SIGTERM → （FORCE_KILL_MS 后）SIGKILL。
+     *
+     * 幂等；main 进程先退出也**不取消**强杀兜底——孙子进程可能还活着。兜底只在
+     * 确认清理完成（settle）时取消。
+     */
+    const terminate = (): void => {
+      if (!terminated) {
+        terminated = true
+        killProcessGroup('SIGTERM')
+        forceTimer = setTimeout(() => {
+          forceTimer = null
+          killProcessGroup('SIGKILL')
+          // 强杀之后再确认一次：可能有成员刚被收掉
+          checkCleanup()
+        }, FORCE_KILL_MS)
+      }
+      bumpCleanupWatchdog()
+      checkCleanup()
     }
 
     const onAbort = (): void => {
       if (settled || stopReason) return
       stopReason = 'canceled'
       terminate()
-      checkDrain()
     }
 
     // ── 让调用方（gitManager.dispose / 应用退出）能终止这个子进程 ──
@@ -266,13 +332,14 @@ export function runGit(
       if (settled || stopReason) return
       stopReason = 'timeout'
       terminate()
-      checkDrain()
     }, timeoutMs)
 
     child.on('error', (error) => {
       if (settled) return
       settled = true
-      clearTimersOnSettle()
+      if (timer) clearTimeout(timer)
+      if (cleanupTimer) clearTimeout(cleanupTimer)
+      if (forceTimer) clearTimeout(forceTimer)
       signal?.removeEventListener('abort', onAbort)
       onSpawn?.unregister?.()
       reject(error)
@@ -281,14 +348,21 @@ export function runGit(
     child.on('exit', (code) => {
       exitCode = code
       childExited = true
-      // 输出可能还没收尾（孙子进程还在写），等它；正常完成时 'close' 紧随其后
-      checkDrain()
+      // 主进程退出 ≠ 进程组清理完成（可能有孙进程）≠ 输出已收尾：
+      // 三个事实分别确认，谁先到都只推进自己那一项。
+      if (streamsEnded) checkCleanup()
+      maybeSettle()
     })
     child.on('close', (code) => {
       exitCode = code
       childExited = true
-      checkDrain()
+      // close = 输出管道关闭：可以据此确认清理（管道关了说明没人在写了）
+      if (streamsEnded) checkCleanup()
+      checkCleanup()
     })
+
+    // close 不一定来（孙进程可能一直占着管道），事件都挂好之后主动确认一次清理
+    checkCleanup()
   })
 }
 
