@@ -45,10 +45,25 @@ const pageErrors = trackPageErrors(page)
 await page.waitForLoadState('domcontentloaded')
 
 const caption = () => page.locator('input.desk-image__caption').first()
+/**
+ * 把光标显式放到描述末尾。
+ *
+ * 自动化点击已打开的输入框落点不可靠（描述框文字居中，点中心 = 光标落在文字中间），
+ * 而"继续在末尾编辑"才是用户路径；产品侧 focusCaption（点「描述」打开）也落到末尾。
+ * 这里不依赖合成按键 `End`：实测在可滚动的长文档里它时灵时不灵（浏览器/Electron
+ * 合成按键的导航键竞态，与产品代码无关的探针结论）。
+ */
+const focusCaptionAtEnd = async () => {
+  await caption().evaluate((el) => {
+    el.focus()
+    const end = el.value.length
+    if (end > 0) el.setSelectionRange(end, end)
+  })
+}
 const openCaption = async () => {
-  // 输入框还开着：直接聚焦，不要重复点按钮（toggle 会把它收起来）
+  // 输入框还开着：直接聚焦到末尾，不要重复点按钮（toggle 会把它收起来）
   if ((await caption().count()) > 0 && (await caption().isVisible())) {
-    await caption().click()
+    await focusCaptionAtEnd()
     return
   }
   await page.locator('.ProseMirror figure.desk-image').first().click()
@@ -57,13 +72,8 @@ const openCaption = async () => {
   if (!appeared) throw new Error('描述按钮未出现（图片未进入选中态）')
   await button.click()
   await waitFor(async () => (await caption().count()) > 0, 5000)
-  // 显式聚焦并把光标放到末尾：自动化点击的落点不可靠，而"继续在末尾编辑"
-  // 才是用户路径（产品侧的 focusCaption 也保证这一点）。
-  await caption().evaluate((el) => {
-    el.focus()
-    const end = el.value.length
-    if (end > 0) el.setSelectionRange(end, end)
-  })
+  // 打开（点「描述」按钮）这一路径**不兜底光标**：光标该落在末尾是产品侧
+  // focusCaption 的职责，留给调用方断言（否则脚本自己把回归遮掉）。
 }
 /** 直接读图片节点的 alt（不依赖渲染出来的可见文字）。 */
 const imageAlt = async () =>
@@ -92,11 +102,21 @@ try {
 
   // ── 1. 逐字输入中文：只更新描述，不动图片节点 ──
   await openCaption()
+  // 产品行为（不靠脚本兜底）：点「描述」打开时光标落在已有描述的末尾。
+  const caretOnOpen = await caption().evaluate((el) => ({
+    caret: el.selectionStart,
+    end: el.value.length,
+    focused: document.activeElement === el
+  }))
+  rec.record(
+    '打开描述框时光标落在末尾（产品侧）',
+    caretOnOpen.focused && caretOnOpen.caret === caretOnOpen.end,
+    JSON.stringify(caretOnOpen)
+  )
   const valueBefore = await caption().inputValue()
   await page.keyboard.type('风景照', { delay: 60 })
   const valueAfter = await caption().inputValue()
-  // 判据只看"新输入是否完整进入描述框且未被塞进 alt"：
-  // 是追加还是插入取决于聚焦落点（浏览器行为），不当作缺陷判据。
+  // 判据只看"新输入是否完整进入描述框且未被塞进 alt"（追加式输入，光标已在末尾）。
   rec.record(
     '逐字输入只进入描述框（未写进 alt）',
     valueAfter.length === valueBefore.length + 3 && valueAfter.includes('风景照'),
@@ -159,8 +179,9 @@ try {
   )
 
   // ── 6. 输入框内删除（Backspace）只影响输入框 ──
+  // openCaption 已把光标显式放到末尾；不再按合成的 `End`（长文档里它会被浏览器
+  // 合成按键的导航竞态吃掉，见 focusCaptionAtEnd 的注释）。
   await openCaption()
-  await page.keyboard.press('End')
   await page.keyboard.press('Backspace')
   const afterBackspace = await caption().inputValue()
   rec.record(

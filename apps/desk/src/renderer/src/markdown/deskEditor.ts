@@ -32,6 +32,7 @@ import { table } from './crepePort/table'
 import { toolbar, type ToolbarFeatureConfig } from './crepePort/toolbar'
 import { type DeskToolbarFeatures } from './crepePort/toolbar/features'
 import { applyDeskEditorConfigs, type DeskEditorConfigOptions } from './deskEditorConfigs'
+import { clipboardNewline } from './clipboardNewline'
 import { headingKeymap } from './headingKeymap'
 import { listBackspaceKeymap } from './listBackspaceKeymap'
 
@@ -91,6 +92,10 @@ export function createDeskEditor(options: DeskEditorOptions): DeskEditorHandle {
     .use(history)
     .use(indent)
     .use(trailing)
+    // clipboardNewline 必须在 clipboard **之前**：带 text/plain 的粘贴在 ProseMirror
+    // 里只认**第一个返回 true** 的 handlePaste，而 clipboard 插件的纯文本分支会先
+    // 把文本当 markdown 解析（单换行被折叠成空格）。插件顺序 = 注册顺序。
+    .use(clipboardNewline)
     .use(clipboard)
     .use(upload)
     // 标题里按一次 Backspace 直接回正文（语雀对齐），覆盖 Milkdown 的逐级降级
