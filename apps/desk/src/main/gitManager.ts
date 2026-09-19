@@ -4,7 +4,9 @@ import { spawn } from 'node:child_process'
 
 import { deskLog } from './log'
 import { loadSettings } from './settings'
+import { BackgroundFetchScheduler, BACKGROUND_FETCH_INTERVAL_MS } from './backgroundFetchScheduler'
 
+import type { BackgroundFetchRequest } from './backgroundFetchScheduler'
 import type { GitRepositoryDescriptor } from './workspaceManager'
 import type {
   GitFileChangeDto,
@@ -12,6 +14,16 @@ import type {
   GitOperationResult,
   GitRepositoryStateDto
 } from '../shared/contracts'
+
+/**
+ * 后台（定时 / 初次刷新）fetch 的超时。
+ *
+ * 与手动 fetch 的 60s 不同：后台抓取不该长时间占着队列，但 15s 也意味着
+ * **慢于 15s 的远端在后台一定会失败**（终端里没有这个上限）。这是应用内与
+ * 终端 `git fetch` 最确定的一处行为差异，诊断记录见报告。
+ */
+export const BACKGROUND_FETCH_TIMEOUT_MS = 15_000
+export const MANUAL_FETCH_TIMEOUT_MS = 60_000
 
 export interface CommandResult {
   code: number
@@ -92,6 +104,24 @@ export interface GitRunExtras {
    * **不会**被重试重复启动。
    */
   onCleanupUnconfirmed?: () => void
+}
+
+/** 后台 Git 任务的执行句柄（由装配方注入，避免 GitManager 直接依赖任务层）。 */
+export interface BackgroundGitTaskHandle {
+  observer: GitRunObserver
+  finish(status: 'done' | 'failed' | 'timeout', error: string | null): void
+}
+
+export type BackgroundGitTaskFactory = (event: {
+  knowledgeBaseId: string
+  kind: 'git-fetch' | 'git-push'
+}) => BackgroundGitTaskHandle | null
+
+/** 后台 fetch 的判定结果（比 `GitOperationResult` 多出"成功/超时"这一层）。 */
+interface FetchOutcome {
+  ok: boolean
+  timedOut: boolean
+  message: string | null
 }
 
 export function runGit(
@@ -514,14 +544,19 @@ export class GitManager {
   /** 进程级退出：所有在跑子进程的终止器（只用于 dispose，不参与单任务取消） */
   private disposeKills = new Set<() => void>()
   private autoPushTimers = new Map<string, NodeJS.Timeout>()
-  /** 后台失败上报（由装配方注入，见 onBackgroundFailure） */
-  private backgroundFailureListener:
-    | ((event: {
-        knowledgeBaseId: string
-        kind: 'git-fetch' | 'git-push'
-        message: string
-      }) => void)
-    | null = null
+  /**
+   * 后台任务工厂（由装配方注入，见 onBackgroundTaskFactory）。
+   *
+   * 后台 fetch / 自动推送在**开始时**通过它认领一个可见任务，结束时按真实结果结算：
+   * 这样任务记录有真实的开始/结束时间与失败分类，而不是失败后补一条 0ms 的假记录。
+   */
+  private backgroundTaskFactory: BackgroundGitTaskFactory | null = null
+  /** 后台自动抓取调度闸门：全局并发上限 + 同目标去重 + 失败退避 */
+  private readonly backgroundFetch = new BackgroundFetchScheduler({
+    runner: (request) => this.runBackgroundFetch(request)
+  })
+  /** 当前设置里后台自动抓取是否开启（与调度器同步，避免每次判定都读配置） */
+  private backgroundFetchEnabled = false
   private periodicFetchTimer: NodeJS.Timeout | null = null
   private assetWritePaused = new Set<string>()
 
@@ -539,28 +574,97 @@ export class GitManager {
   }
 
   /**
-   * 后台 Git 操作（定时 fetch、自动推送）失败时的上报入口。
+   * 注入后台任务工厂（定时 fetch、自动推送）。
    *
-   * 后台操作原本只写日志：用户看不到、也没有「查看输出」的入口。接上这条回调后，
-   * 失败会被做成一个**可见的命令任务**，面板据此弹出带「查看输出」的通知。
-   * 由装配方（main/index.ts）注入，避免 GitManager 直接依赖任务层。
+   * 后台操作原本只写日志：用户看不到失败，也没有「查看输出」的入口。接上工厂后，
+   * 后台操作在开始时就会出现在命令任务面板里，失败/超时按真实分类结算，面板据此
+   * 弹出带「查看输出」的通知。由装配方（main/index.ts）注入，避免 GitManager 直接
+   * 依赖任务层。
    */
-  onBackgroundFailure(
-    listener: (event: {
-      knowledgeBaseId: string
-      kind: 'git-fetch' | 'git-push'
-      message: string
-    }) => void
-  ): void {
-    this.backgroundFailureListener = listener
+  onBackgroundTaskFactory(factory: BackgroundGitTaskFactory): void {
+    this.backgroundTaskFactory = factory
   }
 
-  private reportBackgroundFailure(
+  private createBackgroundTask(
     knowledgeBaseId: string,
-    kind: 'git-fetch' | 'git-push',
-    message: string
-  ): void {
-    this.backgroundFailureListener?.({ knowledgeBaseId, kind, message })
+    kind: 'git-fetch' | 'git-push'
+  ): BackgroundGitTaskHandle | null {
+    try {
+      return this.backgroundTaskFactory?.({ knowledgeBaseId, kind }) ?? null
+    } catch (cause) {
+      // 任务层失败不能反过来影响 Git 流程
+      deskLog('git:background-task', 'factory failed', {
+        knowledgeBaseId,
+        kind,
+        message: cause instanceof Error ? cause.message : String(cause)
+      })
+      return null
+    }
+  }
+
+  /** 设置里后台自动抓取是否开启。读配置失败时按**默认关闭**处理。 */
+  private readAutoFetchSetting(): boolean {
+    try {
+      return loadSettings().git?.autoFetch === true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * 把设置里的开关落到运行时：关闭时停掉定时器并清空等待队列（在跑的自然收敛），
+   * 打开时启动定时器；**从关到开**的那一刻额外安排一轮抓取，用户不必等 5 分钟。
+   *
+   * 手动 fetch / pull 完全不经过这里——关掉后台抓取不影响用户主动操作。
+   */
+  applyBackgroundFetchPreference(options: { scheduleNow?: boolean } = {}): void {
+    const enabled = this.readAutoFetchSetting()
+    const transitioned = enabled && !this.backgroundFetchEnabled
+    this.backgroundFetchEnabled = enabled
+    this.backgroundFetch.setEnabled(enabled)
+    if (!enabled) {
+      this.stopPeriodicFetchTimer()
+      return
+    }
+    this.startPeriodicFetchTimer()
+    if (transitioned && options.scheduleNow !== false) this.scheduleBackgroundFetches()
+  }
+
+  private startPeriodicFetchTimer(): void {
+    if (this.periodicFetchTimer || this.disposed) return
+    this.periodicFetchTimer = setInterval(() => {
+      if (this.disposed || !this.backgroundFetchEnabled) return
+      this.scheduleBackgroundFetches()
+    }, BACKGROUND_FETCH_INTERVAL_MS)
+  }
+
+  private stopPeriodicFetchTimer(): void {
+    if (!this.periodicFetchTimer) return
+    clearInterval(this.periodicFetchTimer)
+    this.periodicFetchTimer = null
+  }
+
+  /**
+   * 对所有已就绪的知识库请求一次后台抓取。
+   *
+   * 是否真的执行由调度器裁决：同一目标不会重复入队，处于失败退避窗口内的会被跳过，
+   * 全局并发也有上限。这里只负责"把候选目标交上去"。定时器与开关打开时都走它。
+   */
+  scheduleBackgroundFetches(): void {
+    if (!this.backgroundFetchEnabled || this.disposed) return
+    for (const state of this.states.values()) {
+      if (!state.initialized) continue
+      // 手动操作正在跑（fetch/pull/publish 会置 busy）：这一轮先不跟它抢队列，
+      // 下一轮定时器再来（不 busy 时才入队）。
+      if (state.busy) continue
+      if (this.assetWritePaused.has(state.knowledgeBaseId)) continue
+      this.backgroundFetch.request(state.knowledgeBaseId, 'periodic')
+    }
+  }
+
+  /** 后台抓取的调度状态（测试与排查用）。 */
+  backgroundFetchStatus(): ReturnType<BackgroundFetchScheduler['status']> {
+    return this.backgroundFetch.status()
   }
 
   configure(repositories: GitRepositoryDescriptor[]): void {
@@ -575,31 +679,23 @@ export class GitManager {
       }
     }
     void this.refresh().then(() => {
-      for (const repository of repositories) {
-        const state = this.states.get(repository.knowledgeBaseId)
-        if (
-          state?.initialized &&
-          !state.lastFetchedAt &&
-          !this.assetWritePaused.has(repository.knowledgeBaseId)
-        ) {
-          void this.fetch(repository.knowledgeBaseId, true).catch(() => undefined)
+      // 初次刷新只在开关打开时联网：默认关闭意味着启动时不碰远端。
+      if (this.backgroundFetchEnabled) {
+        for (const repository of repositories) {
+          const state = this.states.get(repository.knowledgeBaseId)
+          if (
+            state?.initialized &&
+            !state.lastFetchedAt &&
+            !this.assetWritePaused.has(repository.knowledgeBaseId)
+          ) {
+            this.backgroundFetch.request(repository.knowledgeBaseId, 'initial')
+          }
         }
       }
       this.applyAutoPushSchedules(true)
     })
-    if (!this.periodicFetchTimer) {
-      this.periodicFetchTimer = setInterval(() => {
-        for (const state of this.states.values()) {
-          if (
-            state.initialized &&
-            !state.busy &&
-            !this.assetWritePaused.has(state.knowledgeBaseId)
-          ) {
-            void this.fetch(state.knowledgeBaseId, true).catch(() => undefined)
-          }
-        }
-      }, 5 * 60_000)
-    }
+    // configure 期间只把开关落到运行时（不额外安排一轮）：refresh 完成后自会安排初次抓取
+    this.applyBackgroundFetchPreference({ scheduleNow: false })
   }
 
   list(): GitRepositoryStateDto[] {
@@ -626,39 +722,123 @@ export class GitManager {
     background = false,
     extras: GitRunExtras = {}
   ): Promise<GitOperationResult> {
-    return this.enqueue(
+    return this.enqueue<GitOperationResult>(
       knowledgeBaseId,
       async (repository, runExtras) => {
         if (!background) this.setBusy(knowledgeBaseId, 'fetch')
-        const result = await this.execute(
-          repository.rootPath,
-          ['fetch', '--prune'],
-          background ? 15_000 : 60_000,
-          runExtras
-        )
-        if (result.code !== 0) {
-          const message = operationMessage(commandError(result, 'Git fetch 失败'))
-          if (!background) {
-            await this.refreshRepository(repository, message)
-            throw new Error(message)
-          }
+        const outcome = await this.executeFetch(repository, background, runExtras)
+        if (!outcome.ok && !background) {
+          await this.refreshRepository(repository, outcome.message)
+          throw new Error(outcome.message ?? 'Git fetch 失败')
+        }
+        if (!outcome.ok) {
           deskLog('git:fetch', 'background fetch failed', {
             knowledgeBaseId,
-            message
+            message: outcome.message,
+            timedOut: outcome.timedOut
           })
-          this.reportBackgroundFailure(knowledgeBaseId, 'git-fetch', message)
-          const state = await this.refreshRepository(repository)
-          return {
-            state,
-            message,
-            conflict: false
-          }
         }
-        const state = await this.refreshRepository(repository, null, new Date().toISOString())
-        return { state, message: '已获取远端最新状态', conflict: false }
+        const state = await this.refreshRepository(
+          repository,
+          null,
+          outcome.ok ? new Date().toISOString() : undefined
+        )
+        return {
+          state,
+          message: outcome.ok ? '已获取远端最新状态' : (outcome.message ?? 'Git fetch 失败'),
+          conflict: false
+        }
       },
       extras
     ).result
+  }
+
+  /**
+   * 执行一次 `git fetch --prune` 并**如实分类**结果。
+   *
+   * 超时由执行层用 code 124 表达（runGit 在超时时保留已有输出并追加原因），
+   * 这里把它单独标出来：后台任务要结算成 `timeout` 而不是笼统的 `failed`。
+   */
+  private async executeFetch(
+    repository: GitRepositoryDescriptor,
+    background: boolean,
+    runExtras: GitRunExtras
+  ): Promise<FetchOutcome> {
+    const result = await this.execute(
+      repository.rootPath,
+      ['fetch', '--prune'],
+      background ? BACKGROUND_FETCH_TIMEOUT_MS : MANUAL_FETCH_TIMEOUT_MS,
+      runExtras
+    )
+    if (result.code === 0) return { ok: true, timedOut: false, message: null }
+    return {
+      ok: false,
+      timedOut: result.code === 124,
+      message: operationMessage(commandError(result, 'Git fetch 失败'))
+    }
+  }
+
+  /**
+   * 后台抓取：走同一条 per-KB 队列，但由一个**可见任务**包住。
+   *
+   * 与手动 fetch 的区别只在超时（15s）与任务来源（background），业务路径完全一致；
+   * 任务在真正开始执行时认领，结束时按真实结果结算（done / failed / timeout），
+   * 因此任务记录里的时长与分类都是真的。
+   */
+  private runBackgroundFetch(request: BackgroundFetchRequest): Promise<boolean> {
+    const knowledgeBaseId = request.knowledgeBaseId
+    const repository = this.repositories.get(knowledgeBaseId)
+    const state = this.states.get(knowledgeBaseId)
+    // 目标已消失 / 还没就绪 / 资源写入暂停：当作"无需重试"（成功结算），清掉退避
+    if (this.disposed || !repository || !state?.initialized) return Promise.resolve(true)
+    if (this.assetWritePaused.has(knowledgeBaseId)) return Promise.resolve(true)
+
+    // 任务在**执行开始时**才认领：观察者是稳定的转发器，避免 extras 工厂被
+    // enqueue 调用两次而认领出两个任务。
+    const holder: { task: BackgroundGitTaskHandle | null } = { task: null }
+    const observer: GitRunObserver = {
+      commandLine: (line) => holder.task?.observer.commandLine?.(line),
+      output: (stream, chunk) => holder.task?.observer.output(stream, chunk),
+      outputTruncated: (bytes) => holder.task?.observer.outputTruncated?.(bytes)
+    }
+
+    return new Promise<boolean>((resolve) => {
+      void this.enqueue<FetchOutcome>(
+        knowledgeBaseId,
+        async (target, runExtras) => {
+          holder.task = this.createBackgroundTask(knowledgeBaseId, 'git-fetch')
+          const outcome = await this.executeFetch(target, true, runExtras)
+          await this.refreshRepository(
+            target,
+            null,
+            outcome.ok ? new Date().toISOString() : undefined
+          )
+          if (!outcome.ok) {
+            deskLog('git:fetch', 'background fetch failed', {
+              knowledgeBaseId,
+              attempt: request.attempt,
+              message: outcome.message,
+              timedOut: outcome.timedOut
+            })
+          }
+          return outcome
+        },
+        { observer }
+      ).result.then(
+        (outcome) => {
+          holder.task?.finish(
+            outcome.ok ? 'done' : outcome.timedOut ? 'timeout' : 'failed',
+            outcome.ok ? null : outcome.message
+          )
+          resolve(outcome.ok)
+        },
+        (error) => {
+          // 排队中被取消 / 退出 / 资源写入暂停：按失败计入退避，任务如实结算
+          holder.task?.finish('failed', operationMessage(error))
+          resolve(false)
+        }
+      )
+    })
   }
 
   pull(knowledgeBaseId: string, extras: GitRunExtras = {}): Promise<GitOperationResult> {
@@ -669,7 +849,7 @@ export class GitManager {
         const fetchResult = await this.execute(
           repository.rootPath,
           ['fetch', '--prune'],
-          60_000,
+          MANUAL_FETCH_TIMEOUT_MS,
           runExtras
         )
         if (fetchResult.code !== 0) throw commandError(fetchResult, '无法获取远端状态')
@@ -775,11 +955,27 @@ export class GitManager {
           () => {
             this.autoPushTimers.delete(repository.knowledgeBaseId)
             if (this.assetWritePaused.has(repository.knowledgeBaseId)) return
-            void this.publish(repository.knowledgeBaseId).catch((error) => {
-              const message = operationMessage(error)
-              deskLog('git:auto-push', 'failed', message)
-              this.reportBackgroundFailure(repository.knowledgeBaseId, 'git-push', message)
-            })
+            // 自动推送也走可见任务：开始前认领、结束后按真实结果结算（失败/超时分类）
+            const task = this.createBackgroundTask(repository.knowledgeBaseId, 'git-push')
+            void this.publish(
+              repository.knowledgeBaseId,
+              task ? { observer: task.observer } : {}
+            ).then(
+              (outcome) => {
+                if (outcome.conflict) {
+                  const message = outcome.message || '自动推送未完成'
+                  deskLog('git:auto-push', 'failed', message)
+                  task?.finish('failed', message)
+                  return
+                }
+                task?.finish('done', null)
+              },
+              (error) => {
+                const message = operationMessage(error)
+                deskLog('git:auto-push', 'failed', message)
+                task?.finish(/超时/.test(message) ? 'timeout' : 'failed', message)
+              }
+            )
           },
           (override?.idleMinutes ?? 1) * 60_000
         )
@@ -813,8 +1009,9 @@ export class GitManager {
   async dispose(): Promise<void> {
     // 1) 退出开始：不再接收新任务，并停掉后台调度
     this.disposed = true
-    if (this.periodicFetchTimer) clearInterval(this.periodicFetchTimer)
-    this.periodicFetchTimer = null
+    this.stopPeriodicFetchTimer()
+    // 等待队列清空；在跑的后台 fetch 会在各自任务里如实结算
+    this.backgroundFetch.dispose()
     for (const timer of this.autoPushTimers.values()) clearTimeout(timer)
     this.autoPushTimers.clear()
 
@@ -1005,14 +1202,11 @@ export class GitManager {
    * 入队之后才准备好的（命令任务面板就是先认领标签、再开始执行）。入队时固化会让
    * 整条操作丢失实时输出与取消能力——实测踩过。
    */
-  private enqueue(
+  private enqueue<T>(
     knowledgeBaseId: string,
-    operation: (
-      repository: GitRepositoryDescriptor,
-      extras: GitRunExtras
-    ) => Promise<GitOperationResult>,
+    operation: (repository: GitRepositoryDescriptor, extras: GitRunExtras) => Promise<T>,
     extras: GitRunExtras | (() => GitRunExtras) = {}
-  ): { result: Promise<GitOperationResult>; node: QueueNode } {
+  ): { result: Promise<T>; node: QueueNode } {
     if (this.disposed) {
       return {
         result: Promise.reject(new Error('Desk 正在退出，Git 操作不再受理')),

@@ -6,6 +6,7 @@ import { useWorkspaceStore } from '../stores/workspace'
 import ConfigSettings from './settings/ConfigSettings.vue'
 import EditorSettings from './settings/EditorSettings.vue'
 import GeneralSettings from './settings/GeneralSettings.vue'
+import GitSettings from './settings/GitSettings.vue'
 import ImageSettings from './settings/ImageSettings.vue'
 import ShortcutsSettings from './settings/ShortcutsSettings.vue'
 import TabsSettings from './settings/TabsSettings.vue'
@@ -47,6 +48,11 @@ const groups = [
     id: 'tools',
     label: '外部工具',
     icon: 'M5 7h14M5 12h14M5 17h14M8 5v4M12 10v4M16 15v4'
+  },
+  {
+    id: 'git',
+    label: 'Git 与远端',
+    icon: 'M6 3v12M6 21a3 3 0 1 0 0-6a3 3 0 0 0 0 6M18 9a3 3 0 1 0 0-6a3 3 0 0 0 0 6M18 9a9 9 0 0 1-9 9'
   },
   {
     id: 'image',
@@ -97,6 +103,9 @@ const groupDefaults: Record<string, Partial<AppSettings>> = {
     gitPath: null,
     nodePath: null,
     confirmBeforeCommit: false
+  },
+  git: {
+    git: { autoFetch: false }
   },
   image: {
     imageUpload: {
@@ -240,6 +249,11 @@ function onSettingsSynced(settings: AppSettings): void {
             v-else-if="activeGroup === 'tools'"
             :draft="draft"
             @reset="resetGroup('tools')"
+          />
+          <GitSettings
+            v-else-if="activeGroup === 'git'"
+            :draft="draft"
+            @reset="resetGroup('git')"
           />
           <ImageSettings
             v-else-if="activeGroup === 'image'"

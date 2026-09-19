@@ -11,7 +11,7 @@ import {
   registerWindowGuard,
   unregisterWindowGuard
 } from './closeGuards'
-import { reportBackgroundGitFailure } from './backgroundGitFailure'
+import { createBackgroundGitTask } from './backgroundGitFailure'
 import { configureBottomPanelMaxTabs } from './bottomPanelTabs'
 import { gitManager } from './gitManager'
 import { registerIpc } from './ipc'
@@ -48,9 +48,9 @@ function scheduleGitRefresh(): void {
   }, 2000)
 }
 
-// 后台 Git 失败（定时 fetch / 自动推送）落成一条可见的失败任务：
-// 面板会对失败任务弹带「查看输出」的通知，用户才有入口看到原因。
-gitManager.onBackgroundFailure((event) => reportBackgroundGitFailure(event))
+// 后台 Git 操作（定时 fetch / 自动推送）在**开始时**认领一个可见任务，结束时按
+// 真实结果结算：面板据此对失败/超时弹带「查看输出」的通知，且时长与分类都是真的。
+gitManager.onBackgroundTaskFactory((event) => createBackgroundGitTask(event))
 
 function scheduleSearchRefresh(hint?: WorkspaceChangeHint): void {
   const overview = workspaceManager.getOverview()

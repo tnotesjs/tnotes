@@ -437,6 +437,23 @@ export const SUITES = [
     note: '画布每画一步只写盘、不产生 commit；笔记源码不变'
   },
   {
+    name: 'e2e-git-background-fetch.mjs',
+    area: 'git',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/main/gitManager.ts',
+      'apps/desk/src/main/backgroundFetchScheduler.ts',
+      'apps/desk/src/main/backgroundGitFailure.ts',
+      'apps/desk/src/main/settings.ts',
+      'apps/desk/src/renderer/src/stores/failureNotice.ts',
+      'apps/desk/src/renderer/src/components/settings/GitSettings.vue',
+      'apps/desk/src/renderer/src/components/SettingsPanel.vue'
+    ],
+    serial: false,
+    smoke: false,
+    note: '后台自动抓取默认关闭、手动 fetch 可用、开关打开后抓取、多库失败聚合成一条通知、时间显示'
+  },
+  {
     name: 'e2e-excalidraw-inline.mjs',
     area: 'excalidraw',
     tier: 'regression',

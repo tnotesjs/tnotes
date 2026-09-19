@@ -55,6 +55,13 @@ const settingsSchema = z.object({
   gitPath: z.string().trim().min(1).nullable().default(null),
   nodePath: z.string().trim().min(1).nullable().default(null),
   confirmBeforeCommit: z.boolean().default(false),
+  // 后台自动抓取远端状态。默认 **关闭**：不在用户不知情时联网；老配置文件没有
+  // 这个分组，靠分组级 `.default({ autoFetch: false })` 补齐（见 loadSettings）。
+  git: z
+    .object({
+      autoFetch: z.boolean().default(false)
+    })
+    .default({ autoFetch: false }),
   tabs: z
     .object({
       maxOpenCount: z.number().int().min(1).max(30).default(10),
@@ -62,13 +69,6 @@ const settingsSchema = z.object({
       autoRevealInToc: z.boolean().default(true)
     })
     .default({ maxOpenCount: 10, wrap: true, autoRevealInToc: true }),
-  toc: z
-    .object({
-      showNoteIndex: z.boolean().default(true),
-      showNoteStatus: z.boolean().default(true),
-      changesCollapsedByDefault: z.boolean().default(true)
-    })
-    .default({
   // 底部面板（终端会话 + 命令任务标签）的上限：两类**合计**计数，上限单独存在这里。
   // 默认 10，合法区间 1-30（上界与 shared/bottomPanelTabs 的常量一致）；
   // 老配置文件没有这个分组，靠分组级 `.default({ maxTabs: 10 })` 补默认值。
@@ -82,6 +82,13 @@ const settingsSchema = z.object({
         .default(BOTTOM_PANEL_TABS_DEFAULT_MAX)
     })
     .default({ maxTabs: BOTTOM_PANEL_TABS_DEFAULT_MAX }),
+  toc: z
+    .object({
+      showNoteIndex: z.boolean().default(true),
+      showNoteStatus: z.boolean().default(true),
+      changesCollapsedByDefault: z.boolean().default(true)
+    })
+    .default({
       showNoteIndex: true,
       showNoteStatus: true,
       changesCollapsedByDefault: true
@@ -336,7 +343,9 @@ export function saveSettings(next: Partial<AppSettings>): AppSettings {
     ...current,
     ...next,
     autosave: { ...current.autosave, ...next.autosave },
+    git: { ...current.git, ...next.git },
     tabs: { ...current.tabs, ...next.tabs },
+    bottomPanel: { ...current.bottomPanel, ...next.bottomPanel },
     editor: { ...current.editor, ...next.editor },
     imageUpload: {
       ...current.imageUpload,
@@ -345,7 +354,6 @@ export function saveSettings(next: Partial<AppSettings>): AppSettings {
       optimize: { ...current.imageUpload.optimize, ...next.imageUpload?.optimize }
     },
     knowledgeBases: { ...current.knowledgeBases, ...next.knowledgeBases }
-    bottomPanel: { ...current.bottomPanel, ...next.bottomPanel },
   })
   return writeSettingsFile(merged)
 }

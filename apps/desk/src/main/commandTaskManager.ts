@@ -104,14 +104,14 @@ export class CommandTaskManager {
   private byKey = new Map<string, string>()
   private listener: ((state: CommandTaskDto) => void) | null = null
   private logListener: ((event: CommandTaskLogEvent) => void) | null = null
+  /** 任务标签被移除（用户关闭 / 容量回收）时通知渲染端 */
+  private closedListener: ((taskId: string) => void) | null = null
   private readonly maxLogBytes: number
   private readonly flushIntervalMs: number
 
   constructor(options: CommandTaskManagerOptions = {}) {
     this.maxLogBytes = options.maxLogBytes ?? DEFAULT_MAX_LOG_BYTES
     this.flushIntervalMs = options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS
-  }
-
     // 底部面板的统一容量检查要把命令任务算进去：这里只提供「有哪些标签 / 怎么回收」，
     // 判定规则在 shared/bottomPanelTabs（与终端会话合并计数）。
     registerBottomPanelTabProvider({
@@ -119,6 +119,8 @@ export class CommandTaskManager {
       listTabs: () => this.bottomPanelTabs(),
       closeTab: (taskId) => this.close(taskId)
     })
+  }
+
   onChanged(listener: (state: CommandTaskDto) => void): () => void {
     this.listener = listener
     return () => {
@@ -133,8 +135,6 @@ export class CommandTaskManager {
     }
   }
 
-  list(): CommandTaskDto[] {
-    return [...this.tasks.values()].map((task) => ({ ...task.dto }))
   /** 任务标签被移除时回调（用户关闭或容量回收都会走这里）。 */
   onClosed(listener: (taskId: string) => void): () => void {
     this.closedListener = listener
@@ -143,10 +143,10 @@ export class CommandTaskManager {
     }
   }
 
+  list(): CommandTaskDto[] {
+    return [...this.tasks.values()].map((task) => ({ ...task.dto }))
   }
 
-  /** 定位已有任务（「查看输出」用）；没有则 null。 */
-  find(knowledgeBaseId: string, kind: CommandTaskDto['kind']): CommandTaskDto | null {
   /**
    * 容量检查用的标签快照。
    *
@@ -162,6 +162,8 @@ export class CommandTaskManager {
     }))
   }
 
+  /** 定位已有任务（「查看输出」用）；没有则 null。 */
+  find(knowledgeBaseId: string, kind: CommandTaskDto['kind']): CommandTaskDto | null {
     const id = this.byKey.get(`${knowledgeBaseId}::${kind}`)
     const record = id ? this.tasks.get(id) : undefined
     return record ? { ...record.dto } : null
@@ -180,6 +182,8 @@ export class CommandTaskManager {
     title: string
     cwd: string
     command?: string
+    /** 后台调度发起；见 `claimHandle` */
+    background?: boolean
   }): CommandTaskDto {
     const { dto } = this.claimHandle(input)
     return dto
@@ -198,10 +202,20 @@ export class CommandTaskManager {
     title: string
     cwd: string
     command?: string
+    /**
+     * 后台调度发起（定时 fetch / 自动推送）。后台失败通知按多个知识库**聚合**，
+     * 手动操作仍逐条提示，因此这个来源标记必须随任务一起记录。
+     */
+    background?: boolean
   }): { handle: CommandTaskHandle; dto: CommandTaskDto } {
     const key = `${input.knowledgeBaseId}::${input.kind}`
     const existingId = this.byKey.get(key)
     const existing = existingId ? this.tasks.get(existingId) : undefined
+
+    // 统一容量检查：复用已有标签（运行中复用 / 已结束重跑）不占新名额，直接放行；
+    // 新建才参与合并计数（终端会话 + 命令任务）。必须在这里判——调用方随后就可能
+    // 进入保存 / Git 写操作，先执行再报错是不允许的。
+    ensureBottomPanelCapacity({ kind: 'command-task', reuse: Boolean(existing) })
 
     if (existing && this.isActiveInternal(existing.dto.status)) {
       // 正在跑：复用同一个标签，**且不自增 run**。
@@ -212,11 +226,6 @@ export class CommandTaskManager {
       // 任务会永远停在「已排队」。只有真正开始新一轮运行才允许自增。
       const handle = this.handleFor(existing)
       return { handle, dto: { ...existing.dto } }
-    // 统一容量检查：复用已有标签（运行中复用 / 已结束重跑）不占新名额，直接放行；
-    // 新建才参与合并计数（终端会话 + 命令任务）。必须在这里判——调用方随后就可能
-    // 进入保存 / Git 写操作，先执行再报错是不允许的。
-    ensureBottomPanelCapacity({ kind: 'command-task', reuse: Boolean(existing) })
-
     }
 
     const record = existing ?? this.createRecord(input)
@@ -234,7 +243,9 @@ export class CommandTaskManager {
       error: null,
       startedAt: Date.now(),
       finishedAt: null,
-      truncatedBytes: 0
+      truncatedBytes: 0,
+      background: input.background === true,
+      notify: true
     }
     record.cancelRequested = false
     record.pending = []
@@ -299,11 +310,16 @@ export class CommandTaskManager {
     taskId: string,
     run: number,
     status: Extract<CommandTaskStatus, 'done' | 'failed' | 'timeout' | 'canceled'>,
-    error: string | null
+    error: string | null,
+    /**
+     * `notify: false` 表示这一轮的失败**不再重复弹通知**（去抖命中）。任务记录、
+     * 输出与「查看输出」入口照常保留，只是界面不新增一条提示。
+     */
+    options: { notify?: boolean } = {}
   ): void {
     const record = this.tasks.get(taskId)
     if (!record || record.dto.run !== run) return
-    this.finish(record, status, error)
+    this.finish(record, status, error, options.notify !== false)
   }
 
   /** 关闭输出标签：只移除视图，**不影响**正在运行的任务。 */
@@ -317,6 +333,7 @@ export class CommandTaskManager {
     this.tasks.delete(taskId)
     const key = `${record.dto.knowledgeBaseId}::${record.dto.kind}`
     if (this.byKey.get(key) === taskId) this.byKey.delete(key)
+    this.emitClosed(taskId)
   }
 
   dispose(): void {
@@ -327,23 +344,6 @@ export class CommandTaskManager {
     this.byKey.clear()
     this.listener = null
     this.logListener = null
-  }
-
-  private createRecord(input: {
-    knowledgeBaseId: string
-    knowledgeBaseName: string
-    kind: CommandTaskDto['kind']
-    title: string
-    cwd: string
-    command?: string
-  }): CommandTaskRecord {
-    const id = randomUUID()
-    const record: CommandTaskRecord = {
-      dto: {
-        id,
-        knowledgeBaseId: input.knowledgeBaseId,
-        knowledgeBaseName: input.knowledgeBaseName,
-        kind: input.kind,
     this.closedListener = null
   }
 
@@ -356,6 +356,24 @@ export class CommandTaskManager {
         message: error instanceof Error ? error.message : String(error)
       })
     }
+  }
+
+  private createRecord(input: {
+    knowledgeBaseId: string
+    knowledgeBaseName: string
+    kind: CommandTaskDto['kind']
+    title: string
+    cwd: string
+    command?: string
+    background?: boolean
+  }): CommandTaskRecord {
+    const id = randomUUID()
+    const record: CommandTaskRecord = {
+      dto: {
+        id,
+        knowledgeBaseId: input.knowledgeBaseId,
+        knowledgeBaseName: input.knowledgeBaseName,
+        kind: input.kind,
         title: input.title.slice(0, 80),
         cwd: input.cwd,
         command: input.command ?? '',
@@ -367,7 +385,9 @@ export class CommandTaskManager {
         finishedAt: null,
         error: null,
         logBytes: 0,
-        truncatedBytes: 0
+        truncatedBytes: 0,
+        background: input.background === true,
+        notify: true
       },
       cancelRequested: false,
       pending: [],
@@ -513,10 +533,14 @@ export class CommandTaskManager {
   private finish(
     record: CommandTaskRecord,
     status: Extract<CommandTaskStatus, 'done' | 'failed' | 'timeout' | 'canceled'>,
-    error: string | null
+    error: string | null,
+    notify = true
   ): void {
     // 先把残留输出冲出去，保证「超时/失败也保留真实输出」
     this.flush(record)
+    // 结束时间只能前进：调用方必须先认领任务、真跑完再结算，这里的单调保护是
+    // 兜底——绝不允许出现 finishedAt < startedAt 这种倒退的假时长。
+    const finishedAt = Math.max(Date.now(), record.dto.startedAt)
     record.dto = {
       ...record.dto,
       status,
@@ -530,7 +554,8 @@ export class CommandTaskManager {
               ? '已取消'
               : '失败',
       error: error ? error.slice(0, 4000) : null,
-      finishedAt: Date.now()
+      finishedAt,
+      notify: record.dto.notify && notify
     }
     this.emit(record)
     deskLog('command-task:finish', record.dto.id, {

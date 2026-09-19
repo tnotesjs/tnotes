@@ -27,6 +27,7 @@ import {
   updateBanner
 } from './stores/update'
 import { useCommandTaskStore } from './stores/commandTask'
+import { planFailureNotices } from './stores/failureNotice'
 import { useTerminalStore } from './stores/terminal'
 import { useWorkspaceStore } from './stores/workspace'
 import { selectAllInRenderer } from './selectAll'
@@ -87,6 +88,14 @@ let unsubscribeTerminalOpen: (() => void) | null = null
 let unsubscribeCommandTask: (() => void) | null = null
 /** 已经通知过的运行，避免同类失败反复弹通知 */
 const notifiedTaskRuns = new Set<string>()
+/**
+ * 失败通知的合批防抖。
+ *
+ * 多个知识库的后台 fetch 往往在几十毫秒内先后失败，逐次 watch 触发会各弹一条；
+ * 先等一小段时间，让同一批失败一起交给 `planFailureNotices` 聚合成一条。
+ */
+let failureNoticeTimer: ReturnType<typeof setTimeout> | null = null
+const FAILURE_NOTICE_DEBOUNCE_MS = 600
 let unsubscribeCommandTaskReveal: (() => void) | null = null
 let unsubscribeCommandTaskRetry: (() => void) | null = null
 let unsubscribeTabShortcut: (() => void) | null = null
@@ -538,29 +547,30 @@ watch(
 /**
  * 命令任务收尾时的反馈。
  *
- * - **手动**操作已经在开始时展开面板，这里不再打扰；
- * - **后台**操作（定时 fetch、自动推送）失败才通知，并给「查看输出」入口，
- *   避免同类重复失败不停新增标签（同一 (库, 种类) 只有一个标签）。
+ * - **手动**操作已经在开始时展开面板，这里逐条提示；
+ * - **后台**操作（定时 fetch、自动推送）失败会**聚合成一条**通知（多个知识库同时
+ *   失败不刷屏），消息里列出涉及的库，「查看输出」定位到批次里的第一条；
+ *   同一 (库, 种类) 的重复失败由主进程的 `notify` 标记去抖。
  */
 watch(
   () => commandTaskStore.tasks.map((task) => `${task.id}:${task.run}:${task.status}`).join('|'),
   () => {
-    for (const task of commandTaskStore.tasks) {
-      if (task.status === 'failed' || task.status === 'timeout') {
-        const key = `${task.id}:${task.run}`
-        if (notifiedTaskRuns.has(key)) continue
-        notifiedTaskRuns.add(key)
+    if (failureNoticeTimer) clearTimeout(failureNoticeTimer)
+    failureNoticeTimer = setTimeout(() => {
+      failureNoticeTimer = null
+      for (const notice of planFailureNotices(commandTaskStore.tasks, notifiedTaskRuns)) {
+        for (const key of notice.keys) notifiedTaskRuns.add(key)
         pushActionToast(
-          `${task.title}失败：${task.knowledgeBaseName}`,
+          notice.message,
           '查看输出',
           () => {
             terminalStore.toggle(true)
-            void nextTick(() => terminalPanel.value?.showTask(task.id))
+            void nextTick(() => terminalPanel.value?.showTask(notice.actionTaskId))
           },
           'error'
         )
       }
-    }
+    }, FAILURE_NOTICE_DEBOUNCE_MS)
   }
 )
 

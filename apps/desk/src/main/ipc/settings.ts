@@ -25,6 +25,8 @@ import type { AppSettings } from '../../shared/contracts'
 export function registerSettings(getWindow: GetWindow): void {
   function applyRuntimeSettings(settings: AppSettings): AppSettings {
     gitManager.applyAutoPushSchedules(true)
+    // 后台自动抓取开关：关掉立刻停定时器与等待队列，打开则立刻安排一轮
+    gitManager.applyBackgroundFetchPreference()
     updateManager.configure(settings.updates.autoCheck)
     webContentsManager.setZoomFactor(settings.appZoomPercent / 100)
     return settings

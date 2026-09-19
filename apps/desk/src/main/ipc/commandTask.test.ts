@@ -411,7 +411,9 @@ describe('取消中的任务不允许重试', () => {
       finishedAt: null,
       error: null,
       logBytes: 0,
-      truncatedBytes: 0
+      truncatedBytes: 0,
+      background: false,
+      notify: true
     } as CommandTaskDto
     expect(manager.isActive(dto.status)).toBe(true)
   })

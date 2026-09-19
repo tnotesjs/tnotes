@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { commandTaskManager } from './commandTaskManager'
-import { reportBackgroundGitFailure, resetBackgroundFailureDedupe } from './backgroundGitFailure'
+import {
+  createBackgroundGitTask,
+  resetBackgroundFailureDedupe,
+  shouldNotifyBackgroundFailure,
+  NOTIFY_DEDUPE_WINDOW_MS
+} from './backgroundGitFailure'
 
 import type { CommandTaskDto } from '../shared/contracts'
 
@@ -13,82 +18,111 @@ vi.mock('./workspaceManager', () => ({
 }))
 
 const manager = commandTaskManager
-const failedOf = (kind: CommandTaskDto['kind']) =>
-  manager.list().filter((task) => task.kind === kind && task.status === 'failed')
+const taskOf = (kind: CommandTaskDto['kind']) => manager.list().filter((task) => task.kind === kind)
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 beforeEach(() => {
   manager.dispose()
   resetBackgroundFailureDedupe()
 })
 
-describe('后台 Git 失败 → 可见的命令任务', () => {
-  it('定时 fetch 失败会落成一条 failed 任务（面板据此弹「查看输出」）', () => {
-    reportBackgroundGitFailure({
-      knowledgeBaseId: 'kb1',
-      kind: 'git-fetch',
-      message: 'fatal: unable to access remote'
-    })
-    const failed = failedOf('git-fetch')
-    expect(failed).toHaveLength(1)
-    expect(failed[0].error).toContain('unable to access')
-    // 必须有终态时间：通知只在任务结算之后才有意义
-    expect(failed[0].finishedAt).not.toBeNull()
+describe('失败通知去抖（纯函数）', () => {
+  const event = { knowledgeBaseId: 'kb1', kind: 'git-fetch' as const, message: 'fatal: 远端不可达' }
+
+  it('同一库同一种类的相同失败在窗口内只通知一次', () => {
+    const memory = new Map<string, { message: string; at: number }>()
+    expect(shouldNotifyBackgroundFailure(memory, event, 1_000)).toBe(true)
+    expect(shouldNotifyBackgroundFailure(memory, event, 2_000)).toBe(false)
+    expect(shouldNotifyBackgroundFailure(memory, event, 1_000 + NOTIFY_DEDUPE_WINDOW_MS - 1)).toBe(
+      false
+    )
+    // 窗口之外重新通知
+    expect(shouldNotifyBackgroundFailure(memory, event, 1_000 + NOTIFY_DEDUPE_WINDOW_MS)).toBe(true)
   })
 
-  it('自动推送失败同样可见，且种类正确', () => {
-    reportBackgroundGitFailure({
-      knowledgeBaseId: 'kb1',
-      kind: 'git-push',
-      message: 'Git push 失败'
-    })
-    expect(failedOf('git-push')).toHaveLength(1)
+  it('失败原因变了要通知；不同知识库互不影响', () => {
+    const memory = new Map<string, { message: string; at: number }>()
+    expect(shouldNotifyBackgroundFailure(memory, event, 1_000)).toBe(true)
+    expect(shouldNotifyBackgroundFailure(memory, { ...event, message: '第二种失败' }, 1_500)).toBe(
+      true
+    )
+    // 不同库各自有独立的去抖键
+    expect(shouldNotifyBackgroundFailure(memory, { ...event, knowledgeBaseId: 'kb2' }, 1_500)).toBe(
+      true
+    )
+  })
+})
+
+describe('后台 Git 任务：真实时长与失败分类', () => {
+  it('任务在开始时认领：时长是真实执行时间，不是 0ms', async () => {
+    const task = createBackgroundGitTask({ knowledgeBaseId: 'kb1', kind: 'git-fetch' })
+    expect(task).not.toBeNull()
+    const started = taskOf('git-fetch')[0]
+    expect(started.status).toBe('running')
+    expect(started.background).toBe(true)
+    expect(started.finishedAt).toBeNull()
+
+    // 模拟一次真实的慢失败（远超 0ms）
+    await sleep(40)
+    task!.finish('timeout', 'Git 操作超时：git fetch（15000ms）')
+
+    const finished = taskOf('git-fetch')[0]
+    expect(finished.id).toBe(started.id)
+    expect(finished.status).toBe('timeout')
+    expect(finished.stage).toBe('finished')
+    expect(finished.error).toContain('超时')
+    expect(finished.finishedAt).not.toBeNull()
+    // 关键断言：禁止出现 claimHandle 后立刻 finishRun 的假 0ms 时长
+    expect(finished.finishedAt! - finished.startedAt).toBeGreaterThanOrEqual(30)
   })
 
-  it('同一失败在窗口内只落一次（否则定时 fetch 每个周期都新增一条）', () => {
-    const event = { knowledgeBaseId: 'kb1', kind: 'git-fetch' as const, message: '同样的失败' }
-    reportBackgroundGitFailure(event)
-    const first = failedOf('git-fetch')[0]
-    reportBackgroundGitFailure(event)
-    reportBackgroundGitFailure(event)
-    // 被去抖：没有产生新一轮运行
-    const after = failedOf('git-fetch')
-    expect(after).toHaveLength(1)
-    expect(after[0].run).toBe(first.run)
+  it('失败保留已有输出，分类如实记录', async () => {
+    const task = createBackgroundGitTask({ knowledgeBaseId: 'kb1', kind: 'git-fetch' })!
+    task.observer.commandLine?.('git fetch --prune')
+    task.observer.output('stderr', 'fatal: unable to access remote\n')
+    task.finish('failed', 'fatal: unable to access remote')
+
+    const finished = taskOf('git-fetch')[0]
+    expect(finished.status).toBe('failed')
+    expect(finished.command).toContain('git fetch --prune')
+    // 输出在结算时被冲刷，已经计入任务（面板「查看输出」据此展示）
+    expect(finished.logBytes).toBeGreaterThan(0)
+    expect(finished.truncatedBytes).toBe(0)
   })
 
-  it('失败原因变了就再落一条（不是永久静音）', () => {
-    reportBackgroundGitFailure({
-      knowledgeBaseId: 'kb1',
-      kind: 'git-fetch',
-      message: '第一次失败'
-    })
-    const first = failedOf('git-fetch')[0]
-    reportBackgroundGitFailure({
-      knowledgeBaseId: 'kb1',
-      kind: 'git-fetch',
-      message: '第二次不同的失败'
-    })
-    // 同一 (库, 种类) 共用一个标签：新一轮运行 = run 递增，且原因被更新。
-    // 面板的失败通知按 `${id}:${run}` 去重，所以这仍会通知一次。
-    const after = failedOf('git-fetch')
-    expect(after).toHaveLength(1)
-    expect(after[0].id).toBe(first.id)
-    expect(after[0].run).toBe(first.run + 1)
-    expect(after[0].error).toContain('第二次不同的失败')
+  it('同一失败在窗口内重复发生时任务保留、但不再通知', async () => {
+    const first = createBackgroundGitTask({ knowledgeBaseId: 'kb1', kind: 'git-fetch' })!
+    first.finish('failed', '同样的失败')
+    const second = createBackgroundGitTask({ knowledgeBaseId: 'kb1', kind: 'git-fetch' })!
+    second.finish('failed', '同样的失败')
+
+    const tasks = taskOf('git-fetch')
+    // 明细两条运行都保留（run 递增），但第二次不再触发通知
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0].run).toBe(2)
+    expect(tasks[0].notify).toBe(false)
+  })
+
+  it('失败原因变了会重新通知；成功结算不参与去抖', () => {
+    const first = createBackgroundGitTask({ knowledgeBaseId: 'kb1', kind: 'git-fetch' })!
+    first.finish('failed', '第一次失败')
+    const second = createBackgroundGitTask({ knowledgeBaseId: 'kb1', kind: 'git-fetch' })!
+    second.finish('failed', '第二次不同的失败')
+    expect(taskOf('git-fetch')[0].notify).toBe(true)
+
+    const done = createBackgroundGitTask({ knowledgeBaseId: 'kb1', kind: 'git-fetch' })!
+    done.finish('done', null)
+    expect(taskOf('git-fetch')[0].status).toBe('done')
+    expect(taskOf('git-fetch')[0].notify).toBe(true)
   })
 
   it('不同知识库各自独立', () => {
-    reportBackgroundGitFailure({
-      knowledgeBaseId: 'kb1',
-      kind: 'git-fetch',
-      message: '失败'
-    })
-    reportBackgroundGitFailure({
-      knowledgeBaseId: 'kb2',
-      kind: 'git-fetch',
-      message: '失败'
-    })
-    expect(failedOf('git-fetch')).toHaveLength(2)
+    const kb1 = createBackgroundGitTask({ knowledgeBaseId: 'kb1', kind: 'git-fetch' })!
+    kb1.finish('failed', '失败')
+    const kb2 = createBackgroundGitTask({ knowledgeBaseId: 'kb2', kind: 'git-fetch' })!
+    kb2.finish('failed', '失败')
+    expect(taskOf('git-fetch')).toHaveLength(2)
   })
 })
 

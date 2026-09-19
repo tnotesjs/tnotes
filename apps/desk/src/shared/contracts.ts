@@ -619,19 +619,19 @@ export interface AppSettings {
   gitPath: string | null
   nodePath: string | null
   confirmBeforeCommit: boolean
+  /**
+   * Git 后台行为。
+   *
+   * `autoFetch` 默认 **false**：Desk 不会在后台自动联网抓取远端状态，只有用户
+   * 明确打开后才会在打开知识库时与每 5 分钟定时抓取。手动 fetch / pull 不受影响。
+   */
+  git: {
+    autoFetch: boolean
+  }
   tabs: {
     maxOpenCount: number
     wrap: boolean
     autoRevealInToc: boolean
-  }
-  toc: {
-    showNoteIndex: boolean
-    showNoteStatus: boolean
-    changesCollapsedByDefault: boolean
-  }
-  /** 编辑器行为。`selectionToolbar` 默认关闭（选中文字不弹浮动格式条）。 */
-  editor: {
-    selectionToolbar: boolean
   }
   /**
    * 底部面板（终端会话 + 命令任务标签）的容量。
@@ -641,6 +641,15 @@ export interface AppSettings {
    */
   bottomPanel: {
     maxTabs: number
+  }
+  toc: {
+    showNoteIndex: boolean
+    showNoteStatus: boolean
+    changesCollapsedByDefault: boolean
+  }
+  /** 编辑器行为。`selectionToolbar` 默认关闭（选中文字不弹浮动格式条）。 */
+  editor: {
+    selectionToolbar: boolean
   }
   imageUpload: ImageUploadSettings
   updates: {
@@ -1134,6 +1143,19 @@ export interface CommandTaskDto {
   logBytes: number
   /** 因上限被丢弃的字节数（>0 时界面显示截断提示） */
   truncatedBytes: number
+  /**
+   * 是否由后台调度（定时 fetch / 自动推送）发起。
+   *
+   * 后台失败要**聚合**成一条通知（多个知识库同时失败不刷屏）；手动操作仍逐条提示。
+   */
+  background: boolean
+  /**
+   * 这一轮是否应触发失败通知。
+   *
+   * 后台同一知识库的相同失败在去抖窗口内重复发生时置 false：任务明细照常保留
+   * （面板里能翻到、能看输出），只是不再弹一次通知。
+   */
+  notify: boolean
 }
 
 /** 分批推送的日志片段。`data` 里 `\u0000stderr\u0001` 前缀标记 stderr。 */
@@ -1816,6 +1838,11 @@ export interface DeskApi {
     ): Promise<DeskResult<void>>
     onChanged(callback: (state: CommandTaskDto) => void): () => void
     onLog(callback: (event: CommandTaskLogEvent) => void): () => void
+    /**
+     * 主进程移除了某个任务标签（用户关闭，或达到上限时被容量回收）。
+     * 界面据此清掉本地残留的标签与日志，避免留下点不动的空标签。
+     */
+    onClosed(callback: (taskId: string) => void): () => void
     /** 主进程请求「展开面板并定位到这个任务」（手动 Git 操作、后台失败入口） */
     onReveal(callback: (taskId: string) => void): () => void
     /** 主进程请求渲染端重跑某任务（重试必须复用渲染端的完整流程） */
@@ -1839,16 +1866,11 @@ export interface DeskApi {
     onChanged(callback: (state: TerminalSessionDto) => void): () => void
     onData(callback: (event: TerminalDataEvent) => void): () => void
     /**
-     * 主进程移除了某个任务标签（用户关闭，或达到上限时被容量回收）。
-     * 界面据此清掉本地残留的标签与日志，避免留下点不动的空标签。
-     */
-    onClosed(callback: (taskId: string) => void): () => void
-    onOpenAt(callback: (event: TerminalOpenAtEvent) => void): () => void
-  }
-  onLog(callback: (line: string) => void): () => void
-}
-    /**
      * 主进程移除了某个会话（用户关闭，或达到上限时被容量回收）。
      * 界面据此清掉本地残留的标签，避免 xterm 还挂着一个主进程已经不存在的会话。
      */
     onClosed(callback: (sessionId: string) => void): () => void
+    onOpenAt(callback: (event: TerminalOpenAtEvent) => void): () => void
+  }
+  onLog(callback: (line: string) => void): () => void
+}
