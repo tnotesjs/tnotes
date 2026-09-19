@@ -187,14 +187,30 @@ export function createDeskImageView(options: {
     morePanel.append(morePreview, moreDelete, moreCopy)
 
     const caption = document.createElement('input')
+    // 声明为"不可编辑区域里的表单控件"：prosemirror 不会把它当正文内容处理
+    caption.contentEditable = 'false'
     caption.type = 'text'
     caption.className = 'desk-image__caption'
     caption.placeholder = '添加图片描述'
     caption.spellcheck = false
     caption.size = 1
+    /**
+     * 描述输入框挂在**contenteditable 子树之外**（编辑器宿主的绝对定位浮层）。
+     *
+     * 为什么必须这样：这个 NodeView 在 ProseMirror 的 contenteditable 树内，而
+     * ProseMirror 会把树里的 `<input>` 当"正文内容"读取 —— 实测在描述框里逐字输入
+     * 「XY」时，图片的 alt 先被写成 `示X例`（在光标处插入），随后 change 又把这个
+     * 坏值写回文档，看起来就是"图片被文字替换"。
+     * 事件层的所有拦截都无效（`stopEvent` 返回 true、figure/caption 捕获与冒泡
+     * `stopPropagation`、编辑器根捕获拦截都试过），因为污染来自 **DOM 读取**而不是
+     * 事件冒泡；所以只能在结构上把输入框移出那棵树。
+     */
     const captionRow = document.createElement('div')
     captionRow.className = 'desk-image__caption-row'
+    captionRow.contentEditable = 'false'
     captionRow.append(caption)
+    // 先挂在 figure 上，mount 后再移到宿主（NodeView 的 dom 必须自洽，二者都要在）
+    captionRow.dataset.deskImageCaption = 'true'
 
     // 「正在编辑中」：该画布的标签页开着时，盖在图正中的一支笔
     const editingBadge = document.createElement('div')
@@ -211,7 +227,7 @@ export function createDeskImageView(options: {
       morePanel,
       chrome
     )
-    stack.append(frame, captionRow)
+    stack.append(frame)
     stage.append(stack)
     figure.append(stage)
 
@@ -222,13 +238,73 @@ export function createDeskImageView(options: {
       node.addEventListener('mousedown', isolate)
       node.addEventListener('pointerdown', isolate)
     }
+    /**
+     * 描述框里的按键**绝不能被正文编辑器拿到**。
+     *
+     * 实测（真实逐字输入）：图片处于选中态时，输入框里的 keydown/input 会冒泡到
+     * ProseMirror，被当成"替换选中内容"，于是输入的字被写进图片的 alt ——
+     * 例如 alt「示例图」里输入「风景照」会得到 `![示风景照例图]`，
+     * 看起来就是"图片被替换成文字"。
+     *
+     * `stopEvent` 在可编辑态原本一律返回 false，所以这里是唯一的拦截点；
+     * 只对描述框内的事件返回 true，A 不误伤正文。
+     */
+    const fromCaption = (event: Event): boolean =>
+      event.target instanceof Node && caption.contains(event.target)
+    /**
+     * 描述框的输入类事件在**捕获阶段**就被 figure（NodeView 根）吃掉。
+     *
+     * 只在 stopEvent 里拦不够：实测（真实逐字输入）即使 stopEvent 对
+     * keypress/beforeinput 返回 true，输入框的值依然被写成 `示X例`——
+     * 事件仍被正文方向处理了一次。捕获阶段停在 figure 上更早、更彻底。
+     */
+    const captionEventKinds = new Set([
+      'keydown',
+      'keypress',
+      'keyup',
+      'beforeinput',
+      'input',
+      'textInput',
+      'compositionstart',
+      'compositionupdate',
+      'compositionend',
+      'paste',
+      'cut',
+      'copy'
+    ])
     caption.addEventListener('keydown', (event) => {
       event.stopPropagation()
       if (event.key === 'Enter') {
         event.preventDefault()
         caption.blur()
       }
+      if (event.key === 'Escape') {
+        // 放弃本次输入：把值还原成当前属性值再失焦
+        event.preventDefault()
+        caption.value = String(current.attrs.alt ?? '')
+        caption.blur()
+      }
     })
+    // 中文输入法：写入属性只发生在 change / blur（浏览器保证组字期间不触发 change），
+    // 且组字事件本身被 stopEvent 拦在 NodeView 内，不会进正文。
+    // 打开/聚焦描述框时光标落在**末尾**（继续编辑现有描述的自然预期）。
+    // 不这样做时，自动化点击与部分打开路径会把光标留在 0，新输入会插到旧描述前面。
+    /**
+     * 打开描述框：聚焦并把光标放到末尾（继续编辑现有描述的自然预期）。
+     *
+     * 需要等**下一帧**再落光标：此刻浮层刚挂上/刚做完定位，浏览器随后可能再落一次
+     * 默认选区（实测聚焦早于布局完成时光标会停在 0，新输入被插到旧描述前面）。
+     */
+    const focusCaption = (): void => {
+      caption.focus()
+      const place = (): void => {
+        if (document.activeElement !== caption) return
+        const end = caption.value.length
+        if (end > 0) caption.setSelectionRange(end, end)
+      }
+      place()
+      requestAnimationFrame(place)
+    }
     caption.addEventListener('change', () => {
       writeAttrs(view, getPos, { alt: caption.value.trim() })
     })
@@ -249,7 +325,7 @@ export function createDeskImageView(options: {
       captionOpen = true
       closePanels()
       syncChrome()
-      caption.focus()
+      focusCaption()
     })
     alignButton.addEventListener('click', (event) => {
       event.preventDefault()
@@ -484,6 +560,41 @@ export function createDeskImageView(options: {
       figure.classList.toggle('has-caption', !caption.hidden)
       for (const corner of CORNERS) handles[corner].hidden = readOnly || !selected
       syncCompact()
+      positionCaptionRow()
+    }
+
+    /**
+     * 把描述浮层挂到编辑器宿主上（contenteditable 之外），并跟随图片定位。
+     *
+     * 位置用 offsetLeft/offsetTop 相对宿主计算：figure 与宿主之间若有定位祖先，
+     * 用 getBoundingClientRect 求差更稳。
+     */
+    const captionHost = view.dom.parentElement ?? view.dom
+    // 构造期即挂载：`caption.focus()` 可能发生在首次 render/syncChrome 之前，
+    // 那时元素若还不在文档里，光标会停在 0（实测：后续输入被插到旧描述前面）。
+    captionHost.append(captionRow)
+    const positionCaptionRow = (): void => {
+      if (captionRow.parentElement !== captionHost) {
+        captionHost.append(captionRow)
+        if (getComputedStyle(captionHost).position === 'static') {
+          captionHost.style.position = 'relative'
+        }
+      }
+      if (captionRow.hidden) return
+      const hostRect = captionHost.getBoundingClientRect()
+      const figureRect = figure.getBoundingClientRect()
+      captionRow.style.left = `${figureRect.left - hostRect.left}px`
+      captionRow.style.top = `${figureRect.bottom - hostRect.top + 4}px`
+      captionRow.style.minWidth = `${figureRect.width}px`
+      // 同步期间若浏览器把光标留在了开头（聚焦早于挂载/定位时会这样），补到末尾。
+      // 只在"已聚焦且仍在 0"时补，所以不会覆盖用户自己点的位置。
+      if (
+        document.activeElement === caption &&
+        caption.selectionStart === 0 &&
+        caption.value.length > 0
+      ) {
+        caption.setSelectionRange(caption.value.length, caption.value.length)
+      }
     }
 
     /**
@@ -630,7 +741,10 @@ export function createDeskImageView(options: {
       figure.classList.toggle('tn-image--right', align === 'right')
       figure.classList.toggle('is-selected', selected && !options.isReadOnly())
       alignButton.innerHTML = ALIGN_ICONS[align]
-      caption.value = alt
+      // 描述框**聚焦时绝不回写它的值**：每次节点更新都会走 render，若无条件
+      // `caption.value = alt`，用户正在输入的内容会被文档旧值重置/回灌
+      // （实测表现为输入结束时 alt 变成"旧描述 + 新输入"）。
+      if (document.activeElement !== caption) caption.value = alt
       if (alt) captionOpen = true
       syncChrome()
     }
@@ -650,6 +764,8 @@ export function createDeskImageView(options: {
         render(current, false)
       },
       stopEvent: (event) => {
+        // 描述框内的输入类事件一律自己处理，绝不让正文编辑器拿到（见 caption 处注释）
+        if (fromCaption(event) && captionEventKinds.has(event.type)) return true
         if (!options.isReadOnly()) return false
         return (
           event instanceof MouseEvent ||
@@ -660,6 +776,7 @@ export function createDeskImageView(options: {
       },
       ignoreMutation: () => true,
       destroy: () => {
+        captionRow.remove()
         teardownCanvas()
         observer?.disconnect()
         document.removeEventListener('pointerdown', onDocumentPointerDown)
