@@ -174,8 +174,22 @@ export const useCommandTaskStore = defineStore('commandTask', () => {
     run: number,
     stage: CommandTaskStage,
     label: string
-  ): Promise<void> {
-    await window.desk.commandTask.reportStage(taskId, run, stage, label)
+  ): Promise<boolean> {
+    const result = await window.desk.commandTask.reportStage(taskId, run, stage, label)
+    // 上报失败或这一轮已不是当前运行 → false，调用方不得继续进入 Git
+    return result.ok ? result.value : false
+  }
+
+  /**
+   * 声明「这一轮开始执行」（进入 Git 之前）。
+   *
+   * 推送的完整流程是「保存 → Git」：只有先声明，保存期间收到的取消才有归属，
+   * 取消才不会去按知识库猜一个 Git 队列项、误伤同库其他排队任务。
+   * 返回 false 表示这一轮已不是当前运行（已被取消/已被取代）。
+   */
+  async function begin(taskId: string, run: number): Promise<boolean> {
+    const result = await window.desk.commandTask.begin(taskId, run)
+    return result.ok ? result.value : false
   }
 
   async function finish(
@@ -257,6 +271,7 @@ export const useCommandTaskStore = defineStore('commandTask', () => {
     load,
     claim,
     reportStage,
+    begin,
     finish,
     cancel,
     closeTask,

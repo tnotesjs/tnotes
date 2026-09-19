@@ -128,6 +128,7 @@ export const IPC_CHANNELS = {
   commandTaskList: 'command-task:list',
   commandTaskClose: 'command-task:close',
   commandTaskCancel: 'command-task:cancel',
+  commandTaskBegin: 'command-task:begin',
   commandTaskRetry: 'command-task:retry',
   commandTaskRetryRequested: 'command-task:retry-requested',
   commandTaskStage: 'command-task:stage',
@@ -1680,10 +1681,26 @@ export interface DeskApi {
   git: {
     list(): Promise<DeskResult<GitRepositoryStateDto[]>>
     refresh(knowledgeBaseId?: string): Promise<DeskResult<GitRepositoryStateDto[]>>
-    /** 带 taskId 时由命令任务处理器执行：面板能拿到实时输出与取消能力 */
-    fetch(knowledgeBaseId: string, taskId?: string): Promise<DeskResult<GitOperationResult>>
-    pull(knowledgeBaseId: string, taskId?: string): Promise<DeskResult<GitOperationResult>>
-    publish(knowledgeBaseId: string, taskId?: string): Promise<DeskResult<GitOperationResult>>
+    /**
+     * 带 taskId 时由命令任务处理器执行：面板能拿到实时输出与取消能力。
+     * 再带 `run` 时只认**那一轮**（推送带保存）：被取消或已被取代就收手，
+     * 不认领、不复活。
+     */
+    fetch(
+      knowledgeBaseId: string,
+      taskId?: string,
+      run?: number
+    ): Promise<DeskResult<GitOperationResult>>
+    pull(
+      knowledgeBaseId: string,
+      taskId?: string,
+      run?: number
+    ): Promise<DeskResult<GitOperationResult>>
+    publish(
+      knowledgeBaseId: string,
+      taskId?: string,
+      run?: number
+    ): Promise<DeskResult<GitOperationResult>>
     onStateChanged(callback: (state: GitRepositoryStateDto) => void): () => void
   }
   ide: {
@@ -1747,17 +1764,30 @@ export interface DeskApi {
     /** 停止任务：排队中的直接取消，运行中的终止子进程 */
     cancel(taskId: string): Promise<DeskResult<void>>
     /**
+     * 声明「这一轮运行已经开始」，在**进入 Git 之前**调用。
+     *
+     * 推送的完整流程是「受控保存 → Git」，保存期间任务还没进 Git 队列。
+     * 有了这条声明，保存阶段收到的取消请求才有明确的归属，取消不必再去
+     * 按知识库猜某个 Git 队列项（那会误伤同库其他排队任务）。
+     * 返回这一轮是否**仍是当前运行**：false 表示已被取消/已被新运行取代，
+     * 调用方不得再进入 Git，也不得因此重新认领。
+     */
+    begin(taskId: string, run: number): Promise<DeskResult<boolean>>
+    /**
      * 重试：请渲染端重新走**完整业务流程**（推送要先保存），
      * 不在主进程直接调 Git——否则会把旧磁盘内容提交并推送。
      */
     retry(taskId: string): Promise<DeskResult<void>>
-    /** 渲染端在调用 Git 前报告自己的阶段（如推送前的保存） */
+    /**
+     * 渲染端在调用 Git 前报告自己的阶段（如推送前的保存）。
+     * 返回 false 表示这一轮已不是当前运行：调用方不得继续执行 Git。
+     */
     reportStage(
       taskId: string,
       run: number,
       stage: CommandTaskStage,
       label: string
-    ): Promise<DeskResult<void>>
+    ): Promise<DeskResult<boolean>>
     /** 渲染端因前置失败结束任务（如保存失败、检查不通过） */
     finish(
       taskId: string,

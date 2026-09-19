@@ -194,11 +194,44 @@ export class CommandTaskManager {
   }
 
   /**
+   * 拿**指定那一轮**的句柄，不做任何认领/复活。
+   *
+   * 渲染端已经认领过（为保证"保存也能被取消"还在进入 Git 前登记过运行），
+   * 主进程只需校验 `run` 是否仍是当前那一轮：
+   *  - `run` 不符（已被新运行取代）→ 返回 null，调用方**不得**执行 Git；
+   *  - 任务已收尾（取消/失败/完成）→ 也返回 null，绝不能借 `claimHandle`
+   *    把已取消的操作复活成新一轮再跑一次 add/commit/push。
+   */
+  handleForRun(taskId: string, run: number): CommandTaskHandle | null {
+    const record = this.tasks.get(taskId)
+    if (!record || record.dto.run !== run) return null
+    if (!this.isActiveInternal(record.dto.status)) return null
+    return this.handleFor(record)
+  }
+
+  /**
    * 由外部（渲染端上报保存阶段等）直接设置阶段。
    * `run` 不符时忽略——旧运行的迟到上报不能改新运行的状态。
    */
   reportStage(taskId: string, run: number, stage: CommandTaskStage, label?: string): void {
     this.setStage(taskId, run, stage, label)
+  }
+
+  /**
+   * 上报阶段并返回「这一轮是否仍是当前运行」。
+   *
+   * 渲染端在进入 Git 之前用它做校验：返回 false 说明这一轮已被取消、
+   * 被新运行取代，或任务已结束——此时**不得**继续执行 Git 写操作。
+   */
+  reportStageChecked(
+    taskId: string,
+    run: number,
+    stage: CommandTaskStage,
+    label?: string
+  ): boolean {
+    this.setStage(taskId, run, stage, label)
+    const record = this.tasks.get(taskId)
+    return Boolean(record && record.dto.run === run && this.isActiveInternal(record.dto.status))
   }
 
   /** 排队中取消：没有任何子进程需要终止，直接收尾。 */

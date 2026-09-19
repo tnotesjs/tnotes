@@ -75,7 +75,7 @@ export function createGit(ctx: GitContext) {
       const result = resultValue(
         await window.desk.git[
           kind === 'git-fetch' ? 'fetch' : kind === 'git-pull' ? 'pull' : 'publish'
-        ](knowledgeBaseId, task.id)
+        ](knowledgeBaseId, task.id, claimed ? task.run : undefined)
       )
       ctx.gitStates.value = { ...ctx.gitStates.value, [knowledgeBaseId]: result.state }
       if (kind === 'git-pull' && result.conflict) {
@@ -140,8 +140,18 @@ export function createGit(ctx: GitContext) {
       ctx.error.value = '无法创建命令任务'
       return
     }
+    // 先声明「本轮开始执行」，否则保存期间收到的取消没有归属：任务还没进 Git 队列，
+    // 取消只能按知识库去猜一个队列项，会误伤同库其他任务。
+    if (!(await commandTasks.begin(task.id, task.run))) {
+      ctx.status.value = '任务已取消'
+      return
+    }
     // 推送前先受控保存：这一步的进度与失败原因也要出现在任务里
-    await commandTasks.reportStage(task.id, task.run, 'saving', '保存未提交的更改')
+    // 上报返回值同时说明这一轮是否还有效（已被取消/已被取代时不得继续）
+    if (!(await commandTasks.reportStage(task.id, task.run, 'saving', '保存未提交的更改'))) {
+      ctx.status.value = '任务已取消'
+      return
+    }
     try {
       await ctx.saveAllDocuments()
     } catch (cause) {
@@ -149,6 +159,12 @@ export function createGit(ctx: GitContext) {
       ctx.error.value = message
       // 保存失败就**不得**执行 Git 写操作，把原因留在任务里
       await commandTasks.finish(task.id, task.run, 'failed', `保存失败：${message}`)
+      return
+    }
+    // 保存期间可能已经被取消：此时**不得**进入 Git。也不重新认领——那等于把
+    // 已取消的操作复活，既违背用户意图，又会多跑一次 add/commit/push。
+    if (!(await commandTasks.reportStage(task.id, task.run, 'precheck', '检查仓库状态'))) {
+      await commandTasks.finish(task.id, task.run, 'canceled', '任务已取消')
       return
     }
     await runGitWithTask(knowledgeBaseId, 'git-push', { id: task.id, run: task.run })

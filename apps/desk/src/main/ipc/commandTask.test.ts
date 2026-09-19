@@ -6,7 +6,13 @@ import { join } from 'node:path'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { commandTaskManager } from '../commandTaskManager'
-import { ensureExecution, cancelRunningExecution, runGitTask } from './commandTask'
+import {
+  beginCommandTask,
+  cancelRunningExecution,
+  ensureExecution,
+  requestCancel,
+  runGitTask
+} from './commandTask'
 
 import type { CommandTaskDto } from '../../shared/contracts'
 
@@ -272,6 +278,80 @@ describe('同一运行只执行一次', () => {
     release(Promise.reject(new Error('操作已取消')))
     await running
     expect(manager.list().find((item) => item.kind === 'git-pull')?.status).toBe('canceled')
+  })
+})
+
+describe('保存阶段取消（任务还没进 Git 队列）', () => {
+  it('取消停在保存阶段的推送：不按知识库取消任何 Git 队列项，同库其他任务不受影响', async () => {
+    manager.dispose()
+    // 同库另一个任务正排在 gitManager 队列里（模拟"其他排队任务"）
+    const otherHandle = manager.claimHandle({
+      knowledgeBaseId: 'kb1',
+      knowledgeBaseName: 'TNotes.a',
+      kind: 'git-pull',
+      title: '拉取更新',
+      cwd: repoRoot
+    }).handle
+
+    // 推送：渲染端已认领并**声明开始**（保存阶段），但一条 Git 命令都还没发
+    const pushHandle = manager.claimHandle({
+      knowledgeBaseId: 'kb1',
+      knowledgeBaseName: 'TNotes.a',
+      kind: 'git-push',
+      title: '推送更改',
+      cwd: repoRoot
+    }).handle
+    expect(beginCommandTask(pushHandle.id, pushHandle.run)).toBe(true)
+    expect(manager.list().find((item) => item.id === pushHandle.id)?.status).toBe('queued')
+
+    // 用户在保存期间点了停止
+    requestCancel(pushHandle.id)
+
+    // 关键：**没有**按知识库去取消 gitManager 里的队列项——那会打到同库其他任务
+    expect(gitManagerMock.cancelQueuedOperation).not.toHaveBeenCalled()
+    expect(gitManagerMock.cancelRunningOperation).not.toHaveBeenCalled()
+    // 也没有为这个任务启动任何 Git 执行（拉取队列里的那一项不受影响）
+    expect(gitManagerMock.publish).not.toHaveBeenCalled()
+    expect(gitManagerMock.pull).not.toHaveBeenCalled()
+    // 保存完成后收尾方据此判定"不得进入 Git"
+    expect(manager.list().find((item) => item.id === pushHandle.id)?.status).toBe('canceling')
+    expect(manager.list().find((item) => item.id === otherHandle.id)?.status).toBe('queued')
+  })
+
+  it('保存期间取消后，执行层一条 Git 命令都不执行', async () => {
+    manager.dispose()
+    const handle = manager.claimHandle({
+      knowledgeBaseId: 'kb1',
+      knowledgeBaseName: 'TNotes.a',
+      kind: 'git-push',
+      title: '推送更改',
+      cwd: repoRoot
+    }).handle
+    beginCommandTask(handle.id, handle.run)
+    requestCancel(handle.id)
+
+    // 保存完成后渲染端仍会调一次（真实流程），但已被取消 → 不得进入 Git
+    await ensureExecution(handle, 'git-push', 'kb1')
+
+    expect(gitManagerMock.publish).not.toHaveBeenCalled()
+    expect(manager.list().find((item) => item.id === handle.id)?.status).toBe('canceled')
+  })
+
+  it('没有运行记录时取消：不取消任何 Git 队列项，只把该任务收尾', () => {
+    manager.dispose()
+    const handle = manager.claimHandle({
+      knowledgeBaseId: 'kb1',
+      knowledgeBaseName: 'TNotes.a',
+      kind: 'git-fetch',
+      title: '获取远端更新',
+      cwd: repoRoot
+    }).handle
+
+    requestCancel(handle.id)
+
+    expect(gitManagerMock.cancelQueuedOperation).not.toHaveBeenCalled()
+    expect(gitManagerMock.cancelRunningOperation).not.toHaveBeenCalled()
+    expect(manager.list().find((item) => item.id === handle.id)?.status).toBe('canceled')
   })
 })
 

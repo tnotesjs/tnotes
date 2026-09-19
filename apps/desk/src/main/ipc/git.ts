@@ -21,20 +21,32 @@ export function registerGit(getWindow: GetWindow): () => void {
   handle(
     IPC_CHANNELS.gitFetch,
     getWindow,
-    z.object({ knowledgeBaseId: z.string().min(1), taskId: z.string().min(1).optional() }),
-    (input) => runGitTaskFor(input.knowledgeBaseId, 'git-fetch', input.taskId, getWindow)
+    z.object({
+      knowledgeBaseId: z.string().min(1),
+      taskId: z.string().min(1).optional(),
+      run: z.number().int().min(1).optional()
+    }),
+    (input) => runGitTaskFor(input.knowledgeBaseId, 'git-fetch', input.taskId, getWindow, input.run)
   )
   handle(
     IPC_CHANNELS.gitPull,
     getWindow,
-    z.object({ knowledgeBaseId: z.string().min(1), taskId: z.string().min(1).optional() }),
-    (input) => runGitTaskFor(input.knowledgeBaseId, 'git-pull', input.taskId, getWindow)
+    z.object({
+      knowledgeBaseId: z.string().min(1),
+      taskId: z.string().min(1).optional(),
+      run: z.number().int().min(1).optional()
+    }),
+    (input) => runGitTaskFor(input.knowledgeBaseId, 'git-pull', input.taskId, getWindow, input.run)
   )
   handle(
     IPC_CHANNELS.gitPublish,
     getWindow,
-    z.object({ knowledgeBaseId: z.string().min(1), taskId: z.string().min(1).optional() }),
-    (input) => runGitTaskFor(input.knowledgeBaseId, 'git-push', input.taskId, getWindow)
+    z.object({
+      knowledgeBaseId: z.string().min(1),
+      taskId: z.string().min(1).optional(),
+      run: z.number().int().min(1).optional()
+    }),
+    (input) => runGitTaskFor(input.knowledgeBaseId, 'git-push', input.taskId, getWindow, input.run)
   )
   handle(IPC_CHANNELS.ideShowKnowledgeBaseMenu, getWindow, z.string().min(1), (knowledgeBaseId) => {
     const window = getWindow()

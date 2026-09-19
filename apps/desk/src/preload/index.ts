@@ -318,12 +318,12 @@ const api: DeskApi = {
     list: () => invoke<GitRepositoryStateDto[]>(IPC_CHANNELS.gitList),
     refresh: (knowledgeBaseId) =>
       invoke<GitRepositoryStateDto[]>(IPC_CHANNELS.gitRefresh, knowledgeBaseId),
-    fetch: (knowledgeBaseId, taskId) =>
-      invoke<GitOperationResult>(IPC_CHANNELS.gitFetch, { knowledgeBaseId, taskId }),
-    pull: (knowledgeBaseId, taskId) =>
-      invoke<GitOperationResult>(IPC_CHANNELS.gitPull, { knowledgeBaseId, taskId }),
-    publish: (knowledgeBaseId, taskId) =>
-      invoke<GitOperationResult>(IPC_CHANNELS.gitPublish, { knowledgeBaseId, taskId }),
+    fetch: (knowledgeBaseId, taskId, run) =>
+      invoke<GitOperationResult>(IPC_CHANNELS.gitFetch, { knowledgeBaseId, taskId, run }),
+    pull: (knowledgeBaseId, taskId, run) =>
+      invoke<GitOperationResult>(IPC_CHANNELS.gitPull, { knowledgeBaseId, taskId, run }),
+    publish: (knowledgeBaseId, taskId, run) =>
+      invoke<GitOperationResult>(IPC_CHANNELS.gitPublish, { knowledgeBaseId, taskId, run }),
     onStateChanged: (callback) => {
       const listener = (_event: Electron.IpcRendererEvent, state: GitRepositoryStateDto): void =>
         callback(state)
@@ -410,9 +410,13 @@ const api: DeskApi = {
     list: () => invoke<CommandTaskDto[]>(IPC_CHANNELS.commandTaskList),
     close: (taskId: string) => invoke<void>(IPC_CHANNELS.commandTaskClose, { taskId }),
     cancel: (taskId: string) => invoke<void>(IPC_CHANNELS.commandTaskCancel, { taskId }),
+    /** 进入 Git 之前声明本轮已开始；返回该轮是否仍是当前运行 */
+    begin: (taskId: string, run: number) =>
+      invoke<boolean>(IPC_CHANNELS.commandTaskBegin, { taskId, run }),
     retry: (taskId: string) => invoke<void>(IPC_CHANNELS.commandTaskRetry, { taskId }),
+    /** 上报阶段；返回 false 表示该轮已不是当前运行，不得继续进入 Git */
     reportStage: (taskId: string, run: number, stage: CommandTaskStage, label: string) =>
-      invoke<void>(IPC_CHANNELS.commandTaskStage, { taskId, run, stage, label }),
+      invoke<boolean>(IPC_CHANNELS.commandTaskStage, { taskId, run, stage, label }),
     finish: (
       taskId: string,
       run: number,
