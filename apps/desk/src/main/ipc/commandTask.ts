@@ -44,8 +44,6 @@ const runningExecutions = new Map<
   string,
   {
     cancel: () => void
-    /** 这一轮的 git 操作是否已经离开队列开始执行（决定取消要不要等进程 close） */
-    started: boolean
     promise: Promise<void>
   }
 >()
@@ -165,25 +163,17 @@ export async function ensureExecution(
   let operationId: string | null = null
   let cancelQueuedNode: (() => void) | null = null
   const execution = {
-    /**
-     * 本轮的 git 操作是否**已经离开队列开始执行**。
-     *
-     * 两种取消的含义完全不同：
-     *  - 还在排队：它没有任何子进程可等，取消只需让这一项失效并立即结算，
-     *    否则「取消中」会一直挂到一个根本不该执行的 fetch 超时；
-     *  - 已经开始：必须只终止这一轮的 spawn，并等进程 close 之后才结算 canceled。
-     */
-    started: false,
     cancel: () => {
-      // 「已开始执行」的可靠判据：本轮的入队身份**就是** gitManager 当前运行的那一项。
-      // 同库队列串行，因此这一条能准确区分「已经跑起来」与「还在后面排队」。
+      // 两种取消的含义完全不同，判据只有一条：这一项的入队身份**是不是**
+      // gitManager 当前正在运行的那一项（同库队列串行，所以这条判据是准确的）。
+      //  - 是：已经在跑 → 只终止这一轮的 spawn（身份不匹配则 gitManager 拒绝），
+      //    并等进程 close 之后再结算 canceled；
+      //  - 不是：还在后面排队 → 只让这一项失效，**绝不碰**正在跑的另一项。
       const runningNow = gitManager.getRunningOperationId?.(knowledgeBaseId) ?? null
-      if (execution.started && operationId && runningNow === operationId) {
-        // 已开始执行：只终止这一轮登记的 spawn（身份不匹配则 gitManager 拒绝）
+      if (operationId && runningNow === operationId) {
         gitManager.cancelRunningOperation(knowledgeBaseId, operationId)
         return
       }
-      // 还在 gitManager 队列里排队：只让这一项失效，**绝不碰**正在跑的另一项
       cancelQueuedNode?.()
     },
     promise: Promise.resolve()
@@ -197,9 +187,6 @@ export async function ensureExecution(
     },
     (cancel) => {
       cancelQueuedNode = cancel
-    },
-    () => {
-      execution.started = true
     }
   )
   runningExecutions.set(key, execution)
@@ -221,8 +208,7 @@ export async function runGitTask(
   kind: 'git-pull' | 'git-push' | 'git-fetch',
   knowledgeBaseId: string,
   onOperationId?: (id: string | null) => void,
-  onQueuedCancel?: (cancel: () => void) => void,
-  onStarted?: () => void
+  onQueuedCancel?: (cancel: () => void) => void
 ): Promise<void> {
   try {
     handleRef.stage('precheck', kind === 'git-fetch' ? '检查远端更新' : '检查仓库状态')
@@ -234,11 +220,7 @@ export async function runGitTask(
     let captured = false
     const extras = {
       observer: {
-        commandLine: (line: string) => {
-          handleRef.command(line)
-          // 第一条命令出现 = 本轮已经真正在跑（不是排队）
-          onStarted?.()
-        },
+        commandLine: (line: string) => handleRef.command(line),
         output: (stream: 'stdout' | 'stderr', chunk: string): void => handleRef.write(stream, chunk)
       },
       // 一入队就拿到身份：排队中被取消时只让这一项失效，不碰正在跑的另一项
