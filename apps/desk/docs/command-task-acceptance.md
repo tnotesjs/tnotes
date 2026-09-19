@@ -56,9 +56,11 @@ pnpm --filter desk test     # 1469 passed / 168 files / 0 skipped
   运行中取消带身份、排队取消不误杀、**保存阶段取消**（无记录时不取消任何队列项、
   执行层一条 Git 命令都不执行）。
 - `runGit.test.ts`（2，真 git）：超时必须结算、超时后不留 git 子孙进程。
-- `runGitLifecycle.test.ts`（6，可控子进程）：正常退出等输出收尾、大输出只留尾部、
+- `runGitLifecycle.test.ts`（8，可控子进程）：正常退出等输出收尾、大输出只留尾部、
   父进程退出而孙子进程持有管道时不提前结算且强杀兜底仍执行（无残留）、
-  取消信号同样等收尾、注册/注销配对、无注册表也能工作。
+  取消信号同样等收尾、**主进程先关输出流但仍存活时取消不提前结算**、
+  **孙进程关输出流但仍在跑时不得解除占用（清理完成才进终态）**、
+  注册/注销配对、无注册表也能工作。
 - `disposeSpawn.test.ts`（1，**真实执行路径**）：真实 `GitManager` + 真实 `runGit`
   - 可控远端，验证 `dispose()` 能收掉仍在挂着的 git fetch 且不留进程
     （撤掉 `onSpawn.register` 后该用例 60s 超时失败）。
@@ -107,7 +109,7 @@ pnpm --filter desk test     # 1469 passed / 168 files / 0 skipped
 ## 五、门禁
 
 ```
-pnpm --filter desk test        # 1479 passed / 170 files / 0 skipped
+pnpm --filter desk test        # 1481 passed / 170 files / 0 skipped
 pnpm --filter desk lint        # 0 errors（41 warnings 均为既有）
 pnpm --filter desk typecheck   # 0 errors
 pnpm format:check              # All matched files use Prettier code style
