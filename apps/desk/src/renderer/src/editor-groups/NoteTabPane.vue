@@ -782,6 +782,7 @@ function openLink(url: string): void {
           :page-width="tab.pageWidth"
           :outline-visible="outlineVisible"
           :toc-display="workspace.settings?.noteTocDisplay ?? 'expanded'"
+          :selection-toolbar="workspace.settings?.editor.selectionToolbar ?? false"
           :upload-image="uploadVisualImage"
           @change="updateContent"
           @open-link="openLink"

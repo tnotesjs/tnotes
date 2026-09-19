@@ -42,6 +42,7 @@ const autosaveSettings: AppSettings = {
     showNoteStatus: true,
     changesCollapsedByDefault: true
   },
+  editor: { selectionToolbar: false },
   imageUpload: {
     defaultTarget: 'local',
     github: {

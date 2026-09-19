@@ -139,3 +139,56 @@ describe('保存时格式化（Prettier）', () => {
     expect(loadSettings().prettier).toBe(false)
   })
 })
+
+describe('选区浮动工具条开关', () => {
+  const path = () => join(environment.profile, '.tn-desk-config.json')
+
+  it('全新配置默认关闭', () => {
+    expect(loadSettings().editor).toEqual({ selectionToolbar: false })
+  })
+
+  it('老配置没有 editor 分组时补默认 false，且不清掉其它偏好', () => {
+    // 老用户的真实等价场景：升级前的配置文件里没有这个字段。
+    writeFileSync(
+      path(),
+      JSON.stringify({
+        version: 1,
+        theme: 'dark',
+        tabs: { maxOpenCount: 5, wrap: false, autoRevealInToc: true },
+        toc: { showNoteIndex: false, showNoteStatus: true, changesCollapsedByDefault: true }
+      })
+    )
+    const settings = loadSettings()
+
+    expect(settings.editor.selectionToolbar).toBe(false)
+    expect(settings.theme).toBe('dark')
+    expect(settings.tabs.maxOpenCount).toBe(5)
+    expect(settings.toc.showNoteIndex).toBe(false)
+    // 缺字段由 schema 的 .default() 补齐，不算「非法字段」，不应留下备份。
+    expect(existsSync(`${path()}.invalid.bak`)).toBe(false)
+  })
+
+  it('配置里 editor 分组存在但缺字段 / 整组非法时也回默认 false', () => {
+    writeFileSync(path(), JSON.stringify({ editor: {} }))
+    expect(loadSettings().editor.selectionToolbar).toBe(false)
+
+    writeFileSync(path(), JSON.stringify({ editor: 'nonsense' }))
+    expect(loadSettings().editor.selectionToolbar).toBe(false)
+
+    writeFileSync(path(), JSON.stringify({ editor: { selectionToolbar: 'oops' } }))
+    expect(loadSettings().editor.selectionToolbar).toBe(false)
+  })
+
+  it('用户显式开关会持久化，且不被其它字段更新覆盖', () => {
+    expect(saveSettings({ editor: { selectionToolbar: true } }).editor.selectionToolbar).toBe(true)
+    expect(loadSettings().editor.selectionToolbar).toBe(true)
+
+    saveSettings({ theme: 'dark' })
+    expect(loadSettings().editor.selectionToolbar).toBe(true)
+
+    expect(saveSettings({ editor: { selectionToolbar: false } }).editor.selectionToolbar).toBe(
+      false
+    )
+    expect(loadSettings().editor.selectionToolbar).toBe(false)
+  })
+})

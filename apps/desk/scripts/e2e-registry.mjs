@@ -614,6 +614,23 @@ export const SUITES = [
     note: '渲染忠实性：结构性不忠实的区域降级为「按原文显示」，无关内容照常渲染，切视图不改磁盘'
   },
   {
+    name: 'e2e-selection-toolbar.mjs',
+    area: 'editor',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/main/settings.ts',
+      'apps/desk/src/shared/contracts.ts',
+      'apps/desk/src/renderer/src/markdown/deskEditor.ts',
+      'apps/desk/src/renderer/src/markdown/crepePort/toolbar/**',
+      'apps/desk/src/renderer/src/markdown/MilkdownMarkdownEditor.vue',
+      'apps/desk/src/renderer/src/components/SettingsPanel.vue',
+      'apps/desk/src/renderer/src/components/settings/EditorSettings.vue'
+    ],
+    serial: false,
+    smoke: false,
+    note: '选区浮动工具条开关：默认关闭不弹且不拦截指针事件、设置面板可开、重启后保持、改回关闭后不再出现'
+  },
+  {
     name: 'e2e-packaged-smoke.mjs',
     area: 'packaged',
     tier: 'manual',

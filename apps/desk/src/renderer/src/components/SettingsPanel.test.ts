@@ -32,6 +32,7 @@ const settings: AppSettings = {
     showNoteStatus: true,
     changesCollapsedByDefault: true
   },
+  editor: { selectionToolbar: false },
   imageUpload: {
     defaultTarget: 'local',
     github: {
@@ -94,7 +95,11 @@ describe('SettingsPanel Markdown quick-input catalog', () => {
 
   it('renders every shared slash, block, and inline shortcut entry', async () => {
     const wrapper = mount(SettingsPanel)
-    await wrapper.get('button.nav-item:nth-child(7)').trigger('click')
+    const shortcutsNav = wrapper
+      .findAll('button.nav-item')
+      .find((item) => item.text().includes('快捷键'))
+    expect(shortcutsNav).toBeTruthy()
+    await shortcutsNav?.trigger('click')
 
     const group = wrapper
       .findAll('.shortcut-group')
@@ -178,7 +183,11 @@ describe('SettingsPanel 目录管理', () => {
 describe('SettingsPanel GitHub image-bed config', () => {
   it('renders the GitHub config only after selecting the GitHub target', async () => {
     const wrapper = mount(SettingsPanel)
-    await wrapper.get('button.nav-item:nth-child(5)').trigger('click')
+    const imageNav = wrapper
+      .findAll('button.nav-item')
+      .find((item) => item.text().includes('图片与图床'))
+    expect(imageNav).toBeTruthy()
+    await imageNav?.trigger('click')
 
     // 本地 assets：不渲染 GitHub 详细配置，只保留压缩块
     expect(

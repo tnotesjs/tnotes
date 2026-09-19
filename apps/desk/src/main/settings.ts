@@ -69,6 +69,13 @@ const settingsSchema = z.object({
       showNoteStatus: true,
       changesCollapsedByDefault: true
     }),
+  // 选区浮动工具条（选中文字后弹出的格式条）。默认关闭：不打扰写作；老配置文件
+  // 没有这个分组，靠这里的分组级 `.default({...})` 补 false（见 loadSettings）。
+  editor: z
+    .object({
+      selectionToolbar: z.boolean().default(false)
+    })
+    .default({ selectionToolbar: false }),
   imageUpload: z
     .object({
       defaultTarget: z.enum(['local', 'github']).default('local'),
@@ -313,6 +320,7 @@ export function saveSettings(next: Partial<AppSettings>): AppSettings {
     ...next,
     autosave: { ...current.autosave, ...next.autosave },
     tabs: { ...current.tabs, ...next.tabs },
+    editor: { ...current.editor, ...next.editor },
     imageUpload: {
       ...current.imageUpload,
       ...next.imageUpload,

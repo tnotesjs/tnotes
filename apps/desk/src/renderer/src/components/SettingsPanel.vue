@@ -4,6 +4,7 @@ import { ref, watch } from 'vue'
 import { useWorkspaceStore } from '../stores/workspace'
 
 import ConfigSettings from './settings/ConfigSettings.vue'
+import EditorSettings from './settings/EditorSettings.vue'
 import GeneralSettings from './settings/GeneralSettings.vue'
 import ImageSettings from './settings/ImageSettings.vue'
 import ShortcutsSettings from './settings/ShortcutsSettings.vue'
@@ -26,6 +27,11 @@ const groups = [
     id: 'general',
     label: '常规',
     icon: 'M4 7h10M18 7h2M4 12h2M10 12h10M4 17h10M18 17h2'
+  },
+  {
+    id: 'editor',
+    label: '编辑器',
+    icon: 'M8 4h8M12 4v16M8 20h8'
   },
   {
     id: 'tabs',
@@ -70,6 +76,9 @@ const groupDefaults: Record<string, Partial<AppSettings>> = {
     workspaceLayout: 'kb-dir-content',
     prettier: false,
     updates: { autoCheck: true }
+  },
+  editor: {
+    editor: { selectionToolbar: false }
   },
   tabs: {
     tabs: { maxOpenCount: 10, wrap: true, autoRevealInToc: true }
@@ -209,6 +218,11 @@ function onSettingsSynced(settings: AppSettings): void {
             v-if="activeGroup === 'general'"
             :draft="draft"
             @reset="resetGroup('general')"
+          />
+          <EditorSettings
+            v-else-if="activeGroup === 'editor'"
+            :draft="draft"
+            @reset="resetGroup('editor')"
           />
           <TabsSettings
             v-else-if="activeGroup === 'tabs'"

@@ -627,6 +627,10 @@ export interface AppSettings {
     showNoteStatus: boolean
     changesCollapsedByDefault: boolean
   }
+  /** 编辑器行为。`selectionToolbar` 默认关闭（选中文字不弹浮动格式条）。 */
+  editor: {
+    selectionToolbar: boolean
+  }
   imageUpload: ImageUploadSettings
   updates: {
     autoCheck: boolean
