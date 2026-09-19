@@ -356,6 +356,11 @@ export class GitManager {
   }
 
   async refresh(knowledgeBaseId?: string): Promise<GitRepositoryStateDto[]> {
+    // 退出已经开始就不再派生新的 git 进程：dispose() 会把未启动的队列项排空、
+    // 终止在跑的子进程，但收尾的 best-effort 刷新是绕过队列直接执行的
+    // （runGitTask 的 finally），如果不拦住，它会在排空之后再造出一个子进程，
+    // 既没人等它，也没人杀它。
+    if (this.disposed) return this.list()
     const targets = knowledgeBaseId
       ? [this.getRepository(knowledgeBaseId)]
       : [...this.repositories.values()]
@@ -606,7 +611,10 @@ export class GitManager {
       const commit = await this.execute(
         repository.rootPath,
         ['commit', '-m', `docs: update notes ${timestamp}`],
-        120_000
+        120_000,
+        // 漏传 extras 会让 commit 阶段既看不到输出、也收不到取消信号：
+        // 取消 push 任务时 commit 子进程会一直跑到自己结束。
+        extras
       )
       if (commit.code !== 0) throw commandError(commit, 'Git commit 失败')
       committed = true

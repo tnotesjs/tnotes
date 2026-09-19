@@ -114,38 +114,86 @@ interface FakeCall {
   args: string[]
   hung: boolean
   resolve: (result: CommandResult) => void
+  /** 该次调用收到的运行参数（观察者 / 取消信号 / 子进程登记表）。 */
+  extras?: unknown
+  /** 假子进程是否已收到终止请求（abort 时置位，close 时据此给出退出码）。 */
+  terminateRequested?: boolean
 }
 
-function createExecutor() {
+function createExecutor(options: { publish?: boolean } = {}) {
   const calls: FakeCall[] = []
   let hangFetches = false
+  let hangCommits = false
   let seq = 0
-  const executor = vi.fn((root: string, args: string[]): Promise<CommandResult> => {
-    const call: FakeCall = {
-      id: ++seq,
-      root,
-      args,
-      hung: false,
-      resolve: () => {}
+  const executor = vi.fn(
+    (root: string, args: string[], _timeout?: number, extras?: unknown): Promise<CommandResult> => {
+      const call: FakeCall = {
+        id: ++seq,
+        root,
+        args,
+        hung: false,
+        resolve: () => {},
+        extras
+      }
+      calls.push(call)
+      // 真实 runGit 会驱动观察者；假执行器如实模拟，否则"输出能在 commit 阶段被看到"
+      // 这条契约在假执行器下永远看不到内容。
+      const observer = (
+        extras as
+          | {
+              observer?: {
+                commandLine?(line: string): void
+                output?(s: 'stdout' | 'stderr', c: string): void
+              }
+            }
+          | undefined
+      )?.observer
+      observer?.commandLine?.(args.join(' '))
+      observer?.output?.('stdout', `${args[0]} ok\n`)
+      const hang = (hangFetches && args[0] === 'fetch') || (hangCommits && args[0] === 'commit')
+      if (hang) {
+        call.hung = true
+        // 假子进程必须像真 runGit 一样对中止信号作出反应：收到 abort 才置位终止请求。
+        // 否则"取消后没 push"只是因为假执行器不看信号，测试就没有区分力。
+        const signal = (extras as { signal?: AbortSignal } | undefined)?.signal
+        if (signal?.aborted) {
+          call.terminateRequested = true
+        } else {
+          signal?.addEventListener(
+            'abort',
+            () => {
+              call.terminateRequested = true
+            },
+            { once: true }
+          )
+        }
+        return new Promise<CommandResult>((resolve) => {
+          call.resolve = resolve
+        })
+      }
+      // 干净、与远端同步的仓库
+      if (args[0] === 'rev-parse' && args[1] === '--is-inside-work-tree') {
+        return Promise.resolve({ code: 0, stdout: 'true\n', stderr: '' })
+      }
+      if (args[0] === 'branch') return Promise.resolve({ code: 0, stdout: 'main\n', stderr: '' })
+      if (args[0] === 'rev-list') return Promise.resolve({ code: 0, stdout: '0\t0\n', stderr: '' })
+      if (args[0] === 'rev-parse')
+        return Promise.resolve({ code: 0, stdout: 'abc123\n', stderr: '' })
+      if (options.publish) {
+        // -z 格式的工作区：本地有未提交变更（publish 的前置条件之一）
+        if (args[0] === 'status') {
+          return Promise.resolve({ code: 0, stdout: ' M notes/1.md\u0000', stderr: '' })
+        }
+        // `diff --cached --quiet`：code 1 表示**有已暂存变更** → 必须执行 commit
+        if (args[0] === 'diff') return Promise.resolve({ code: 1, stdout: '', stderr: '' })
+      }
+      return Promise.resolve({ code: 0, stdout: '', stderr: '' })
     }
-    calls.push(call)
-    if (hangFetches && args[0] === 'fetch') {
-      call.hung = true
-      return new Promise<CommandResult>((resolve) => {
-        call.resolve = resolve
-      })
-    }
-    // 干净、与远端同步的仓库
-    if (args[0] === 'rev-parse' && args[1] === '--is-inside-work-tree') {
-      return Promise.resolve({ code: 0, stdout: 'true\n', stderr: '' })
-    }
-    if (args[0] === 'branch') return Promise.resolve({ code: 0, stdout: 'main\n', stderr: '' })
-    if (args[0] === 'rev-list') return Promise.resolve({ code: 0, stdout: '0\t0\n', stderr: '' })
-    if (args[0] === 'rev-parse') return Promise.resolve({ code: 0, stdout: 'abc123\n', stderr: '' })
-    return Promise.resolve({ code: 0, stdout: '', stderr: '' })
-  })
+  )
   const hungFetches = (root?: string): FakeCall[] =>
     calls.filter((call) => call.hung && call.args[0] === 'fetch' && (!root || call.root === root))
+  const hungCommits = (): FakeCall[] =>
+    calls.filter((call) => call.hung && call.args[0] === 'commit')
   return {
     executor,
     calls,
@@ -153,16 +201,31 @@ function createExecutor() {
     hangFetchesFromNow: () => {
       hangFetches = true
     },
+    /** 从此刻起挂起 commit（用于「取消发生在 commit 阶段」） */
+    hangCommitsFromNow: () => {
+      hangCommits = true
+    },
     hungFetches,
+    hungCommits,
+    /** **指定**的几个挂起调用已经关闭（真实子进程已退出）。 */
+    closedCalls: (targets: FakeCall[]): boolean =>
+      targets.length > 0 && targets.every((call) => !call.hung),
     /** 关闭**指定**那几个挂起的调用（模拟这些子进程退出）；绝不批量释放 */
-    closeHung: (targets: FakeCall[], code = 130): void => {
+    closeHung: (targets: FakeCall[], code?: number): void => {
       for (const call of targets.splice(0)) {
         call.hung = false
-        call.resolve({ code, stdout: '', stderr: code === 0 ? '' : 'Git 操作已取消' })
+        // 收到过终止请求的进程以 130 退出（被信号终止），否则正常退出
+        const exitCode = code ?? (call.terminateRequested ? 130 : 0)
+        call.resolve({
+          code: exitCode,
+          stdout: '',
+          stderr: exitCode === 0 ? '' : 'Git 操作已取消'
+        })
       }
     },
     closeAllHung: (code = 0): void => {
-      for (const call of hungFetches()) {
+      const targets = [...hungFetches(), ...hungCommits()]
+      for (const call of targets) {
         call.hung = false
         call.resolve({ code, stdout: '', stderr: code === 0 ? '' : 'Git 操作已取消' })
       }
@@ -388,14 +451,133 @@ describe('业务结果映射（明确失败但不抛错的场景）', () => {
   })
 })
 
+describe('取消后的刷新不得拖住队列（best-effort）', () => {
+  // 注意：收尾刷新本身就是**本地状态读取**（readState），从不发 fetch，所以
+  // 「断言刷新不发 fetch」是同义反复，不能证明实现正确——这里不做那种断言。
+  // 真正要钉住的不变量是：**未结算的刷新不进队列状态**，因此不会让后续操作排不上。
+  it('未结算的刷新不影响队列状态：后续操作照常启动并完成', async () => {
+    const fake = createExecutor()
+    const { manager } = await ready(fake, ['kb1'])
+
+    // ready() 之后所有 fetch 都会挂住
+    const fetch = manager.fetch('kb1')
+    await vi.waitFor(() => expect(fake.hungFetches('/tmp/kb1').length).toBe(1))
+    const runningId = manager.getRunningOperationId('kb1')
+    manager.cancelRunningOperation('kb1', runningId!)
+    fake.closeHung(fake.hungFetches('/tmp/kb1'))
+    await expect(fetch).rejects.toThrow(/取消/)
+
+    // 队列必须已经空闲（挂住的刷新不计入队列状态）
+    expect(manager.queueStatus('kb1')).toMatchObject({ queued: 0, running: 0, canceled: 0 })
+
+    // 后续操作能启动
+    const next = manager.fetch('kb1')
+    await vi.waitFor(() => expect(fake.hungFetches('/tmp/kb1').length).toBeGreaterThanOrEqual(1))
+    fake.closeAllHung(0)
+    await expect(next).resolves.toBeTruthy()
+    await vi.waitFor(() =>
+      expect(manager.queueStatus('kb1')).toMatchObject({ queued: 0, running: 0, canceled: 0 })
+    )
+  })
+
+  it('退出开始后，收尾刷新不得再派生 git 进程', async () => {
+    const fake = createExecutor()
+    const { manager } = await ready(fake, ['kb1'])
+
+    // 一个取消中的任务：它的收尾 finally 会做 best-effort 刷新
+    const fetch = manager.fetch('kb1')
+    await vi.waitFor(() => expect(fake.hungFetches('/tmp/kb1').length).toBe(1))
+    const runningId = manager.getRunningOperationId('kb1')
+    manager.cancelRunningOperation('kb1', runningId!)
+    fake.closeHung(fake.hungFetches('/tmp/kb1'))
+    await expect(fetch).rejects.toThrow(/取消/)
+
+    const before = fake.calls.length
+    // 对照：未退出时 refresh 一定会派生进程，证明下面的断言不是同义反复
+    await manager.refresh('kb1')
+    expect(fake.calls.length).toBeGreaterThan(before)
+
+    await manager.dispose()
+    const afterDispose = fake.calls.length
+    await manager.refresh('kb1')
+    expect(fake.calls.length).toBe(afterDispose)
+  })
+})
+
 describe('推送阶段的观察者与取消（commit 阶段）', () => {
-  // TODO(handoff)：这条尚未打通——假执行器下 publishRepository 正常返回却没有跑任何
-  // 命令（readState 未构造出"有可提交内容"的状态）。**未通过，不算验证**。
-  // 已确认相关产品缺口并修复：enqueue 现在会拒绝"入队即已中止"的信号（见下一条用例）。
-  it.skip('add / commit / push 都收到 observer，输出能在 commit 阶段被看到', () => {})
+  it('add / commit / push 都收到 observer，输出能在 commit 阶段被看到', async () => {
+    const fake = createExecutor({ publish: true })
+    const manager = new GitManager(fake.executor)
+    manager.configure([descriptor('kb1')])
+    await manager.whenQueueIdle('kb1')
+
+    const lines: string[] = []
+    const chunks: string[] = []
+    const observer = {
+      commandLine: (line: string): void => {
+        lines.push(line)
+      },
+      output: (_stream: 'stdout' | 'stderr', chunk: string): void => {
+        chunks.push(chunk)
+      }
+    }
+
+    const result = await manager.publish('kb1', { observer } as never)
+    expect(result.conflict).toBe(false)
+
+    // commit 与 push 必须真的被调用过（不是"没跑命令就返回成功"）
+    const commands = fake.calls.map((call) => call.args[0])
+    expect(commands).toContain('add')
+    expect(commands).toContain('commit')
+    expect(commands).toContain('push')
+
+    // 三个阶段的命令都必须把 extras 传下去，否则观察者与取消信号会丢在中间
+    for (const verb of ['add', 'diff', 'commit', 'push']) {
+      const call = fake.calls.find((item) => item.args[0] === verb)
+      expect(call, `${verb} 应当被执行`).toBeTruthy()
+      expect(call!.extras, `${verb} 必须收到 extras`).toMatchObject({ observer })
+    }
+
+    // 观察者确实被驱动过（命令行 + 输出；用假执行器时输出由假执行器给出）
+    expect(lines.length).toBeGreaterThan(0)
+    expect(chunks.join('')).toContain('commit')
+  })
+
+  it('取消发生在 commit 阶段时：不执行 push，且等进程 close 才结算', async () => {
+    const fake = createExecutor({ publish: true })
+    fake.hangCommitsFromNow()
+    const manager = new GitManager(fake.executor)
+    manager.configure([descriptor('kb1')])
+    await manager.whenQueueIdle('kb1')
+
+    const controller = new AbortController()
+    let settled = false
+    const publish = manager.publish('kb1', { signal: controller.signal } as never).finally(() => {
+      settled = true
+    })
+
+    // 走到 commit：前面的 add / diff 都已完成，commit 子进程挂住
+    await vi.waitFor(() => expect(fake.hungCommits().length).toBe(1))
+    const commitCall = fake.hungCommits()[0]
+
+    controller.abort()
+    // abort 必须把终止请求送到 commit 子进程（extras 丢了就送不到）
+    await vi.waitFor(() => expect(commitCall.terminateRequested).toBe(true))
+    // 但只发终止信号：commit 进程还没 close，操作不得算结束
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(settled).toBe(false)
+    expect(commitCall.hung).toBe(true)
+    expect(fake.calls.some((call) => call.args[0] === 'push')).toBe(false)
+
+    // 进程真正退出后才结算，并且**始终没有 push**
+    fake.closeHung([commitCall])
+    await expect(publish).rejects.toThrow(/取消/)
+    expect(settled).toBe(true)
+    expect(fake.calls.some((call) => call.args[0] === 'push')).toBe(false)
+  })
 
   it('已中止的信号会让 commit 阶段的操作直接以取消结束', async () => {
-    const fake = createExecutor()
+    const fake = createExecutor({ publish: true })
     const manager = new GitManager(fake.executor)
     manager.configure([descriptor('kb1')])
     await manager.whenQueueIdle('kb1')
@@ -405,5 +587,8 @@ describe('推送阶段的观察者与取消（commit 阶段）', () => {
     await expect(manager.publish('kb1', { signal: controller.signal } as never)).rejects.toThrow(
       /取消|退出/
     )
+    // 一进队列就已取消：任何命令都不该被执行
+    expect(fake.calls.some((call) => call.args[0] === 'commit')).toBe(false)
+    expect(fake.calls.some((call) => call.args[0] === 'push')).toBe(false)
   })
 })
