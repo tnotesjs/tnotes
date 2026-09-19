@@ -262,7 +262,11 @@ async function openHeaderMenu(): Promise<void> {
       </template>
     </div>
 
-    <div v-if="store.knowledgeBase" class="navigator-body">
+    <div
+      v-if="store.knowledgeBase"
+      class="navigator-body"
+      :class="{ 'is-searching': Boolean(query.trim()) }"
+    >
       <section class="changes-section">
         <div class="section-heading git-heading">
           <button
@@ -746,6 +750,39 @@ async function openHeaderMenu(): Promise<void> {
   min-height: 0;
   overflow: auto;
   padding: 7px;
+}
+
+/*
+ * 第二列头部固定：滚动目录树时「变更」与「目录」栏始终可见可操作。
+ * 搜索栏（.navigator-top）本就在滚动容器之外，天然固定。
+ *
+ * `display: contents` 的关键作用：sticky 元素无法超出其父容器，而
+ * `.changes-section` / `.toc-section` 在折叠时只有标题那么高，标题会跟着
+ * 父容器一起滚走。让 section 不生成盒子，标题就按滚动容器的直接子级参与布局。
+ */
+.changes-section,
+.toc-section {
+  display: contents;
+}
+
+.git-heading,
+.toc-heading {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  /* 吸顶时必须不透明：容器有 7px padding，否则内容会从边缘透出 */
+  background: var(--panel);
+  box-shadow: 0 1px 0 var(--border);
+}
+
+/* 目录栏吸在变更栏下方（正常态两栏同时吸顶） */
+.toc-heading {
+  top: 27px;
+}
+
+/* 搜索态没有「变更」栏，目录栏回到顶部 */
+.navigator-body.is-searching .toc-heading {
+  top: 0;
 }
 
 .section-heading {
