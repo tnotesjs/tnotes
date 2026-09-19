@@ -1,104 +1,118 @@
 # 命令操作与底部终端面板联动 · 验收报告
 
 **日期**：2026-09-19
-**状态**：**实现待验收** —— 命令任务链路本身已确定性验证 + E2E 验收；终端/外部修改等改动面之外的回归只走了冒烟集，未做专项验收。
+**状态**：**实现待验收** —— 代码与验证都已完成，等待最终验收。
 
 ---
 
 ## 一、这次交付的是什么
 
-把**手动 Git 操作**（获取/拉取/提交推送）与 IDE 启动做成**底部面板里的命令任务标签**，
+把**手动 Git 操作**（获取/拉取/提交推送）做成**底部面板里的命令任务标签**，
 而不是新造一套任务系统：
 
 - 一次手动操作 = 一个任务标签，实时显示阶段、实际命令行、git 的真实输出、耗时；
 - 同一 `(知识库, 操作)` 只有一个标签，重复点击只定位、不再执行；
 - 可取消、可重试；重试复用**完整业务流程**（推送会重新保存未提交更改）。
 
-## 二、修复清单（每一条都先证伪、再修复、再用测试钉住）
+## 二、修复清单（每条都先证伪、再修复、再用测试钉住）
 
-| #   | 缺陷                                              | 用户可见后果                                                                                                                    | 证据                                                       |
-| --- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| 1   | `publishRepository` 的 `commit` 调用漏传 `extras` | 取消推送时 **commit 子进程收不到终止信号**（push 能取消、最耗时的 commit 反而不能）；commit 输出不进面板                        | 撤掉修复 → `gitManager.test.ts` 2 条变红                   |
-| 2   | `refresh()` 不检查 `disposed`                     | 退出时收尾的 best-effort 刷新会在 `dispose()` 排空后**再造一个没人等、没人杀的 git 进程**                                       | 撤掉守卫 → 对应用例变红                                    |
-| 3   | 取消同库某任务时**不带队列身份**                  | 同库有两个任务（后者在 gitManager 队列里排队）时，取消后者会**误杀正在跑的前者**（前一个变 failed，被取消的那个卡在「取消中」） | 撤掉修复 → `commandTask.test.ts` 1 条 + E2E 的隔离场景变红 |
+| #   | 缺陷                                              | 用户可见后果                                                                                                                                      | 钉住它的证据（撤掉修复即变红）                      |
+| --- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| 1   | `publishRepository` 的 `commit` 调用漏传 `extras` | 取消推送时 **commit 子进程收不到终止信号**（push 能取消、最耗时的 commit 反而不能）；commit 输出进不了面板                                        | `gitManager.test.ts` 2 条                           |
+| 2   | `refresh()` 不检查 `disposed`                     | 退出时收尾的 best-effort 刷新会在 `dispose()` 排空后**再造一个没人等、没人杀的 git 进程**                                                         | `gitManager.test.ts` 1 条（含"退出前会派生"的对照） |
+| 3   | 取消同库某任务时**不带队列身份**                  | 同库有两个任务（后者在 gitManager 队列里排队）时，取消后者会**误杀正在跑的前者**（前者变 failed，被取消的那个卡在「取消中」）                     | `commandTask.test.ts` 1 条（确定性）                |
+| 4   | 无执行记录时**按知识库盲取消**                    | 取消处理器在找不到本轮记录时仍调 `cancelQueuedOperation(kb)`，会取消该库第一个未运行节点——**不一定是目标任务**（推送停在保存阶段时必然命中）      | `commandTask.test.ts` 1 条                          |
+| 5   | 保存期间取消后**仍继续推送**                      | `publishWithSave` 在 `saveAllDocuments()` 返回后无条件进入 Git：用户点了停止，保存完成后照样 add/commit/push                                      | `git/workspace/git.test.ts` 1 条                    |
+| 6   | `runGit` 超时后**不结算**（git 孙子进程占着管道） | 远端"接受连接但不响应"时，超时杀了 git 之后 `close` 永不触发（孙子进程 `git-remote-http` 继承管道），任务**永远停在「运行中」**，该库队列一起卡死 | `runGit.test.ts` 2 条（真 git + 可控挂起服务）      |
 
-缺陷 3 的修法：`gitManager.enqueue` 新增 `onEnqueued(operationId, cancel)`，**入队时**就交出
-这一项的队列身份与"只让这一项失效"的入口；命令任务层据此区分：
+缺陷 3/4/5 的修法：
 
-- 身份 == gitManager 当前运行项 → 已开始执行：只终止这一轮的 spawn，**等进程 close** 才结算；
-- 否则 → 还在排队：只让这一项失效，**绝不碰**任何进程，轮到它时立即以「已取消」结算。
+- `gitManager.enqueue` 新增 `onEnqueued(operationId, cancel)`，**入队时**就交出这一项的
+  队列身份；执行层据此区分：身份 == 当前运行项 → 只终止这一轮的 spawn 并等进程 close；
+  否则 → 只让这一项失效，**绝不碰**任何进程。
+- **没有身份就不取消任何 Git 队列项**：只把任务本身收尾。
+- 推送在保存前先 `commandTaskBegin` 登记本轮（取消在保存阶段即有归属），
+  `saving`/`precheck` 两次上报都校验这一轮是否仍有效；无效就收尾为 canceled，
+  不进 Git、也不重新认领（不复活已取消的操作）；git 通道带 `run`，主进程只认那一轮。
+- `runGit`：spawn 时 `detached` 自成进程组，终止时杀**整个进程组**，
+  并把结算同时挂在 `exit` 与 `close` 上。
 
 ## 三、验收依据
 
-### 1. 确定性单测（注入假执行器 / 假 gitManager）
+### 1. 确定性单测
 
 ```
-pnpm --filter desk exec vitest run src/main/gitManager.test.ts       # 17 passed
-pnpm --filter desk exec vitest run src/main/ipc/commandTask.test.ts  # 9 passed
-pnpm --filter desk test                                              # 1453 passed / 165 files / 0 skipped
+pnpm --filter desk test     # 1469 passed / 168 files / 0 skipped
 ```
 
-覆盖的取消语义（本轮的核心风险区）：
+关键覆盖：
 
-- 跨库隔离：取消 kb1 的运行，kb2 的进程不受影响；
-- 同库先后：取消排队中的后任务，前任务照常完成、后任务**永不启动**；
-- 同库多任务：取消绑定到**具体运行项**，身份不匹配即拒绝；
-- abort 与 close 分离：abort 后进程未退出前**不得**算结束（仍是「取消中」、不可重试）；
-- 排队中取消：只让该项失效、**不**调用按知识库的取消、轮到时立即结算；
-- `dispose()`：停受理、使未启动项失效、等进程关闭、退出中不让排队项启动；
-- 退出后刷新不再派生进程。
+- `gitManager.test.ts`（17）：跨库隔离、同库先后/排队取消、身份精确取消、abort 与 close 分离、
+  `dispose` 四步、`onEnqueued` 入队身份、退出后刷新守卫、commit 阶段 extras。
+- `ipc/commandTask.test.ts`（12）：业务结果映射、同一运行只执行一次（并发 3 次→1 次）、
+  运行中取消带身份、排队取消不误杀、**保存阶段取消**（无记录时不取消任何队列项、
+  执行层一条 Git 命令都不执行）。
+- `runGit.test.ts`（2，真 git）：超时必须结算、超时后不留 git 子孙进程。
+- `backgroundGitFailure.test.ts`（5）：后台失败落成可见 failed 任务、同因去抖、跨库独立。
+- `stores/workspace/git.test.ts`（4）：保存期间取消后不进入 Git、不重新认领、
+  保存失败不发生 Git 写操作、正常路径把 run 传给主进程。
+- `stores/workspace/documents.test.ts`：外部修改 → `REVISION_CONFLICT` → 标冲突、
+  保留本地编辑、revision 不变。
 
-### 2. 命令任务 E2E（真实 git 子进程 + 裸远端）
+### 2. E2E（真实 Electron + 真实 git + 真实 pty）
 
-```
-pnpm --filter desk exec electron-vite build
-node apps/desk/scripts/e2e-command-task.mjs        # 15/15
-```
+| 套件                      | 条数 | 覆盖                                                                                                                                                              |
+| ------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `e2e-command-task.mjs`    | 23   | 标签建立、真实输出、推送真的到裸远端、标签复用、失败重试真的推上去、失败通知 +「查看输出」、**超时端到端**（120s 后进程关闭进入 timeout、已有输出不清空、可重试） |
+| `e2e-terminal.mjs`        | 13   | 真 node-pty 起 shell、命令经真 PTY 有回显与输出、cwd 绑定知识库、多会话并存、关闭隔离、旧代次输入被拒绝                                                           |
+| `e2e-external-change.mjs` | 12   | 打开笔记 → 编辑器输入 → 外部改盘 → 保存 → 弹冲突横幅、**磁盘未被覆盖**、本地编辑没丢、「载入磁盘」可恢复                                                          |
 
-| 断言                                 | 说明                                                |
-| ------------------------------------ | --------------------------------------------------- |
-| 手动操作在面板里建出命令任务标签     | 底部面板 + 任务标签真实渲染                         |
-| 面板显示实际命令行与真实输出         | `command=git pull --ff-only`，首行是 git 自己的输出 |
-| 推送成功且提交**真的到了裸远端**     | 比对本地与远端 HEAD                                 |
-| 同一 (知识库, 操作) 只有一个标签     | 重复执行前后标签数不变                              |
-| 远端不可达时标 failed（不是成功）    | 错误原文进入任务                                    |
-| 重试把失败时留在本地的提交真的推上去 | 重试前远端缺、重试后远端有；run 递增；不新增标签    |
+**关于取消隔离的证据口径（统一说明）**：缺陷 3 的隔离场景**没有**、也无法在 E2E 里稳定断言
+——要复现"同库两任务、后者在队列里排队"必须让前者的 fetch 一直挂着，而真实远端总会自己失败，
+窗口太窄。E2E 里只覆盖了它的可观测部分（排队中的 B 被取消 → B 结算 canceled）；**误杀隔离本身
+由确定性单测覆盖**（已验证撤掉修复即变红）。请不要把 E2E 当成该场景的证据。
+
+**关于"重复操作只执行一次"的证据口径**：标签数量不变**只能**说明没有新增标签，
+不足以证明命令只执行了一次。真正证明"只执行一次"的是
+`ipc/commandTask.test.ts` 的并发用例（3 次并发 `ensureExecution` → 底层调用 1 次）。
 
 ### 3. 原有功能回归
 
-按改动面（`main/gitManager.ts`、`main/ipc/*`）由 runner 选出 **14 个 E2E 套件**：
-
-- **10/14 直接通过**，含直接依赖 gitManager 的 `e2e-delete-dialog`、`e2e-excalidraw-git`；
-- **4 个曾 305s 超时**（`kb-assets` / `markdown-input` / `numbered-tabs` / `quit-flush`）：
-  日志为空、卡在启动阶段；`--concurrency 1` 重跑 **4/4 通过**（各 2.9–7.2s）。
-  判定为**并发启动多个 Electron 的环境问题**，非代码回归。
-- 冒烟核心集 12 个套件由上表覆盖。
+按改动面由 runner 选出的套件全部通过；另有冒烟核心集。详见
+`command-task-handoff.md` 第六节（含并发超时的环境注记）。
 
 ## 四、明确未验证（不要当成已验）
 
-1. **E2E 未断言"取消排队任务不误杀同库正在跑的"**：稳定复现需要让前者的 fetch 一直挂着，
-   而任何真实远端都会自己失败（实测不可路由地址约 5s），窗口太窄、硬写会变成碰运气。
-   该语义由第三节的确定性单测覆盖（已证伪）。
-2. **超时路径**：`/超时/ → timeout` 的映射有单测，但**没有端到端等 60s 超时**。
-3. **保存失败不得写 Git**：`publishWithSave` 的该逻辑在渲染端，本轮未补渲染端断言。
-4. **后台定时 fetch 失败入口**：未端到端验证。
-5. **交互式终端**（新建/切换/关闭、cwd 绑定）：本阶段没有终端 E2E 套件；改动面不含
-   `main/terminalManager.ts`，其 32 条单测通过，但**未做终端专项 E2E**。
-6. **外部修改文件 / 未保存冲突**：由 8 个单测文件覆盖且全绿，**未做 E2E 专项**。
+1. **取消隔离的 E2E**：见上，只有确定性单测，E2E 未断言。
+2. **后台定时 fetch / 自动推送的 E2E 触发**：这两条是主进程内部路径，从界面无法确定触发；
+   其产物（"一个 failed 任务 → 面板弹通知"）由 `backgroundGitFailure.test.ts` 直接覆盖，
+   通知与「查看输出」链路由 `e2e-command-task.mjs` 用一次真实失败覆盖。
+3. **保存失败 → 重试仍失败**：`publishWithSave` 的"不写 Git"单测覆盖；
+   "重试后仍保存失败"这条组合路径没有专门用例。
+4. **Windows**：`detached` 进程组只在非 Windows 生效，Windows 仍是 `child.kill`；
+   平台相关行为未在 Windows 上验证。
 
 ## 五、门禁
 
 ```
-pnpm --filter desk test        # 1453 passed / 165 files / 0 skipped
+pnpm --filter desk test        # 1469 passed / 168 files / 0 skipped
 pnpm --filter desk lint        # 0 errors（41 warnings 均为既有）
 pnpm --filter desk typecheck   # 0 errors
 pnpm format:check              # All matched files use Prettier code style
+node apps/desk/scripts/e2e-command-task.mjs       # 23/23
+node apps/desk/scripts/e2e-terminal.mjs           # 13/13
+node apps/desk/scripts/e2e-external-change.mjs    # 12/12
 ```
 
 ## 六、交付物
 
-- `apps/desk/src/main/gitManager.ts`：`onEnqueued` 入队身份、退出后刷新守卫、commit 传 extras
-- `apps/desk/src/main/ipc/commandTask.ts`：按队列身份精确取消（排队/运行两条路径）
-- `apps/desk/src/main/gitManager.test.ts`、`apps/desk/src/main/ipc/commandTask.test.ts`
-- `apps/desk/scripts/e2e-command-task.mjs`（新增，已注册进 `e2e-registry.mjs`）
-- `apps/desk/docs/command-task-handoff.md`（交接记录，含环境注记）
+- `apps/desk/src/main/gitManager.ts`：`onEnqueued` 入队身份、退出后刷新守卫、
+  commit 传 extras、进程组终止 + `exit` 结算
+- `apps/desk/src/main/ipc/commandTask.ts`：按队列身份精确取消、保存阶段登记、
+  无身份不取消任何队列项、按 run 只认本轮
+- `apps/desk/src/renderer/src/stores/workspace/git.ts`：保存前 `begin` + 保存后校验
+- `apps/desk/src/main/backgroundGitFailure.ts`：后台失败 → 可见任务
+- 测试：`gitManager.test.ts`、`ipc/commandTask.test.ts`、`runGit.test.ts`、
+  `backgroundGitFailure.test.ts`、`stores/workspace/git.test.ts`、`documents.test.ts`
+- E2E：`e2e-command-task.mjs`、`e2e-terminal.mjs`、`e2e-external-change.mjs`（均已注册）
+- 文档：本报告与 `command-task-handoff.md`
