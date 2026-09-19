@@ -219,7 +219,16 @@ async function handleTabShortcut(command: TabShortcutCommand): Promise<void> {
     await commandPalette.value?.openCommands()
     return
   }
-  if (command === 'select-all') {
+  if (typeof command === 'object' && command.type === 'select-all') {
+    // 优先用**来源**判断：原生网页视图里按 Cmd+A 时，渲染端的"活动标签"可能还停在
+    // 上一次的分组/标签上（原生视图不冒泡焦点事件），按活动标签猜会误选笔记。
+    const source = command.sourceTabId ? findTab(editor.layout, command.sourceTabId) : null
+    if (source?.tab.type === 'web') {
+      // 分屏时来源组可能不是当前活动组：先定位到它，再交给该网页全选
+      editor.activate(source.group.id, source.tab.id)
+      await window.desk.web.selectAll(source.tab.id)
+      return
+    }
     if (editor.activeTab?.type === 'web') {
       await window.desk.web.selectAll(editor.activeTab.id)
       return

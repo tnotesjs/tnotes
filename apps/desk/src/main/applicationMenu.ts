@@ -78,7 +78,7 @@ export function applicationMenuTemplate(options: {
         {
           label: '全选',
           accelerator: 'CmdOrCtrl+A',
-          click: () => send('select-all')
+          click: () => send({ type: 'select-all' })
         },
         ...(platform === 'darwin'
           ? ([

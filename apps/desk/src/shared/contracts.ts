@@ -492,6 +492,11 @@ export type NavigatorSidebarMenuAction =
 
 export type TabShortcutCommand =
   | { type: 'activate-tab-by-number'; number: number; sourceTabId?: string }
+  /**
+   * 全选。带 `sourceTabId` 时表示这次按键发生在某个**原生网页视图**里，
+   * 渲染端必须把全选交给那个网页，而不是按"当前活动标签"猜。
+   */
+  | { type: 'select-all'; sourceTabId?: string }
   | 'close-active-tab-or-window'
   | 'close-saved-note-tabs'
   | 'close-all-tabs'
@@ -506,7 +511,6 @@ export type TabShortcutCommand =
   | 'reset-app-zoom'
   | 'open-quick-open'
   | 'open-command-palette'
-  | 'select-all'
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type InterfaceDensity = 'compact' | 'comfortable'
 export type IdeKind = 'vscode' | 'cursor'

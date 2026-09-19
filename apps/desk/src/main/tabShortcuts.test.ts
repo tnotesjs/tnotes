@@ -104,8 +104,12 @@ describe('tab shortcuts', () => {
   })
 
   it('maps Command+A and Ctrl+A to in-editor select-all', () => {
-    expect(resolveTabShortcut(input({ key: 'a', meta: true }), 'darwin')).toBe('select-all')
-    expect(resolveTabShortcut(input({ key: 'a', control: true }), 'win32')).toBe('select-all')
+    expect(resolveTabShortcut(input({ key: 'a', meta: true }), 'darwin')).toEqual({
+      type: 'select-all'
+    })
+    expect(resolveTabShortcut(input({ key: 'a', control: true }), 'win32')).toEqual({
+      type: 'select-all'
+    })
     expect(resolveTabShortcut(input({ key: 'a', control: true }), 'darwin')).toBeNull()
     expect(resolveTabShortcut(input({ key: 'a', meta: true, shift: true }), 'darwin')).toBeNull()
   })

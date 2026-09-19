@@ -106,6 +106,38 @@ it('includes the native web tab origin when forwarding numbered tab shortcuts', 
   })
 })
 
+it('网页里按 Cmd+A 会带上来源标签（渲染端据此定位，而不是猜活动标签）', async () => {
+  const manager = new WebContentsManager()
+  manager.attachWindow({
+    on: vi.fn(),
+    isDestroyed: () => false,
+    contentView: { addChildView: vi.fn() }
+  } as unknown as Electron.BrowserWindow)
+  const listener = vi.fn()
+  manager.onTabShortcut(listener)
+  await manager.create('web-focus', 'https://example.com')
+  // mocks.contents.on 跨用例累积，取**最后一次**注册的处理器（本次 create 的）
+  const onInput = mocks.contents.on.mock.calls
+    .filter(([name]) => name === 'before-input-event')
+    .at(-1)?.[1]
+  const event = { preventDefault: vi.fn() }
+  onInput(event, {
+    type: 'keyDown',
+    key: 'a',
+    meta: process.platform === 'darwin',
+    control: process.platform !== 'darwin',
+    alt: false,
+    shift: false,
+    isComposing: false
+  })
+  expect(event.preventDefault).toHaveBeenCalledOnce()
+  // 关键：带 sourceTabId，否则渲染端只能按 editor.activeTab 猜（会误选笔记）
+  expect(listener).toHaveBeenCalledExactlyOnceWith({
+    type: 'select-all',
+    sourceTabId: 'web-focus'
+  })
+})
+
 it('selects all in a native web tab without touching the Desk chrome', async () => {
   mocks.contents.selectAll.mockClear()
   const manager = new WebContentsManager()
