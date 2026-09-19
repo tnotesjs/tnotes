@@ -129,6 +129,7 @@ export const IPC_CHANNELS = {
   commandTaskClose: 'command-task:close',
   commandTaskCancel: 'command-task:cancel',
   commandTaskRetry: 'command-task:retry',
+  commandTaskRetryRequested: 'command-task:retry-requested',
   commandTaskStage: 'command-task:stage',
   commandTaskFinish: 'command-task:finish',
   commandTaskChanged: 'command-task:changed',
@@ -1069,10 +1070,26 @@ export type CommandTaskKind = 'git-pull' | 'git-push' | 'git-fetch' | 'launch-id
  * 执行阶段。`queued` 起就有反馈——不等真正的子进程启动才显示。
  * `saving` 是推送前的受控保存，`precheck` 是门禁/业务检查。
  */
-export type CommandTaskStage = 'queued' | 'saving' | 'precheck' | 'running' | 'finished'
+export type CommandTaskStage =
+  | 'queued'
+  | 'saving'
+  | 'precheck'
+  | 'running'
+  /** 已发出终止信号、等待进程真正退出。此时不允许重试。 */
+  | 'canceling'
+  | 'finished'
 
 export type CommandTaskStatus =
-  'queued' | 'saving' | 'precheck' | 'running' | 'done' | 'failed' | 'timeout' | 'canceled'
+  | 'queued'
+  | 'saving'
+  | 'precheck'
+  | 'running'
+  /** 取消中：进程尚未确认退出 */
+  | 'canceling'
+  | 'done'
+  | 'failed'
+  | 'timeout'
+  | 'canceled'
 
 export interface CommandTaskDto {
   id: string
@@ -1729,7 +1746,10 @@ export interface DeskApi {
     close(taskId: string): Promise<DeskResult<void>>
     /** 停止任务：排队中的直接取消，运行中的终止子进程 */
     cancel(taskId: string): Promise<DeskResult<void>>
-    /** 重试：重新走既有业务检查（不机械重放上一条命令） */
+    /**
+     * 重试：请渲染端重新走**完整业务流程**（推送要先保存），
+     * 不在主进程直接调 Git——否则会把旧磁盘内容提交并推送。
+     */
     retry(taskId: string): Promise<DeskResult<void>>
     /** 渲染端在调用 Git 前报告自己的阶段（如推送前的保存） */
     reportStage(
@@ -1749,6 +1769,8 @@ export interface DeskApi {
     onLog(callback: (event: CommandTaskLogEvent) => void): () => void
     /** 主进程请求「展开面板并定位到这个任务」（手动 Git 操作、后台失败入口） */
     onReveal(callback: (taskId: string) => void): () => void
+    /** 主进程请求渲染端重跑某任务（重试必须复用渲染端的完整流程） */
+    onRetryRequested(callback: (taskId: string) => void): () => void
   }
   terminal: {
     create(request: TerminalCreateRequest): Promise<DeskResult<TerminalSessionDto>>

@@ -88,6 +88,7 @@ let unsubscribeCommandTask: (() => void) | null = null
 /** 已经通知过的运行，避免同类失败反复弹通知 */
 const notifiedTaskRuns = new Set<string>()
 let unsubscribeCommandTaskReveal: (() => void) | null = null
+let unsubscribeCommandTaskRetry: (() => void) | null = null
 let unsubscribeTabShortcut: (() => void) | null = null
 let unsubscribeBeforeClose: (() => void) | null = null
 let unsubscribeUpdates: (() => void) | null = null
@@ -578,6 +579,10 @@ onMounted(async () => {
   })
   unsubscribeTerminal = terminalStore.subscribe()
   unsubscribeCommandTask = commandTaskStore.subscribe()
+  unsubscribeCommandTaskRetry = window.desk.commandTask.onRetryRequested((taskId) => {
+    // 重试复用渲染端的完整业务流程（推送会先保存）
+    void store.retryCommandTask(taskId)
+  })
   unsubscribeCommandTaskReveal = window.desk.commandTask.onReveal((taskId) => {
     // 手动 Git 操作：立即展开面板并定位到该任务
     terminalStore.toggle(true)
@@ -608,6 +613,8 @@ onUnmounted(() => {
   unsubscribeCommandTask = null
   unsubscribeCommandTaskReveal?.()
   unsubscribeCommandTaskReveal = null
+  unsubscribeCommandTaskRetry?.()
+  unsubscribeCommandTaskRetry = null
   unsubscribeTabShortcut?.()
   unsubscribeTabShortcut = null
   unsubscribeBeforeClose?.()

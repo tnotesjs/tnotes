@@ -305,6 +305,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     confirmPull,
     requestGitPublish,
     publishGit,
+    retryCommandTask,
     openKnowledgeBaseInIde
   } = createGit({
     gitStates,
@@ -678,6 +679,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     confirmPull,
     requestGitPublish,
     publishGit,
+    retryCommandTask,
     openKnowledgeBaseInIde,
     syncToActiveTab,
     revealTabInToc,

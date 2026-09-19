@@ -69,6 +69,7 @@ const statusTone = computed(() => {
   switch (props.task.status) {
     case 'done':
       return 'ok'
+    case 'canceling':
     case 'timeout':
     case 'canceled':
       return 'warn'

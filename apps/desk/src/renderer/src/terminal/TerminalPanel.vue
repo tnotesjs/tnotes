@@ -562,6 +562,10 @@ body.is-resizing .terminal-resize-handle::before {
   background: var(--accent);
 }
 
+.command-tab-dot[data-status='canceling'] {
+  background: var(--warning, #e5c07b);
+}
+
 .command-tab-dot[data-status='done'] {
   background: var(--success, #98c379);
 }
@@ -570,6 +574,7 @@ body.is-resizing .terminal-resize-handle::before {
   background: var(--danger, #e06c75);
 }
 
+.command-tab-dot[data-status='canceling'],
 .command-tab-dot[data-status='timeout'],
 .command-tab-dot[data-status='canceled'] {
   background: var(--warning, #e5c07b);

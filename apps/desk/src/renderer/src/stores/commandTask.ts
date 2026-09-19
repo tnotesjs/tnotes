@@ -1,6 +1,8 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
+import { pushToast } from './toast'
+
 import type {
   CommandTaskDto,
   CommandTaskKind,
@@ -39,7 +41,12 @@ export const useCommandTaskStore = defineStore('commandTask', () => {
 
   function isActiveStatus(status: CommandTaskDto['status']): boolean {
     return (
-      status === 'queued' || status === 'saving' || status === 'precheck' || status === 'running'
+      status === 'queued' ||
+      status === 'saving' ||
+      status === 'precheck' ||
+      status === 'running' ||
+      // 取消中：进程还没确认退出，仍算活动（不允许重试）
+      status === 'canceling'
     )
   }
 
@@ -195,10 +202,15 @@ export const useCommandTaskStore = defineStore('commandTask', () => {
     if (activeTaskId.value === taskId) activeTaskId.value = null
   }
 
+  /**
+   * 请求重试。真正重跑由 App 接 `onRetryRequested` 调 workspace 的完整业务流程
+   * （推送必须先保存），主进程不直接调 Git。
+   */
   async function retry(taskId: string): Promise<void> {
     retrying.value = { ...retrying.value, [taskId]: true }
     try {
-      await window.desk.commandTask.retry(taskId)
+      const result = await window.desk.commandTask.retry(taskId)
+      if (!result.ok) pushToast(result.error.message, 'error')
     } finally {
       const next = { ...retrying.value }
       delete next[taskId]

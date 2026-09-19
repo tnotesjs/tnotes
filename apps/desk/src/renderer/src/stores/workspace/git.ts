@@ -123,15 +123,18 @@ export function createGit(ctx: GitContext) {
     }
   }
 
-  async function publishGit(knowledgeBaseId: string): Promise<void> {
-    ctx.pendingGitPublishId.value = null
+  /**
+   * 推送的**完整业务流程**：认领任务 → 受控保存 → 执行 Git。
+   *
+   * 首次执行与重试都必须走这里。重试若走主进程直连会跳过保存，
+   * 可能把旧磁盘内容提交并推送——这是必须避免的。
+   */
+  async function publishWithSave(knowledgeBaseId: string): Promise<void> {
     const task = await commandTasks.claim({
       knowledgeBaseId,
       kind: 'git-push',
       title: '推送更改',
-      cwd:
-        ctx.overview.value.allKnowledgeBases.find((item) => item.id === knowledgeBaseId)
-          ?.rootPath ?? ''
+      cwd: commandTaskCwd(knowledgeBaseId)
     })
     if (!task) {
       ctx.error.value = '无法创建命令任务'
@@ -144,10 +147,29 @@ export function createGit(ctx: GitContext) {
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
       ctx.error.value = message
+      // 保存失败就**不得**执行 Git 写操作，把原因留在任务里
       await commandTasks.finish(task.id, task.run, 'failed', `保存失败：${message}`)
       return
     }
     await runGitWithTask(knowledgeBaseId, 'git-push', { id: task.id, run: task.run })
+  }
+
+  async function publishGit(knowledgeBaseId: string): Promise<void> {
+    ctx.pendingGitPublishId.value = null
+    await publishWithSave(knowledgeBaseId)
+  }
+
+  /**
+   * 重试：按任务种类重新走**完整业务流程**（推送会重新保存；拉取/fetch 会重新检查）。
+   * 启动器任务没有可重放的业务流程，不重试——避免认领出新运行却没有任何执行。
+   */
+  async function retryCommandTask(taskId: string): Promise<void> {
+    const task = commandTasks.tasks.find((item) => item.id === taskId)
+    if (!task) return
+    if (task.kind === 'git-push') await publishWithSave(task.knowledgeBaseId)
+    else if (task.kind === 'git-pull' || task.kind === 'git-fetch') {
+      await runGitWithTask(task.knowledgeBaseId, task.kind)
+    }
   }
 
   async function openKnowledgeBaseInIde(knowledgeBaseId: string): Promise<void> {
@@ -162,6 +184,7 @@ export function createGit(ctx: GitContext) {
     confirmPull,
     requestGitPublish,
     publishGit,
+    retryCommandTask,
     openKnowledgeBaseInIde
   }
 }

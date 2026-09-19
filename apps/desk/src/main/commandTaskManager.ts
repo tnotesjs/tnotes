@@ -26,10 +26,14 @@ export interface CommandTaskHandle {
   command(line: string): void
   /** 自己是否仍是该任务的最新一轮运行 */
   isCurrent(): boolean
+  /** 是否已收到取消请求（用于决定结算成 canceled 还是 failed） */
+  canceled(): boolean
 }
 
 interface CommandTaskRecord {
   dto: CommandTaskDto
+  /** 已请求取消：结算时据此判定 canceled */
+  cancelRequested: boolean
   /** 待推送的输出片段，按 flush 间隔合批 */
   pending: string[]
   pendingBytes: number
@@ -152,7 +156,7 @@ export class CommandTaskManager {
     const existingId = this.byKey.get(key)
     const existing = existingId ? this.tasks.get(existingId) : undefined
 
-    if (existing && this.isActive(existing.dto.status)) {
+    if (existing && this.isActiveInternal(existing.dto.status)) {
       // 正在跑：复用同一个标签，**且不自增 run**。
       //
       // 自增会破坏运行标识：渲染端与主进程各自 claim 一次同一个任务（渲染端为了
@@ -180,6 +184,7 @@ export class CommandTaskManager {
       finishedAt: null,
       truncatedBytes: 0
     }
+    record.cancelRequested = false
     record.pending = []
     record.pendingBytes = 0
     record.truncated = 0
@@ -200,7 +205,7 @@ export class CommandTaskManager {
   cancelQueued(taskId: string, run: number, reason: string): void {
     const record = this.tasks.get(taskId)
     if (!record || record.dto.run !== run) return
-    if (!this.isActive(record.dto.status)) return
+    if (!this.isActiveInternal(record.dto.status)) return
     this.finish(record, 'canceled', reason)
   }
 
@@ -267,6 +272,7 @@ export class CommandTaskManager {
         logBytes: 0,
         truncatedBytes: 0
       },
+      cancelRequested: false,
       pending: [],
       pendingBytes: 0,
       flushTimer: null,
@@ -276,9 +282,18 @@ export class CommandTaskManager {
     return record
   }
 
-  private isActive(status: CommandTaskStatus): boolean {
+  /** 任务是否仍在推进（含取消中：此时不允许重试） */
+  isActive(status: CommandTaskStatus): boolean {
+    return this.isActiveInternal(status)
+  }
+
+  private isActiveInternal(status: CommandTaskStatus): boolean {
     return (
-      status === 'queued' || status === 'saving' || status === 'precheck' || status === 'running'
+      status === 'queued' ||
+      status === 'saving' ||
+      status === 'precheck' ||
+      status === 'running' ||
+      status === 'canceling'
     )
   }
 
@@ -292,6 +307,7 @@ export class CommandTaskManager {
         const current = this.tasks.get(taskId)
         return Boolean(current && current.dto.run === run)
       },
+      canceled: () => Boolean(this.tasks.get(taskId)?.cancelRequested),
       stage: (stage, label) => this.setStage(taskId, run, stage, label),
       write: (stream, chunk) => this.appendLog(taskId, run, stream, chunk),
       command: (line) => this.setCommand(taskId, run, line)
@@ -301,7 +317,7 @@ export class CommandTaskManager {
   private setStage(taskId: string, run: number, stage: CommandTaskStage, label?: string): void {
     const record = this.tasks.get(taskId)
     if (!record || record.dto.run !== run) return
-    if (!this.isActive(record.dto.status)) return
+    if (!this.isActiveInternal(record.dto.status)) return
     const status: CommandTaskStatus =
       stage === 'queued'
         ? 'queued'
@@ -311,7 +327,11 @@ export class CommandTaskManager {
             ? 'precheck'
             : stage === 'running'
               ? 'running'
-              : record.dto.status
+              : stage === 'canceling'
+                ? 'canceling'
+                : record.dto.status
+    // 进入取消中即记录取消请求，结算时据此判定 canceled
+    if (stage === 'canceling') record.cancelRequested = true
     record.dto = {
       ...record.dto,
       stage,

@@ -13,7 +13,7 @@ import type {
   GitRepositoryStateDto
 } from '../shared/contracts'
 
-interface CommandResult {
+export interface CommandResult {
   code: number
   stdout: string
   stderr: string
@@ -24,6 +24,16 @@ interface GitManagerEvents {
 }
 
 const CONFLICT_CODES = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU'])
+
+/** 队列中的一项：取消只作用于自己。`id` 是它的稳定身份（用于精确取消）。 */
+export interface QueueNode {
+  id: string
+  canceled: boolean
+  running: boolean
+  controller?: AbortController
+  /** 终止本项登记的（且仅本项的）子进程 */
+  killSpawns: () => void
+}
 
 function gitExecutable(): string {
   return loadSettings().gitPath || 'git'
@@ -269,23 +279,29 @@ export class GitManager {
   private states = new Map<string, GitRepositoryStateDto>()
   private operationTails = new Map<string, Promise<void>>()
   /**
-   * 正在跑的 git 子进程的终止器。
+   * 每个知识库的**队列项**（按入队顺序）。
    *
-   * 退出应用时必须把它们全部结束：否则一个挂住的 `git fetch`（例如需要凭证或
-   * 网络不可达）会把退出流程一起拖住，还会留下受我们管理的孤儿进程。
+   * 取消必须精确到具体那一项：排队中的取消只是让该项失效（轮到它时跳过），
+   * **绝不能**去杀前一个操作（那可能是别的任务、甚至别的知识库的 Git 操作）。
+   * 运行中的取消只终止该项自己派生并登记的进程。
    */
-  private activeKills = new Set<() => void>()
-  /**
-   * 每个知识库当前**正在执行**的操作的终止器。
-   *
-   * 队列是串行的：一个卡住的后台 fetch（例如远端不可达）会把后面的手动操作一起
-   * 堵住。用户对手动任务点「停止」时，真正需要终止的往往是这个占住队列的操作——
-   * 否则取消没有任何效果，任务会一直停在运行中。
-   */
-  private activeOperationKill = new Map<string, () => void>()
+  private queueNodes = new Map<string, QueueNode[]>()
+  private operationSeq = 0
+  /** 每个知识库当前正在执行的那一项（用于「运行中取消」精确定位） */
+  private runningNode = new Map<string, QueueNode>()
+  /** 进程级退出：所有在跑子进程的终止器（只用于 dispose，不参与单任务取消） */
+  private disposeKills = new Set<() => void>()
   private autoPushTimers = new Map<string, NodeJS.Timeout>()
   private periodicFetchTimer: NodeJS.Timeout | null = null
   private assetWritePaused = new Set<string>()
+
+  constructor(
+    /**
+     * 命令执行器。默认走真实的 `runGit`；测试注入假实现即可确定性验证
+     * 「排队取消不误杀前一个操作」「同一运行只启动一次」这类时序约定。
+     */
+    private readonly execute: typeof runGit = runGit
+  ) {}
 
   onChanged(listener: (state: GitRepositoryStateDto) => void): () => void {
     this.events.on('changed', listener)
@@ -354,7 +370,7 @@ export class GitManager {
       knowledgeBaseId,
       async (repository, runExtras) => {
         if (!background) this.setBusy(knowledgeBaseId, 'fetch')
-        const result = await runGit(
+        const result = await this.execute(
           repository.rootPath,
           ['fetch', '--prune'],
           background ? 15_000 : 60_000,
@@ -381,7 +397,7 @@ export class GitManager {
         return { state, message: '已获取远端最新状态', conflict: false }
       },
       extras
-    )
+    ).result
   }
 
   pull(knowledgeBaseId: string, extras: GitRunExtras = {}): Promise<GitOperationResult> {
@@ -389,7 +405,7 @@ export class GitManager {
       knowledgeBaseId,
       async (repository, runExtras) => {
         this.setBusy(knowledgeBaseId, 'pull')
-        const fetchResult = await runGit(
+        const fetchResult = await this.execute(
           repository.rootPath,
           ['fetch', '--prune'],
           60_000,
@@ -405,7 +421,12 @@ export class GitManager {
           })
           return { state, message: state.error!, conflict: true }
         }
-        const result = await runGit(repository.rootPath, ['pull', '--ff-only'], 90_000, runExtras)
+        const result = await this.execute(
+          repository.rootPath,
+          ['pull', '--ff-only'],
+          90_000,
+          runExtras
+        )
         if (result.code !== 0) {
           const message = operationMessage(commandError(result, 'Git pull 失败'))
           const state = await this.refreshRepository(repository, message)
@@ -416,7 +437,7 @@ export class GitManager {
       },
       // 工厂：真正开始执行时才读观察者与取消信号
       () => extras
-    )
+    ).result
   }
 
   publish(knowledgeBaseId: string, extras: GitRunExtras = {}): Promise<GitOperationResult> {
@@ -424,7 +445,7 @@ export class GitManager {
       knowledgeBaseId,
       (repository, runExtras) => this.publishRepository(repository, runExtras),
       extras
-    )
+    ).result
   }
 
   /**
@@ -526,20 +547,6 @@ export class GitManager {
     if (tail) await tail.catch(() => undefined)
   }
 
-  /**
-   * 终止某个知识库当前正在执行的操作（以及它派生的子进程）。
-   *
-   * 用于「取消排队中的任务」：此时真正占住队列的是前一个操作。
-   * 返回是否确实终止了什么，便于调用方决定是标记取消还是继续等待。
-   */
-  abortActiveOperation(knowledgeBaseId: string): boolean {
-    const kill = this.activeOperationKill.get(knowledgeBaseId)
-    if (!kill) return false
-    this.activeOperationKill.delete(knowledgeBaseId)
-    kill()
-    return true
-  }
-
   async dispose(): Promise<void> {
     if (this.periodicFetchTimer) clearInterval(this.periodicFetchTimer)
     this.periodicFetchTimer = null
@@ -547,7 +554,7 @@ export class GitManager {
     this.autoPushTimers.clear()
     // 先终止所有在跑的 git 子进程，再等队列收敛：不这么做，一个挂住的 fetch 会让
     // dispose 永久等待（也会把退出流程拖死）
-    for (const kill of [...this.activeKills]) kill()
+    for (const kill of [...this.disposeKills]) kill()
     await Promise.allSettled(this.operationTails.values())
     this.events.removeAllListeners()
   }
@@ -560,9 +567,9 @@ export class GitManager {
     const current = await this.readState(repository)
     if (current.conflict) throw new Error('仓库存在冲突，请先在 IDE 中处理')
     if (current.behind > 0) throw new Error('本地版本落后于远端，请先拉取最新版本')
-    const add = await runGit(repository.rootPath, ['add', '-A'], 30_000, extras)
+    const add = await this.execute(repository.rootPath, ['add', '-A'], 30_000, extras)
     if (add.code !== 0) throw commandError(add, 'Git 暂存失败')
-    const staged = await runGit(
+    const staged = await this.execute(
       repository.rootPath,
       ['diff', '--cached', '--quiet'],
       30_000,
@@ -575,7 +582,7 @@ export class GitManager {
         timeStyle: 'short',
         hour12: false
       }).format(new Date())
-      const commit = await runGit(
+      const commit = await this.execute(
         repository.rootPath,
         ['commit', '-m', `docs: update notes ${timestamp}`],
         120_000
@@ -591,7 +598,7 @@ export class GitManager {
       const state = this.storeState({ ...stateBeforePush, busy: null, error: null })
       return { state, message: '没有需要提交或推送的变更', conflict: false }
     }
-    const push = await runGit(repository.rootPath, ['push'], 120_000, extras)
+    const push = await this.execute(repository.rootPath, ['push'], 120_000, extras)
     if (push.code !== 0) throw commandError(push, 'Git push 失败')
     const state = await this.refreshRepository(repository)
     return { state, message: '变更已提交并推送到远端', conflict: false }
@@ -619,14 +626,19 @@ export class GitManager {
     repository: GitRepositoryDescriptor,
     lastFetchedAt?: string
   ): Promise<GitRepositoryStateDto> {
-    const inside = await runGit(repository.rootPath, ['rev-parse', '--is-inside-work-tree'])
+    const inside = await this.execute(repository.rootPath, ['rev-parse', '--is-inside-work-tree'])
     if (inside.code !== 0 || inside.stdout.trim() !== 'true') {
       return { ...defaultState(repository), error: '目录不是 Git 仓库' }
     }
     const [statusResult, branchResult, upstreamResult] = await Promise.all([
-      runGit(repository.rootPath, ['status', '--porcelain=v1', '-z', '--untracked-files=all']),
-      runGit(repository.rootPath, ['branch', '--show-current']),
-      runGit(repository.rootPath, [
+      this.execute(repository.rootPath, [
+        'status',
+        '--porcelain=v1',
+        '-z',
+        '--untracked-files=all'
+      ]),
+      this.execute(repository.rootPath, ['branch', '--show-current']),
+      this.execute(repository.rootPath, [
         'rev-parse',
         '--abbrev-ref',
         '--symbolic-full-name',
@@ -638,7 +650,7 @@ export class GitManager {
     let ahead = 0
     let behind = 0
     if (upstream) {
-      const counts = await runGit(repository.rootPath, [
+      const counts = await this.execute(repository.rootPath, [
         'rev-list',
         '--left-right',
         '--count',
@@ -697,74 +709,171 @@ export class GitManager {
       : change
   }
 
+  /**
+   * 入队一个操作。
+   *
+   * 每个队列项是一个独立节点，取消**只作用于该项**：
+   *  - 排队中取消：把该项标记失效，轮到它时**跳过执行**（不碰前面正在跑的操作）；
+   *  - 运行中取消：触发该项自己的 AbortController，只终止它派生并登记的进程。
+   *
+   * `extras` 允许传工厂函数：操作可能在队列里等很久，观察者与取消信号是调用方在
+   * 入队之后才准备好的（命令任务面板就是先认领标签、再开始执行）。入队时固化会让
+   * 整条操作丢失实时输出与取消能力——实测踩过。
+   */
   private enqueue(
     knowledgeBaseId: string,
     operation: (
       repository: GitRepositoryDescriptor,
       extras: GitRunExtras
     ) => Promise<GitOperationResult>,
-    /**
-     * 运行参数。**允许传工厂函数**：操作可能在队列里等很久，而观察者与取消信号是
-     * 调用方在入队之后才准备好的（命令任务面板就是先认领标签、再开始执行）。
-     * 入队时固化会让整条操作丢失实时输出与取消能力——实测踩过。
-     */
     extras: GitRunExtras | (() => GitRunExtras) = {}
-  ): Promise<GitOperationResult> {
+  ): { result: Promise<GitOperationResult>; node: QueueNode } {
     if (this.assetWritePaused.has(knowledgeBaseId)) {
-      throw new Error('资源整理进行中，Git 操作已暂停')
+      return {
+        result: Promise.reject(new Error('资源整理进行中，Git 操作已暂停')),
+        node: { id: 'rejected', canceled: true, running: false, killSpawns: () => {} }
+      }
     }
     const repository = this.getRepository(knowledgeBaseId)
+    const controller = new AbortController()
+    const spawnKills = new Set<() => void>()
+    const node: QueueNode = {
+      id: `op-${++this.operationSeq}`,
+      canceled: false,
+      running: false,
+      killSpawns: () => {
+        for (const kill of [...spawnKills]) kill()
+      }
+    }
+    node.controller = controller
+
+    const nodes = this.queueNodes.get(knowledgeBaseId) ?? []
+    nodes.push(node)
+    this.queueNodes.set(knowledgeBaseId, nodes)
+
     const previous = this.operationTails.get(knowledgeBaseId) ?? Promise.resolve()
     const result = previous.then(async () => {
+      // 排队期间被取消：跳过执行（前一个操作完全不受影响）
+      if (node.canceled) throw new Error('操作已取消')
       if (this.assetWritePaused.has(knowledgeBaseId)) {
         throw new Error('资源整理进行中，Git 操作已暂停')
       }
-      // 本次操作产生的子进程都登记进来，退出时统一终止
-      let currentKill: (() => void) | null = null
+      node.running = true
+      this.runningNode.set(knowledgeBaseId, node)
+      // 本次操作产生的子进程只登记在这一个节点上
       const registry: GitRunSpawnRegistry = {
         register: (kill) => {
-          currentKill = kill
-          this.activeKills.add(kill)
+          spawnKills.add(kill)
+          this.disposeKills.add(kill)
         },
         unregister: () => {
-          if (currentKill) this.activeKills.delete(currentKill)
-          currentKill = null
+          for (const kill of [...spawnKills]) {
+            this.disposeKills.delete(kill)
+          }
+          spawnKills.clear()
         }
       }
-      // 执行时再求值：见上面关于工厂函数的说明
       const resolved = typeof extras === 'function' ? extras() : extras
-      const killThisOperation = (): void => {
-        for (const kill of [...this.activeKills]) kill()
-        resolved.signal?.dispatchEvent?.(new Event('abort'))
-      }
-      this.activeOperationKill.set(knowledgeBaseId, killThisOperation)
-      if (resolved.signal) {
-        if (resolved.signal.aborted) killThisOperation()
-        else resolved.signal.addEventListener('abort', killThisOperation, { once: true })
-      }
+      // 调用方的取消信号与本次项的信号合并：任一触发都终止本项的子进程
+      await new Promise<void>((resolve) => {
+        if (node.canceled) {
+          controller.abort()
+          resolve()
+          return
+        }
+        if (resolved.signal) {
+          if (resolved.signal.aborted) {
+            controller.abort()
+            resolve()
+            return
+          }
+          resolved.signal.addEventListener('abort', () => controller.abort(), { once: true })
+        }
+        resolve()
+      })
       try {
-        return await operation(repository, { ...resolved, onSpawn: registry })
+        return await operation(repository, {
+          ...resolved,
+          signal: controller.signal,
+          onSpawn: registry
+        })
       } finally {
-        if (this.activeOperationKill.get(knowledgeBaseId) === killThisOperation) {
-          this.activeOperationKill.delete(knowledgeBaseId)
+        node.running = false
+        if (this.runningNode.get(knowledgeBaseId) === node) {
+          this.runningNode.delete(knowledgeBaseId)
         }
       }
     })
     const tail = result.then(
       () => undefined,
       async (error) => {
+        this.removeNode(knowledgeBaseId, node)
+        // 被取消的操作**不做刷新**：取消不是失败，也不该因为一次刷新
+        // （可能挂住的 fetch）把队列尾拖住——那会让后续操作永远排不上。
+        if (node.canceled) return
         await this.refreshRepository(repository, operationMessage(error))
       }
     )
     this.operationTails.set(knowledgeBaseId, tail)
     const cleanup = (): void => {
+      this.removeNode(knowledgeBaseId, node)
       if (this.operationTails.get(knowledgeBaseId) === tail) {
         this.operationTails.delete(knowledgeBaseId)
       }
       this.applyAutoPushSchedules()
     }
     void result.then(cleanup, cleanup)
-    return result
+    return { result, node }
+  }
+
+  private removeNode(knowledgeBaseId: string, node: QueueNode): void {
+    const nodes = this.queueNodes.get(knowledgeBaseId)
+    if (!nodes) return
+    const next = nodes.filter((item) => item !== node)
+    if (next.length === 0) this.queueNodes.delete(knowledgeBaseId)
+    else this.queueNodes.set(knowledgeBaseId, next)
+  }
+
+  /**
+   * 取消一个知识库上「尚未开始」的那一项（排队取消）。
+   *
+   * 只让该项失效，跳过它自己不执行；**不终止任何正在跑的操作**，更不碰其他知识库。
+   * 返回被取消的项是否存在，便于调用方决定后续动作。
+   */
+  cancelQueuedOperation(knowledgeBaseId: string): boolean {
+    const nodes = this.queueNodes.get(knowledgeBaseId)
+    if (!nodes) return false
+    const queued = nodes.find((node) => !node.running && !node.canceled)
+    if (!queued) return false
+    queued.canceled = true
+    return true
+  }
+
+  /**
+   * 取消一个知识库上**正在执行**的那一项。
+   *
+   * 只触发该项自己的 AbortController（其子进程终止器只登记在该项上），
+   * 不涉及其他知识库或队列中的其他项。返回是否确实有运行中的项被终止。
+   */
+  cancelRunningOperation(knowledgeBaseId: string, operationId?: string): boolean {
+    const running = this.runningNode.get(knowledgeBaseId)
+    if (!running) return false
+    // 只按知识库定位可能取消到同库的其他任务：带 operationId 时必须精确匹配
+    if (operationId && running.id !== operationId) return false
+    running.canceled = true
+    running.controller?.abort()
+    running.killSpawns()
+    return true
+  }
+
+  /** 当前正在执行的那一项的身份（调用方用它做精确取消）。 */
+  getRunningOperationId(knowledgeBaseId: string): string | null {
+    return this.runningNode.get(knowledgeBaseId)?.id ?? null
+  }
+
+  /** 等该知识库的队列推进到空闲（初始化 refresh 也走这条队列）。 */
+  async whenQueueIdle(knowledgeBaseId: string): Promise<void> {
+    await this.waitForIdle(knowledgeBaseId)
   }
 
   private setBusy(knowledgeBaseId: string, busy: GitRepositoryStateDto['busy']): void {

@@ -435,6 +435,11 @@ const api: DeskApi = {
       const listener = (_event: Electron.IpcRendererEvent, taskId: string): void => callback(taskId)
       ipcRenderer.on(IPC_CHANNELS.commandTaskReveal, listener)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.commandTaskReveal, listener)
+    },
+    onRetryRequested: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, taskId: string): void => callback(taskId)
+      ipcRenderer.on(IPC_CHANNELS.commandTaskRetryRequested, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.commandTaskRetryRequested, listener)
     }
   },
   terminal: {

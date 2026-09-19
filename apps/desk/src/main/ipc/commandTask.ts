@@ -2,16 +2,18 @@ import { z } from 'zod'
 
 import { commandTaskManager } from '../commandTaskManager'
 import { gitManager } from '../gitManager'
+import { launchIde } from '../ide'
 import { workspaceManager } from '../workspaceManager'
 import { IPC_CHANNELS } from '../../shared/contracts'
 import { handle } from './shared'
 
 import type { BrowserWindow } from 'electron'
-import type { GitOperationResult } from '../../shared/contracts'
+import type { CommandTaskDto, GitOperationResult } from '../../shared/contracts'
 import type { CommandTaskHandle } from '../commandTaskManager'
+import type { IdeLaunchResult } from '../ide'
 
 const kindSchema = z.enum(['git-pull', 'git-push', 'git-fetch', 'launch-ide'])
-const stageSchema = z.enum(['queued', 'saving', 'precheck', 'running', 'finished'])
+const stageSchema = z.enum(['queued', 'saving', 'precheck', 'running', 'canceling', 'finished'])
 const finishStatusSchema = z.enum(['done', 'failed', 'timeout', 'canceled'])
 
 const claimSchema = z.object({
@@ -22,25 +24,69 @@ const claimSchema = z.object({
   command: z.string().max(2000).optional()
 })
 
+export const TASK_TITLES: Record<CommandTaskDto['kind'], string> = {
+  'git-pull': '拉取更新',
+  'git-push': '推送更改',
+  'git-fetch': '获取远端更新',
+  'launch-ide': '启动 IDE'
+}
+
 /**
- * 正在执行的运行：`taskId::run` → AbortController。
+ * 正在执行的运行：`taskId::run` → 本轮上下文。
  *
- * 取消要落到**具体那一轮运行**上，并且发出终止信号后必须等子进程真的退出
- * （`runGitStreaming` 会等 `close`，必要时 SIGKILL 兜底），再解除忙碌状态。
+ * 两件事都靠它保证：
+ *  - **同一 (taskId, run) 只启动一次**：重复点击只定位/等待已有运行，不再起第二次；
+ *  - **取消要等进程真的退出**：这里登记取消入口，真正结算由 `runGitTask` 在子进程
+ *    close 之后完成（`gitManager` 的 runGit 以 close 为准，必要时 SIGKILL 兜底）。
+ *    发出终止信号后任务先进入「取消中」，**不会**提前标记 canceled。
  */
-const activeRuns = new Map<string, AbortController>()
-/** 被请求重试的任务 id：任务结束后由主进程按种类重新走一遍既有流程 */
-const retryRequested = new Set<string>()
+const runningExecutions = new Map<
+  string,
+  {
+    cancel: () => void
+    promise: Promise<void>
+  }
+>()
 
-export type CommandTaskKindName = 'git-pull' | 'git-push' | 'git-fetch' | 'launch-ide'
-
-function runKey(taskId: string, run: number): string {
+function executionKey(taskId: string, run: number): string {
   return `${taskId}::${run}`
 }
 
 /** 请求渲染端展开面板并定位任务（手动操作立即展开；后台失败由界面决定是否展开）。 */
 function requestReveal(getWindow: () => BrowserWindow | null, taskId: string): void {
   getWindow()?.webContents.send(IPC_CHANNELS.commandTaskReveal, taskId)
+}
+
+/**
+ * 请求渲染端重跑该任务。
+ *
+ * 重试**不能**在主进程直接调 Git：推送的完整流程包含渲染端的「保存未提交更改」，
+ * 绕过去会把旧磁盘内容提交并推送。所以这里只发请求，由渲染端起头复用完整流程。
+ */
+function requestRetry(getWindow: () => BrowserWindow | null, taskId: string): void {
+  getWindow()?.webContents.send(IPC_CHANNELS.commandTaskRetryRequested, taskId)
+}
+
+/** 把业务结果汇总成既有契约的返回值（失败时保留真实原因）。 */
+function summarizeResult(
+  knowledgeBaseId: string,
+  kind: CommandTaskDto['kind']
+): GitOperationResult {
+  const task = commandTaskManager.find(knowledgeBaseId, kind)
+  const state =
+    gitManager.list().find((item) => item.knowledgeBaseId === knowledgeBaseId) ??
+    ({
+      knowledgeBaseId,
+      knowledgeBaseName: task?.knowledgeBaseName ?? '',
+      busy: null,
+      error: task?.error ?? null
+    } as GitOperationResult['state'])
+  return {
+    state,
+    message: task?.error ?? task?.stageLabel ?? '',
+    // 非 done 一律按「需要处理」回给上层，避免失败被当成成功
+    conflict: Boolean(task && task.status !== 'done')
+  }
 }
 
 /**
@@ -56,7 +102,7 @@ export async function runGitTaskFor(
   getWindow?: () => BrowserWindow | null
 ): Promise<GitOperationResult> {
   if (!taskId) {
-    // 老路径：没有任务面板参与
+    // 老路径：没有任务面板参与（后台定时 fetch 等）
     if (kind === 'git-fetch') return gitManager.fetch(knowledgeBaseId)
     if (kind === 'git-pull') return gitManager.pull(knowledgeBaseId)
     return gitManager.publish(knowledgeBaseId)
@@ -69,52 +115,58 @@ export async function runGitTaskFor(
     title: TASK_TITLES[kind],
     cwd: location.rootPath
   })
-  // 展开面板并定位：新建与复用（重复点击）都要把用户带到那个标签上。
-  // 由主进程统一发事件，避免渲染端再造一条平行的通路面。
   if (getWindow) requestReveal(getWindow, handleRef.id)
-  if (kind === 'git-fetch') await runGitTask(handleRef, kind, knowledgeBaseId)
-  else if (kind === 'git-pull') await runGitTask(handleRef, kind, knowledgeBaseId)
-  else await runGitTask(handleRef, kind, knowledgeBaseId)
 
-  const state = gitManager.list().find((item) => item.knowledgeBaseId === knowledgeBaseId)
-  const task = commandTaskManager.find(knowledgeBaseId, kind)
-  return {
-    state: state ?? {
-      knowledgeBaseId,
-      knowledgeBaseName: location.name,
-      busy: null,
-      error: task?.error ?? null
-    },
-    message: task?.error ?? task?.stageLabel ?? '',
-    conflict: task?.status === 'failed'
-  } as GitOperationResult
+  await ensureExecution(handleRef, kind, knowledgeBaseId)
+  return summarizeResult(knowledgeBaseId, kind)
 }
 
-const TASK_TITLES = {
-  'git-pull': '拉取更新',
-  'git-push': '推送更改',
-  'git-fetch': '获取远端更新',
-  'launch-ide': '启动 IDE'
-} as const
+/**
+ * 保证同一 (taskId, run) 只启动一次。
+ *
+ * 重复点击、并发请求都会命中同一条运行：后来者只**等待**已有运行，不会再起一次
+ * （否则同一运行会有两个执行体、两个 AbortController 互相覆盖）。
+ */
+export async function ensureExecution(
+  handleRef: CommandTaskHandle,
+  kind: 'git-pull' | 'git-push' | 'git-fetch',
+  knowledgeBaseId: string
+): Promise<void> {
+  const key = executionKey(handleRef.id, handleRef.run)
+  const existing = runningExecutions.get(key)
+  if (existing) {
+    await existing.promise
+    return
+  }
+  const execution = {
+    cancel: () => {
+      // 只终止本轮：gitManager 的队列节点只登记了本轮 spawn
+      gitManager.cancelRunningOperation(knowledgeBaseId)
+    },
+    promise: Promise.resolve()
+  }
+  execution.promise = runGitTask(handleRef, kind, knowledgeBaseId)
+  runningExecutions.set(key, execution)
+  try {
+    await execution.promise
+  } finally {
+    runningExecutions.delete(key)
+  }
+}
 
 /**
- * 把一次 Git 操作包成命令任务：排队/检查/执行阶段与实时输出都进面板。
+ * 执行一次 Git 操作并把过程与结果写进任务。
  *
- * 业务检查（门禁、冲突、保存）仍由既有实现负责——这里只订阅过程。
+ * 注意**业务结果映射**：`gitManager` 对「本地有变更阻止拉取」「快进失败」等情况
+ * 返回 `{ conflict: true }` 而**不抛错**，只看 Promise 会把失败显示成成功。
  */
 export async function runGitTask(
   handleRef: CommandTaskHandle,
   kind: 'git-pull' | 'git-push' | 'git-fetch',
   knowledgeBaseId: string
 ): Promise<void> {
-  const controller = new AbortController()
-  activeRuns.set(runKey(handleRef.id, handleRef.run), controller)
   try {
-    if (kind === 'git-fetch') {
-      handleRef.stage('precheck', '检查远端更新')
-    } else {
-      handleRef.stage('precheck', '检查仓库状态')
-    }
+    handleRef.stage('precheck', kind === 'git-fetch' ? '检查远端更新' : '检查仓库状态')
     handleRef.stage(
       'running',
       kind === 'git-fetch' ? '获取远端更新' : kind === 'git-pull' ? '拉取更新' : '推送更改'
@@ -124,66 +176,86 @@ export async function runGitTask(
       commandLine: (line: string) => handleRef.command(line),
       output: (stream: 'stdout' | 'stderr', chunk: string) => handleRef.write(stream, chunk)
     }
-    const options = { observer, signal: controller.signal }
 
-    if (kind === 'git-fetch') {
-      await gitManager.fetch(knowledgeBaseId, false, options)
-    } else if (kind === 'git-pull') {
-      await gitManager.pull(knowledgeBaseId, options)
-    } else {
-      await gitManager.publish(knowledgeBaseId, options)
-    }
+    let outcome: GitOperationResult
+    if (kind === 'git-fetch') outcome = await gitManager.fetch(knowledgeBaseId, false, { observer })
+    else if (kind === 'git-pull') outcome = await gitManager.pull(knowledgeBaseId, { observer })
+    else outcome = await gitManager.publish(knowledgeBaseId, { observer })
 
     if (!handleRef.isCurrent()) return
-    if (controller.signal.aborted) {
+    // 取消请求由「取消中」阶段标记；此时 gitManager 已确认子进程退出（它等 close），
+    // 所以这里结算成 canceled 是「退出确认之后」的结果。
+    if (handleRef.canceled()) {
       commandTaskManager.finishRun(handleRef.id, handleRef.run, 'canceled', '任务已取消')
+      return
+    }
+    if (outcome.conflict) {
+      commandTaskManager.finishRun(
+        handleRef.id,
+        handleRef.run,
+        'failed',
+        outcome.message || '操作未完成，需要处理'
+      )
       return
     }
     commandTaskManager.finishRun(handleRef.id, handleRef.run, 'done', null)
   } catch (error) {
     if (!handleRef.isCurrent()) return
     const message = error instanceof Error ? error.message : String(error)
-    const canceled = controller.signal.aborted
-    // 超时与取消都要保留此前输出：finishRun 会先冲刷残留日志再置状态
+    const canceled = handleRef.canceled()
     commandTaskManager.finishRun(
       handleRef.id,
       handleRef.run,
       canceled ? 'canceled' : /超时/.test(message) ? 'timeout' : 'failed',
       canceled ? '任务已取消' : message
     )
-  } finally {
-    activeRuns.delete(runKey(handleRef.id, handleRef.run))
   }
 }
 
-function scheduleRetry(
-  kind: 'git-pull' | 'git-push' | 'git-fetch' | 'launch-ide',
-  knowledgeBaseId: string
-): void {
-  // 重试必须重新走既有业务检查：这里只是重新认领任务并调用同一个入口，
-  // 不缓存、也不重放上一条命令。
-  const task = commandTaskManager.find(knowledgeBaseId, kind)
-  if (!task) return
-  const { handle: handleRef } = commandTaskManager.claimHandle({
+/**
+ * 启动 IDE 并把**启动器**的过程做成命令任务。
+ *
+ * 正常打开时只创建任务、不请求展开面板（不抢焦点）；失败才请求展开，
+ * 让用户直接看到命令、目标路径与错误。
+ */
+async function launchIdeTask(
+  getWindow: () => BrowserWindow | null,
+  knowledgeBaseId: string,
+  targetPath: string
+): Promise<IdeLaunchResult> {
+  const location = workspaceManager.getLocation(knowledgeBaseId)
+  const { handle: task } = commandTaskManager.claimHandle({
     knowledgeBaseId,
-    knowledgeBaseName: task.knowledgeBaseName,
-    kind,
-    title: task.title,
-    cwd: task.cwd,
-    command: task.command
+    knowledgeBaseName: location.name,
+    kind: 'launch-ide',
+    title: TASK_TITLES['launch-ide'],
+    cwd: targetPath
   })
-  if (kind === 'launch-ide') return
-  void runGitTask(handleRef, kind, knowledgeBaseId)
+  task.stage('running', '启动 IDE')
+  const result = await launchIde(targetPath, (stream, chunk) => task.write(stream, chunk))
+  task.command(result.command)
+  if (result.ok) {
+    commandTaskManager.finishRun(task.id, task.run, 'done', null)
+    return result
+  }
+  commandTaskManager.finishRun(
+    task.id,
+    task.run,
+    'failed',
+    [result.error, result.stderr.trim()].filter(Boolean).join('\n')
+  )
+  const window = getWindow()
+  if (window && !window.isDestroyed()) {
+    window.webContents.send(IPC_CHANNELS.commandTaskReveal, task.id)
+  }
+  return result
 }
+
+export { launchIdeTask }
 
 export function registerCommandTask(getWindow: () => BrowserWindow | null): () => void {
   const offChanged = commandTaskManager.onChanged((state) => {
     getWindow()?.webContents.send(IPC_CHANNELS.commandTaskChanged, state)
-    // 任务收尾时兑现「重试」请求：成功也重试没有意义，只在非 done 时执行
-    if (state.stage === 'finished' && state.status !== 'done' && retryRequested.has(state.id)) {
-      retryRequested.delete(state.id)
-      scheduleRetry(state.kind, state.knowledgeBaseId)
-    }
   })
   const offLog = commandTaskManager.onLog((event) => {
     getWindow()?.webContents.send(IPC_CHANNELS.commandTaskLog, event)
@@ -220,26 +292,21 @@ export function registerCommandTask(getWindow: () => BrowserWindow | null): () =
     (input) => {
       const task = commandTaskManager.list().find((item) => item.id === input.taskId)
       if (!task) throw new Error('命令任务不存在')
-      const controller = activeRuns.get(runKey(task.id, task.run))
+      if (task.stage === 'finished') return
 
-      // 队列是串行的：任务可能正卡在某个操作后面。此时只 abort 自己的 signal 没有用
-      // ——那个 signal 还没被任何子进程监听。必须先终止真正占住队列的操作，
-      // 队列才会前进（否则用户看到的就是「点了停止没反应」）。
-      const blockedQueue = gitManager.abortActiveOperation(task.knowledgeBaseId)
-
-      if (controller) {
-        // 自己已经在跑：发终止信号，等 runGitTask 收到子进程退出再收尾
-        controller.abort()
+      const key = executionKey(task.id, task.run)
+      const execution = runningExecutions.get(key)
+      if (execution) {
+        // 运行中：先进入「取消中」，等子进程真正退出后由 runGitTask 结算 canceled。
+        // 这里**不**提前标记终态——否则用户可以在进程还没退出时重试。
+        commandTaskManager.reportStage(task.id, task.run, 'canceling', '正在停止…')
+        execution.cancel()
+        return
       }
-      if (!controller || blockedQueue) {
-        // 排队中被取消（或刚终止了占队列的操作）：立刻结算，不必再等自己那一轮
-        commandTaskManager.finishRun(
-          task.id,
-          task.run,
-          'canceled',
-          blockedQueue ? '已取消（同时终止了占用队列的前一个操作）' : '已在排队阶段取消'
-        )
-      }
+      // 尚未开始执行（排队中）：让**这一项**失效即可。绝不终止前面正在跑的操作，
+      // 更不会碰其他知识库；轮到它时直接跳过。
+      gitManager.cancelQueuedOperation(task.knowledgeBaseId)
+      commandTaskManager.finishRun(task.id, task.run, 'canceled', '已在排队阶段取消')
     }
   )
 
@@ -250,11 +317,11 @@ export function registerCommandTask(getWindow: () => BrowserWindow | null): () =
     (input) => {
       const task = commandTaskManager.list().find((item) => item.id === input.taskId)
       if (!task) throw new Error('命令任务不存在')
-      if (task.status === 'queued' || task.status === 'running') {
-        throw new Error('任务仍在执行，先停止再重试')
+      if (commandTaskManager.isActive(task.status)) {
+        throw new Error('任务仍在执行或正在停止，请等它结束再重试')
       }
-      // 重新走既有业务检查：只是重新认领 + 调同一个入口，不重放上一条命令
-      scheduleRetry(task.kind, task.knowledgeBaseId)
+      // 交给渲染端重跑：它才知道推送前要先保存（完整业务流程）
+      requestRetry(getWindow, task.id)
     }
   )
 
