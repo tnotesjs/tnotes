@@ -467,6 +467,10 @@ export function registerCommandTask(getWindow: () => BrowserWindow | null): () =
     }),
     (input) => {
       commandTaskManager.finishRun(input.taskId, input.run, input.status, input.error)
+      // 任务已收尾：清掉这一轮的运行记录。
+      // 保存阶段被取消时只会登记取消能力（还没进入 Git），那条记录不会由
+      // `ensureExecution` 的 finally 清理——不清就会残留到应用退出。
+      runningExecutions.delete(executionKey(input.taskId, input.run))
     }
   )
 
