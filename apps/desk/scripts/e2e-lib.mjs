@@ -108,6 +108,8 @@ export async function launchDesk(fixture, options = {}) {
     timeout: options.timeout ?? 60000,
     env: {
       ...process.env,
+      // 用例可追加环境变量（例如 E2E 专用的内部句柄暴露）
+      ...(options.env ?? {}),
       // 本机可能设了 http_proxy：会让打到本地服务和本地远端的请求被代理接管
       NO_PROXY: '*',
       no_proxy: '*',

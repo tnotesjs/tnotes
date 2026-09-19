@@ -338,6 +338,24 @@ export class WebContentsManager {
   private emitState(handle: WebHandle): void {
     this.stateListener?.({ ...handle.state })
   }
+
+  /**
+   * 仅供 E2E：把某个标签的原生 WebContents 暴露给测试驱动。
+   *
+   * 原生网页视图不在渲染端 DOM 里，Playwright 无法直接向它发按键；E2E 需要
+   * 通过真实的 `before-input-event` 路径验证「网页里的 Cmd+A 按来源定位」。
+   * 只在 `DESK_E2E_EXPOSE_INTERNALS=1` 时可用，生产环境返回 null（不影响行为）。
+   */
+  debugWebContents(tabId: string): Electron.WebContents | null {
+    if (process.env.DESK_E2E_EXPOSE_INTERNALS !== '1') return null
+    return this.handles.get(tabId)?.view.webContents ?? null
+  }
 }
 
 export const webContentsManager = new WebContentsManager()
+
+// E2E 专用：便于测试用 app.evaluate 拿到原生 WebContents（生产不设该变量）
+if (process.env.DESK_E2E_EXPOSE_INTERNALS === '1') {
+  ;(globalThis as { __deskWebContentsManager?: WebContentsManager }).__deskWebContentsManager =
+    webContentsManager
+}

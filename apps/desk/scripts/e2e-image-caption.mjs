@@ -19,7 +19,17 @@ import {
 const rec = createRecorder()
 const fixture = createFixture('img-caption-e2e', {
   notes: [
-    { index: '0001', title: '图片描述', body: '# 图片描述\n\n![示例图](../assets/0001-pic.svg)\n' }
+    {
+      index: '0001',
+      title: '图片描述',
+      // 图片后面留足够长的正文：编辑器 canvas 必须真的能滚，第 12 步的
+      // 「滚动后浮层跟随图片」才有意义（滚不动就是空断言）。
+      body: `# 图片描述\n\n![示例图](../assets/0001-pic.svg)\n\n${Array.from(
+        { length: 30 },
+        (_, i) => `段落 ${i + 1}：用来把文档撑高，验证滚动时描述浮层仍贴着图片。`
+      ).join('\n\n')}\n`
+    },
+    { index: '0002', title: '另一篇', body: '# 另一篇\n\n另一篇正文\n' }
   ]
 })
 mkdirSync(join(fixture.kb, 'assets'), { recursive: true })
@@ -245,13 +255,133 @@ try {
   const imgCountAfterSize = await page.locator('.ProseMirror img[src*="0001-pic.svg"]').count()
   rec.record('尺寸改动后图片节点仍在', imgCountAfterSize === 1, `img=${imgCountAfterSize}`)
 
-  // ── 11. 中文输入法（IME）──
-  // 真实 IME 无法在自动化里触发，这里**明确记为未验证**，不用合成事件冒充结论。
+  // ── 11. 用户原始场景（端到端一条链）：选中图片 → 打开描述 → 逐字输入 → 保存重开 ──
+  const originalPath = await imageSrc()
+  await save()
+  const beforeOriginal = diskImage()
+  await openCaption()
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.type('原始场景描述', { delay: 60 })
+  await page.keyboard.press('Enter')
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  await save()
+  const afterOriginal = diskImage()
   rec.record(
-    '中文输入法（IME）实测',
-    false,
-    '未实测：无法在自动化环境中触发真实 IME 组字，需人工验证（不用合成事件代替结论）'
+    '原始场景：只有描述变化，图片节点与路径不变',
+    (await page.locator('.ProseMirror img[src*="0001-pic.svg"]').count()) === 1 &&
+      (await imageSrc()) === originalPath &&
+      beforeOriginal?.src === afterOriginal?.src &&
+      beforeOriginal?.alt !== afterOriginal?.alt &&
+      afterOriginal?.alt === '原始场景描述',
+    `src ${beforeOriginal?.src} → ${afterOriginal?.src}；alt ${beforeOriginal?.alt} → ${afterOriginal?.alt}`
   )
+  // 重开笔记再核对
+  await page.locator('.toc-row', { hasText: '图片描述' }).first().click()
+  await new Promise((resolve) => setTimeout(resolve, 700))
+  await waitFor(
+    async () => (await page.locator('.ProseMirror img[src*="0001-pic.svg"]').count()) > 0,
+    15000
+  )
+  rec.record(
+    '原始场景：保存重开后图片与描述都正确',
+    (await imageAlt()) === '原始场景描述' && (await imageSrc()).includes('0001-pic.svg'),
+    `alt=${await imageAlt()}`
+  )
+
+  // ── 12. 浮层生命周期：定位 / 滚动 / 切换笔记 / 关标签 / 焦点恢复 ──
+  await openCaption()
+  const captionBefore = await caption().evaluate((el) => {
+    const image = document.querySelector('.ProseMirror img')
+    const r = el.getBoundingClientRect()
+    const ir = image?.getBoundingClientRect()
+    return {
+      insideProseMirror: Boolean(el.closest('.ProseMirror')),
+      belowImage: ir ? r.top >= ir.bottom - 2 : null,
+      visible: r.width > 0 && r.height > 0
+    }
+  })
+  rec.record(
+    '浮层在 contenteditable 之外、位于图片下方且可见',
+    captionBefore.insideProseMirror === false &&
+      captionBefore.belowImage === true &&
+      captionBefore.visible,
+    JSON.stringify(captionBefore)
+  )
+
+  // 滚动编辑器：浮层跟随图片（不悬挂在旧位置）
+  //
+  // 真正的滚动容器是编辑器的 canvas：`.milkdown-markdown-editor__canvas`
+  // （`overflow-y: auto`，探针实测 scrollHeight > clientHeight）。早先这里滚的是
+  // `.note-editor-area, .editor-group-body` 的第一个 —— 两者都是 `overflow: visible`
+  // 且 scrollTop 恒为 0，等于没滚（滚错容器）。
+  const scrollCanvas = page.locator('.milkdown-markdown-editor__canvas').first()
+  const scrolled = await scrollCanvas.evaluate((el) => {
+    el.scrollTop = el.scrollHeight
+    return { scrollTop: el.scrollTop, max: el.scrollHeight - el.clientHeight }
+  })
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  const afterScroll = await caption().evaluate((el) => {
+    const ir = document.querySelector('.ProseMirror img')?.getBoundingClientRect()
+    const r = el.getBoundingClientRect()
+    const canvas = document.querySelector('.milkdown-markdown-editor__canvas')
+    return {
+      delta: ir ? Math.round(r.top - ir.bottom) : null,
+      visible: r.width > 0,
+      canvasScrollTop: canvas ? Math.round(canvas.scrollTop) : null
+    }
+  })
+  rec.record(
+    '滚动后浮层仍贴着图片（未悬挂在旧位置）',
+    scrolled.scrollTop > 0 &&
+      afterScroll.canvasScrollTop > 0 &&
+      afterScroll.delta !== null &&
+      Math.abs(afterScroll.delta) <= 12,
+    `scrolled=${JSON.stringify(scrolled)} after=${JSON.stringify(afterScroll)}`
+  )
+  await scrollCanvas.evaluate((el) => {
+    el.scrollTop = 0
+  })
+  await new Promise((resolve) => setTimeout(resolve, 300))
+
+  // 切到另一篇笔记：本笔记的浮层不得残留在界面上
+  await page.locator('.toc-row', { hasText: '另一篇' }).first().click()
+  await new Promise((resolve) => setTimeout(resolve, 700))
+  const strayOnSwitch = await page.locator('input.desk-image__caption:visible').count()
+  rec.record('切换笔记后没有残留描述浮层', strayOnSwitch === 0, `visibleCaptions=${strayOnSwitch}`)
+
+  // 关掉该笔记标签：同样不得残留
+  const closeButton = page.locator('.tab-close:visible').first()
+  if ((await closeButton.count()) > 0) {
+    await closeButton.click()
+  } else {
+    // 退化路径：用命令关闭当前标签
+    await page.keyboard.press('ControlOrMeta+w')
+  }
+  await new Promise((resolve) => setTimeout(resolve, 700))
+  const strayAfterClose = await page.locator('input.desk-image__caption').count()
+  rec.record('关闭标签后描述浮层被清理', strayAfterClose === 0, `captions=${strayAfterClose}`)
+
+  // 焦点恢复：再打开笔记并点回正文，输入应进入正文而不是描述框
+  await page.locator('.toc-row', { hasText: '图片描述' }).first().click()
+  await new Promise((resolve) => setTimeout(resolve, 700))
+  await openCaption()
+  await page.locator('.ProseMirror h1').first().click()
+  await page.keyboard.type('焦点已回到正文', { delay: 40 })
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  const focusInfo = await page.evaluate(() => ({
+    active: document.activeElement?.className ?? null,
+    inCaption: Boolean(document.activeElement?.closest?.('.desk-image__caption'))
+  }))
+  rec.record(
+    '点回正文后焦点不在描述浮层（无悬挂焦点）',
+    focusInfo.inCaption === false,
+    JSON.stringify(focusInfo)
+  )
+
+  // ── 13. 中文输入法（IME）──
+  // 真实 IME 无法在自动化里触发：**明确标注未实测**，不计入通过也不计入失败，
+  // 不用合成事件冒充结论。
+  console.log('NOTE  中文输入法（IME）实测 —— 未执行（需人工验证，不用合成事件代替）')
 
   rec.record('无未捕获页面异常', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 200))
 } catch (error) {

@@ -564,27 +564,39 @@ export function createDeskImageView(options: {
     }
 
     /**
-     * 把描述浮层挂到编辑器宿主上（contenteditable 之外），并跟随图片定位。
+     * 描述浮层的宿主 = 编辑器宿主的**滚动容器** `.milkdown-markdown-editor__canvas`。
      *
-     * 位置用 offsetLeft/offsetTop 相对宿主计算：figure 与宿主之间若有定位祖先，
-     * 用 getBoundingClientRect 求差更稳。
+     * 不能在 NodeView 构造时把 `view.dom.parentElement` 定死，这里有两个实测过的坑：
+     *  1) 构造时机有两种：首次打开笔记时父元素还是 canvas，而重开笔记（文档内容在
+     *     editor 建好之后才 replaceAll 进去）时父元素已经是 Milkdown 的 `.milkdown`
+     *     容器；
+     *  2) `.milkdown` 容器会被 Milkdown 在插件视图重建时**整个换掉**（旧的连同里面的
+     *     浮层一起从文档中移除）。定死的引用指向的正是被丢弃的那个容器，之后浮层
+     *     再也回不到文档里（实测：重开笔记后「描述」按钮点得开，但全文档查不到
+     *     `input.desk-image__caption`，E2E 在下一步 30s 超时）。
+     * canvas 由 Vue 渲染、编辑器生命周期内稳定不变，所以每次都按 closest 重新解析。
      */
-    const captionHost = view.dom.parentElement ?? view.dom
+    const resolveCaptionHost = (): HTMLElement =>
+      (view.dom.closest('.milkdown-markdown-editor__canvas') as HTMLElement | null) ??
+      view.dom.parentElement ??
+      view.dom
+
     // 构造期即挂载：`caption.focus()` 可能发生在首次 render/syncChrome 之前，
     // 那时元素若还不在文档里，光标会停在 0（实测：后续输入被插到旧描述前面）。
-    captionHost.append(captionRow)
+    resolveCaptionHost().append(captionRow)
+
     const positionCaptionRow = (): void => {
-      if (captionRow.parentElement !== captionHost) {
-        captionHost.append(captionRow)
-        if (getComputedStyle(captionHost).position === 'static') {
-          captionHost.style.position = 'relative'
-        }
-      }
+      const host = resolveCaptionHost()
+      if (captionRow.parentElement !== host) host.append(captionRow)
+      if (getComputedStyle(host).position === 'static') host.style.position = 'relative'
       if (captionRow.hidden) return
-      const hostRect = captionHost.getBoundingClientRect()
+      const hostRect = host.getBoundingClientRect()
       const figureRect = figure.getBoundingClientRect()
-      captionRow.style.left = `${figureRect.left - hostRect.left}px`
-      captionRow.style.top = `${figureRect.bottom - hostRect.top + 4}px`
+      // 宿主自己就是滚动容器：绝对定位的后代随内容一起滚动，所以 left/top 必须是
+      // **内容坐标**（加上宿主的 scrollLeft/scrollTop）。用可视坐标会在滚动时被
+      // 重复补偿、浮层反向漂移（实测偏差 583px 的"悬挂控件"）。
+      captionRow.style.left = `${figureRect.left - hostRect.left + host.scrollLeft}px`
+      captionRow.style.top = `${figureRect.bottom - hostRect.top + host.scrollTop + 4}px`
       captionRow.style.minWidth = `${figureRect.width}px`
       // 同步期间若浏览器把光标留在了开头（聚焦早于挂载/定位时会这样），补到末尾。
       // 只在"已聚焦且仍在 0"时补，所以不会覆盖用户自己点的位置。
@@ -596,6 +608,22 @@ export function createDeskImageView(options: {
         caption.setSelectionRange(caption.value.length, caption.value.length)
       }
     }
+
+    /**
+     * 浮层要跟着图片走：滚动、容器尺寸变化时都重新定位。
+     *
+     * 浮层挂在滚动容器里，滚动时本来就随内容走；重定位是给宿主的退化分支
+     * （解析不到 canvas 时）与尺寸变化兜底。监听挂在 document/window 这种稳定目标上，
+     * 不随宿主解析结果变化，destroy 时也一定摘得掉。scroll 不冒泡，用 capture
+     * 才能收到任意滚动容器（真正的滚动容器实测是 `.milkdown-markdown-editor__canvas`，
+     * `overflow-y: auto`，`.note-editor-area` / `.editor-group-body` 都不能滚）的滚动。
+     */
+    const reposition = (): void => {
+      if (captionRow.hidden) return
+      positionCaptionRow()
+    }
+    document.addEventListener('scroll', reposition, { capture: true, passive: true })
+    window.addEventListener('resize', reposition)
 
     /**
      * 画布图片状态：同名 `.excalidraw` 的 KB 相对路径（null = 普通图片），
@@ -776,6 +804,8 @@ export function createDeskImageView(options: {
       },
       ignoreMutation: () => true,
       destroy: () => {
+        document.removeEventListener('scroll', reposition, { capture: true })
+        window.removeEventListener('resize', reposition)
         captionRow.remove()
         teardownCanvas()
         observer?.disconnect()

@@ -2558,8 +2558,8 @@
    selection highlight that the blanket `.desk-raw-block *::selection` above
    would otherwise wipe out. Prefer native ::selection (character-tight) over
    CodeMirror drawSelection full-line layers. */
-.milkdown-markdown-editor :deep(figure.desk-image .desk-image__caption::selection),
-.milkdown-markdown-editor :deep(figure.desk-image .desk-image__caption *::selection),
+.milkdown-markdown-editor :deep(.desk-image__caption::selection),
+.milkdown-markdown-editor :deep(.desk-image__caption *::selection),
 .milkdown-markdown-editor :deep(figure.desk-image input::selection),
 .milkdown-markdown-editor :deep(figure.desk-image input *::selection) {
   background: color-mix(in srgb, var(--accent) 55%, transparent);
@@ -3375,14 +3375,20 @@
   user-select: none;
 }
 
-.milkdown-markdown-editor :deep(figure.desk-image .desk-image__caption-row) {
+/* 描述浮层挂在编辑器宿主的滚动容器里（contenteditable 之外，见 deskImageView.ts），
+   不再是 figure.desk-image 的后代 —— 选择器不能带 figure 前缀，否则整条规则失配：
+   浮层退回普通流里的一个 div（inline left/top 无效），"浮在图片下方"完全失效
+   （实测短文档里浮层落到距图片 583px 的视口底部）。 */
+.milkdown-markdown-editor :deep(.desk-image__caption-row) {
+  position: absolute;
+  z-index: 3;
   box-sizing: border-box;
   width: 0;
   min-width: 100%;
-  margin: 8px 0 0;
+  margin: 0;
 }
 
-.milkdown-markdown-editor :deep(figure.desk-image .desk-image__caption) {
+.milkdown-markdown-editor :deep(.desk-image__caption) {
   display: block;
   box-sizing: border-box;
   width: 100%;
@@ -3398,7 +3404,7 @@
   outline: none;
 }
 
-.milkdown-markdown-editor :deep(figure.desk-image .desk-image__caption.is-readonly) {
+.milkdown-markdown-editor :deep(.desk-image__caption.is-readonly) {
   pointer-events: none;
 }
 
