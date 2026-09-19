@@ -166,8 +166,6 @@ async function waitForShellReady(timeoutMs = 20000) {
   return null
 }
 
-const lastScreens = { before: '', after: '' }
-
 /**
  * 在**当前活动会话**里跑一条命令并读回它屏幕上的输出。
  *
