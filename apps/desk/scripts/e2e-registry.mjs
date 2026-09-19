@@ -45,6 +45,21 @@ export const SUITES = [
     note: '资源验收：盘点/合并/压缩/转格式/断链 + SSG 产物资源完整性（sharp/oxipng、系统剪贴板、固定端口 8123）'
   },
   {
+    name: 'e2e-terminal.mjs',
+    area: 'terminal',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/main/terminalManager.ts',
+      'apps/desk/src/renderer/src/stores/terminal.ts',
+      'apps/desk/src/renderer/src/terminal/**',
+      'apps/desk/src/main/ipc/terminal.ts',
+      'apps/desk/src/shared/contracts.ts'
+    ],
+    serial: false,
+    smoke: false,
+    note: '交互式终端：真 node-pty 起 shell 并读回真实输出、cwd 绑定知识库、多会话并存、关闭隔离、旧代次输入被拒绝'
+  },
+  {
     name: 'e2e-command-task.mjs',
     area: 'command-task',
     tier: 'regression',
