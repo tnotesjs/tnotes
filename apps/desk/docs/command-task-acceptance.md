@@ -1,7 +1,10 @@
 # 命令操作与底部终端面板联动 · 验收报告
 
 **日期**：2026-09-19
-**状态**：**实现待验收** —— 代码与验证都已完成，等待最终验收。
+**状态**：**macOS 已测范围验收通过**（本轮复核通过，执行层阻塞问题已关闭）。
+
+通过范围**仅限 macOS 上已实际验证的部分**：第四节列出的平台与场景**不在**通过范围内，
+第 3 小节里批量超时的说明也按"原因尚未确认"如实记录。
 
 ---
 
@@ -94,10 +97,27 @@ pnpm --filter desk test     # 1469 passed / 168 files / 0 skipped
 
 ### 3. 原有功能回归
 
-按改动面由 runner 选出的套件全部通过；另有冒烟核心集。详见
-`command-task-handoff.md` 第六节（含并发超时的环境注记）。
+按改动面由 runner 选出的套件通过；另有冒烟核心集。
 
-## 四、明确未验证（不要当成已验）
+**批量超时的记录口径**：批量运行时曾出现套件在启动阶段超时（日志为空），
+**单独重跑通过**。重跑通过**不能**据此断定原因；正确记录是
+「批量运行超时、单独重跑通过，**原因尚未确认**」。详见 `command-task-handoff.md` 第六节。
+
+## 四、本次通过范围的边界
+
+**通过（macOS，已实际跑过）**
+
+- 单测：`1482 passed / 170 files / 0 skipped`（含可控子进程的 `runGitLifecycle` 9 条、
+  真实 git 的 `runGit` 2 条、真实执行路径的 `disposeSpawn` 1 条）。
+- E2E：`e2e-command-task` 23/23、`e2e-terminal` 13/13、`e2e-external-change` 12/12；
+  改动面选出的其它套件通过。
+- 门禁：lint 0 error、typecheck 0 error、prettier。
+
+**不在通过范围内**
+
+见下节。以下各项**未被本次验收覆盖**，不作为"已验"或"通过"引用。
+
+## 五、明确未验证（**不在本次通过范围内**）
 
 1. **取消隔离的 E2E**：**尚未做**（不是不可做——可控装置已具备，见第三节说明）。
    目前只有确定性单测。
@@ -107,7 +127,7 @@ pnpm --filter desk test     # 1469 passed / 168 files / 0 skipped
 3. **Windows**：`detached` 进程组只在非 Windows 生效，Windows 仍是 `child.kill`；
    平台相关行为未在 Windows 上验证。
 
-## 五、门禁
+## 六、门禁
 
 ```
 pnpm --filter desk test        # 1482 passed / 170 files / 0 skipped
@@ -120,7 +140,7 @@ node apps/desk/scripts/e2e-external-change.mjs    # 12/12
 node scripts/run-e2e.mjs --only delete-dialog,excalidraw-git --concurrency 1   # 2/2
 ```
 
-## 六、交付物
+## 七、交付物
 
 - `apps/desk/src/main/gitManager.ts`：`onEnqueued` 入队身份、退出后刷新守卫、
   commit 传 extras、进程组终止、`exit`/`close` 与输出收尾分离结算、

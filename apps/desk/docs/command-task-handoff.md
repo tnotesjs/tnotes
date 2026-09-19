@@ -66,15 +66,20 @@ node scripts/run-e2e.mjs --only command-task                         # 走 runne
 
 - **10/14 直接通过**，包含直接依赖 gitManager 的 `e2e-delete-dialog`、`e2e-excalidraw-git`
   与本轮的 `e2e-command-task`。
-- **4 个曾 305s 超时**（`kb-assets` / `markdown-input` / `numbered-tabs` / `quit-flush`）：
+- **4 个曾批量超时**（`kb-assets` / `markdown-input` / `numbered-tabs` / `quit-flush`）：
   日志为空、卡在启动阶段；`--concurrency 1` 重跑 **4/4 通过**（各 2.9–7.2s）。
-  判定为**并发启动多个 Electron 的环境问题**，不是本轮回归。
+  记录为「**批量运行超时、单独重跑通过，原因尚未确认**」——重跑通过不构成归因依据，
+  也没有证据表明与本轮改动相关或无关。后续若再复现，作为独立问题查。
 
-仍未验收（改动面之外，按需再跑）：
+后续已补做（不在上面那批 14 个套件里）：
 
-1. 交互式终端（新建/切换/关闭、cwd 绑定）——本轮的 14 个套件不含终端套件。
-2. 外部修改文件后 Desk 的感知与未保存冲突处理。
-3. 打开/切换知识库、资源面板、历史版本等流程（`e2e-kb-assets` 已通过，其余未跑）。
+1. 交互式终端（新建/切换/关闭、cwd 绑定）→ `e2e-terminal.mjs`（13 条，真 pty）。
+2. 外部修改与未保存冲突 → `e2e-external-change.mjs`（12 条）+ `documents.test.ts`。
+
+仍不在通过范围内：
+
+- Windows（`detached` 进程组不生效）、取消隔离的 E2E、后台定时 fetch/自动推送的
+  E2E 触发——见验收报告第四节。
 
 跑法：`node scripts/run-e2e.mjs --smoke` 后再按需全量；`--since <ref>` 可选相关套件。
 机器较忙时用 `--concurrency 1`，避免上面那种启动阶段互相拖死。
