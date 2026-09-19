@@ -273,7 +273,12 @@ export function mountCodeTabEditor(
     () => {
       void save()
     },
-    { language: options.language, lineHighlight: options.lineHighlight }
+    {
+      language: options.language,
+      lineHighlight: options.lineHighlight,
+      // 代码组面板与普通代码块口径一致：长行不折、块内横向滚动
+      lineWrapping: false
+    }
   )
   syncDirtyUi()
 

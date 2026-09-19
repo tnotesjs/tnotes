@@ -54,6 +54,14 @@ export interface ContainerSourceEditorOptions {
     onChange?: (encoded: string) => void
     readOnly?: () => boolean
   }
+  /**
+   * 长行是否自动折行。默认 true（保持既有行为）。
+   *
+   * 代码类内容传 false：长行不折、在块内横向滚动，与普通代码块口径一致。
+   * 这个开关必须显式传递——该编辑器也服务 mermaid / callout / word-list 等
+   * 非代码内容，那些地方折行是合理的，不能全局关掉。
+   */
+  lineWrapping?: boolean
 }
 
 /**
@@ -177,7 +185,7 @@ export function createContainerSourceEditor(
           ...searchKeymap,
           ...completionKeymap
         ]),
-        EditorView.lineWrapping,
+        ...(options.lineWrapping === false ? [] : [EditorView.lineWrapping]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) onChange(update.state.doc.toString())
         }),

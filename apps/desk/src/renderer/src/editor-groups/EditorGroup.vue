@@ -140,6 +140,11 @@ function closeTab(tab: EditorTab): void {
   void workspace.requestCloseTab(tab.id)
 }
 
+/** 点图钉：只取消固定，不关闭标签（关闭另有 .tab-close 与右键菜单）。 */
+function togglePinned(tab: EditorTab): void {
+  editor.togglePinned(tab.id)
+}
+
 function closeTabWithMiddleButton(event: MouseEvent, tab: EditorTab): void {
   if (event.button !== 1) return
   event.preventDefault()
@@ -235,7 +240,21 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
           <span v-else class="tab-icon">⌘</span>
           <span class="tab-title">{{ tab.title }}</span>
           <span v-if="isDirty(tab)" class="dirty-dot">●</span>
-          <span class="pin-mark" aria-hidden="true">⌖</span>
+          <!-- 图钉就是"取消固定"的入口：单击只取消固定，不关闭标签（标签本体是 button，
+               所以这里用 span + 可访问名称，与 .tab-close 同一写法） -->
+          <span
+            class="pin-mark"
+            role="button"
+            tabindex="0"
+            aria-label="取消固定标签"
+            :title="`取消固定 ${tab.title}`"
+            @click.stop="togglePinned(tab)"
+            @keydown.enter.prevent.stop="togglePinned(tab)"
+            @keydown.space.prevent.stop="togglePinned(tab)"
+            @mousedown.stop
+            @dblclick.stop
+            >⌖</span
+          >
         </button>
       </div>
 
@@ -493,6 +512,21 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
   flex: none;
   color: var(--muted);
   font-size: 10px;
+  /* 图钉是可点击的"取消固定"入口 */
+  cursor: pointer;
+  border-radius: 3px;
+  padding: 0 1px;
+  line-height: 1;
+}
+
+.pin-mark:hover {
+  color: var(--text);
+  background: var(--tn-c-bg-soft, transparent);
+}
+
+.pin-mark:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .tab-close {
