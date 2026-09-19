@@ -73,6 +73,9 @@ export function createDeskImageView(options: {
 
     const figure = document.createElement('figure')
     figure.className = 'tn-image desk-image'
+    // 描述浮层不在 figure 里（必须脱离 contenteditable 子树），DOM 顺序也不等于图片
+    // 顺序。用图片节点位置把「图片 ↔ 浮层」关联起来：多张图同 x 同宽时也能确定归属。
+    figure.dataset.imagePos = String(getPos())
     figure.contentEditable = 'false'
     figure.style.display = 'block'
     figure.style.width = '100%'
@@ -211,6 +214,7 @@ export function createDeskImageView(options: {
     captionRow.append(caption)
     // 先挂在 figure 上，mount 后再移到宿主（NodeView 的 dom 必须自洽，二者都要在）
     captionRow.dataset.deskImageCaption = 'true'
+    captionRow.dataset.imagePos = figure.dataset.imagePos
 
     // 「正在编辑中」：该画布的标签页开着时，盖在图正中的一支笔
     const editingBadge = document.createElement('div')
@@ -576,6 +580,8 @@ export function createDeskImageView(options: {
      *     `input.desk-image__caption`，E2E 在下一步 30s 超时）。
      * canvas 由 Vue 渲染、编辑器生命周期内稳定不变，所以每次都按 closest 重新解析。
      */
+    let pinnedHostPosition: HTMLElement | null = null
+
     const resolveCaptionHost = (): HTMLElement =>
       (view.dom.closest('.milkdown-markdown-editor__canvas') as HTMLElement | null) ??
       view.dom.parentElement ??
@@ -588,16 +594,33 @@ export function createDeskImageView(options: {
     const positionCaptionRow = (): void => {
       const host = resolveCaptionHost()
       if (captionRow.parentElement !== host) host.append(captionRow)
-      if (getComputedStyle(host).position === 'static') host.style.position = 'relative'
+      // 只接管"本来就是 static"的宿主：宿主若自带定位（例如 canvas 是 relative），
+      // 内联写 relative 是等价的；而 destroy 时只清掉自己写的那次，不覆盖别人的值。
+      if (getComputedStyle(host).position === 'static') {
+        host.style.position = 'relative'
+        pinnedHostPosition = host
+      }
       if (captionRow.hidden) return
       const hostRect = host.getBoundingClientRect()
       const figureRect = figure.getBoundingClientRect()
+      // 图片还没布局完（首次挂载时实测 figureRect 全 0）就写 minWidth 会把浮层
+      // 永久锁成 0 宽：既看不见也点不到，而且之后没有任何事件会重算。此时只挂 DOM，
+      // 等 ResizeObserver / 下一次重定位拿到真实尺寸再写。
+      if (figureRect.width <= 0) return
       // 宿主自己就是滚动容器：绝对定位的后代随内容一起滚动，所以 left/top 必须是
       // **内容坐标**（加上宿主的 scrollLeft/scrollTop）。用可视坐标会在滚动时被
       // 重复补偿、浮层反向漂移（实测偏差 583px 的"悬挂控件"）。
-      captionRow.style.left = `${figureRect.left - hostRect.left + host.scrollLeft}px`
+      // 描述框跟**图片本身**对齐（frame 是图片盒子；stage 是整块容器）：水平位置与
+      // 宽度都取 frame —— 若 left 用 figure、minWidth 用 frame，同一个浮层就会有两套
+      // 基准（实测：点「居中对齐」后 left 停在 figure 的左沿 618，宽度却已按图片收成
+      // 335，浮层整体偏左 168px）。垂直仍贴 figure 下沿。
+      const frameRect = (
+        figure.querySelector('.desk-image__frame') ?? figure
+      ).getBoundingClientRect()
+      captionRow.style.left = `${frameRect.left - hostRect.left + host.scrollLeft}px`
       captionRow.style.top = `${figureRect.bottom - hostRect.top + host.scrollTop + 4}px`
-      captionRow.style.minWidth = `${figureRect.width}px`
+      captionRow.style.minWidth = `${frameRect.width}px`
+      captionRow.style.maxWidth = `${frameRect.width}px`
       // 同步期间若浏览器把光标留在了开头（聚焦早于挂载/定位时会这样），补到末尾。
       // 只在"已聚焦且仍在 0"时补，所以不会覆盖用户自己点的位置。
       if (
@@ -618,12 +641,53 @@ export function createDeskImageView(options: {
      * 才能收到任意滚动容器（真正的滚动容器实测是 `.milkdown-markdown-editor__canvas`，
      * `overflow-y: auto`，`.note-editor-area` / `.editor-group-body` 都不能滚）的滚动。
      */
+    // 稍后再量一次：改尺寸 / 改对齐这类操作会先同步改 DOM、再派发观察器回调，
+    // 回调里读到的仍是**改动前**的布局（实测：点「居中对齐」后图片从 335px 变 670px，
+    // 行宽停在 335px）。rAF 在同一帧布局之前触发，仍然读到旧值；用 timeout 把量测
+    // 推到本轮样式/布局重算之后。
+    let captionRetry = 0
     const reposition = (): void => {
       if (captionRow.hidden) return
       positionCaptionRow()
+      if (captionRetry) return
+      captionRetry = setTimeout(() => {
+        captionRetry = 0
+        if (!captionRow.hidden) positionCaptionRow()
+      }, 0) as unknown as number
     }
     document.addEventListener('scroll', reposition, { capture: true, passive: true })
     window.addEventListener('resize', reposition)
+    // 首次挂载时图片尚未布局（figureRect 全 0），positionCaptionRow 会主动跳过；
+    // 布局完成后由 ResizeObserver 补一次定位。桌面窗口缩放（window resize）与
+    // 拖拽改尺寸都覆盖得到。
+    // 让浮层跟上图片。三种信号都要，缺一不可：
+    //  1) ResizeObserver(宿主内容盒)：内容增删 / 拖拽改尺寸 / 窗口变化；
+    //  2) ResizeObserver(图片)：图片自身尺寸变化；
+    //  3) MutationObserver(内容子树)：**只有位移、尺寸没变**的情况 —— 实测首屏图片
+    //     异步完成布局时后面的图片整体下移 424px，宿主内容盒高度与图片自身尺寸都
+    //     没变，1) 2) 都不会触发，浮层就停在旧位置（与图片错位 257px）。
+    //     图片布局完成时会给 img 写内联尺寸，正好落在 3) 的捕获范围里。
+    // 观察目标都取稳定对象（宿主 / figure / view.dom），destroy 时成对断开。
+    const captionObserver =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            positionCaptionRow()
+          })
+    captionObserver?.observe(resolveCaptionHost())
+    captionObserver?.observe(figure)
+    const captionMutations =
+      typeof MutationObserver === 'undefined'
+        ? null
+        : new MutationObserver(() => {
+            positionCaptionRow()
+          })
+    captionMutations?.observe(view.dom, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['style', 'width', 'height', 'src']
+    })
 
     /**
      * 画布图片状态：同名 `.excalidraw` 的 KB 相对路径（null = 普通图片），
@@ -775,6 +839,11 @@ export function createDeskImageView(options: {
       if (document.activeElement !== caption) caption.value = alt
       if (alt) captionOpen = true
       syncChrome()
+      // 改对齐只改 margin、改尺寸只改内联宽度：figure 的**盒子尺寸与内容盒都没变**，
+      // ResizeObserver / MutationObserver 都不会触发，浮层会停在旧的位置（实测：
+      // 点「居中对齐」后图片中心 953，浮层中心仍停在 785.5 / 左对齐的 x 618）。
+      // 所以每次按新属性渲染完，直接重定位一次。
+      if (!captionRow.hidden) positionCaptionRow()
     }
 
     render(initialNode, false)
@@ -806,6 +875,14 @@ export function createDeskImageView(options: {
       destroy: () => {
         document.removeEventListener('scroll', reposition, { capture: true })
         window.removeEventListener('resize', reposition)
+        captionObserver?.disconnect()
+        captionMutations?.disconnect()
+        if (captionRetry) clearTimeout(captionRetry)
+        captionRetry = 0
+        if (pinnedHostPosition && pinnedHostPosition.style.position === 'relative') {
+          pinnedHostPosition.style.position = ''
+        }
+        pinnedHostPosition = null
         captionRow.remove()
         teardownCanvas()
         observer?.disconnect()

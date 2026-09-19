@@ -3383,8 +3383,11 @@
   position: absolute;
   z-index: 3;
   box-sizing: border-box;
-  width: 0;
-  min-width: 100%;
+  /* 宽度与图片对齐：min-width 由 positionCaptionRow 按图片实测宽度写入内联样式，
+     这里**不能**写 `min-width: 100%` —— 那是按宿主（canvas，838px）解析的，
+     比图片（670px）宽，行会被撑到宿主右边界外，描述文字跑到图片右边（实测
+     图片中心 650 / 描述中心 953）。 */
+  max-width: 100%;
   margin: 0;
 }
 

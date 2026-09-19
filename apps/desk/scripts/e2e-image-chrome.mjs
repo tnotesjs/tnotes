@@ -77,6 +77,7 @@ const app = await _electron.launch({
   env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true' }
 })
 
+
 async function visible(locator) {
   if ((await locator.count()) === 0) return false
   return locator.evaluate((element) => {
@@ -127,7 +128,12 @@ try {
   const initialCaptioned = await captioned.evaluate((figure) => {
     const img = figure.querySelector('img')
     const frame = figure.querySelector('.desk-image__frame')
-    const caption = figure.querySelector('.desk-image__caption')
+    const caption = (() => {
+      const pos = figure.getAttribute('data-image-pos')
+      return figure
+        .closest('.milkdown-markdown-editor__canvas')
+        .querySelector(`.desk-image__caption-row[data-image-pos="${pos}"] .desk-image__caption`)
+    })()
     const quick = figure.querySelector('.desk-image__quick')
     const imageBox = img.getBoundingClientRect()
     const frameBox = frame.getBoundingClientRect()
@@ -234,7 +240,12 @@ try {
   const afterPercent = await large.evaluate((figure) => {
     const img = figure.querySelector('img')
     const frame = figure.querySelector('.desk-image__frame')
-    const caption = figure.querySelector('.desk-image__caption')
+    const caption = (() => {
+      const pos = figure.getAttribute('data-image-pos')
+      return figure
+        .closest('.milkdown-markdown-editor__canvas')
+        .querySelector(`.desk-image__caption-row[data-image-pos="${pos}"] .desk-image__caption`)
+    })()
     const imageBox = img.getBoundingClientRect()
     const frameBox = frame.getBoundingClientRect()
     const captionBox = caption.getBoundingClientRect()
@@ -268,9 +279,16 @@ try {
     await large.evaluate((element) => element.classList.contains('tn-image--center')),
     true
   )
+  // 等一帧 + 一个宏任务，让「居中对齐」引起的重排与浮层重定位都落地再量
+  await page.waitForTimeout(250)
   const afterCenter = await large.evaluate((figure) => {
     const img = figure.querySelector('img')
-    const caption = figure.querySelector('.desk-image__caption')
+    const caption = (() => {
+      const pos = figure.getAttribute('data-image-pos')
+      return figure
+        .closest('.milkdown-markdown-editor__canvas')
+        .querySelector(`.desk-image__caption-row[data-image-pos="${pos}"] .desk-image__caption`)
+    })()
     const stage = figure.querySelector('.desk-image__stage')
     const imageBox = img.getBoundingClientRect()
     const captionBox = caption.getBoundingClientRect()
@@ -286,7 +304,11 @@ try {
   await page.screenshot({ path: join(shots, '03-align-center.png') })
 
   await large.getByTitle('描述', { exact: true }).click()
-  const caption = large.locator('.desk-image__caption')
+  // 描述框已移出 figure、挂在 canvas 上（见 deskImageView.ts resolveCaptionHost），
+  // 用 data-image-pos 与图片节点位置关联（多张图同 x 同宽也能确定归属）。
+  const caption = page.locator(
+    `.desk-image__caption-row[data-image-pos="${await large.getAttribute('data-image-pos')}"] .desk-image__caption`
+  )
   assert.equal(await visible(caption), true)
   await caption.fill('新说明')
   await caption.press('Enter')
@@ -341,7 +363,12 @@ try {
   const selectedCaptioned = await captioned.evaluate((figure) => {
     const img = figure.querySelector('img')
     const frame = figure.querySelector('.desk-image__frame')
-    const captionEl = figure.querySelector('.desk-image__caption')
+    const captionEl = (() => {
+      const pos = figure.getAttribute('data-image-pos')
+      return figure
+        .closest('.milkdown-markdown-editor__canvas')
+        .querySelector(`.desk-image__caption-row[data-image-pos="${pos}"] .desk-image__caption`)
+    })()
     const more = figure.querySelector('.desk-image__more')
     const imageBox = img.getBoundingClientRect()
     const frameBox = frame.getBoundingClientRect()
