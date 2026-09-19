@@ -241,6 +241,14 @@ try {
   )
   await closeSettings(page)
 
+  // 关掉开关后即使不重新选区，也不应该还挂着上一次选区留下的浮条。
+  state = await toolbarState(page)
+  rec.record(
+    '改回关闭后：未重新选区时已显示的浮条也收起了',
+    !state.visible,
+    `state=${JSON.stringify(state)}`
+  )
+
   selected = await selectBodyText(page)
   await page.waitForTimeout(900)
   state = await toolbarState(page)

@@ -60,6 +60,7 @@ import {
 } from './blockActionMenu'
 import { createDeskBlockEditConfig } from './deskBlockEditConfig'
 import { createDeskEditor, type DeskEditorHandle } from './deskEditor'
+import { hideSelectionToolbar } from './crepePort/toolbar'
 import { createDocumentSelectAllPlugin } from './documentSelection'
 import { createCodeBlockTitlePlugin } from './codeBlockTitlePlugin'
 import { createCodeBlockLatexPreviewPlugin } from './codeBlockLatexPreview'
@@ -1365,6 +1366,16 @@ watch(
 watch(
   () => props.tocDisplay,
   () => applyGeneratedTocDisplay()
+)
+
+watch(
+  () => props.selectionToolbar,
+  (enabled) => {
+    // 关掉开关时立刻收起已显示的浮条：`shouldShow` 只在编辑器更新时重算，
+    // 光靠它会让上一次选区留下的浮条一直挂到下次编辑器交互（期间仍拦截指针事件）。
+    if (enabled || !deskEditor) return
+    hideSelectionToolbar(deskEditor.editor)
+  }
 )
 
 watch(

@@ -18,9 +18,10 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 
 import { TooltipProvider, tooltipFactory } from '@milkdown/kit/plugin/tooltip'
 import { TextSelection } from '@milkdown/kit/prose/state'
+import { $ctx } from '@milkdown/kit/utils'
 import { createApp, ref, shallowRef, type App, type ShallowRef } from 'vue'
 
-import type { Editor } from '@milkdown/kit/core'
+import { EditorStatus, type Editor } from '@milkdown/kit/core'
 import type { GroupBuilder } from '../utils'
 
 import {
@@ -71,6 +72,26 @@ export interface ToolbarRuntimeOptions {
 }
 
 export const toolbarTooltip = tooltipFactory('CREPE_TOOLBAR')
+
+/**
+ * 由 `ToolbarView` 在装配时登记的控制柄：让外部能立即收起浮条。
+ * （与 `toolbarTooltip` 分开，免得往 ProseMirror 的 plugin spec 里塞非 plugin 字段。）
+ */
+const selectionToolbarControl = $ctx(
+  null as { hide: () => void } | null,
+  'CREPE_TOOLBAR_CONTROL'
+)
+
+/**
+ * 立即收起选区浮条，不等下一次编辑器更新。
+ *
+ * 设置面板把开关关掉时需要它：`shouldShow` 只在编辑器更新时被调用，如果只靠它，
+ * 上一次选区留下的浮条会一直挂到下一次编辑器交互，这期间它仍然会拦截指针事件。
+ */
+export function hideSelectionToolbar(editor: Editor): void {
+  if (editor.status !== EditorStatus.Created) return
+  editor.action((ctx) => ctx.get(selectionToolbarControl.key)?.hide())
+}
 
 class ToolbarView implements PluginView {
   #tooltipProvider: TooltipProvider
@@ -173,8 +194,14 @@ export function toolbar(
   editor
     .config((ctx) => {
       ctx.set(toolbarTooltip.key, {
-        view: (view) => new ToolbarView(ctx, view, config, features, runtime)
+        view: (view) => {
+          const instance = new ToolbarView(ctx, view, config, features, runtime)
+          // 注册「立即收起」控制柄，供 hideSelectionToolbar 使用。
+          ctx.set(selectionToolbarControl.key, { hide: instance.hide })
+          return instance
+        }
       })
     })
+    .use(selectionToolbarControl)
     .use(toolbarTooltip)
 }
