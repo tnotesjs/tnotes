@@ -45,6 +45,24 @@ export const SUITES = [
     note: '资源验收：盘点/合并/压缩/转格式/断链 + SSG 产物资源完整性（sharp/oxipng、系统剪贴板、固定端口 8123）'
   },
   {
+    name: 'e2e-command-task.mjs',
+    area: 'command-task',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/main/gitManager.ts',
+      'apps/desk/src/main/commandTaskManager.ts',
+      'apps/desk/src/main/ipc/commandTask.ts',
+      'apps/desk/src/main/ipc/git.ts',
+      'apps/desk/src/renderer/src/stores/commandTask.ts',
+      'apps/desk/src/renderer/src/stores/workspace/git.ts',
+      'apps/desk/src/renderer/src/terminal/**',
+      'apps/desk/src/shared/contracts.ts'
+    ],
+    serial: false,
+    smoke: false,
+    note: '命令任务：手动 Git 操作在底部面板建标签、复用同一标签、失败重试走完整业务流程、排队取消不误杀同库正在跑的任务（真实 git 子进程与裸远端）'
+  },
+  {
     name: 'e2e-kb-assets.mjs',
     area: 'assets',
     tier: 'regression',

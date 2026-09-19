@@ -56,6 +56,14 @@ export interface GitRunExtras {
   observer?: GitRunObserver
   signal?: AbortSignal
   onSpawn?: GitRunSpawnRegistry
+  /**
+   * 本项**刚进入队列**时回调（还没轮到执行就会触发）。
+   *
+   * 调用方据此在「排队中」也能精确取消这一项：只凭知识库取消会打到当前正在跑的
+   * **另一项**——同库可以有多个任务（后面的在队列里等），那正是必须避免的误杀。
+   * `cancel` 只让这一项失效，不碰任何进程。
+   */
+  onEnqueued?: (operationId: string, cancel: () => void) => void
 }
 
 function runGit(
@@ -785,6 +793,14 @@ export class GitManager {
     const nodes = this.queueNodes.get(knowledgeBaseId) ?? []
     nodes.push(node)
     this.queueNodes.set(knowledgeBaseId, nodes)
+
+    // 入队就已确定身份：调用方在「排队中」也能精确取消这一项（不碰正在跑的另一项）。
+    // extras 可能是工厂（pull 用它推迟读取观察者），这里解析一次只为取入口回调；
+    // 真正的执行仍会在轮到时重新解析。
+    const resolvedAtEnqueue = typeof extras === 'function' ? extras() : extras
+    resolvedAtEnqueue.onEnqueued?.(node.id, () => {
+      node.canceled = true
+    })
 
     const previous = this.operationTails.get(knowledgeBaseId) ?? Promise.resolve()
     const result = previous.then(async () => {

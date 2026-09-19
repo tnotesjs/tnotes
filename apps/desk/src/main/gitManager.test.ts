@@ -291,6 +291,46 @@ describe('取消与队列（确定性）', () => {
     await expect(kb2).resolves.toBeTruthy()
   })
 
+  it('入队即回调 onEnqueued：排队中的项也能被精确取消，不碰正在跑的那一项', async () => {
+    const fake = createExecutor()
+    const { manager } = await ready(fake, ['kb1'])
+
+    // 前任务启动并挂起
+    const fetch = manager.fetch('kb1')
+    await vi.waitFor(() => expect(fake.hungFetches('/tmp/kb1').length).toBe(1))
+    const fetchCall = fake.hungFetches('/tmp/kb1')[0]
+
+    // 后任务入队：还没轮到执行，但身份与取消入口必须已经拿到
+    let queuedId: string | null = null
+    let cancelQueued: (() => void) | null = null
+    const pull = manager.pull('kb1', {
+      onEnqueued: (id, cancel) => {
+        queuedId = id
+        cancelQueued = cancel
+      }
+    })
+    expect(queuedId).toBeTruthy()
+    expect(cancelQueued).toBeTruthy()
+    // 还没执行：本次 pull 一个命令都没发
+    const pullCommands = fake.calls.filter(
+      (call) => call.root === '/tmp/kb1' && call.args[0] === 'pull'
+    )
+    expect(pullCommands).toHaveLength(0)
+
+    // 精确取消排在后面的这一项：正在跑的 fetch 进程必须原封不动
+    cancelQueued!()
+    expect(fake.hungFetches('/tmp/kb1').length).toBe(1)
+    expect(fake.hungFetches('/tmp/kb1')[0]).toBe(fetchCall)
+
+    // 前任务正常完成，被取消的 pull 永不执行
+    fake.closeHung([fetchCall], 0)
+    await expect(fetch).resolves.toBeTruthy()
+    await expect(pull).rejects.toThrow(/取消/)
+    expect(
+      fake.calls.filter((call) => call.root === '/tmp/kb1' && call.args[0] === 'pull')
+    ).toHaveLength(0)
+  }, 20000)
+
   it('同库先后：取消排队中的后任务，不影响前任务，且后任务永不启动', async () => {
     const fake = createExecutor()
     const { manager } = await ready(fake, ['kb1'])

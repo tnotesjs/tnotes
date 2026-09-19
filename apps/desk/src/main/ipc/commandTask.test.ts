@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { commandTaskManager } from '../commandTaskManager'
-import { ensureExecution, runGitTask } from './commandTask'
+import { ensureExecution, cancelRunningExecution, runGitTask } from './commandTask'
 
 import type { CommandTaskDto } from '../../shared/contracts'
 
@@ -24,6 +24,7 @@ const { gitManagerMock } = vi.hoisted(() => ({
     publish: vi.fn(),
     cancelRunningOperation: vi.fn(() => true),
     cancelQueuedOperation: vi.fn(() => true),
+    getRunningOperationId: vi.fn((): string | null => null),
     find: vi.fn(() => null),
     list: vi.fn(() => [])
   }
@@ -60,13 +61,27 @@ vi.mock('../workspaceManager', () => ({
 
 const manager = commandTaskManager
 
+// 顶层钩子：所有 describe 共用同一份单例，重置必须对所有用例生效
+// （挂在某一个 describe 里时，别的 describe 的用例会带着上一轮实现与历史跑）。
+beforeEach(() => {
+  // runGitTask 用的是模块单例：必须操作同一个实例，否则状态永远不变
+  manager.dispose()
+  // reset（不是 clear）：clearAllMocks 只清调用历史，上一用例的 mockImplementation
+  // 会留到这一用例，制造出"实现残留"的假象。
+  vi.resetAllMocks()
+  gitManagerMock.refresh.mockResolvedValue([])
+  gitManagerMock.cancelRunningOperation.mockReturnValue(true)
+  gitManagerMock.cancelQueuedOperation.mockReturnValue(true)
+  gitManagerMock.find.mockReturnValue(null)
+  gitManagerMock.list.mockReturnValue([])
+  // null = 该知识库当前没有运行项（排队中的项据此被正确识别）
+  gitManagerMock.getRunningOperationId.mockReturnValue(null)
+})
+
 describe('命令任务的业务结果映射', () => {
   let handle: ReturnType<typeof manager.claimHandle>['handle']
 
   beforeEach(() => {
-    // runGitTask 用的是模块单例：必须操作同一个实例，否则状态永远不变
-    manager.dispose()
-    vi.clearAllMocks()
     handle = manager.claimHandle({
       knowledgeBaseId: 'kb1',
       knowledgeBaseName: 'TNotes.a',
@@ -161,6 +176,102 @@ describe('同一运行只执行一次', () => {
 
     expect(calls).toBe(1)
     expect(manager.list()[0].status).toBe('done')
+  })
+
+  it('取消要带上本轮的队列身份，不能按知识库盲取消', async () => {
+    manager.dispose()
+    const fetchHandle = manager.claimHandle({
+      knowledgeBaseId: 'kb1',
+      knowledgeBaseName: 'TNotes.a',
+      kind: 'git-fetch',
+      title: '获取远端更新',
+      cwd: repoRoot
+    }).handle
+
+    // 入队时执行层应记下这一项的身份；第一条命令出现表示「已开始执行」。
+    // 随后驱动**真实的取消处理器**（先标取消中，再终止本轮）。
+    let release: (value: unknown) => void = () => {}
+    gitManagerMock.fetch.mockImplementation(
+      async (
+        _kb: string,
+        _background?: boolean,
+        extras?: {
+          observer?: { commandLine(line: string): void }
+          onEnqueued?: (id: string, cancel: () => void) => void
+        }
+      ) => {
+        // 推迟一个微任务：ensureExecution 是在 runGitTask 返回 promise 之后才把
+        // 本轮登记进 runningExecutions 的，取消必须发生在登记之后。
+        await Promise.resolve()
+        extras?.onEnqueued?.('op-42', () => {})
+        // 已经在跑：gitManager 把这一项标成当前运行项，并产生了第一条命令
+        gitManagerMock.getRunningOperationId.mockReturnValue('op-42')
+        extras?.observer?.commandLine('git fetch --prune')
+        cancelRunningExecution(fetchHandle.id, fetchHandle.run)
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      }
+    )
+
+    const running = ensureExecution(fetchHandle, 'git-fetch', 'kb1')
+    await vi.waitFor(() =>
+      expect(gitManagerMock.cancelRunningOperation).toHaveBeenCalledWith('kb1', 'op-42')
+    )
+    // 已经在跑：取消不提前结算，本轮还没返回时仍是「取消中」
+    expect(manager.list().find((item) => item.kind === 'git-fetch')?.status).toBe('canceling')
+    release(ok(false))
+    await running
+
+    // 终态由 runGitTask 在本轮返回之后结算
+    expect(manager.list().find((item) => item.kind === 'git-fetch')?.status).toBe('canceled')
+  })
+
+  it('排队中的项被取消：只让这一项失效，不碰同库正在跑的另一项，并立即结算', async () => {
+    manager.dispose()
+    const queuedHandle = manager.claimHandle({
+      knowledgeBaseId: 'kb1',
+      knowledgeBaseName: 'TNotes.a',
+      kind: 'git-pull',
+      title: '拉取更新',
+      cwd: repoRoot
+    }).handle
+
+    // 模拟「已入队但在排队」：onEnqueued 触发后一直不产生任何命令
+    let queuedCancelCalled = false
+    let release: (value: unknown) => void = () => {}
+    let enqueued: () => void = () => {}
+    const enqueuedSignal = new Promise<void>((resolve) => {
+      enqueued = resolve
+    })
+    gitManagerMock.pull.mockImplementation(
+      async (_kb: string, extras?: { onEnqueued?: (id: string, cancel: () => void) => void }) => {
+        await Promise.resolve()
+        extras?.onEnqueued?.('op-99', () => {
+          queuedCancelCalled = true
+        })
+        enqueued()
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      }
+    )
+
+    const running = ensureExecution(queuedHandle, 'git-pull', 'kb1')
+    // 等它真的入队（onEnqueued 触发）再取消
+    await enqueuedSignal
+    cancelRunningExecution(queuedHandle.id, queuedHandle.run)
+
+    // 排队取消：只让该项失效，**不**调用按知识库的取消（那会误杀别人）
+    expect(queuedCancelCalled).toBe(true)
+    expect(gitManagerMock.cancelRunningOperation).not.toHaveBeenCalled()
+    // 取消已受理：进入「取消中」，等轮到时以「已取消」立即结算
+    expect(manager.list().find((item) => item.kind === 'git-pull')?.status).toBe('canceling')
+
+    // 排队项轮到时 gitManager 以「已取消」拒绝 → 任务结算 canceled
+    release(Promise.reject(new Error('操作已取消')))
+    await running
+    expect(manager.list().find((item) => item.kind === 'git-pull')?.status).toBe('canceled')
   })
 })
 

@@ -44,12 +44,26 @@ const runningExecutions = new Map<
   string,
   {
     cancel: () => void
+    /** 这一轮的 git 操作是否已经离开队列开始执行（决定取消要不要等进程 close） */
+    started: boolean
     promise: Promise<void>
   }
 >()
 
 function executionKey(taskId: string, run: number): string {
   return `${taskId}::${run}`
+}
+
+/**
+ * 请求取消一次正在执行的运行（与 IPC 取消处理器**同一条**路径）。
+ *
+ * 单独抽出来是为了让测试能驱动真实的取消处理逻辑，而不是复制一份判断：
+ * 复制出来的那份只能证明测试自己是对的。
+ */
+export function cancelRunningExecution(taskId: string, run: number): void {
+  if (!runningExecutions.has(executionKey(taskId, run))) return
+  commandTaskManager.reportStage(taskId, run, 'canceling', '正在停止…')
+  runningExecutions.get(executionKey(taskId, run))?.cancel()
 }
 
 /** 请求渲染端展开面板并定位任务（手动操作立即展开；后台失败由界面决定是否展开）。 */
@@ -138,14 +152,56 @@ export async function ensureExecution(
     await existing.promise
     return
   }
+  /**
+   * 本轮在 gitManager 队列里的操作身份与「只让这一项失效」的入口。
+   *
+   * 同一知识库的队列是**串行**的，因此同库可以有多个命令任务：后面那个任务的
+   * git 操作在 gitManager 里排队，`runningExecutions` 里却已经是「执行中」。
+   * 取消它若只按知识库取消，`cancelRunningOperation` 会打到**当前正在跑的那一个**
+   * ——也就是前面的任务，于是"取消后面的任务"把别人的进程杀了。
+   *
+   * 身份在**入队时**就拿到（不必等它开始执行），所以排队中的项也能被精确取消。
+   */
+  let operationId: string | null = null
+  let cancelQueuedNode: (() => void) | null = null
   const execution = {
+    /**
+     * 本轮的 git 操作是否**已经离开队列开始执行**。
+     *
+     * 两种取消的含义完全不同：
+     *  - 还在排队：它没有任何子进程可等，取消只需让这一项失效并立即结算，
+     *    否则「取消中」会一直挂到一个根本不该执行的 fetch 超时；
+     *  - 已经开始：必须只终止这一轮的 spawn，并等进程 close 之后才结算 canceled。
+     */
+    started: false,
     cancel: () => {
-      // 只终止本轮：gitManager 的队列节点只登记了本轮 spawn
-      gitManager.cancelRunningOperation(knowledgeBaseId)
+      // 「已开始执行」的可靠判据：本轮的入队身份**就是** gitManager 当前运行的那一项。
+      // 同库队列串行，因此这一条能准确区分「已经跑起来」与「还在后面排队」。
+      const runningNow = gitManager.getRunningOperationId?.(knowledgeBaseId) ?? null
+      if (execution.started && operationId && runningNow === operationId) {
+        // 已开始执行：只终止这一轮登记的 spawn（身份不匹配则 gitManager 拒绝）
+        gitManager.cancelRunningOperation(knowledgeBaseId, operationId)
+        return
+      }
+      // 还在 gitManager 队列里排队：只让这一项失效，**绝不碰**正在跑的另一项
+      cancelQueuedNode?.()
     },
     promise: Promise.resolve()
   }
-  execution.promise = runGitTask(handleRef, kind, knowledgeBaseId)
+  execution.promise = runGitTask(
+    handleRef,
+    kind,
+    knowledgeBaseId,
+    (id) => {
+      operationId = id
+    },
+    (cancel) => {
+      cancelQueuedNode = cancel
+    },
+    () => {
+      execution.started = true
+    }
+  )
   runningExecutions.set(key, execution)
   try {
     await execution.promise
@@ -163,7 +219,10 @@ export async function ensureExecution(
 export async function runGitTask(
   handleRef: CommandTaskHandle,
   kind: 'git-pull' | 'git-push' | 'git-fetch',
-  knowledgeBaseId: string
+  knowledgeBaseId: string,
+  onOperationId?: (id: string | null) => void,
+  onQueuedCancel?: (cancel: () => void) => void,
+  onStarted?: () => void
 ): Promise<void> {
   try {
     handleRef.stage('precheck', kind === 'git-fetch' ? '检查远端更新' : '检查仓库状态')
@@ -172,15 +231,30 @@ export async function runGitTask(
       kind === 'git-fetch' ? '获取远端更新' : kind === 'git-pull' ? '拉取更新' : '推送更改'
     )
 
-    const observer = {
-      commandLine: (line: string) => handleRef.command(line),
-      output: (stream: 'stdout' | 'stderr', chunk: string) => handleRef.write(stream, chunk)
+    let captured = false
+    const extras = {
+      observer: {
+        commandLine: (line: string) => {
+          handleRef.command(line)
+          // 第一条命令出现 = 本轮已经真正在跑（不是排队）
+          onStarted?.()
+        },
+        output: (stream: 'stdout' | 'stderr', chunk: string): void => handleRef.write(stream, chunk)
+      },
+      // 一入队就拿到身份：排队中被取消时只让这一项失效，不碰正在跑的另一项
+      onEnqueued: (id: string, cancel: () => void) => {
+        if (!captured) {
+          captured = true
+          onOperationId?.(id)
+        }
+        onQueuedCancel?.(cancel)
+      }
     }
 
     let outcome: GitOperationResult
-    if (kind === 'git-fetch') outcome = await gitManager.fetch(knowledgeBaseId, false, { observer })
-    else if (kind === 'git-pull') outcome = await gitManager.pull(knowledgeBaseId, { observer })
-    else outcome = await gitManager.publish(knowledgeBaseId, { observer })
+    if (kind === 'git-fetch') outcome = await gitManager.fetch(knowledgeBaseId, false, extras)
+    else if (kind === 'git-pull') outcome = await gitManager.pull(knowledgeBaseId, extras)
+    else outcome = await gitManager.publish(knowledgeBaseId, extras)
 
     if (!handleRef.isCurrent()) return
     // 取消请求由「取消中」阶段标记；此时 gitManager 已确认子进程退出（它等 close），
@@ -305,10 +379,10 @@ export function registerCommandTask(getWindow: () => BrowserWindow | null): () =
       const key = executionKey(task.id, task.run)
       const execution = runningExecutions.get(key)
       if (execution) {
-        // 运行中：先进入「取消中」，等子进程真正退出后由 runGitTask 结算 canceled。
-        // 这里**不**提前标记终态——否则用户可以在进程还没退出时重试。
-        commandTaskManager.reportStage(task.id, task.run, 'canceling', '正在停止…')
-        execution.cancel()
+        // 进入「取消中」后：已在跑的等子进程 close 再结算；还在排队的等它轮到时
+        // 立即以「已取消」拒绝并结算。两条路径都不在这里提前写终态
+        // ——否则会出现「已取消」与「取消中」两个终态互相覆盖。
+        cancelRunningExecution(task.id, task.run)
         return
       }
       // 尚未开始执行（排队中）：让**这一项**失效即可。绝不终止前面正在跑的操作，

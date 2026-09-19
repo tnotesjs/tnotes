@@ -1,85 +1,68 @@
-# 命令任务修复 · 交接记录（状态：**修复待验证**）
+# 命令任务 · 交接记录（状态：**实现待验收**）
 
-> **当前状态：确定性回归已全绿（11/11 + 7/7），E2E 与原功能回归待完成。**
-> 源码改动 + 测试替身都已修正；下列"已确认事实"与"待验证假设"仍严格区分。
+> **当前状态：确定性回归全绿，命令任务 E2E 15/15 通过。**
+> 三个缺陷都已"先证伪、再修复、再用测试钉住"；**尚未验收**的是原有功能回归（见第六节）。
 
 ## 一、复现命令
 
 ```bash
 cd /Users/huyouda/tnotesjs/tnotes
-pnpm --filter desk exec vitest run src/main/gitManager.test.ts        # 11 passed
-pnpm --filter desk exec vitest run src/main/ipc/commandTask.test.ts   # 7 passed
-pnpm --filter desk exec vitest run                                    # 1445 passed / 165 files
-pnpm --filter desk run lint && pnpm --filter desk run typecheck       # 0 error / 通过
+pnpm --filter desk exec vitest run src/main/gitManager.test.ts       # 17 passed
+pnpm --filter desk exec vitest run src/main/ipc/commandTask.test.ts  # 9 passed
+pnpm --filter desk test                                              # 1453 passed / 165 files / 0 skipped
+pnpm --filter desk lint && pnpm --filter desk typecheck && pnpm format:check
+
+# E2E（需要先构建）
+pnpm --filter desk exec electron-vite build
+node apps/desk/scripts/e2e-command-task.mjs                          # 15/15
+node scripts/run-e2e.mjs --only command-task                         # 走 runner
 ```
 
-## 二、红测（2 条）
+## 二、本轮修掉的三个缺陷（都有"撤掉修复即变红"的证据）
 
-| 用例                                                           | 现象     | 已定位到哪一步                                                                                        |
-| -------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------- |
-| `同库先后：取消排队中的后任务，不影响前任务，且后任务永不启动` | 超时 5s  | 卡在最后一步"队列已释放：后续 fetch 能执行"——前两步（前任务完成、排队项被跳过且调用数不变）**已通过** |
-| `dispose 终止所有在跑的进程并等队列收敛`                       | 超时 15s | `dispose()` 未被 resolve；假线程的 `periodicFetchTimer`/`operationTails` 可能仍挂着                   |
+| #   | 缺陷                                              | 影响                                                                                     | 钉住它的测试                                                                             |
+| --- | ------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 1   | `publishRepository` 的 `commit` 调用漏传 `extras` | commit 阶段收不到取消信号（取消 push 时 commit 会跑到底），输出也进不了面板              | `gitManager.test.ts`：add/commit/push 都收到 extras；取消发生在 commit 阶段时不 push     |
+| 2   | `refresh()` 不检查 `disposed`                     | 退出时收尾的 best-effort 刷新会在 `dispose()` 排空后**再派生**一个没人管、没人杀的子进程 | `gitManager.test.ts`：退出开始后刷新不再派生进程（含"退出前会派生"的对照）               |
+| 3   | 取消同库某个任务时**不带队列身份**                | 同库有两个任务（后者在 gitManager 队列里排队）时，取消后者会**误杀**正在跑的前者         | `commandTask.test.ts` 两条 + `gitManager.test.ts` 的 `onEnqueued` 用例；E2E 侧见第五节注 |
 
-## 三、已确认事实（有测试或代码为证）
+缺陷 3 的修法：`gitManager.enqueue` 新增 `onEnqueued(operationId, cancel)` 回调（**入队时**就给出身份），
+命令任务执行层据此在"排队中"也能精确取消这一项；已开始执行的才走
+`cancelRunningOperation(kb, operationId)` 并等进程 close 结算。
 
-1. **跨库隔离成立**：`跨库并行：取消一个库的运行，另一个库的进程不受影响` ✅
-   —— 只关闭 kb1 的挂起调用，kb2 仍挂着并最终正常完成。
-2. **取消绑定到具体队列项**：`同库多任务：取消绑定到具体正在运行的那一项（身份不匹配则拒绝）` ✅
-   —— `cancelRunningOperation(kb, 'op-不存在')` 返回 false 且不动进程；传真实 `operationId` 才取消。
-3. **abort 与 close 分离**：`abort 与 close 分离：abort 后进程未退出前不得算结束` ✅
-   —— abort 后 30ms 仍 `settled === false`、挂起调用仍在；手动 close 后才 reject。
-4. **业务结果映射**：`本地有未提交变更时 pull 返回 conflict，而不是抛错` ✅
-   —— `left=ahead / right=behind` 的顺序已核对；mock 需 `upstream` 存在才进入该分支。
-5. **排队取消不误杀前任务**：该用例的**前半段已通过**（前任务正常完成、排队项从未启动、调用数不变）。
-6. 源码改动（见第五节）通过 `typecheck`；全量单测此前为 1432 passed。
-7. **已修掉一个真实缺陷**：被取消的操作原先也会触发 `refreshRepository`，而该刷新（含 fetch）
-   可能挂住 → 队列尾永不收敛。现改为 `if (node.canceled) return`。
+## 三、取消语义（已确认事实）
 
-## 四、待验证假设（**不是结论**）
+1. **排队取消只让该项失效**：不终止正在跑的前一项，也不碰其他知识库。
+2. **运行中取消绑定身份**：`cancelRunningOperation(kb, operationId)` 身份不匹配即拒绝。
+3. **终态只在进程 close 之后**：abort 只发终止信号，此时仍是「取消中」、不可重试。
+4. **排队项的取消在轮到时立即结算**，不会挂在「取消中」等一个根本不该执行的操作超时。
+5. **被取消的操作不做自动刷新**，避免一次挂住的刷新把队列尾拖住。
 
-- **假设 A**：那 2 条红测仍属测试装置问题（假执行器/初始化时序），源码无需再改。
-  **反证方向**：`cancelQueuedOperation` 标记的后继 `pull` 在 rejecting 时若走 `cancelQueuedOperation`
-  分支之外的路径，可能仍有刷新或尾部不收敛。**需按下方"下一步"逐步验证**。
-- **假设 B**：`dispose()` 超时只是测试环境残留计时器，不影响生产退出。
-  **反证方向**：真实应用里若有挂起的后台 refresh，`dispose()` 同样可能长时间不返回。
-- **假设 C**：源码修复（P1-1…P1-5）语义正确。**已由 5 条通过用例部分支持，但未全覆盖。**
+## 四、E2E 覆盖（`scripts/e2e-command-task.mjs`，真实 git 子进程 + 裸远端）
 
-## 五、当前改动（未提交）
+- T0–T1：知识库发现、Git 状态就绪、底部面板可打开
+- T2：拉取 → 面板出现命令任务标签，显示实际命令行与真实输出，成功结算
+- T3：推送 → 未提交改动被提交并**真的推到裸远端**，工作区干净
+- T4：同一 (知识库, 操作) 只有**一个**标签，重复执行不新增
+- T5：远端不可达 → 标 failed（不是成功）；恢复后**重试**把本地提交真的推上去、run 递增、不新增标签
+- T6：全程无未捕获异常
 
-源码（`apps/desk/src/`）：
+## 五、明确未覆盖（不要当成已验）
 
-| 文件                                                 | 改动                                                                                                                                                                                                                                                                                                                                                         |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `main/gitManager.ts`                                 | 删除全局 `activeKills`/`killThisOperation`；改为**按队列项**节点（`QueueNode.id`）；`cancelQueuedOperation(kb)` 只让排队项失效、`cancelRunningOperation(kb, operationId?)` 精确取消；`whenQueueIdle(kb)`；`disposeKills` 仅用于退出；`enqueue` 返回 `{ result, node }`；extras 支持工厂（执行时求值）；取消的操作不触发刷新；构造函数注入 `execute` 便于测试 |
-| `main/ipc/commandTask.ts`                            | 整文件重写：`runningExecutions`（同 `taskId::run` 只启动一次）、`ensureExecution`、`runGitTask` 做业务结果映射（`conflict` → failed）、取消先进入 `canceling` 并等 close 结算、重试改为发 `commandTaskRetryRequested` 由渲染端重跑；IDE 启动任务                                                                                                             |
-| `main/commandTaskManager.ts`                         | `claimHandle()`/`claim()`（DTO 与句柄分离）、`canceled()`、`canceling` 阶段与状态、`isActive` 公开                                                                                                                                                                                                                                                           |
-| `main/ipc/git.ts`                                    | Git 三个通道带可选 `taskId`；IDE 启动接任务                                                                                                                                                                                                                                                                                                                  |
-| `main/index.ts`、`main/ipc.ts`、`main/ipc/shared.ts` | 注册/清理；zod 错误响应改为纯数据（否则不可克隆）                                                                                                                                                                                                                                                                                                            |
-| `shared/contracts.ts`、`preload/index.ts`            | `canceling` 阶段/状态、`onRetryRequested`、`commandTaskRetryRequested`                                                                                                                                                                                                                                                                                       |
-| 删除                                                 | `main/git.ts`（死代码，无任何导入）                                                                                                                                                                                                                                                                                                                          |
+- **E2E 没有断言"取消排队任务不误杀同库正在跑的"**：要稳定复现"同库两任务、后者在队列里排队"，
+  就得让前者的 fetch 一直挂着；任何真实远端都会自己失败（实测不可路由地址约 5s），窗口太窄，
+  硬写会变成碰运气。该语义由第三、四节的两条单测**确定性**覆盖（已证伪）。
+- **超时路径**：`gitManager` 的 `/超时/` → `timeout` 映射有单测，但没有端到端等待 60s 超时。
+- **保存失败不得写 Git**：`publishWithSave` 的"保存失败 → 结束任务、不执行 Git"逻辑在渲染端，
+  本轮没有补渲染端断言。
+- **后台定时 fetch 失败入口**：未端到端验证。
 
-渲染端：`stores/commandTask.ts`（canceling 视为活动、retry 只发请求）、`stores/workspace/git.ts`（`publishWithSave` 完整流程 + `retryCommandTask`）、`stores/workspace/index.ts`、`App.vue`（接重试请求）、`terminal/CommandTaskPane.vue`（取消中禁用重试）、`terminal/TerminalPanel.vue`。
+## 六、仍待验收（原有功能回归）
 
-测试：`main/gitManager.test.ts`（新增 6 条确定性用例，9/11 通过）。
+命令任务这轮改动碰了 `main/gitManager.ts` 与 `main/ipc/*`，需要回归确认没有副作用：
 
-## 六、剩余验收项
+1. 交互式终端（新建/切换/关闭、cwd 绑定）仍正常。
+2. 外部修改文件后 Desk 能感知、未保存冲突处理不变。
+3. 打开/切换知识库、资源面板、历史版本等原有流程不受 `refresh` 守卫影响。
 
-已完成：确定性回归（`gitManager.test.ts` 11 + `commandTask.test.ts` 7）、门禁（1445 tests / 0 lint / typecheck / prettier）。
-
-仍待完成：
-
-1. **保存失败后的推送重试**：渲染端 `publishWithSave` 已实现"保存失败 → 结束任务、不执行 Git"，但**未端到端验证**；"保存仍失败不得写 Git" 需一条断言（可在 `commandTask.test.ts` 里对 `publish` 是否被调用做断言）。
-2. **重复点击只执行一次**：已由 `ensureExecution` 的并发断言覆盖（3 次并发 → 1 次调用）；UI 层"连续点击"未端到端跑。
-3. **commit 阶段的输出与取消**：`publishRepository` 的 `add`/`commit`/`push` 已接 extras，**未验证**。
-4. E2E：超时端到端、推送全流程、重试、后台失败入口。
-5. 原有功能回归：交互式终端、文件外部修改、未保存冲突处理。
-
-## 七、下一步（按顺序，避免再绕）
-
-1. 在 `同库先后` 用例里，把"后续 fetch 能执行"这一步拆开观察：先断言 `whenQueueIdle('kb1')` 能返回，
-   再断言新 fetch 被调用。若 `whenQueueIdle` 不返回，说明**尾部仍被某次 refresh 拖住**，
-   此时查 `cancelQueuedOperation` 路径上的 `pull` 是否真的走了 `node.canceled` 分支
-   （可在 `enqueue` 的 `if (node.canceled) throw` 处临时计数，**不要**用静默窗口猜）。
-2. `dispose` 用例：确认 `periodicFetchTimer` 与 `operationTails` 都由 `dispose()` 收敛；
-   如仍是环境残留，用 `vi.useFakeTimers()` 或在断言前 `await manager.whenQueueIdle(id)`。
-3. 之后按第六节 2–4 补 `commandTask` 层回归，再做 5–7。
+跑法：`node scripts/run-e2e.mjs --smoke`（冒烟核心集）后再按需全量；`--since <ref>` 可选相关套件。
