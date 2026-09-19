@@ -801,23 +801,15 @@ export class GitManager {
         }
       }
       const resolved = typeof extras === 'function' ? extras() : extras
+      // 一进队列就已被取消（信号已中止 / 排队期间被取消）：直接拒绝，不执行任何命令。
+      // 原先这里只是 abort 自己的 controller，而此刻还没有任何子进程登记，
+      // 于是操作照常执行 —— 取消请求被完全忽略。
+      if (node.canceled || resolved.signal?.aborted) {
+        node.canceled = true
+        throw new Error('操作已取消')
+      }
       // 调用方的取消信号与本次项的信号合并：任一触发都终止本项的子进程
-      await new Promise<void>((resolve) => {
-        if (node.canceled) {
-          controller.abort()
-          resolve()
-          return
-        }
-        if (resolved.signal) {
-          if (resolved.signal.aborted) {
-            controller.abort()
-            resolve()
-            return
-          }
-          resolved.signal.addEventListener('abort', () => controller.abort(), { once: true })
-        }
-        resolve()
-      })
+      resolved.signal?.addEventListener('abort', () => controller.abort(), { once: true })
       try {
         return await operation(repository, {
           ...resolved,

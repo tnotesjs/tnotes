@@ -387,3 +387,23 @@ describe('业务结果映射（明确失败但不抛错的场景）', () => {
     expect(result.message).toMatch(/提交|处理/)
   })
 })
+
+describe('推送阶段的观察者与取消（commit 阶段）', () => {
+  // TODO(handoff)：这条尚未打通——假执行器下 publishRepository 正常返回却没有跑任何
+  // 命令（readState 未构造出"有可提交内容"的状态）。**未通过，不算验证**。
+  // 已确认相关产品缺口并修复：enqueue 现在会拒绝"入队即已中止"的信号（见下一条用例）。
+  it.skip('add / commit / push 都收到 observer，输出能在 commit 阶段被看到', () => {})
+
+  it('已中止的信号会让 commit 阶段的操作直接以取消结束', async () => {
+    const fake = createExecutor()
+    const manager = new GitManager(fake.executor)
+    manager.configure([descriptor('kb1')])
+    await manager.whenQueueIdle('kb1')
+
+    const controller = new AbortController()
+    controller.abort()
+    await expect(manager.publish('kb1', { signal: controller.signal } as never)).rejects.toThrow(
+      /取消|退出/
+    )
+  })
+})
