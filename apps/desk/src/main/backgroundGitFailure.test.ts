@@ -91,3 +91,26 @@ describe('后台 Git 失败 → 可见的命令任务', () => {
     expect(failedOf('git-fetch')).toHaveLength(2)
   })
 })
+
+describe('执行层输出截断的信息通路', () => {
+  it('累加执行层丢弃的字节数，并进入任务 DTO（面板据此提示）', () => {
+    manager.dispose()
+    const handle = manager.claimHandle({
+      knowledgeBaseId: 'kb1',
+      knowledgeBaseName: 'TNotes.a',
+      kind: 'git-fetch',
+      title: '获取远端更新',
+      cwd: '/kb'
+    }).handle
+
+    expect(manager.list()[0].truncatedBytes).toBe(0)
+    handle.addTruncated(1024)
+    handle.addTruncated(2048)
+    // 非法值忽略（不因为一次坏上报把计数弄乱）
+    handle.addTruncated(0)
+    handle.addTruncated(-5)
+    handle.addTruncated(Number.NaN)
+
+    expect(manager.list()[0].truncatedBytes).toBe(3072)
+  })
+})

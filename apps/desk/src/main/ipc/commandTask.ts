@@ -279,7 +279,10 @@ export async function runGitTask(
     const extras = {
       observer: {
         commandLine: (line: string) => handleRef.command(line),
-        output: (stream: 'stdout' | 'stderr', chunk: string): void => handleRef.write(stream, chunk)
+        output: (stream: 'stdout' | 'stderr', chunk: string): void =>
+          handleRef.write(stream, chunk),
+        // 执行层为限制内存丢弃了输出：把丢弃量告诉面板，用户能看到"有输出被丢"
+        outputTruncated: (droppedBytes: number): void => handleRef.addTruncated(droppedBytes)
       },
       // 一入队就拿到身份：排队中被取消时只让这一项失效，不碰正在跑的另一项
       onEnqueued: (id: string, cancel: () => void) => {

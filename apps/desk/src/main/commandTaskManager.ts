@@ -24,6 +24,13 @@ export interface CommandTaskHandle {
   write(stream: 'stdout' | 'stderr', chunk: string): void
   /** 记录实际执行的命令行（仅用于展示） */
   command(line: string): void
+  /**
+   * 报告**执行层**为限制内存丢弃的输出字节数。
+   *
+   * 与面板自己的日志上限是两件事：面板上限管不到执行期间累积的 Buffer，
+   * 但对用户来说都是"有输出被丢弃"，所以累加到同一个计数里展示。
+   */
+  addTruncated(bytes: number): void
   /** 自己是否仍是该任务的最新一轮运行 */
   isCurrent(): boolean
   /** 是否已收到取消请求（用于决定结算成 canceled 还是 failed） */
@@ -351,7 +358,8 @@ export class CommandTaskManager {
       canceled: () => Boolean(this.tasks.get(taskId)?.cancelRequested),
       stage: (stage, label) => this.setStage(taskId, run, stage, label),
       write: (stream, chunk) => this.appendLog(taskId, run, stream, chunk),
-      command: (line) => this.setCommand(taskId, run, line)
+      command: (line) => this.setCommand(taskId, run, line),
+      addTruncated: (bytes) => this.addTruncated(taskId, run, bytes)
     }
   }
 
@@ -379,6 +387,15 @@ export class CommandTaskManager {
       status,
       stageLabel: label ?? stage
     }
+    this.emit(record)
+  }
+
+  /** 累加执行层丢弃的字节数（不只是面板自己的截断）。 */
+  private addTruncated(taskId: string, run: number, bytes: number): void {
+    const record = this.tasks.get(taskId)
+    if (!record || record.dto.run !== run || !Number.isFinite(bytes) || bytes <= 0) return
+    record.truncated += bytes
+    record.dto = { ...record.dto, truncatedBytes: record.truncated }
     this.emit(record)
   }
 

@@ -281,6 +281,43 @@ describe('同一运行只执行一次', () => {
   })
 })
 
+describe('执行层输出截断', () => {
+  it('observer 上报的丢弃量会进入任务（面板可提示"有输出被丢弃"）', async () => {
+    manager.dispose()
+    const handle = manager.claimHandle({
+      knowledgeBaseId: 'kb1',
+      knowledgeBaseName: 'TNotes.a',
+      kind: 'git-fetch',
+      title: '获取远端更新',
+      cwd: repoRoot
+    }).handle
+
+    // 执行层（runGit）在超过缓存上限时通过 observer.outputTruncated 上报
+    gitManagerMock.fetch.mockImplementation(
+      async (
+        _kb: string,
+        _background?: boolean,
+        extras?: {
+          observer?: {
+            outputTruncated?(dropped: number): void
+            output(stream: 'stdout' | 'stderr', chunk: string): void
+          }
+        }
+      ) => {
+        extras?.observer?.output('stdout', 'keep me\n')
+        extras?.observer?.outputTruncated?.(4096)
+        return ok(false)
+      }
+    )
+
+    await runGitTask(handle, 'git-fetch', 'kb1')
+
+    const task = manager.list().find((item) => item.id === handle.id)
+    expect(task?.status).toBe('done')
+    expect(task?.truncatedBytes).toBe(4096)
+  })
+})
+
 describe('保存阶段取消（任务还没进 Git 队列）', () => {
   it('取消停在保存阶段的推送：不按知识库取消任何 Git 队列项，同库其他任务不受影响', async () => {
     manager.dispose()

@@ -50,6 +50,13 @@ export interface GitRunObserver {
   /** 实际执行的命令行（展示用，不重放） */
   commandLine?(line: string): void
   output(stream: 'stdout' | 'stderr', chunk: string): void
+  /**
+   * 运行期间为限制内存丢弃了最旧的输出时上报（保留必要的截断信息）。
+   *
+   * 这是**执行层**的缓存上限，与面板自己的日志上限是两回事：面板上限管不到
+   * 这里累积的 Buffer（一次大输出会在任务面板之外把主进程内存吃满）。
+   */
+  outputTruncated?(droppedBytes: number): void
 }
 
 export interface GitRunExtras {
@@ -75,101 +82,109 @@ export function runGit(
   const { observer, signal, onSpawn } = extras
   observer?.commandLine?.(formatCommandLine(args))
   return new Promise((resolve, reject) => {
+    const detached = process.platform !== 'win32'
     const child = spawn(gitExecutable(), args, {
       cwd: rootPath,
-      env: {
-        ...process.env,
-        GIT_TERMINAL_PROMPT: '0',
-        LC_ALL: 'C'
-      },
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
-      // 自成进程组：git 会再 fork 出 git-remote-http 之类的孙子进程，
-      // 只杀直接子进程的话它们会活下来（还会继续占着管道，见下面 terminate）
-      detached: process.platform !== 'win32'
+      // 自成进程组：git 会再 fork 出 git-remote-http 之类的孙子进程。
+      // 它们会**直接继承** stdout/stderr 管道，只杀直接子进程就会留下它们。
+      detached
     })
-    // Accumulate chunks and join once — template-literal appends are O(n²)
-    // and a large `git status` (tens of thousands of changes) would block the
-    // main process for seconds.
+
+    // ── 运行期间的输出缓存：必须有上限 ──
+    // 这里累积的是 Buffer，任务面板自己的日志上限管不到；一次大输出
+    // （几十万条变更的 status）会把主进程内存吃满。只保留最近的，并记录丢弃量。
+    const MAX_BUFFER_BYTES = 2 * 1024 * 1024
     const stdoutChunks: Buffer[] = []
     const stderrChunks: Buffer[] = []
-    const cap = (text: string): string => text.slice(-2 * 1024 * 1024)
+    let stdoutBytes = 0
+    let stderrBytes = 0
+    let droppedBytes = 0
+    const pushChunk = (into: Buffer[], chunk: Buffer, currentBytes: number): number => {
+      into.push(chunk)
+      let total = currentBytes + chunk.length
+      while (total > MAX_BUFFER_BYTES && into.length > 1) {
+        const removed = into.shift()!
+        total -= removed.length
+        droppedBytes += removed.length
+      }
+      // 单块就超上限：只保留它的尾部
+      if (total > MAX_BUFFER_BYTES && into.length === 1) {
+        const only = into[0]
+        const kept = only.subarray(only.length - MAX_BUFFER_BYTES)
+        droppedBytes += only.length - kept.length
+        into[0] = kept
+        total = kept.length
+      }
+      if (droppedBytes > 0) observer?.outputTruncated?.(droppedBytes)
+      return total
+    }
 
+    // ── 三个必须分开处理的状态 ──
+    /** 主进程（直接子进程）是否已退出：它自己不再持有管道 */
+    let childExited = false
+    /** 停止原因（取消/超时）；null 表示正常完成 */
     let stopReason: 'timeout' | 'canceled' | null = null
     let settled = false
-    let forceTimer: NodeJS.Timeout | null = null
+    let terminated = false
+    let exitCode: number | null = null
+    let timer: NodeJS.Timeout | null = null
+    let drainTimer: NodeJS.Timeout | null = null
+    /** 强杀兜底发出的时间（毫秒）；0 = 还没发出。兜底窗口从这一刻才开始算 */
+    let forceKilledAt = 0
 
-    const cleanup = (): void => {
-      clearTimeout(timer)
-      if (forceTimer) clearTimeout(forceTimer)
+    /** 主进程退出后仍要等输出收尾，但不能无限等：强杀之后再给一个窗口 */
+    const DRAIN_GRACE_MS = 2000
+    /** SIGTERM 之后多久强杀整个进程组 */
+    const FORCE_KILL_MS = 3000
+
+    const killProcessGroup = (sig: NodeJS.Signals): void => {
+      try {
+        if (detached && child.pid) process.kill(-child.pid, sig)
+        else child.kill(sig)
+      } catch {
+        /* 进程组已不存在 */
+      }
+    }
+
+    /**
+     * 终止这一轮：SIGTERM → （FORCE_KILL_MS 后）SIGKILL。
+     *
+     * 幂等；而且**main 进程先退出也不会取消强杀兜底**——孙子进程可能还活着并占着
+     * 管道，那正是需要 SIGKILL 的时候。
+     */
+    const terminate = (): void => {
+      if (terminated) return
+      terminated = true
+      killProcessGroup('SIGTERM')
+      // 幂等：只会排一个强杀兜底。句柄不用存——它到点执行，进程组没了就抛 ESRCH。
+      setTimeout(() => {
+        killProcessGroup('SIGKILL')
+        // 兜底窗口从**强杀发出**之后算起：否则会在 SIGKILL 之前就结算，
+        // 留下还在跑的孙进程（它忽略 SIGTERM，正等着被强杀）。
+        if (settled || forceKilledAt) return
+        forceKilledAt = Date.now()
+        drainTimer = setTimeout(settle, DRAIN_GRACE_MS)
+      }, FORCE_KILL_MS)
+    }
+
+    const clearTimersOnSettle = (): void => {
+      if (timer) clearTimeout(timer)
+      if (drainTimer) clearTimeout(drainTimer)
+      // 注意：强杀兜底**不在这里取消**。主进程先退出时孙子进程可能仍在，
+      // 那正是需要 SIGKILL 的时候；让它到点执行（进程组没了就抛 ESRCH，被吞掉）。
+    }
+
+    const settle = (): void => {
+      if (settled) return
+      settled = true
+      clearTimersOnSettle()
       signal?.removeEventListener('abort', onAbort)
       onSpawn?.unregister?.()
-    }
-
-    const terminate = (): void => {
-      // 杀**整个进程组**：git 的传输子进程（git-remote-http 等）是孙子进程，
-      // 只杀直接子进程会把它们留下。
-      try {
-        if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGTERM')
-        else child.kill('SIGTERM')
-      } catch {
-        /* 已退出 */
-      }
-      // 强杀兜底：不能因为子进程赖着不走而卡住整个操作队列
-      forceTimer = setTimeout(() => {
-        try {
-          if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL')
-          else child.kill('SIGKILL')
-        } catch {
-          /* 已退出 */
-        }
-      }, 3000)
-    }
-
-    const onAbort = (): void => {
-      if (settled || stopReason) return
-      stopReason = 'canceled'
-      terminate()
-    }
-
-    if (signal) {
-      if (signal.aborted) {
-        stopReason = 'canceled'
-        terminate()
-      } else {
-        signal.addEventListener('abort', onAbort, { once: true })
-      }
-    }
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdoutChunks.push(chunk)
-      observer?.output('stdout', chunk.toString('utf8'))
-    })
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderrChunks.push(chunk)
-      observer?.output('stderr', chunk.toString('utf8'))
-    })
-
-    const timer = setTimeout(() => {
-      if (settled || stopReason) return
-      stopReason = 'timeout'
-      terminate()
-    }, timeoutMs)
-
-    child.on('error', (error) => {
-      if (settled) return
-      settled = true
-      cleanup()
-      reject(error)
-    })
-
-    // 以 close 为准：确保子进程**真的退出**（信号发出不等于结束）后才解除忙碌
-    const settle = (code: number | null): void => {
-      if (settled) return
-      settled = true
-      cleanup()
-      const stdout = cap(Buffer.concat(stdoutChunks).toString('utf8'))
-      const stderr = cap(Buffer.concat(stderrChunks).toString('utf8'))
+      const stdout = Buffer.concat(stdoutChunks).toString('utf8')
+      const stderr = Buffer.concat(stderrChunks).toString('utf8')
       if (stopReason === 'timeout') {
         // 超时：保留此前输出，把原因**追加**在既有 stderr 之后（不覆盖原始错误）
         resolve({
@@ -189,14 +204,91 @@ export function runGit(
         })
         return
       }
-      resolve({ code: code ?? 1, stdout, stderr })
+      resolve({ code: exitCode ?? 1, stdout, stderr })
     }
 
-    child.on('close', (code) => settle(code))
-    // **exit 也要结算**：git 的孙子进程（git-remote-http 等）会继承 stdout/stderr，
-    // 即使 git 自己已经退出，管道仍然打开，Node 就不会发 'close'。
-    // 实测只等 'close' 时，超时杀掉 git 之后任务会永远停在「运行中」。
-    child.on('exit', (code) => settle(code))
+    /**
+     * 只有「输出收尾」满足时才结算。
+     *
+     * 正常完成必须等 stdout/stderr 都结束，否则会丢掉尾部输出；
+     * 终止场景下若孙子进程赖着不走（管道不关），等 DRAIN_GRACE_MS 就结算
+     * ——强杀已经发出，不能把队列永远挂着。
+     *
+     * 注意这里**不能**用"检查过就不再进来"的守卫：'end' 可能先到（此时进程还没
+     * 退出）、'exit' 后到，第二次进来才是真正该结算的时刻。`settle` 自身幂等。
+     */
+    const checkDrain = (): void => {
+      if (settled) return
+      const bothEnded = Boolean(child.stdout.readableEnded && child.stderr.readableEnded)
+      if (!bothEnded) {
+        // 只有强杀兜底已经发出之后才有必要限时；否则会早于 SIGKILL 结算，
+        // 把忽略 SIGTERM 的孙进程留成孤儿。
+        if (forceKilledAt && !drainTimer) drainTimer = setTimeout(settle, DRAIN_GRACE_MS)
+        return
+      }
+      // exit 或终止之后才结算；否则等 'close'（正常完成的最后一步）
+      if (childExited || stopReason) settle()
+    }
+
+    const onAbort = (): void => {
+      if (settled || stopReason) return
+      stopReason = 'canceled'
+      terminate()
+      checkDrain()
+    }
+
+    // ── 让调用方（gitManager.dispose / 应用退出）能终止这个子进程 ──
+    // 少了这一步，退出时谁也碰不到正在跑的 git，孙子进程会留下来卡住退出。
+    // 注册的终止器要覆盖"注册之前就已经在终止"的窗口：terminate 幂等，直接调一次。
+    onSpawn?.register(terminate)
+
+    if (signal) {
+      if (signal.aborted) {
+        stopReason = 'canceled'
+        terminate()
+      } else {
+        signal.addEventListener('abort', onAbort, { once: true })
+      }
+    }
+
+    const trackStream = (stream: NodeJS.ReadableStream, isStdout: boolean): void => {
+      stream.on('end', checkDrain)
+      stream.on('data', (chunk: Buffer) => {
+        if (isStdout) stdoutBytes = pushChunk(stdoutChunks, chunk, stdoutBytes)
+        else stderrBytes = pushChunk(stderrChunks, chunk, stderrBytes)
+        observer?.output(isStdout ? 'stdout' : 'stderr', chunk.toString('utf8'))
+      })
+    }
+    trackStream(child.stdout, true)
+    trackStream(child.stderr, false)
+
+    timer = setTimeout(() => {
+      if (settled || stopReason) return
+      stopReason = 'timeout'
+      terminate()
+      checkDrain()
+    }, timeoutMs)
+
+    child.on('error', (error) => {
+      if (settled) return
+      settled = true
+      clearTimersOnSettle()
+      signal?.removeEventListener('abort', onAbort)
+      onSpawn?.unregister?.()
+      reject(error)
+    })
+
+    child.on('exit', (code) => {
+      exitCode = code
+      childExited = true
+      // 输出可能还没收尾（孙子进程还在写），等它；正常完成时 'close' 紧随其后
+      checkDrain()
+    })
+    child.on('close', (code) => {
+      exitCode = code
+      childExited = true
+      checkDrain()
+    })
   })
 }
 

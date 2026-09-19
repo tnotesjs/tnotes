@@ -84,7 +84,11 @@ beforeEach(() => {
     configurable: true,
     value: { commandTask: commandTaskApi, git: gitApi }
   })
-  commandTaskApi.claim.mockResolvedValue({ ok: true, value: { id: 't1', run: 1 } })
+  // retryCommandTask 要按 kind 找到完整业务流程，所以任务里必须带 kind
+  commandTaskApi.claim.mockResolvedValue({
+    ok: true,
+    value: { id: 't1', run: 1, kind: 'git-push', knowledgeBaseId: 'kb1' }
+  })
   commandTaskApi.begin.mockResolvedValue({ ok: true, value: true })
   commandTaskApi.reportStage.mockResolvedValue({ ok: true, value: true })
   commandTaskApi.finish.mockResolvedValue({ ok: true, value: undefined })
@@ -145,6 +149,27 @@ describe('推送：保存阶段被取消', () => {
 
     expect(gitApi.publish).not.toHaveBeenCalled()
     expect(commandTaskApi.finish).toHaveBeenCalledWith('t1', 1, 'failed', '保存失败：磁盘只读')
+  })
+
+  it('保存失败 → 重试仍失败：两次都不发生 Git 写操作', async () => {
+    const ctx = makeContext()
+    const git = createGit(ctx)
+    // 第一次与重试都保存失败
+    ctx.saveAllDocuments.mockRejectedValue(new Error('磁盘只读'))
+
+    await git.publishGit('kb1')
+    expect(commandTaskApi.finish).toHaveBeenCalledWith('t1', 1, 'failed', '保存失败：磁盘只读')
+    expect(gitApi.publish).not.toHaveBeenCalled()
+
+    // 用户点重试：走完整业务流程（重新保存），仍然失败
+    await git.retryCommandTask('t1')
+
+    // 关键：两次都没有碰 Git 写操作，且原因仍然可读
+    expect(gitApi.publish).not.toHaveBeenCalled()
+    expect(gitApi.fetch).not.toHaveBeenCalled()
+    expect(gitApi.pull).not.toHaveBeenCalled()
+    expect(commandTaskApi.finish).toHaveBeenCalledTimes(2)
+    expect(commandTaskApi.finish).toHaveBeenLastCalledWith('t1', 1, 'failed', '保存失败：磁盘只读')
   })
 
   it('保存成功且未取消 → 进入 Git，并把这一轮的 run 传给主进程（不得靠认领复活）', async () => {
