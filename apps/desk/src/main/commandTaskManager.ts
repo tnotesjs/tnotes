@@ -81,6 +81,14 @@ function tailWithin(text: string, maxBytes: number): { kept: string; bytes: numb
  *  - 推送回调一律 try/catch：这里常在子进程 data 回调栈里被调用，而窗口销毁时
  *    `webContents.send` 会抛（node-pty 那次的教训）。
  */
+/** 各命令任务种类的默认标题（渲染端与后台失败桥共用同一套）。 */
+export const TASK_TITLES: Record<CommandTaskDto['kind'], string> = {
+  'git-pull': '拉取更新',
+  'git-push': '推送更改',
+  'git-fetch': '获取远端更新',
+  'launch-ide': '启动 IDE'
+}
+
 export class CommandTaskManager {
   private tasks = new Map<string, CommandTaskRecord>()
   /** (知识库, 种类) → 任务 id：重复点击定位已有标签，而不是新建 */

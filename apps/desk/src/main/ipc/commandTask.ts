@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { commandTaskManager } from '../commandTaskManager'
+import { commandTaskManager, TASK_TITLES } from '../commandTaskManager'
 import { gitManager } from '../gitManager'
 import { launchIde } from '../ide'
 import { workspaceManager } from '../workspaceManager'
@@ -23,13 +23,6 @@ const claimSchema = z.object({
   cwd: z.string().min(1).max(4096),
   command: z.string().max(2000).optional()
 })
-
-export const TASK_TITLES: Record<CommandTaskDto['kind'], string> = {
-  'git-pull': '拉取更新',
-  'git-push': '推送更改',
-  'git-fetch': '获取远端更新',
-  'launch-ide': '启动 IDE'
-}
 
 /**
  * 一次运行的取消能力。

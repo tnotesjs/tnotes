@@ -66,7 +66,7 @@ export interface GitRunExtras {
   onEnqueued?: (operationId: string, cancel: () => void) => void
 }
 
-function runGit(
+export function runGit(
   rootPath: string,
   args: string[],
   timeoutMs = 30_000,
@@ -83,7 +83,10 @@ function runGit(
         LC_ALL: 'C'
       },
       stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true
+      windowsHide: true,
+      // 自成进程组：git 会再 fork 出 git-remote-http 之类的孙子进程，
+      // 只杀直接子进程的话它们会活下来（还会继续占着管道，见下面 terminate）
+      detached: process.platform !== 'win32'
     })
     // Accumulate chunks and join once — template-literal appends are O(n²)
     // and a large `git status` (tens of thousands of changes) would block the
@@ -104,15 +107,19 @@ function runGit(
     }
 
     const terminate = (): void => {
+      // 杀**整个进程组**：git 的传输子进程（git-remote-http 等）是孙子进程，
+      // 只杀直接子进程会把它们留下。
       try {
-        child.kill('SIGTERM')
+        if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGTERM')
+        else child.kill('SIGTERM')
       } catch {
         /* 已退出 */
       }
       // 强杀兜底：不能因为子进程赖着不走而卡住整个操作队列
       forceTimer = setTimeout(() => {
         try {
-          child.kill('SIGKILL')
+          if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL')
+          else child.kill('SIGKILL')
         } catch {
           /* 已退出 */
         }
@@ -157,7 +164,7 @@ function runGit(
     })
 
     // 以 close 为准：确保子进程**真的退出**（信号发出不等于结束）后才解除忙碌
-    child.on('close', (code) => {
+    const settle = (code: number | null): void => {
       if (settled) return
       settled = true
       cleanup()
@@ -183,7 +190,13 @@ function runGit(
         return
       }
       resolve({ code: code ?? 1, stdout, stderr })
-    })
+    }
+
+    child.on('close', (code) => settle(code))
+    // **exit 也要结算**：git 的孙子进程（git-remote-http 等）会继承 stdout/stderr，
+    // 即使 git 自己已经退出，管道仍然打开，Node 就不会发 'close'。
+    // 实测只等 'close' 时，超时杀掉 git 之后任务会永远停在「运行中」。
+    child.on('exit', (code) => settle(code))
   })
 }
 
@@ -302,6 +315,14 @@ export class GitManager {
   /** 进程级退出：所有在跑子进程的终止器（只用于 dispose，不参与单任务取消） */
   private disposeKills = new Set<() => void>()
   private autoPushTimers = new Map<string, NodeJS.Timeout>()
+  /** 后台失败上报（由装配方注入，见 onBackgroundFailure） */
+  private backgroundFailureListener:
+    | ((event: {
+        knowledgeBaseId: string
+        kind: 'git-fetch' | 'git-push'
+        message: string
+      }) => void)
+    | null = null
   private periodicFetchTimer: NodeJS.Timeout | null = null
   private assetWritePaused = new Set<string>()
 
@@ -316,6 +337,31 @@ export class GitManager {
   onChanged(listener: (state: GitRepositoryStateDto) => void): () => void {
     this.events.on('changed', listener)
     return () => this.events.off('changed', listener)
+  }
+
+  /**
+   * 后台 Git 操作（定时 fetch、自动推送）失败时的上报入口。
+   *
+   * 后台操作原本只写日志：用户看不到、也没有「查看输出」的入口。接上这条回调后，
+   * 失败会被做成一个**可见的命令任务**，面板据此弹出带「查看输出」的通知。
+   * 由装配方（main/index.ts）注入，避免 GitManager 直接依赖任务层。
+   */
+  onBackgroundFailure(
+    listener: (event: {
+      knowledgeBaseId: string
+      kind: 'git-fetch' | 'git-push'
+      message: string
+    }) => void
+  ): void {
+    this.backgroundFailureListener = listener
+  }
+
+  private reportBackgroundFailure(
+    knowledgeBaseId: string,
+    kind: 'git-fetch' | 'git-push',
+    message: string
+  ): void {
+    this.backgroundFailureListener?.({ knowledgeBaseId, kind, message })
   }
 
   configure(repositories: GitRepositoryDescriptor[]): void {
@@ -401,6 +447,7 @@ export class GitManager {
             knowledgeBaseId,
             message
           })
+          this.reportBackgroundFailure(knowledgeBaseId, 'git-fetch', message)
           const state = await this.refreshRepository(repository)
           return {
             state,
@@ -529,9 +576,11 @@ export class GitManager {
           () => {
             this.autoPushTimers.delete(repository.knowledgeBaseId)
             if (this.assetWritePaused.has(repository.knowledgeBaseId)) return
-            void this.publish(repository.knowledgeBaseId).catch((error) =>
-              deskLog('git:auto-push', 'failed', operationMessage(error))
-            )
+            void this.publish(repository.knowledgeBaseId).catch((error) => {
+              const message = operationMessage(error)
+              deskLog('git:auto-push', 'failed', message)
+              this.reportBackgroundFailure(repository.knowledgeBaseId, 'git-push', message)
+            })
           },
           (override?.idleMinutes ?? 1) * 60_000
         )

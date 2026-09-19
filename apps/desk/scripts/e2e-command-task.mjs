@@ -10,6 +10,7 @@
 // Run: node apps/desk/scripts/e2e-command-task.mjs
 import { _electron } from 'playwright-core'
 import { execFileSync } from 'node:child_process'
+import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -29,12 +30,17 @@ mkdirSync(notes, { recursive: true })
 mkdirSync(profile, { recursive: true })
 mkdirSync(shots, { recursive: true })
 
+// 这台开发机可能设了 http_proxy（实测 http://127.0.0.1:7897）：那会把打到
+// 本地可控服务的请求交给代理，连接行为就不可控了（实测把整个套件挂死）。
+// E2E 里的远端有本地裸仓库、也有本地"不响应"的 HTTP 服务，一律直连。
 const GIT_ENV = {
   ...process.env,
   GIT_AUTHOR_NAME: 'Desk E2E',
   GIT_AUTHOR_EMAIL: 'e2e@tnotes.local',
   GIT_COMMITTER_NAME: 'Desk E2E',
-  GIT_COMMITTER_EMAIL: 'e2e@tnotes.local'
+  GIT_COMMITTER_EMAIL: 'e2e@tnotes.local',
+  NO_PROXY: '*',
+  no_proxy: '*'
 }
 function git(...args) {
   return execFileSync('git', args, { encoding: 'utf8', env: GIT_ENV }).trim()
@@ -44,6 +50,30 @@ function inKb(...args) {
 }
 function inRemote(...args) {
   return git('-C', remote, ...args)
+}
+
+/**
+ * 可控的"接受连接但不返回响应"的本地 HTTP 服务。
+ *
+ * 用来把 git 的请求稳定地卡住——不需要不可路由地址、不依赖外网、也不靠碰运气。
+ * 返回它的地址；进程退出前不会自动关闭，但 handle 已 unref，不会拖住 node。
+ */
+async function startHangingRemote() {
+  const server = createServer(() => {
+    // 故意不响应：连接保持打开，git 会一直等
+  })
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  server.unref()
+  const address = server.address()
+  return {
+    url: `http://127.0.0.1:${address.port}/never.git`,
+    // 必须强制断开仍然打开的连接：`close()` 会等它们自然排空，而被杀掉的 git
+    // 留下的连接可能迟迟不关，脚本就会挂在这里（实测踩过）。
+    close: () => {
+      server.closeAllConnections?.()
+      server.close()
+    }
+  }
 }
 
 // ── fixture：一个带裸远端的知识库，初始提交已经推上去，另有一笔未提交改动 ──
@@ -95,9 +125,21 @@ const record = (name, ok, detail = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`)
 }
 
+// 自计时上限（macOS 没有 timeout）：跑飞时必须留下**已通过的部分**而不是静默挂住。
+// 用一个"超时标志"而不是 Promise.race：后者会把主流程包进额外闭包，结构容易出错；
+// 所有等待都走 waitFor，见到标志立刻返回 null，主流程自然走到收尾。
+const HARD_LIMIT_MS = 8 * 60_000
+let hardLimitHit = false
+const hardLimitTimer = setTimeout(() => {
+  hardLimitHit = true
+  console.log(`FAIL  自计时上限 ${HARD_LIMIT_MS}ms 到了，强制收尾`)
+}, HARD_LIMIT_MS)
+hardLimitTimer.unref?.()
+
 async function waitFor(check, timeoutMs = 10000, intervalMs = 120) {
   const deadline = Date.now() + timeoutMs
   for (;;) {
+    if (hardLimitHit) return null
     const value = await check()
     if (value) return value
     if (Date.now() > deadline) return null
@@ -112,6 +154,9 @@ const app = await _electron.launch({
   timeout: 60000,
   env: {
     ...process.env,
+    // 应用内的 git 子进程同样必须直连本地远端（见 GIT_ENV 的说明）
+    NO_PROXY: '*',
+    no_proxy: '*',
     ELECTRON_RUN_AS_NODE: undefined,
     ELECTRON_DISABLE_SANDBOX: '1',
     ELECTRON_DISABLE_SECURITY_WARNINGS: 'true'
@@ -273,12 +318,126 @@ try {
   )
   await page.screenshot({ path: join(shots, '02-retry-done.png') })
 
-  record('T6 全程没有未捕获异常', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 300))
+  // ── T6 失败通知 + 「查看输出」入口 ──
+  // 面板对**任何**失败/超时的任务都弹带「查看输出」的通知。这里用一次会失败的
+  // 手动 fetch 来验证这条通知链路（确定、快）。
+  // 后台路径（定时 fetch / 自动推送失败落成可见任务）由 backgroundGitFailure.test.ts
+  // 覆盖：那是主进程内部路径，从界面无法确定触发；它的产物就是"一个 failed 任务"，
+  // 与这里触发通知的形态完全一致。
+  inKb('remote', 'set-url', 'origin', join(fixture, 'no-such-remote.git'))
+  // 用界面上的「获取并拉取」按钮制造失败（真实用户流程：任务 + 错误原文 + 通知）
+  await page.locator('button[aria-label="获取并拉取远端更新"]').click()
+  const failedTask = await waitFor(async () => {
+    const task = await taskOf('git-pull')
+    return task && task.status === 'failed' ? task : null
+  }, 60000)
+  inKb('remote', 'set-url', 'origin', remote)
+  record(
+    'T6 失败会落在一个可见的任务里（不是只写日志）',
+    Boolean(failedTask),
+    failedTask ? `${failedTask.status}: ${failedTask.error?.slice(0, 60)}` : '没有失败任务'
+  )
+  const toast = page.locator('.toast', { hasText: '失败' }).first()
+  const toastShown = await waitFor(async () => (await toast.count()) > 0, 10000)
+  record('T6b 失败弹出通知', Boolean(toastShown))
+  const toastText = toastShown ? await toast.innerText() : ''
+  record(
+    'T6c 通知带「查看输出」入口',
+    toastText.includes('查看输出'),
+    toastText.replace(/\n/g, ' ')
+  )
+  if (toastShown) {
+    await toast.getByText('查看输出').click()
+    const revealed = await waitFor(
+      async () => (await page.locator('.command-task').count()) > 0,
+      5000
+    )
+    record('T6d 点「查看输出」后面板定位到该任务', Boolean(revealed))
+  } else {
+    record('T6d 点「查看输出」后面板定位到该任务', false, '没有通知可点')
+  }
+  await page.screenshot({ path: join(shots, '03-failure-notice.png') })
+
+  // ── T7 超时端到端：保留已有输出，进程关闭后进入 timeout ──
+  // 用"接受连接但不响应"的本地服务稳定卡住 push（不依赖外网/不可路由地址）。
+  // 通知会浮在界面之上挡住点击（实测 T6 的通知让这里 click 超时）：
+  // 等它自己收起，再操作面板。
+  await waitFor(async () => (await page.locator('.toast').count()) === 0, 15000)
+  const hanging = await startHangingRemote()
+  inKb('remote', 'set-url', 'origin', hanging.url)
+  writeFileSync(
+    join(notes, '0042. 有未提交改动.md'),
+    `${noteBody('11111111-1111-4111-8111-111111111111', '有未提交改动')}\n超时测试的一笔\n`
+  )
+  const pushButton = page.locator('button[aria-label="提交并推送当前变更"]')
+  // T6 那次失败 pull 会弹出「GIT 需要处理」（拉取冲突提醒），它挡住后面的点击。
+  // 按产品自己的出口收起来：footer 里的「稍后处理」。
+  const attentionDialog = page.locator('.dialog-backdrop')
+  if ((await attentionDialog.count()) > 0) {
+    console.log(
+      '调试：对话框文本',
+      (await attentionDialog.innerText()).slice(0, 120).replace(/\n/g, ' | ')
+    )
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const later = attentionDialog.locator('footer button', { hasText: '稍后处理' })
+      if ((await later.count()) === 0) break
+      await later.first().click({ force: true, timeout: 5000 })
+      const closed = await waitFor(async () => (await attentionDialog.count()) === 0, 5000)
+      if (closed) break
+      console.log(`调试：第 ${attempt} 次关对话框后仍在`)
+    }
+  }
+  await pushButton.click({ timeout: 10000 })
+  // 先确认它真的跑起来了（有命令行输出），再等它超时
+  const running = await waitFor(async () => {
+    const task = await taskOf('git-push')
+    return task && task.command && task.status === 'running' ? task : null
+  }, 30000)
+  const rowsBeforeTimeout = await page.locator('.command-task-row').allInnerTexts()
+  record(
+    'T7 超时前命令已在执行（能看到实际命令行）',
+    Boolean(running),
+    `${running?.command ?? ''}｜输出 ${rowsBeforeTimeout.length} 行`
+  )
+  // push 的超时是 120s（gitManager 里写死的），加上收尾，窗口要给足
+  const pushStartedAt = Date.now()
+  const timedOut = await waitFor(async () => {
+    const task = await taskOf('git-push')
+    return task && task.status === 'timeout' ? task : null
+  }, 240000)
+  const timeoutMs = Date.now() - pushStartedAt
+  const pushAfterTimeout = await taskOf('git-push')
+  const rowsAtTimeout = await page.locator('.command-task-row').allInnerTexts()
+  record(
+    'T7b 进程关闭后进入 timeout（不是 failed、也不是永远运行中）',
+    Boolean(timedOut),
+    timedOut
+      ? `stage=${timedOut.stageLabel}（等待 ${timeoutMs}ms）`
+      : `status=${pushAfterTimeout?.status} stage=${pushAfterTimeout?.stage} 等待=${timeoutMs}ms error=${pushAfterTimeout?.error?.slice(0, 60)} 日志=${JSON.stringify(rowsAtTimeout.slice(-3))}`
+  )
+  // 超时是"已经结束"：这时再取一次日志，之前保留的输出必须还在
+  const afterTimeoutRows = await page.locator('.command-task-row').allInnerTexts()
+  const timeoutTask = await taskOf('git-push')
+  record(
+    'T7c 超时不清空已有输出（且带上超时原因）',
+    afterTimeoutRows.length >= rowsBeforeTimeout.length &&
+      Boolean(timeoutTask?.error?.includes('超时')),
+    `超时前 ${rowsBeforeTimeout.length} 行 → 超时后 ${afterTimeoutRows.length} 行；原因=${timeoutTask?.error?.slice(0, 60)}`
+  )
+  // 超时后可以重试（不是永久卡在活动状态）
+  const retryButton = page.locator('.command-task-actions button', { hasText: '重试' })
+  record('T7d 超时后可以重试（已进入终态）', (await retryButton.count()) > 0)
+  inKb('remote', 'set-url', 'origin', remote)
+  hanging.close()
+  await page.screenshot({ path: join(shots, '04-timeout.png') })
+
+  record('T8 全程没有未捕获异常', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 300))
 } catch (error) {
   record('T 断言执行', false, error instanceof Error ? error.message : String(error))
   console.log('调试：主进程日志', mainLogs.join('').slice(-2000))
   console.log('调试：页面错误', pageErrors.join(' | ').slice(0, 800))
 } finally {
+  clearTimeout(hardLimitTimer)
   await app.close()
 }
 
