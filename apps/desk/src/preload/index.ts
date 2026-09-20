@@ -405,6 +405,10 @@ const api: DeskApi = {
       return () => ipcRenderer.removeListener(IPC_CHANNELS.previewChanged, listener)
     }
   },
+  clipboard: {
+    setPlainText: (text: string, html?: string) =>
+      invoke<{ text: string; html: string }>(IPC_CHANNELS.clipboardSetPlainText, { text, html })
+  },
   backgroundFailures: {
     list: () => invoke<BackgroundFailureDto[]>(IPC_CHANNELS.backgroundFailureList),
     clear: () => invoke<void>(IPC_CHANNELS.backgroundFailureClear),

@@ -26,6 +26,8 @@ import { $prose } from '@milkdown/kit/utils'
 
 import type { EditorView } from '@milkdown/kit/prose/view'
 
+import { ensureImageCopyPlainText } from './imageCopyText'
+
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
@@ -205,8 +207,15 @@ export const clipboardNewline = $prose(
     new Plugin({
       key: new PluginKey('DESK_CLIPBOARD_NEWLINES'),
       view: (view: EditorView) => {
-        const detach = markCodeCopy(view.dom)
-        return { destroy: detach }
+        const detachCode = markCodeCopy(view.dom)
+        // 同一个挂载点：复制含图片的内容后补 text/plain（见 imageCopyText.ts）
+        const detachImage = ensureImageCopyPlainText(view)
+        return {
+          destroy: () => {
+            detachCode()
+            detachImage()
+          }
+        }
       },
       props: {
         handlePaste: (view: EditorView, event: ClipboardEvent): boolean => {

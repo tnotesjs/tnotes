@@ -9,6 +9,7 @@ import { registerKbFiles } from './ipc/kbFiles'
 import { registerHistory } from './ipc/history'
 import { registerRecovery } from './ipc/recovery'
 import { registerSettings } from './ipc/settings'
+import { registerClipboard } from './ipc/clipboard'
 import { registerCommandTask } from './ipc/commandTask'
 import { registerTerminal } from './ipc/terminal'
 import { registerUpdate } from './ipc/update'
@@ -29,6 +30,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): () => void {
   const offUpdate = registerUpdate(getWindow)
   const offTerminal = registerTerminal(getWindow)
   const offCommandTask = registerCommandTask(getWindow)
+  registerClipboard(getWindow)
 
   return () => {
     offWorkspace()

@@ -663,6 +663,20 @@ export const SUITES = [
     note: '面板容量满额时后台失败仍可见：不占标签、设置里有汇总与真实错误详情、同原因只累加计数'
   },
   {
+    name: 'e2e-image-copy-plain-text.mjs',
+    area: 'editor',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/renderer/src/markdown/imageCopyText.ts',
+      'apps/desk/src/renderer/src/markdown/clipboardNewline.ts',
+      'apps/desk/src/main/ipc/clipboard.ts',
+      'apps/desk/src/renderer/src/editor/markdown/deskImageView.ts'
+    ],
+    serial: false,
+    smoke: false,
+    note: '复制图片时系统剪贴板 text/plain 必须是 alt：单张/无 alt/图文混选/多图/粘回 Desk 全覆盖'
+  },
+  {
     name: 'e2e-packaged-smoke.mjs',
     area: 'packaged',
     tier: 'manual',

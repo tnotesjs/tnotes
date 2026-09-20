@@ -142,6 +142,8 @@ export const IPC_CHANNELS = {
   backgroundFailureClear: 'background-failure:clear',
   /** 仅 E2E（`DESK_E2E_EXPOSE_INTERNALS=1`）可用：注入一条"没有可见任务"的后台失败 */
   backgroundFailureInject: 'background-failure:inject',
+  /** 只把剪贴板的 `text/plain` 换成给定值，**保留** `text/html` 等其它 flavor */
+  clipboardSetPlainText: 'clipboard:set-plain-text',
   commandTaskLog: 'command-task:log',
   commandTaskReveal: 'command-task:reveal',
   gitStateChanged: 'git:state-changed',
@@ -1821,6 +1823,16 @@ export interface DeskApi {
     stop(knowledgeBaseId: string): Promise<DeskResult<PreviewStateDto>>
     list(): Promise<DeskResult<PreviewStateDto[]>>
     onChanged(callback: (state: PreviewStateDto) => void): () => void
+  }
+  clipboard: {
+    /**
+     * 只替换剪贴板里的 `text/plain`，其它 flavor（`text/html` 等）原样保留。
+     *
+     * 为什么必须在主进程做：实测 Electron 的 `clipboard.write({ text })` 会把
+     * `text/html` 一起清掉，必须 `write({ text, html, ... })` 同时给全，所以只有
+     * 主进程才能"读现状 → 连同 html 一起重写"。
+     */
+    setPlainText(text: string, html?: string): Promise<DeskResult<{ text: string; html: string }>>
   }
   backgroundFailures: {
     list(): Promise<DeskResult<BackgroundFailureDto[]>>
