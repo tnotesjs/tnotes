@@ -632,3 +632,35 @@ describe('推送阶段的观察者与取消（commit 阶段）', () => {
     expect(fake.calls.some((call) => call.args[0] === 'push')).toBe(false)
   })
 })
+
+describe('dispose() 不会被单个操作无限拖住', () => {
+  it('队列里有永不结算的操作时，dispose() 仍会在上界内返回', async () => {
+    // CI 上实测过 dispose() 卡在 Promise.allSettled(operationTails) 超过 20s（本地不复现）。
+    // 退出流程不允许被单个操作拖死：这里用一个"永不 resolve"的操作固定住该场景。
+    const manager = new GitManager()
+    manager.configure([
+      {
+        knowledgeBaseId: 'kb-stuck',
+        knowledgeBaseName: 'TNotes.stuck',
+        configId: 'cfg',
+        rootPath: '/tmp/stuck-kb',
+        notes: []
+      } as never
+    ])
+    // 借 enqueue 塞一个永不结算的操作（不依赖真实 git）
+    const never = new Promise<void>(() => {})
+    ;(
+      manager as unknown as {
+        enqueue: (kb: string, op: () => Promise<never>) => unknown
+      }
+    ).enqueue('kb-stuck', () => never as Promise<never>)
+    // 让操作真正开始跑；否则 dispose() 会看到空队列直接返回，测不到这条上界
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    const started = Date.now()
+    await manager.dispose()
+    const elapsed = Date.now() - started
+    // 上界 5s；给足余量断言"确实返回了"，而不是无限等
+    expect(elapsed).toBeLessThan(15000)
+  }, 30000)
+})

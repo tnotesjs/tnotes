@@ -1185,13 +1185,42 @@ export class GitManager {
         kills: killCount,
         nodes: nodesSnapshot.join(',')
       })
-      await Promise.allSettled([...this.operationTails.values()])
+      let tailTimedOut = false
+      await Promise.race([
+        Promise.allSettled([...this.operationTails.values()]),
+        new Promise<void>((resolve) => {
+          const timer = setTimeout(() => {
+            tailTimedOut = true
+            resolve()
+          }, GitManager.DISPOSE_TAIL_TIMEOUT_MS)
+          timer.unref?.()
+        })
+      ])
+      if (tailTimedOut) {
+        // 如实记录"还有谁没结算"，然后结束这一轮：继续等会把退出流程拖死
+        deskLog('git:dispose', 'tail timeout', {
+          knowledgeBaseId: null,
+          tails: this.operationTails.size,
+          nodes: nodesSnapshot.join(',')
+        })
+        break
+      }
       const pending = [...this.queueNodes.values()].flat().filter((node) => !node.canceled)
       if (pending.length === 0) break
       if (!touched && pending.every((node) => node.running)) break
     }
     this.events.removeAllListeners()
   }
+
+  /**
+   * `dispose()` 每轮等待队列结算的上界。
+   *
+   * 退出流程不允许被单个操作无限拖住：CI 上实测过 `dispose()` 卡在
+   * `Promise.allSettled(operationTails)` 超过 20s 仍不返回（本地从未复现，
+   * 详见 `docs/round-fixes-report.md`）。到点不再干等，改为如实记录"谁还没结算"
+   * 后继续/结束退出——宁可留下一条可诊断的日志，也不让应用退不掉。
+   */
+  static readonly DISPOSE_TAIL_TIMEOUT_MS = 5000
 
   private async publishRepository(
     repository: GitRepositoryDescriptor,
