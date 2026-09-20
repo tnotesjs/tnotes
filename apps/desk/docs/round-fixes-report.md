@@ -874,3 +874,46 @@ nextTop=317, clearance=16`；
 - 它们是**块级**结构操作，与后面的行内格式（粗体 / 斜体 / 行内代码…）在视觉上分开；
 - `FormatOverflowBar` 是从**尾部**开始把条目收进「…」的（`items.slice(0, visibleCount)`），
   排在最前 = 窄面板下也始终可见（原先它们排在中段，宽度不够时会先被收走）。
+
+## 二十、发版前全量 E2E 抓到的问题（0.10.1 → 0.11.0）
+
+### 20.1 内容区最小宽度那条改动带来的横向滚动条（真回归）
+
+现象：`e2e-tab-drag` 报「拖拽落点预览的高度比窗格矮 9px」（`Math.abs(rect.height -
+area.height) < 2` 失败）。实测 `clientHeight 737 / offsetHeight 746` —— 差的 9px 就是
+**横向滚动条占掉的高度**：窗格 838px 宽，`scrollWidth` 却是 936px。
+
+根因（两处，都是**绝对定位浮层**被当成"内容更宽"）：
+
+1. `FormatOverflowBar` 里量宽用的隐藏行 `.format-overflow__measure`：它装着**全部**条目、
+   必然比工具条宽，且是 `position: absolute`；原先 `.editor-group-body` 不是滚动容器，
+   这份溢出由 `.editor-group { overflow: hidden }` 吸收，现在被新滚动容器看见了。
+   修法：让量宽行自己吃掉这份溢出（`right: 0` 与父级同宽 + `overflow: hidden`；条目是
+   `flex: none`，量到的宽度不变）。
+2. 最右那个按钮的 **tooltip**（`.ui-tooltip-popover` 绝对定位 + 居中，横向探出窗格 23px）。
+   修法：在 `.tab-content` 上加 `overflow-x: clip`（**不是** `hidden`：`clip` 不产生滚动容器，
+   也不影响纵向 —— tooltip 往下弹必须继续可见）。裁剪位置与 `.editor-group { overflow: hidden }`
+   原本就在裁的位置完全一致（两者盒子同宽），所以视觉上是等价裁剪，只是不再把溢出传给
+   新的横向滚动容器。
+
+`e2e-tab-drag` 顺带加了一条断言把这件事钉住：窗格够宽时 `scrollWidth <= clientWidth + 1`
+（原先这个套件只验预览框几何，是预览框高度把它暴露出来的）。
+
+### 20.2 `e2e-note-header` 里的旧顺序（过期断言）
+
+它断言「格式工具条在视图切换**左边**、最右元素是视图切换」，与第 18 节的新顺序冲突。
+按新顺序改写：标题 → 视图切换 → 竖线 → 格式工具条 → 布局开关，右侧贴边改判
+`.layout-controls`；同时删掉「窄窗口下页宽/分隔线会收进溢出菜单」这段已过期的注释
+（布局开关现在始终展示）。
+
+### 20.3 `e2e-note-assets` 的「复制路径」读到 null（并发抢系统剪贴板）
+
+第一次全量跑通过、第二次失败，单跑又是 13/13 全绿 —— 典型的**跨套件抢系统剪贴板**。
+注册表里本来就有这个机制（`locks: ['clipboard']`，注释写着「OS 粘贴板全局共享，必须互斥」），
+但两个真正拿剪贴板做**断言**的套件漏了这行锁：`e2e-image-copy-plain-text.mjs` 与
+`e2e-note-assets.mjs`（前者读 `clipboard.readText/readHTML` 验证复制图片保留纯文本，
+后者「复制路径」后轮询 8s 比对剪贴板内容）。补上锁，并同步注册表单测里那份
+「持有 clipboard 锁的套件清单」。
+
+（顺带说明：先试过把它们标成 `serial: true`，被注册表单测挡下 —— 那个字段表示"整机独占"，
+是给 manual 套件用的；剪贴板这种单一资源互斥用 `locks`。已按既有约定改回。）

@@ -191,13 +191,23 @@ watch(
   justify-content: center;
 }
 
+/*
+ * 量宽用的隐藏行：装着**全部**条目（不做溢出裁剪），所以它一定比工具条本身宽。
+ * 必须自己把这份溢出吃掉（与父级同宽 + `overflow: hidden`）—— 否则它会成为祖先的
+ * 可滚动溢出：内容区一旦是横向滚动容器（`.editor-group-body`，最小宽度 500px 那条），
+ * 就会被它顶出一条横向滚动条（实测：窗格 838px 宽时 scrollWidth 变 936px，
+ * 滚动条吃掉 9px 高度，拖拽落点预览的高度断言因此差 9px）。
+ * 用 `right: 0` 与父级同宽；条目是 `flex: none`，宽度仍按自然尺寸量得到。
+ */
 .format-overflow__measure {
   position: absolute;
   left: 0;
+  right: 0;
   top: 0;
   display: flex;
   align-items: center;
   gap: 2px;
+  overflow: hidden;
   visibility: hidden;
   pointer-events: none;
 }

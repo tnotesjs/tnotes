@@ -59,7 +59,11 @@ describe('e2e registry', () => {
         'e2e-block-interactions.mjs',
         'e2e-block-ranges.mjs',
         'e2e-excalidraw-copy.mjs',
-        'e2e-image-chrome.mjs'
+        'e2e-image-chrome.mjs',
+        // 这两个也用系统剪贴板做断言：漏了锁会与上面几个互相覆盖
+        // （实测：并发跑时「复制路径给的是相对笔记文件的相对路径」读到 null）
+        'e2e-image-copy-plain-text.mjs',
+        'e2e-note-assets.mjs'
       ].sort()
     )
     // 依赖 OS 窗口焦点（sendInputEvent / 大窗口焦点断言）：彼此互斥即可，不必整机独占

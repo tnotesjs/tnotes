@@ -612,6 +612,17 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
   min-width: 500px;
   min-height: 0;
   display: flex;
+  /*
+   * 横向裁掉浮层溢出（`clip` 不是 `hidden`：不产生滚动容器，也不需要隐藏纵向 ——
+   * tooltip 是往下弹的，纵向必须继续可见）。
+   *
+   * 为什么必须有：`.editor-group-body` 现在是横向滚动容器，而**绝对定位的浮层**
+   * （最右那个按钮的 tooltip、量宽用的隐藏行…）也算祖先的可滚动溢出 —— 会被它当成
+   * "内容更宽"顶出一条横向滚动条（实测：窗格 838px 时 scrollWidth 861px，
+   * 滚动条吃掉 9px 高度）。裁在这一层的位置与 `.editor-group { overflow: hidden }`
+   * 原本就在裁的位置**完全一致**（两者盒子同宽），所以视觉上是无变化的等价裁剪。
+   */
+  overflow-x: clip;
 }
 
 .tab-content > * {

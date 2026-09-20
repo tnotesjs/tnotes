@@ -70,8 +70,9 @@ try {
   for (const mode of ['可视化编辑', '只读视图', '源码视图']) {
     await page.getByRole('button', { name: mode, exact: true }).click()
     assert.equal(await page.locator('.note-pane .save-button').count(), 0)
-    // 标题行自适应：窄窗口下页宽/分隔线会收进溢出菜单（宽度 0），只对可见元素
-    // 断言「同一条行内 + 从左到右的顺序」，避免又写死到一个窗口宽度
+    // 标题行从左到右固定是：标题 | 视图切换 | 竖线 | 格式工具条 | 布局开关。
+    // 布局开关**始终展示**（原先窄面板会整组连竖线一起隐藏），所以四块都要可见；
+    // 会随宽度变化的只有格式工具条**内部**的条目（多出来的收进「…」），工具条本身始终在。
     const bounds = await page.locator('.document-toolbar').evaluate((bar) => {
       // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
       const rectOf = (selector) => {
@@ -85,20 +86,24 @@ try {
       return {
         toolbar: { y: toolbar.y, bottom: toolbar.bottom, right: toolbar.right },
         title: rectOf('.document-path'),
+        views: rectOf('.view-switcher'),
+        divider: rectOf('.view-divider'),
         format: rectOf('.format-overflow'),
-        views: rectOf('.view-switcher')
+        layout: rectOf('.layout-controls')
       }
     })
-    const rowPieces = [bounds.title, bounds.format, bounds.views]
+    const rowPieces = [bounds.title, bounds.views, bounds.divider, bounds.format, bounds.layout]
     assert.ok(rowPieces.every((piece) => piece && !piece.hidden))
     assert.ok(
       rowPieces.every(
         (piece) => piece.y >= bounds.toolbar.y - 1 && piece.bottom <= bounds.toolbar.bottom + 1
       )
     )
-    assert.ok(bounds.title.right <= bounds.format.x)
-    assert.ok(bounds.format.right <= bounds.views.x)
-    assert.ok(bounds.toolbar.right - bounds.views.right < 20)
+    assert.ok(bounds.title.right <= bounds.views.x)
+    assert.ok(bounds.views.right <= bounds.divider.x)
+    assert.ok(bounds.divider.right <= bounds.format.x)
+    assert.ok(bounds.format.right <= bounds.layout.x)
+    assert.ok(bounds.toolbar.right - bounds.layout.right < 20)
     // 格式化工具条已改成 FormatOverflowBar（内部按钮/图标由单测覆盖），
     // 这里只验它在三种视图下的存在性与禁用状态，以及它落在标题行下方
     const formatBar = page.locator('.format-overflow')
@@ -113,7 +118,7 @@ try {
     }
     await page.screenshot({ path: join(shots, `${mode}.png`) })
   }
-  console.log('✓ 标题行：路径 | 格式工具条 | 视图切换 同一行，右侧贴边，无保存按钮')
+  console.log('✓ 标题行：路径 | 视图切换 | 格式工具条 | 布局开关 同一行，右侧贴边，无保存按钮')
   // 格式工具条内部的按钮/溢出/标题菜单/表格行为已由 FormatOverflowBar 与
   // NoteTabPane 的单测覆盖；这里的端到端只保留标题行布局、视图模式与重命名链路。
 

@@ -370,6 +370,7 @@ export const SUITES = [
       'packages/kb/src/asset-scan/**'
     ],
     serial: false,
+    locks: ['clipboard'],
     smoke: false,
     note: '笔记级资源面板：引用/编号匹配/无效/缺失分组、复制路径、定位引用、插入、删除、修复编号'
   },
@@ -673,6 +674,7 @@ export const SUITES = [
       'apps/desk/src/renderer/src/editor/markdown/deskImageView.ts'
     ],
     serial: false,
+    locks: ['clipboard'],
     smoke: false,
     note: '复制图片时系统剪贴板 text/plain 必须是 alt：单张/无 alt/图文混选/多图/粘回 Desk 全覆盖'
   },

@@ -113,8 +113,25 @@ try {
     assert.equal(await preview.innerText(), '')
     const [rect, area] = await Promise.all([preview.boundingBox(), body.boundingBox()])
     const horizontal = direction === 'left' || direction === 'right'
-    assert.ok(Math.abs(rect.width - area.width * (horizontal ? 0.5 : 1)) < 2)
-    assert.ok(Math.abs(rect.height - area.height * (horizontal ? 1 : 0.5)) < 2)
+    // 窗格够宽时内容区不该有横向滚动条（滚动条会占掉高度，预览框跟着变矮）
+    const box = await body.evaluate((node) => ({
+      clientWidth: node.clientWidth,
+      scrollWidth: node.scrollWidth,
+      clientHeight: node.clientHeight,
+      offsetHeight: node.offsetHeight
+    }))
+    assert.ok(
+      box.scrollWidth <= box.clientWidth + 1,
+      `${direction} 内容区不应出现横向溢出 ${JSON.stringify(box)}`
+    )
+    assert.ok(
+      Math.abs(rect.width - area.width * (horizontal ? 0.5 : 1)) < 2,
+      `${direction} width rect=${JSON.stringify(rect)} area=${JSON.stringify(area)} ${JSON.stringify(box)}`
+    )
+    assert.ok(
+      Math.abs(rect.height - area.height * (horizontal ? 1 : 0.5)) < 2,
+      `${direction} height rect=${JSON.stringify(rect)} area=${JSON.stringify(area)} ${JSON.stringify(box)}`
+    )
     assert.ok(rect.y >= area.y)
     assert.equal(
       await preview.evaluate((element) => getComputedStyle(element).pointerEvents),
