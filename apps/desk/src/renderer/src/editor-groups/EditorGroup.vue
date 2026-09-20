@@ -511,11 +511,13 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
 .pin-mark {
   flex: none;
   color: var(--muted);
-  font-size: 10px;
+  /* 与 .tab-close 同尺寸：`⌖` 的字形在 em 框里偏小，10px 时视觉上只有 8px 左右，
+     和标签文字不成比例（实测偏小，验收要求调大）。标签行高 35px，放到 13px 不会撑高。 */
+  font-size: 13px;
   /* 图钉是可点击的"取消固定"入口 */
   cursor: pointer;
   border-radius: 3px;
-  padding: 0 1px;
+  padding: 0 2px;
   line-height: 1;
 }
 
