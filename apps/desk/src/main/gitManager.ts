@@ -117,6 +117,20 @@ export type BackgroundGitTaskFactory = (event: {
   kind: 'git-fetch' | 'git-push'
 }) => BackgroundGitTaskHandle | null
 
+/**
+ * 「没能建出可见任务」时的记录器（装配方注入，见 `onBackgroundFailureRecorder`）。
+ *
+ * 两步记录：先记"为什么没有标签"，执行完再用同一个 `id` 补上**真实 Git 结果**，
+ * 这样界面里看到的是实际错误，而不是只看到容量门禁的抱怨。
+ */
+export type BackgroundFailureRecorder = (event: {
+  knowledgeBaseId: string
+  kind: 'git-fetch' | 'git-push'
+  reason: string
+  message: string
+  id?: string
+}) => { id: string }
+
 /** 后台 fetch 的判定结果（比 `GitOperationResult` 多出"成功/超时"这一层）。 */
 interface FetchOutcome {
   ok: boolean
@@ -551,6 +565,8 @@ export class GitManager {
    * 这样任务记录有真实的开始/结束时间与失败分类，而不是失败后补一条 0ms 的假记录。
    */
   private backgroundTaskFactory: BackgroundGitTaskFactory | null = null
+  /** 「没能建出可见任务」时的记录器；未注入时退化为只写日志 */
+  private backgroundFailureRecorder: BackgroundFailureRecorder | null = null
   /** 后台自动抓取调度闸门：全局并发上限 + 同目标去重 + 失败退避 */
   private readonly backgroundFetch = new BackgroundFetchScheduler({
     runner: (request) => this.runBackgroundFetch(request)
@@ -583,6 +599,17 @@ export class GitManager {
    */
   onBackgroundTaskFactory(factory: BackgroundGitTaskFactory): void {
     this.backgroundTaskFactory = factory
+  }
+
+  /**
+   * 注入"没能建出可见任务"的记录器。
+   *
+   * 没有可见任务时用户本来无从上图看到后台失败；注入后由 GitManager 在执行**结束后**
+   * 用真实 `outcome.message` 补记，所以设置里看到的是真实 Git 错误，
+   * 而不是"标签已满"这种挡在前面的原因。
+   */
+  onBackgroundFailureRecorder(recorder: BackgroundFailureRecorder): void {
+    this.backgroundFailureRecorder = recorder
   }
 
   private createBackgroundTask(
@@ -802,12 +829,30 @@ export class GitManager {
       outputTruncated: (bytes) => holder.task?.observer.outputTruncated?.(bytes)
     }
 
+    // 没有可见任务时（容量门禁拦下）也要把**真实执行结果**记下来：
+    // 先记一条"为什么没标签"，执行完再用同一个 id 补上 outcome.message。
+    const missingTask: { id: string | null } = { id: null }
+
     return new Promise<boolean>((resolve) => {
       void this.enqueue<FetchOutcome>(
         knowledgeBaseId,
         async (target, runExtras) => {
           holder.task = this.createBackgroundTask(knowledgeBaseId, 'git-fetch')
+          if (!holder.task) {
+            missingTask.id = this.recordMissingBackgroundTask(knowledgeBaseId, 'git-fetch')
+          }
           const outcome = await this.executeFetch(target, true, runExtras)
+          // 真实结果补记：成功不记（不能把成功的 fetch 展示成 Git 执行失败）
+          if (!holder.task && !outcome.ok) {
+            this.recordMissingBackgroundTask(
+              knowledgeBaseId,
+              'git-fetch',
+              outcome.timedOut
+                ? `Git 执行超时：${outcome.message ?? 'git fetch 超时'}`
+                : (outcome.message ?? 'git fetch 失败'),
+              missingTask.id ?? undefined
+            )
+          }
           await this.refreshRepository(
             target,
             null,
@@ -834,11 +879,59 @@ export class GitManager {
         },
         (error) => {
           // 排队中被取消 / 退出 / 资源写入暂停：按失败计入退避，任务如实结算
-          holder.task?.finish('failed', operationMessage(error))
+          const message = operationMessage(error)
+          if (!holder.task) {
+            this.recordMissingBackgroundTask(
+              knowledgeBaseId,
+              'git-fetch',
+              `Git 未执行完成：${message}`,
+              missingTask.id ?? undefined
+            )
+          }
+          holder.task?.finish('failed', message)
           resolve(false)
         }
       )
     })
+  }
+
+  /**
+   * 记录一条"没有可见任务"的后台失败。
+   *
+   * 没注入记录器时退化为只写日志（不能反过来影响 Git 流程）。
+   * 传 `id` 表示**更新已有条目**（先记原因、执行完补真实错误）。
+   */
+  private recordMissingBackgroundTask(
+    knowledgeBaseId: string,
+    kind: 'git-fetch' | 'git-push',
+    message?: string,
+    id?: string
+  ): string | null {
+    const reason = '底部面板标签已达上限，无法再开一个后台任务标签'
+    if (!this.backgroundFailureRecorder) {
+      deskLog('git:background-task', 'no visible task', {
+        knowledgeBaseId,
+        kind,
+        message: message ?? reason
+      })
+      return null
+    }
+    try {
+      return this.backgroundFailureRecorder({
+        knowledgeBaseId,
+        kind,
+        reason,
+        message: message ?? reason,
+        id
+      }).id
+    } catch (cause) {
+      deskLog('git:background-task', 'failure recorder failed', {
+        knowledgeBaseId,
+        kind,
+        message: cause instanceof Error ? cause.message : String(cause)
+      })
+      return null
+    }
   }
 
   pull(knowledgeBaseId: string, extras: GitRunExtras = {}): Promise<GitOperationResult> {

@@ -102,6 +102,22 @@ export class CommandTaskManager {
   private tasks = new Map<string, CommandTaskRecord>()
   /** (知识库, 种类) → 任务 id：重复点击定位已有标签，而不是新建 */
   private byKey = new Map<string, string>()
+
+  /**
+   * 任务标签的索引键：**知识库 + 种类 + 来源**。
+   *
+   * 来源必须进键：手动 fetch 与后台定时 fetch 是同一个 `(知识库, kind)`，
+   * 只按 `(知识库, kind)` 建索引时，后建的会把先建的从索引里挤掉——
+   * 实测「手动 A → 后台 B → 再次手动认领」会创建第三条 C，而仍然活跃的 A 再也
+   * 找不到（渲染端因此拿不到自己的运行、取消也打不到正确的轮次）。
+   */
+  private keyOf(
+    knowledgeBaseId: string,
+    kind: CommandTaskDto['kind'],
+    background: boolean
+  ): string {
+    return `${knowledgeBaseId}::${kind}::${background ? 'background' : 'manual'}`
+  }
   private listener: ((state: CommandTaskDto) => void) | null = null
   private logListener: ((event: CommandTaskLogEvent) => void) | null = null
   /** 任务标签被移除（用户关闭 / 容量回收）时通知渲染端 */
@@ -162,11 +178,32 @@ export class CommandTaskManager {
     }))
   }
 
-  /** 定位已有任务（「查看输出」用）；没有则 null。 */
-  find(knowledgeBaseId: string, kind: CommandTaskDto['kind']): CommandTaskDto | null {
-    const id = this.byKey.get(`${knowledgeBaseId}::${kind}`)
-    const record = id ? this.tasks.get(id) : undefined
-    return record ? { ...record.dto } : null
+  /**
+   * 定位已有任务（「查看输出」用）；没有则 null。
+   *
+   * 不传 `background` 时：优先返回**活跃**的那条，活跃里优先手动来源
+   * （用户主动触发的那条更可能是他要找的），再退到后台那条；都不活跃就返回手动那条。
+   */
+  find(
+    knowledgeBaseId: string,
+    kind: CommandTaskDto['kind'],
+    background?: boolean
+  ): CommandTaskDto | null {
+    if (background !== undefined) {
+      const id = this.byKey.get(this.keyOf(knowledgeBaseId, kind, background))
+      const record = id ? this.tasks.get(id) : undefined
+      return record ? { ...record.dto } : null
+    }
+    const candidates = [false, true]
+      .map((flag) => this.byKey.get(this.keyOf(knowledgeBaseId, kind, flag)))
+      .map((id) => (id ? this.tasks.get(id) : undefined))
+      .filter((record): record is CommandTaskRecord => Boolean(record))
+    if (candidates.length === 0) return null
+    const activeManual = candidates.find(
+      (record) => !record.dto.background && this.isActiveInternal(record.dto.status)
+    )
+    const activeAny = candidates.find((record) => this.isActiveInternal(record.dto.status))
+    return { ...(activeManual ?? activeAny ?? candidates[0]).dto }
   }
 
   /**
@@ -208,17 +245,10 @@ export class CommandTaskManager {
      */
     background?: boolean
   }): { handle: CommandTaskHandle; dto: CommandTaskDto } {
-    const key = `${input.knowledgeBaseId}::${input.kind}`
+    // 键里已经含来源：手动与后台各自一条，互不挤掉对方
+    const key = this.keyOf(input.knowledgeBaseId, input.kind, input.background === true)
     const existingId = this.byKey.get(key)
-    const candidate = existingId ? this.tasks.get(existingId) : undefined
-    // **来源必须一致才复用标签**：手动 fetch 与后台定时 fetch 是同一个
-    // `(知识库, kind)`，若按 key 无条件复用，后台那一轮会挂到用户手动那条标签上、
-    // 给它 `run+1` 并清掉它的输出与结果（反过来也一样）。来源不同就各自独立成一条，
-    // 两条运行因此不会串输出、不会互相提前结算、取消也只作用于自己那一轮。
-    const existing =
-      candidate && Boolean(candidate.dto.background) === Boolean(input.background)
-        ? candidate
-        : undefined
+    const existing = existingId ? this.tasks.get(existingId) : undefined
 
     // 统一容量检查：复用已有标签（运行中复用 / 已结束重跑）不占新名额，直接放行；
     // 新建才参与合并计数（终端会话 + 命令任务）。必须在这里判——调用方随后就可能
@@ -339,7 +369,11 @@ export class CommandTaskManager {
       record.flushTimer = null
     }
     this.tasks.delete(taskId)
-    const key = `${record.dto.knowledgeBaseId}::${record.dto.kind}`
+    const key = this.keyOf(
+      record.dto.knowledgeBaseId,
+      record.dto.kind,
+      record.dto.background === true
+    )
     if (this.byKey.get(key) === taskId) this.byKey.delete(key)
     this.emitClosed(taskId)
   }

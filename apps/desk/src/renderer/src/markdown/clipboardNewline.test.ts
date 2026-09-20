@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
 
-import { looksLikeMarkdown, textToDom } from './clipboardNewline'
+import { DESK_CODE_CLIPBOARD_TYPE, looksLikeMarkdown, textToDom } from './clipboardNewline'
 
 const toHtml = (text: string): string => {
   const host = document.createElement('div')
@@ -43,15 +43,14 @@ describe('纯文本粘贴的行结构转换', () => {
   })
 })
 
-describe('Markdown 判定（命中就交回原有 Markdown 解析）', () => {
-  it('标题 / 列表 / 围栏 / 引用 / 表格 / 分隔线 / 容器语法都算 Markdown', () => {
+describe('Markdown 判定（P2：不能靠行首正则区分代码与 Markdown）', () => {
+  it('多级标题 / 列表(≥2行) / 成对围栏 / 引用 / 表格 / 分隔线 / 容器语法算 Markdown', () => {
     for (const text of [
-      '# 标题',
+      '## 标题',
       '## 标题\n正文',
-      '- 列表项',
-      '* 列表项',
-      '1. 有序项',
-      '1) 有序项',
+      '- 甲\n- 乙',
+      '* 甲\n* 乙',
+      '1. 甲\n2. 乙',
       '> 引用',
       '```js\nconst a = 1\n```',
       '~~~\ncode\n~~~',
@@ -63,20 +62,70 @@ describe('Markdown 判定（命中就交回原有 Markdown 解析）', () => {
     }
   })
 
-  it('代码与普通多行文本不算 Markdown（走保留行边界的路径）', () => {
+  it('行内语法（`**粗体**` / 链接）也要认（旧实现只查行首，会漏）', () => {
+    expect(looksLikeMarkdown('这是**粗体**文字')).toBe(true)
+    expect(looksLikeMarkdown('见 [文档](https://example.com/a)')).toBe(true)
+    expect(looksLikeMarkdown('这是 *斜体* 文字')).toBe(true)
+  })
+
+  it('Python 注释开头的代码不得被当成 Markdown', () => {
+    const code = [
+      '# 计算总和',
+      'def total(xs):',
+      '    return sum(xs)',
+      '',
+      '# 打印结果',
+      'print(total([1, 2]))'
+    ].join('\n')
+    expect(looksLikeMarkdown(code)).toBe(false)
+  })
+
+  it('Shell 注释开头的代码不得被当成 Markdown', () => {
+    const code = ['#!/bin/bash', '# 部署脚本', 'set -e', '# 构建', 'pnpm build'].join('\n')
+    expect(looksLikeMarkdown(code)).toBe(false)
+  })
+
+  it('C 风格注释块（` * 内容`）不得被当成 Markdown 列表', () => {
+    const code = [
+      '/*',
+      ' * 计算总和',
+      ' * 参数：xs',
+      ' */',
+      'function total(xs) {',
+      '  return xs.length',
+      '}'
+    ].join('\n')
+    expect(looksLikeMarkdown(code)).toBe(false)
+  })
+
+  it('单个 `# 注释` 不算（与标题字符层面无法区分，宁可不解析）', () => {
+    expect(looksLikeMarkdown('# 标题')).toBe(false)
+    expect(looksLikeMarkdown('# 单行注释')).toBe(false)
+  })
+
+  it('单个 `- item` 不算 Markdown（代码里的短横线太常见）', () => {
+    expect(looksLikeMarkdown('- 单个列表项')).toBe(false)
+    expect(looksLikeMarkdown('const a = 1\n- 1')).toBe(false)
+  })
+
+  it('代码与普通多行文本都不算 Markdown', () => {
     for (const text of [
       'const a = 1\n\nconst b = 2\n    indented',
       '普通一句话\n第二行\n\n第四行',
-      '}\n  return value\n}',
+      '}',
       'SELECT *\nFROM t\nWHERE x = 1'
     ]) {
       expect(looksLikeMarkdown(text), JSON.stringify(text)).toBe(false)
     }
   })
 
-  it('行中间出现的 `#` / `-` 不算 Markdown 标记', () => {
+  it('行中间出现的 `#` / `-` / `|` 不算标记', () => {
     expect(looksLikeMarkdown('a # b')).toBe(false)
     expect(looksLikeMarkdown('a - b')).toBe(false)
     expect(looksLikeMarkdown('x = a | b')).toBe(false)
+  })
+
+  it('应用内代码复制带来源标记（`application/x-desk-code`）', () => {
+    expect(DESK_CODE_CLIPBOARD_TYPE).toBe('application/x-desk-code')
   })
 })

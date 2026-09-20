@@ -7,6 +7,7 @@ import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { serializeImageMarkdown } from '@tnotesjs/ui/image-markdown'
 import { createCanvasImageClipboardPlugin } from './canvasImageClipboardPlugin'
+import { DESK_CODE_CLIPBOARD_TYPE } from './clipboardNewline'
 import { noteRelativeAssetPath } from './noteAssetPath'
 import { invalidateCanvasSource, placeholderCanvasSvg } from '../editor/excalidraw/canvasImage'
 import { useEditorStore } from '../stores/editor'
@@ -237,9 +238,23 @@ function deleteCurrentBlock(): void {
   closeBlockActionMenu()
 }
 
-async function writeClipboard(text: string): Promise<void> {
+/**
+ * 写剪贴板。`markAsCode` 时额外写一个自定义类型，让粘贴端知道"这是从代码块复制的代码"，
+ * 从而跳过 Markdown 解析（只靠文本形态无法区分 `# 注释` 与标题）。
+ */
+async function writeClipboard(text: string, options: { markAsCode?: boolean } = {}): Promise<void> {
   if (navigator.clipboard?.writeText) {
     try {
+      if (options.markAsCode && navigator.clipboard.write) {
+        // 同时写纯文本与自定义类型：纯文本保证粘到外部应用仍可用，
+        // 自定义类型只用于 Desk 自己识别"这是代码"
+        const item = new ClipboardItem({
+          'text/plain': new Blob([text], { type: 'text/plain' }),
+          [DESK_CODE_CLIPBOARD_TYPE]: new Blob([text], { type: DESK_CODE_CLIPBOARD_TYPE })
+        })
+        await navigator.clipboard.write([item])
+        return
+      }
       await navigator.clipboard.writeText(text)
       return
     } catch {
@@ -852,7 +867,7 @@ function handleClick(event: MouseEvent): void {
     event.stopPropagation()
     const block = copyButton.closest('.milkdown-code-block')
     const text = block ? readCodeBlockPlainText(block) : ''
-    void writeClipboard(text)
+    void writeClipboard(text, { markAsCode: true })
       .then(() => {
         copyButton.dataset.copied = 'true'
         copyButton.innerHTML = CHECK_ICON

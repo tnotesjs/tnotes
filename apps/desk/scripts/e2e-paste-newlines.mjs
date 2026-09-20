@@ -337,6 +337,92 @@ try {
     JSON.stringify({ headings: reopenedShape.headings, listItems: reopenedShape.listItems })
   )
 
+  // ── 场景七（P2）：Python/Shell/C 风格注释的代码不得被当成 Markdown ──
+  await openNote(page, { kbName: fixture.kbName, title: '空行' })
+  await waitFor(
+    async () => (await page.locator('.ProseMirror:visible').first().innerText()).includes('ALPHA'),
+    20000
+  )
+  const pythonCode = [
+    '# 计算总和',
+    'def total(xs):',
+    '    return sum(xs)',
+    '',
+    '# 打印结果',
+    'print(total([1, 2]))'
+  ].join('\n')
+  await setClipboard(pythonCode)
+  await focusBlankEnd()
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('ControlOrMeta+v')
+  await new Promise((resolve) => setTimeout(resolve, 600))
+  const afterPython = await blankPm().evaluate((root) => ({
+    text: root.innerText,
+    headings: root.querySelectorAll('h1,h2,h3,h4,h5,h6').length,
+    listItems: root.querySelectorAll('li').length
+  }))
+  rec.record(
+    'Python 注释开头的代码粘贴：不产生标题',
+    /# 计算总和\s*\n/.test(afterPython.text.replace(/\n+/g, '\n')),
+    JSON.stringify(afterPython.text.slice(-120))
+  )
+  rec.record(
+    'Python 注释开头的代码粘贴：行边界保留（不是一行空格分隔）',
+    afterPython.text.includes('def total(xs):') &&
+      afterPython.text.includes('print(total([1, 2]))'),
+    JSON.stringify(afterPython.text.slice(-160))
+  )
+  await save()
+  const pythonDisk = await blankDisk()
+  rec.record(
+    'Python 代码落盘仍是多行（# 注释没被吃成标题）',
+    pythonDisk.includes('# 计算总和') &&
+      pythonDisk.includes('def total(xs):') &&
+      !/^#\s+计算总和\s*$/m.test(pythonDisk.split('\n').slice(0, 3).join('\n')),
+    JSON.stringify(pythonDisk.slice(pythonDisk.indexOf('# 计算总和')).slice(0, 80))
+  )
+
+  // ── 场景八（P2）：行内语法的 Markdown 仍要被识别 ──
+  const inlineMd = ['这是**粗体**文字', '', '见 [文档](https://example.com/a)'].join('\n')
+  await setClipboard(inlineMd)
+  await focusBlankEnd()
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('ControlOrMeta+v')
+  await new Promise((resolve) => setTimeout(resolve, 600))
+  const inlineShape = await blankPm().evaluate((root) => ({
+    strong: Array.from(root.querySelectorAll('strong')).map((n) => n.textContent),
+    links: Array.from(root.querySelectorAll('a')).map((n) => n.getAttribute('href'))
+  }))
+  rec.record(
+    '行内 Markdown（`**粗体**` / 链接）仍被解析',
+    inlineShape.strong.includes('粗体') &&
+      inlineShape.links.some((href) => (href ?? '').includes('example.com/a')),
+    JSON.stringify(inlineShape)
+  )
+
+  // 重开核对：代码与 Markdown 的结构都还在
+  await save()
+  await page.locator('.toc-row', { hasText: '空行' }).first().click()
+  await new Promise((resolve) => setTimeout(resolve, 900))
+  await waitFor(
+    async () => (await page.locator('.ProseMirror:visible').first().innerText()).includes('ALPHA'),
+    20000
+  )
+  const reopened2 = await blankPm().evaluate((root) => ({
+    text: root.innerText,
+    strong: Array.from(root.querySelectorAll('strong')).map((n) => n.textContent)
+  }))
+  rec.record(
+    '重开后 Python 代码仍是多行文本',
+    reopened2.text.includes('def total(xs):') && reopened2.text.includes('# 计算总和'),
+    JSON.stringify(reopened2.text.slice(-120))
+  )
+  rec.record(
+    '重开后行内 Markdown 结构仍在',
+    reopened2.strong.includes('粗体'),
+    JSON.stringify(reopened2.strong)
+  )
+
   rec.record('无未捕获页面异常', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 200))
 } catch (error) {
   rec.record('验收脚本执行', false, error instanceof Error ? error.message : String(error))

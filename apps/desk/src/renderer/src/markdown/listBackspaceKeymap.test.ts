@@ -288,3 +288,88 @@ describe('连按四次（等价真实按键序列）', () => {
     expect(caretInfo(view)).toEqual({ parent: 'paragraph', text: '乙', offset: 1 })
   })
 })
+
+describe('空列表项判定：不能误删非文本内容（P1）', () => {
+  it('最小 schema：项里是「空段落 + 图片」时不得被当成空项', async () => {
+    const { Schema } = await import('@milkdown/kit/prose/model')
+    const { EditorState } = await import('@milkdown/kit/prose/state')
+    const schema = new Schema({
+      nodes: {
+        text: { group: 'inline' },
+        doc: { content: 'block+' },
+        paragraph: { group: 'block', content: 'inline*', toDOM: () => ['p', 0] },
+        image: { group: 'inline', inline: true, attrs: { src: {} }, toDOM: () => ['img'] },
+        bullet_list: {
+          group: 'block',
+          content: 'list_item+',
+          toDOM: () => ['ul', 0]
+        },
+        list_item: { content: 'paragraph block*', defining: true, toDOM: () => ['li', 0] }
+      },
+      marks: {}
+    })
+    // 结构：- （空段落）\n  ![](x.png) —— 项里只有一个空段落 + 一个图片
+    const item = schema.nodes.list_item.create(null, [
+      schema.nodes.paragraph.create(),
+      schema.nodes.paragraph.create(null, schema.nodes.image.create({ src: 'x.png' }))
+    ])
+    const doc = schema.nodes.doc.create(null, [schema.nodes.bullet_list.create(null, [item])])
+    const state = EditorState.create({ doc, schema })
+    // 光标放在那个空段落里（项的第一块）。命令**不得**接管（否则整个项连同图片被删）
+    const withSelection = state.apply(state.tr.setSelection(TextSelection.create(state.doc, 2)))
+    expect(listItemEmptyBackspace(withSelection, undefined)).toBe(false)
+  })
+
+  it('真实 Desk schema：列表项里的图片在文字删空后仍在，命令不得接管', async () => {
+    // markdown → 真实 Desk 文档：列表项里先文字、后图片
+    const view = await openView(['- 图文', '  ![图](../assets/pic.svg)', ''].join('\n'))
+    const countImages = () => {
+      let n = 0
+      view.state.doc.descendants((node) => {
+        if (node.type.name === 'image') n += 1
+        return true
+      })
+      return n
+    }
+    const countItems = () => {
+      let n = 0
+      view.state.doc.descendants((node) => {
+        if (node.type.name === 'list_item') n += 1
+        return true
+      })
+      return n
+    }
+    expect(countImages()).toBe(1)
+    expect(countItems()).toBe(1)
+
+    // 把项里的**文字**删掉（等价用户按 Backspace 删完文字），保留行内图片。
+    // 段落里此时是 `text("图文") + hardbreak + image`，所以按节点位置删文本，
+    // 不能用 `textContent === '图文'` 去找（会被图片的 alt 影响）。
+    let textPos = -1
+    let textLen = 0
+    view.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === '图文') {
+        textPos = pos
+        textLen = node.nodeSize
+      }
+      return true
+    })
+    expect(textPos).toBeGreaterThan(0)
+    view.dispatch(view.state.tr.delete(textPos, textPos + textLen))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, textPos)))
+
+    // **区分力**：此刻 `item.textContent` 确实是空串（图片不贡献文本），
+    // 所以旧实现（按 textContent 判空）会接管并删掉整项、图片一起没了。
+    // 新实现按节点结构判空，必须拒绝接管。
+    let itemText = 'MISSING'
+    view.state.doc.descendants((node) => {
+      if (node.type.name === 'list_item') itemText = node.textContent
+      return true
+    })
+    // 只剩下硬换行（图片不贡献文本），按文本判空必然误判
+    expect(itemText.trim()).toBe('')
+    expect(listItemEmptyBackspace(view.state, view.dispatch)).toBe(false)
+    expect(countImages()).toBe(1)
+    expect(countItems()).toBe(1)
+  })
+})

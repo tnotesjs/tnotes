@@ -55,10 +55,10 @@ export const listItemEmptyBackspace: Command = (state, dispatch) => {
   if (itemDepth < 1) return false
   const item = $from.node(itemDepth)
   if (item.type.name !== 'list_item') return false
-  // 空段落必须是本项的第一块，且整项确实没有任何文字 —— 否则（本项还有别的段落 /
-  // 有内容的嵌套列表）删整项会把用户的内容一起删掉，放行给默认行为（join 前后块）。
+  // 空段落必须是本项的第一块，且整项**结构上确实空** —— 否则删整项会把用户的内容
+  // 一起删掉，放行给默认行为（join 前后块）。
   if ($from.index(itemDepth) !== 0) return false
-  if (item.textContent !== '') return false
+  if (!isStructurallyEmptyItem(item)) return false
 
   const listDepth = itemDepth - 1
   const list = $from.node(listDepth)
@@ -89,6 +89,33 @@ export const listItemEmptyBackspace: Command = (state, dispatch) => {
 
   dispatch(tr)
   return true
+}
+
+/**
+ * 列表项是否**结构上**为空（可以整项删掉）。
+ *
+ * 不能用 `item.textContent === ''` 判断：图片、分隔线、画布等**非文本节点**的
+ * `textContent` 也是空串，按文本判空会把 `- <img>` 这种合法内容整项删掉
+ * （实测最小 schema：一个"空段落 + 图片"的列表项删空后图片数量 1 → 0）。
+ *
+ * 规则：本项的所有后代里只允许出现「空段落」与「空列表容器」；一旦出现任何
+ * **叶子节点**（文本 / 图片 / 分隔线 / 代码块 …）就不算空。
+ */
+export function isStructurallyEmptyItem(item: ProseMirrorNode): boolean {
+  let empty = true
+  item.descendants((node) => {
+    if (!empty) return false
+    if (node.isText) {
+      if ((node.text ?? '').length > 0) empty = false
+      return false
+    }
+    if (node.isLeaf) {
+      empty = false
+      return false
+    }
+    return true
+  })
+  return empty
 }
 
 /**

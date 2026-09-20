@@ -31,24 +31,73 @@ function escapeHtml(text: string): string {
 }
 
 /**
- * 这段纯文本是否**看起来像 Markdown**（命中任一"行首 Markdown 标记"就认为像）。
+ * Desk 内代码复制时写入的自定义剪贴板类型。
  *
- * 命中时交回原有的 Markdown 解析路径，从而保住"粘贴 markdown 文本 → 得到标题/列表/
- * 围栏代码块"的既有能力。代码（`const a = 1`、缩进、`}` 之类）通常不命中，
- * 于是走保留行边界的路径。
+ * 只靠"文本长什么样"无法区分代码与 Markdown：Python/Shell 的 `# 注释`、C 风格注释里的
+ * ` * 内容` 与 Markdown 的标题 / 列表项在字符层面完全一样（反过来只有行内语法的
+ * Markdown 又不会被行首规则命中）。所以**应用内复制的代码带明确来源**，粘贴时优先信它。
+ */
+export const DESK_CODE_CLIPBOARD_TYPE = 'application/x-desk-code'
+
+/** `looksLikeMarkdown` 的判定结果，便于单测与排查。 */
+export interface MarkdownSignals {
+  /** 强信号：行首块级语法（标题 / 列表 / 引用 / 围栏 / 分隔线 / 表格 / 容器） */
+  blockMarkers: string[]
+  /** 行内语法（`**粗体**`、`[链接](url)`、`` `代码` ``） */
+  inlineMarkers: string[]
+}
+
+/**
+ * 收集 Markdown 信号。
+ *
+ * 注意：**行首的 `#` / `-` / `*` 单独出现不算**。Python/Shell 的注释、C 风格注释块里的
+ * ` * 内容` 都长这样，只按行首正则判会把代码误判成 Markdown，从而走回会折叠换行的旧路径。
+ */
+export function collectMarkdownSignals(text: string): MarkdownSignals {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  const blockMarkers: string[] = []
+  const inlineMarkers: string[] = []
+  const fenceLines = lines.filter((line) => /^\s{0,3}(?:```|~~~)/.test(line)).length
+  for (const line of lines) {
+    // 标题：要求 `#` 后有空格且不是"注释风格"的单词（`# 注释` 无法区分，交给行内/围栏信号）
+    if (/^\s{0,3}#{1,6}\s+\S/.test(line)) blockMarkers.push('heading')
+    // 列表：要求整段文本里**至少两行**是列表项，单行 `- xxx` 在代码里太常见。
+    // `*` / `+` 还要求**顶格**：C 风格注释块里的 ` * 内容` 与它们字符层面一样（实测会误判）。
+    if (/^\s{0,3}(?:-|\d{1,9}[.)])\s+\S/.test(line) || /^(?:[*+])\s+\S/.test(line)) {
+      blockMarkers.push('list')
+    }
+    if (/^\s{0,3}>\s+\S/.test(line)) blockMarkers.push('quote')
+    // 围栏：成对（≥2 行）才算，单个 ``` 在代码里可能是字符串
+    if (fenceLines >= 2 && /^\s{0,3}(?:```|~~~)/.test(line)) blockMarkers.push('fence')
+    if (/^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) blockMarkers.push('rule')
+    if (/^\s{0,3}\|.*\|\s*$/.test(line)) blockMarkers.push('table')
+    if (/^\s{0,3}:{2,}\s*\S/.test(line)) blockMarkers.push('container')
+    if (/\*\*[^*\n]+\*\*/.test(line)) inlineMarkers.push('bold')
+    if (/\[[^\]\n]+\]\([^)\n]+\)/.test(line)) inlineMarkers.push('link')
+    if (/(^|[^*\w])\*[^*\s][^*\n]*\*([^*\w]|$)/.test(line)) inlineMarkers.push('italic')
+  }
+  return { blockMarkers, inlineMarkers }
+}
+
+/**
+ * 这段纯文本是否**应当走 Markdown 解析**。
+ *
+ * 判定顺序（P2 修正后）：
+ *  1. **行内语法**（`**粗体**` / `[链接](url)`）—— 代码里几乎不会出现，出现即认为是 Markdown；
+ *  2. 行首块级语法，但要求**结构性**证据：列表至少两行、围栏成对、引用/表格/分隔线/容器
+ *     各自有明确形态；单独的 `# 注释` 或 `* 内容` **不算**（那是注释，不是 Markdown）。
  */
 export function looksLikeMarkdown(text: string): boolean {
-  const lines = text.replace(/\r\n?/g, '\n').split('\n')
-  return lines.some((line) => {
-    if (/^\s{0,3}#{1,6}(\s|$)/.test(line)) return true // ATX 标题
-    if (/^\s{0,3}(?:[-*+]|\d{1,9}[.)])\s+/.test(line)) return true // 列表项
-    if (/^\s{0,3}>/.test(line)) return true // 引用
-    if (/^\s{0,3}(?:```|~~~)/.test(line)) return true // 围栏代码块
-    if (/^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) return true // 分隔线
-    if (/^\s{0,3}\|.*\|\s*$/.test(line)) return true // 表格行
-    if (/^\s{0,3}:{2,}\s*\S/.test(line)) return true // 容器语法 `::: note`
-    return false
-  })
+  const { blockMarkers, inlineMarkers } = collectMarkdownSignals(text)
+  if (inlineMarkers.length > 0) return true
+  // 列表：至少两行才当 Markdown（代码里的 `- xxx` 单行太常见）
+  if (blockMarkers.filter((marker) => marker === 'list').length >= 2) return true
+  // `### 标题` 这种多级标题：`##` 及以上几乎不会出现在注释里，直接认
+  if (collectMarkdownSignals(text).blockMarkers.length === 0) return false
+  if (/^\s{0,3}#{2,6}\s+\S/m.test(text.replace(/\r\n?/g, '\n'))) return true
+  // 单个 `# 标题`：与 Python/Shell 的 `# 注释` 字符层面无法区分，
+  // 只有**另有块级证据**（围栏/引用/表格/分隔线/容器）时才当 Markdown
+  return blockMarkers.some((marker) => marker !== 'list' && marker !== 'heading')
 }
 
 /**
@@ -102,8 +151,10 @@ export const clipboardNewline = $prose(
           ) {
             return false
           }
-          // 看起来是 Markdown 的文本交回原有 Markdown 解析（保住既有能力）
-          if (looksLikeMarkdown(text)) return false
+          // 应用内复制的**代码**：带明确来源标记，绝不做 Markdown 解析
+          const markedAsCode = clipboardData.getData(DESK_CODE_CLIPBOARD_TYPE).length > 0
+          // 外部纯文本：只有确实像 Markdown 才交回原有解析（保住既有能力）
+          if (!markedAsCode && looksLikeMarkdown(text)) return false
 
           // 用 schema 自建 DOMParser：不依赖 clipboard 插件暴露 parser，
           // 也就不受插件顺序影响。preserveWhitespace 保住行首缩进。

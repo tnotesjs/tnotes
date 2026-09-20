@@ -1,4 +1,3 @@
-import { recordBackgroundFailureWithoutTask } from './backgroundFailureLog'
 import { deskLog } from './log'
 import { commandTaskManager, TASK_TITLES } from './commandTaskManager'
 import { workspaceManager } from './workspaceManager'
@@ -96,15 +95,12 @@ export function createBackgroundGitTask(event: {
     // 但**不能只写日志**：面板里没有这条任务，用户就没有任何入口看到失败。
     // 所以额外记一条不占标签的记录（设置里可看），保留主进程给出的错误原文。
     const message = cause instanceof Error ? cause.message : String(cause)
+    // 只写日志并返回 null：**记录"没有可见任务"这件事由 GitManager 负责**。
+    // 原因：这里还不知道真实执行结果；由 GitManager 在执行结束后用真实
+    // `outcome.message` 落记录，界面里看到的才是真实 Git 错误而不是这道门禁的抱怨。
     deskLog('git:background-task', 'claim failed', {
       knowledgeBaseId: event.knowledgeBaseId,
       kind: event.kind,
-      message
-    })
-    recordBackgroundFailureWithoutTask({
-      knowledgeBaseId: event.knowledgeBaseId,
-      kind: event.kind,
-      reason: claimFailureReason(message),
       message
     })
     return null

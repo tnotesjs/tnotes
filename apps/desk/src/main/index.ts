@@ -11,6 +11,7 @@ import {
   registerWindowGuard,
   unregisterWindowGuard
 } from './closeGuards'
+import { recordBackgroundFailureWithoutTask } from './backgroundFailureLog'
 import { createBackgroundGitTask } from './backgroundGitFailure'
 import { configureBottomPanelMaxTabs } from './bottomPanelTabs'
 import { gitManager } from './gitManager'
@@ -51,6 +52,9 @@ function scheduleGitRefresh(): void {
 // 后台 Git 操作（定时 fetch / 自动推送）在**开始时**认领一个可见任务，结束时按
 // 真实结果结算：面板据此对失败/超时弹带「查看输出」的通知，且时长与分类都是真的。
 gitManager.onBackgroundTaskFactory((event) => createBackgroundGitTask(event))
+// 没能建出可见任务时：先记"为什么没有标签"，执行结束再由 GitManager 用真实
+// outcome.message 补记同一个 id（这样设置里看到的是真实 Git 错误）
+gitManager.onBackgroundFailureRecorder((event) => recordBackgroundFailureWithoutTask(event))
 
 function scheduleSearchRefresh(hint?: WorkspaceChangeHint): void {
   const overview = workspaceManager.getOverview()

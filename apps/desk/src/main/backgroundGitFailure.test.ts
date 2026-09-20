@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { listBackgroundFailures, resetBackgroundFailureLog } from './backgroundFailureLog'
-import { configureBottomPanelMaxTabs } from './bottomPanelTabs'
+import { resetBackgroundFailureLog } from './backgroundFailureLog'
 import { commandTaskManager } from './commandTaskManager'
 import {
   createBackgroundGitTask,
@@ -149,33 +148,5 @@ describe('执行层输出截断的信息通路', () => {
     handle.addTruncated(Number.NaN)
 
     expect(manager.list()[0].truncatedBytes).toBe(3072)
-  })
-})
-
-describe('容量被拦时不只是写日志', () => {
-  it('claim 抛容量错误时记录一条不占标签的失败，且保留错误原文', () => {
-    // 用真实的容量门禁触发：把上限设为 1，先占一个仍在运行的任务
-    configureBottomPanelMaxTabs(() => 1)
-    const blocker = manager.claimHandle({
-      knowledgeBaseId: 'kb1',
-      knowledgeBaseName: 'TNotes.a',
-      kind: 'git-pull',
-      title: '拉取',
-      cwd: '/kb'
-    })
-    expect(['queued', 'running']).toContain(blocker.dto.status)
-
-    const task = createBackgroundGitTask({ knowledgeBaseId: 'kb1', kind: 'git-fetch' })
-    expect(task).toBeNull()
-    const items = listBackgroundFailures()
-    expect(items).toHaveLength(1)
-    expect(items[0].knowledgeBaseId).toBe('kb1')
-    expect(items[0].kind).toBe('git-fetch')
-    // 原因与消息都保留门禁给出的中文原文，不吞信息
-    expect(items[0].reason).toContain('底部面板')
-    expect(items[0].message).toContain('底部面板')
-    // 没有多占任何任务标签：仍然只有那个占位的手动任务
-    expect(manager.list()).toHaveLength(1)
-    expect(manager.list()[0].kind).toBe('git-pull')
   })
 })

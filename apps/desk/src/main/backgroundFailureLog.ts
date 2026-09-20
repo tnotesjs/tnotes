@@ -62,6 +62,8 @@ export function recordBackgroundFailureWithoutTask(event: {
   kind: 'git-fetch' | 'git-push'
   reason: string
   message: string
+  /** 更新已有条目（例如先记录"没能建出任务"，执行完再补上真实 Git 错误） */
+  id?: string
   at?: Date
 }): BackgroundFailureDto {
   const at = (event.at ?? new Date()).toISOString()
@@ -74,14 +76,18 @@ export function recordBackgroundFailureWithoutTask(event: {
   })()
   const existing = failures.find(
     (item) =>
-      item.knowledgeBaseId === event.knowledgeBaseId &&
-      item.kind === event.kind &&
-      item.reason === event.reason &&
-      item.message === event.message
+      (event.id !== undefined && item.id === event.id) ||
+      (event.id === undefined &&
+        item.knowledgeBaseId === event.knowledgeBaseId &&
+        item.kind === event.kind &&
+        item.reason === event.reason &&
+        item.message === event.message)
   )
   if (existing) {
     existing.count += 1
     existing.at = at
+    existing.reason = event.reason
+    existing.message = event.message
     notify()
     return { ...existing }
   }
