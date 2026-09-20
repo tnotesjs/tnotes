@@ -98,6 +98,12 @@ export interface GitRunExtras {
    */
   probeProcessGroup?: () => boolean
   /**
+   * 「清理确认」硬上界的毫秒数（默认 `CLEANUP_ABSOLUTE_LIMIT_MS`）。
+   *
+   * 只为单测能快速验证这条兜底而暴露；生产不传。
+   */
+  cleanupAbsoluteLimitMs?: number
+  /**
    * 清理超时（`CLEANUP_GRACE_MS` 到点）但仍未确认进程组消失时上报。
    *
    * 这不是错误终态：调用方据此提示"进程还在收尾"，同时这一轮仍被跟踪、
@@ -206,6 +212,21 @@ export function runGit(
 
     /** 终止之后等所属进程组清理完成的上限（SIGTERM→强杀→再给一点时间） */
     const CLEANUP_GRACE_MS = 3500
+    /**
+     * 清理确认的**最长等待**（只在主进程已退出、且已发出 SIGKILL 之后才计时）。
+     *
+     * 为什么需要硬上界：确认清理唯一判据是 `process.kill(-pid, 0)` 给 ESRCH，而 PID
+     * 被回收之后这里会拿到 **EPERM**（macOS 上 PID 不会很快回收，所以本地从来不复现；
+     * CI 的 Linux 上会）。EPERM 被当成"还有成员活着"会让 `checkCleanup()` **永久轮询**，
+     * 于是这一轮 git 永不结算、`dispose()` 永不返回 —— 实测（CI，git 2.55.0）：
+     * `卡在 manager.dispose()（>20000ms）；阶段=repoReady=47ms,queueIdle=53ms,gitProcessUp=195ms`，
+     * 而同一时刻 `ps` 里已经没有任何 git 进程。
+     * 主进程已退出 + 整个进程组都被 SIGKILL 过 + 又等满这个上界，仍然探测不到 ESRCH
+     * 就按"清理完成"结算，避免把队列、`dispose()`、退出流程一起卡死。
+     */
+    const CLEANUP_ABSOLUTE_LIMIT_MS = extras.cleanupAbsoluteLimitMs ?? 8000
+    /** 首次发出终止请求的时间（用于上面那个硬上界），null = 还没终止过 */
+    let terminatedAt: number | null = null
     /** SIGTERM 之后多久强杀整个进程组 */
     const FORCE_KILL_MS = 3000
 
@@ -291,7 +312,17 @@ export function runGit(
       // 清理确认看**进程组本身**，不是管道是否关闭，也不是"已发出 SIGKILL"：
       // 孙进程可能已经关掉输出流却仍在跑（真实 git 的传输子进程就是这样）。
       // 未自成进程组（Windows / 未 detached）没有独立的组要收，就只认主进程退出。
-      const reaped = !detached || !processGroupAlive()
+      let reaped = !detached || !processGroupAlive()
+      // 有界兜底：主进程已退出 + 已强杀 + 等满上界 → 认定 pid 已被回收（探测拿到 EPERM），
+      // 不再无限轮询。见 CLEANUP_ABSOLUTE_LIMIT_MS 的说明。
+      if (
+        !reaped &&
+        childExited &&
+        terminatedAt !== null &&
+        Date.now() - terminatedAt >= CLEANUP_ABSOLUTE_LIMIT_MS
+      ) {
+        reaped = true
+      }
       if (reaped) {
         cleanupConfirmed = true
         if (cleanupPoll) {
@@ -361,6 +392,7 @@ export function runGit(
     const terminate = (): void => {
       if (!terminated) {
         terminated = true
+        terminatedAt = Date.now()
         killProcessGroup('SIGTERM')
         forceTimer = setTimeout(() => {
           forceTimer = null

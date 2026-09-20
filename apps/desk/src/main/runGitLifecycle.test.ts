@@ -389,6 +389,8 @@ describe('runGit 生命周期（可控子进程）', () => {
       signal: controller.signal,
       // 确定性装置：进程组"是否还在"由测试说了算（真实进程组何时消失取决于系统）
       probeProcessGroup: () => groupAlive,
+      // 这条用例要在"管道关了但进程组还在"的状态下多等一会儿，把硬上界放宽，以便断言"时间到了不算清理完成"
+      cleanupAbsoluteLimitMs: 10000,
       onCleanupUnconfirmed: () => {
         unconfirmed += 1
       },
@@ -427,6 +429,43 @@ describe('runGit 生命周期（可控子进程）', () => {
     expect(unregistered).toBe(true)
     expect(settled).toBe(true)
   }, 90000)
+
+  it('清理探测一直说"还在"（模拟 PID 回收后的 EPERM）：到硬上界必须结算，不得永久轮询', async () => {
+    // 真实故障（CI，git 2.55.0）：确认清理靠 `process.kill(-pid, 0)` 拿 ESRCH，PID 被回收后
+    // 会拿到 EPERM，被当成"还有成员活着" → 以 50ms 一轮**永久轮询**，
+    // 于是 dispose() 永不返回（实测 卡在 manager.dispose() >20000ms 而 ps 里已无 git 进程）。
+    // 这里用注入探针把"永远探测到活着"固定下来，并把硬上界压到 300ms 以便快速验证。
+    const mark = `A${Date.now()}`
+    const controller = new AbortController()
+    const chunks: string[] = []
+    let unregistered = false
+
+    const running = runGit(fixture, [SUBPROCESS, 'normal-exit', mark, '50'], 120000, {
+      signal: controller.signal,
+      probeProcessGroup: () => true,
+      cleanupAbsoluteLimitMs: 300,
+      onSpawn: {
+        register: () => {},
+        unregister: () => {
+          unregistered = true
+        }
+      },
+      observer: { output: (_stream, chunk) => chunks.push(chunk) }
+    })
+
+    expect(await waitUntil(() => chunks.join('').includes(`END_${mark}`))).toBe(true)
+    controller.abort()
+
+    const result = await Promise.race([
+      running,
+      new Promise<never>((_resolve, reject) =>
+        setTimeout(() => reject(new Error('硬上界到了仍未结算：又变成永久轮询')), 10000)
+      )
+    ])
+    // 主进程已退出 + 已强杀 + 满上界 → 按清理完成结算
+    expect(result.cleanupConfirmed).toBe(true)
+    expect(unregistered).toBe(true)
+  }, 30000)
 
   it('正常退出时注册的终止器也会被注销（不留悬挂的 kill 引用）', async () => {
     let registered = false
