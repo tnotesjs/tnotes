@@ -654,33 +654,35 @@ HTML 转义，6 条）、`main/settings.test.ts` 的默认值与分组合并用�
 
 其他回归：`e2e-excalidraw-copy` **9/9**、`e2e-image-caption` **26/26**、`e2e-paste-newlines` **44/44**；单测 **180 files / 1614 passed**；lint / typecheck / format:check / build 全绿。
 
-### 4. CI 失败排查结论（2026-09-20 第 3 次运行后订正）
+### 4. CI 失败排查结论（2026-09-20 已定位并处理）
 
-#### (a) 两条 E2E 失败：**陈旧脚本的确定性失败**（已修）
+#### (a) 两条 E2E 失败：**陈旧脚本**（已修）
 
-CI 上 `e2e-block-menus.mjs` 与 `e2e-excalidraw-inline.mjs` 连挂两次，且**两次失败项完全一致**；本地也能稳定复现。根因同源：`6dc6d04` 把图片描述 `<input>` 移出 contenteditable 后，它变成**绝对定位浮层**（挂在编辑器 canvas 上，见 `deskImageView.ts` 的 `resolveCaptionHost`），而两个脚本仍按旧结构写：
+`e2e-block-menus.mjs` 与 `e2e-excalidraw-inline.mjs` 连挂两次且失败项完全一致、本地可稳定复现。根因同源：`6dc6d04` 把图片描述 `<input>` 移出 contenteditable 后，它变成**绝对定位浮层**（挂在编辑器 canvas 上，见 `deskImageView.ts` 的 `resolveCaptionHost`），两个脚本仍按旧结构写：
 
-| 脚本                        | 旧写法                                                          | 失败表现                                                                                                                |
-| --------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `e2e-excalidraw-inline.mjs` | `canvasFigure().locator('.desk-image__caption')`（figure 后代） | `locator.fill: Timeout 30000ms`                                                                                         |
-| `e2e-block-menus.mjs`       | `openMenu()` 只把格式工具条当拦截浮层，候选 hover 点取块下沿    | `hover ... <input class="desk-image__caption"> intercepts pointer events`（夹具里 `![Pixel]` 那块的下沿被描述浮层压住） |
+| 脚本                        | 旧写法                                                          | 失败表现                                                                  |
+| --------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `e2e-excalidraw-inline.mjs` | `canvasFigure().locator('.desk-image__caption')`（figure 后代） | `locator.fill: Timeout 30000ms`                                           |
+| `e2e-block-menus.mjs`       | `openMenu()` 只把格式工具条当拦截浮层，候选 hover 点取块下沿    | `hover ... <input class="desk-image__caption"> intercepts pointer events` |
 
-修法（只改测试）：前者改用页面级 `input.desk-image__caption` 并先 click；后者把格式工具条与描述浮层**都**收进 overlay 列表判断覆盖，并补一个靠近块上沿的候选点。
+修法（只改测试）：前者改用页面级 `input.desk-image__caption` 并先 click；后者把格式工具条与描述浮层**都**收进 overlay 列表判断覆盖，并补一个靠近块上沿的候选点。修复后本地两套件全过，**推送后 E2E (desk) 连续多次通过**。
 
-验证：修复后本地 `e2e-excalidraw-inline` 14/14、`e2e-block-menus` 退出码 0；连带 `e2e-image-chrome` / `e2e-image-caption` 26/26 / `e2e-image-copy-plain-text` 17/17 / `e2e-block-interactions` / `e2e-block-ranges` 均过；**推送后 CI 的 E2E (desk) 通过（7m4s）**（此前两次都是 failure）。
+#### (b) `disposeSpawn` 超时：**根因定位 + 已消除危害**（残留问题已记录）
 
-#### (b) `disposeSpawn` 超时：仍**原因未确认**（已加自证诊断）
+`apps/desk/src/main/disposeSpawn.test.ts > dispose() 收掉仍在挂着的 git fetch` 在 CI 上偶发 `Test timed out`（此前 7 次挂 6 次，本地从未复现）。
 
-`apps/desk/src/main/disposeSpawn.test.ts > dispose() 收掉仍在挂着的 git fetch，且不留进程` 在 CI 上多次 `Test timed out in 60000ms`，本地从未复现。
+排查链条（**每一步都是 CI 实测数据**，不是猜测）：
 
-已排除的假设与对照实验：
+1. 加阶段计时后，CI 报 `卡在 manager.dispose()（>20000ms）；阶段=repoReady=47ms, queueIdle=53ms, gitProcessUp=195ms`，同一时刻 `ps` 里**已无任何 git 进程**；
+2. 给 `runGit` 加"硬上界到点上报内部清理状态"后发现 `onCleanupState` **一次都没触发** → 根本没走到 `runGit` 的终止路径，排除"清理确认被 EPERM 卡住"（我先前的假设被证伪）；
+3. 给 `dispose()` 每轮打印队列状态（`tails` / `kills` / 各队列项 `running|canceled`）后得以确认：它卡在 `Promise.allSettled(operationTails)`——**单个操作在 CI 上偶发不结算**。
 
-| 假设                              | 实验                                                         | 结果                                                                 |
-| --------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------- |
-| 机器负载导致慢                    | 8 路纯 CPU 满载下运行                                        | 1.03s 通过（预算 60s）                                               |
-| 出口代理挡住宅地连接              | 把 `http_proxy` 指向一个"接受连接但不响应"的本地代理跑该测试 | 0.7s 通过（测试自身设 `NO_PROXY=*`，git 不走代理）                   |
-| 代码回归（本轮改过 `gitManager`） | 同一提交的 tag run 与 main run 结论不一致（一个过、一个挂）  | 说明不是确定性代码缺陷，但**3 次失败都落在本轮提交上**，不能据此排除 |
+**修法（产品侧）**：`dispose()` 每轮等待队列结算加上界 `DISPOSE_TAIL_TIMEOUT_MS = 5000`；到点不再干等，改为 `deskLog('git:dispose','tail timeout', { tails, nodes })` 如实记录"谁还没结算"后继续退出。**退出流程不允许被单个操作拖死**——宁可晚 5s 退出并留下可诊断日志，也不能退不掉。
 
-因为本地（含高负载/代理）都无法复现、也拿不到 CI 失败时刻的进程与网络快照，所以**结论仍是"原因未确认"**，不计入 `0.10.1` 的验证结论。
+**验证**：
 
-**已做的改进**：给该测试加了**失败自证**——阶段计时（`repoReady` / `queueIdle` / `gitProcessUp` / `disposed` / `goneChecked`）、失败时打印 `ps` 里的 git 进程快照、`git --version` 与代理相关环境变量。下次 CI 再挂，断言消息会直接区分"git 进程根本没起来"与"起来了但 dispose 没杀掉"，不必再猜。
+- 新增确定性单测（塞一个永不结算的操作）：修复前 `dispose()` 无限等待，修复后 `5004ms` 返回；
+- 保留前两轮加的失败自证（阶段计时、进程/环境快照、`runGit` 清理状态上报），下次 CI 复现可直接看出是哪个操作没结算；
+- 推送后 `CI` 与 `E2E (desk)` 均通过。
+
+**仍未确认**：那个操作在 CI 上为何偶发不结算（本地含 8 路 CPU 满载、把 `http_proxy` 指向"接受连接但不响应"的本地代理，均不复现）。它现在最多让退出晚 5s 并留下诊断日志，不再让应用退不掉；已排除的假设与对照实验记录在提交信息里。
