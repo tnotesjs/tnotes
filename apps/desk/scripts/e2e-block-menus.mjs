@@ -175,26 +175,41 @@ try {
       await page.waitForTimeout(150)
     }
     const box = await target.boundingBox()
+    // 块上的浮层会拦截指针：格式工具条（文本选区时出现）与**图片描述浮层**
+    // （描述框已移出 figure、绝对定位在图片下沿，见 deskImageView.ts；实测它会盖住
+    // 图片块的下沿，让"块整体被覆盖"的候选点全部落在它上面）。
+    // 这里把所有可能挡路的浮层都收集起来，命中任一个就换下一个候选点。
+    /** @type {{ x: number, y: number, width: number, height: number }[]} */
+    const overlays = []
     const toolbar = page.locator('.milkdown-toolbar[data-show="true"]')
-    const toolbarBox = (await toolbar.count()) > 0 ? await toolbar.boundingBox() : null
+    if ((await toolbar.count()) > 0) {
+      const toolbarBox = await toolbar.boundingBox()
+      if (toolbarBox) overlays.push(toolbarBox)
+    }
+    const captionRow = page.locator('.desk-image__caption-row:visible')
+    if ((await captionRow.count()) > 0) {
+      const rowBox = await captionRow.first().boundingBox()
+      if (rowBox) overlays.push(rowBox)
+    }
     const covered = (point) => {
-      if (!toolbarBox) return false
       const x = box.x + point.x
       const y = box.y + point.y
-      return (
-        x >= toolbarBox.x &&
-        x <= toolbarBox.x + toolbarBox.width &&
-        y >= toolbarBox.y &&
-        y <= toolbarBox.y + toolbarBox.height
+      return overlays.some(
+        (overlay) =>
+          x >= overlay.x &&
+          x <= overlay.x + overlay.width &&
+          y >= overlay.y &&
+          y <= overlay.y + overlay.height
       )
     }
     const candidates = [
       { x: Math.min(10, box.width / 2), y: Math.min(10, box.height / 2) },
       { x: Math.min(10, box.width / 2), y: Math.max(box.height - 6, 1) },
-      { x: box.width / 2, y: box.height / 2 }
+      { x: box.width / 2, y: box.height / 2 },
+      { x: box.width / 2, y: Math.min(10, Math.max(box.height / 4, 1)) }
     ].filter((point) => !covered(point))
     if (candidates.length === 0) {
-      throw new Error('块整体被格式工具条覆盖，找不到可 hover 的点')
+      throw new Error('块整体被浮层（格式工具条 / 图片描述浮层）覆盖，找不到可 hover 的点')
     }
     let shown = false
     for (const position of candidates) {

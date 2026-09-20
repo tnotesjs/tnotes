@@ -217,7 +217,10 @@ try {
   await canvasFigure().click()
   await page.waitForTimeout(200)
   await canvasFigure().locator('[data-label="描述"]').click()
-  const caption = canvasFigure().locator('.desk-image__caption')
+  // 描述框已移出 figure（6dc6d04 起挂在编辑器 canvas 上，见 deskImageView.ts 的
+  // resolveCaptionHost），所以不能用 figure 后代选择器；用页面级选择器 + 显式聚焦。
+  const caption = page.locator('input.desk-image__caption').first()
+  await caption.click()
   await caption.fill('架构图')
   await caption.press('Enter')
   const captionWritten = await waitFor(
