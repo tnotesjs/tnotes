@@ -508,17 +508,24 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
   font-size: 7px;
 }
 
-.pin-mark {
+/* 「取消固定」与「关闭」是标签右侧同一排的两个入口，统一成 22×22 的方框 + 居中字形：
+   两者的点击区域与视觉重心一致（验收要求 22*22）。标签行高 35px，放得下。 */
+.pin-mark,
+.tab-close {
   flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
   color: var(--muted);
-  /* 与 .tab-close 同尺寸：`⌖` 的字形在 em 框里偏小，10px 时视觉上只有 8px 左右，
-     和标签文字不成比例（实测偏小，验收要求调大）。标签行高 35px，放到 13px 不会撑高。 */
-  font-size: 13px;
-  /* 图钉是可点击的"取消固定"入口 */
   cursor: pointer;
-  border-radius: 3px;
-  padding: 0 2px;
   line-height: 1;
+}
+
+.pin-mark {
+  /* `⌖` 字形在 em 框里偏小：10px 时视觉上只有 8px 左右，放大后才与关闭按钮相称 */
+  font-size: 14px;
 }
 
 .pin-mark:hover {
@@ -532,12 +539,7 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
 }
 
 .tab-close {
-  width: 14px;
-  flex: none;
-  border-radius: 3px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 14px;
+  font-size: 15px;
 }
 
 .tab-close:hover {
