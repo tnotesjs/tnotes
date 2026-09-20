@@ -4,6 +4,7 @@ import { computed, inject, nextTick, provide, ref, watch } from 'vue'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
 import { resultValue } from '../stores/workspace/helpers'
+import NoteDoneToggle from './NoteDoneToggle.vue'
 import type { ContextMenuAction, EditorTab, DeskTocNode } from '../../../shared/contracts'
 import type { InjectionKey, Ref } from 'vue'
 
@@ -339,16 +340,11 @@ defineExpose({ toggleAllCollapsed })
           </button>
         </template>
         <template v-else>
-          <button
+          <NoteDoneToggle
             v-if="tocShowStatus"
-            type="button"
-            class="done-toggle"
-            :class="{ done: node.completed }"
-            :aria-label="node.completed ? '标记为未完成' : '标记为完成'"
-            @click="emit('toggleDone', node)"
-          >
-            <span class="done-dot" aria-hidden="true" />
-          </button>
+            :done="node.completed"
+            @toggle="emit('toggleDone', node)"
+          />
           <button
             type="button"
             class="node-label"
@@ -472,7 +468,6 @@ defineExpose({ toggleAllCollapsed })
 
 .disclosure,
 .row-action,
-.done-toggle,
 .node-label {
   border: 0;
   background: transparent;
@@ -503,35 +498,6 @@ defineExpose({ toggleAllCollapsed })
 
 .disclosure.spacer {
   display: inline-block;
-}
-
-/*
- * 完成状态用「形状优先」的圆点表达，和站点侧栏（`.tn-site-sidebar-status`）同一套：
- * 空心环 = 待完成，实心 = 已完成；颜色只是强化，不是唯一信号。按钮本身只做点击
- * 目标与无障碍标签，视觉全交给里面那颗点。
- */
-.done-toggle {
-  width: 14px;
-  height: 14px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border: 0;
-  background: transparent;
-  padding: 0;
-}
-
-.done-dot {
-  width: 7px;
-  height: 7px;
-  border: 1.5px solid var(--warning);
-  border-radius: 50%;
-  background: transparent;
-}
-
-.done-toggle.done .done-dot {
-  border-color: var(--success);
-  background: var(--success);
 }
 
 .node-label {

@@ -245,6 +245,28 @@ export function buildNoteIndex(toc: DeskTocNode[]): Map<string, KbNoteRef> {
 }
 
 /**
+ * 按四位编号从 TOC 里取**笔记节点本身**（不是索引项）。
+ *
+ * 与 `buildNoteIndex` 的分工：那个只给路由用，产出 `{ uuid, title }` 快照；这里要的是
+ * 能直接交给 store 动作（`toggleDone`）的活节点 —— 需要 `uuid` 与 `completed`，
+ * 且状态要跟着 TOC 一起更新，所以不另建一份可能过期的快照。
+ *
+ * 遍历顺序与 `buildNoteIndex` 一致（同一编号重复时取先遇到的）。
+ */
+export function findTocNoteByIndex(
+  toc: DeskTocNode[],
+  noteIndex: string
+): Extract<DeskTocNode, { type: 'note' }> | null {
+  const queue = [...toc]
+  while (queue.length > 0) {
+    const node = queue.shift()!
+    if (node.type === 'note' && node.noteIndex === noteIndex) return node
+    queue.unshift(...node.children)
+  }
+  return null
+}
+
+/**
  * 「点这一项该做什么」的唯一判据。纯函数，UI 只负责执行结果。
  *
  * - 目录 → 推进层级（不是打开文件）

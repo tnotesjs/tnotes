@@ -10,6 +10,7 @@ import KbPathBreadcrumb from './KbPathBreadcrumb.vue'
 
 import type {
   DeskResult,
+  DeskTocNode,
   KbFileEntryDto,
   KnowledgeBaseDescriptor,
   KnowledgeBaseDetail
@@ -308,5 +309,56 @@ describe('KbPathBreadcrumb long path folding', () => {
     await flushPromises()
     expect(listMock).toHaveBeenLastCalledWith({ knowledgeBaseId: 'kb-a', relPath: 'notes' })
     wrapper.unmount()
+  })
+})
+
+describe('KbPathBreadcrumb note done toggle', () => {
+  it('toggles the open note through the store, mirroring its completed state', async () => {
+    const workspace = useWorkspaceStore()
+    workspace.knowledgeBase = detail
+    const toggleDone = vi.spyOn(workspace, 'toggleDone').mockResolvedValue()
+    const wrapper = mountBreadcrumb('notes/0001. hello-algo.md')
+
+    const toggle = wrapper.get('.done-toggle')
+    // 与目录里的圆点同一个组件、同一套 class
+    expect(toggle.find('.done-dot').exists()).toBe(true)
+    expect(toggle.classes()).not.toContain('done')
+    expect(toggle.attributes('aria-label')).toBe('标记为完成')
+
+    await toggle.trigger('click')
+    expect(toggleDone).toHaveBeenCalledTimes(1)
+    // 交给 store 的是 TOC 里的活节点，不是快照：uuid + 当前 completed 都要在
+    expect(toggleDone.mock.calls[0]![0]).toMatchObject({
+      type: 'note',
+      uuid: 'uuid-0001',
+      completed: false
+    })
+    wrapper.unmount()
+  })
+
+  it('shows the filled dot when the note is already done', () => {
+    const workspace = useWorkspaceStore()
+    workspace.knowledgeBase = {
+      ...detail,
+      toc: [{ ...(detail.toc[0] as Extract<DeskTocNode, { type: 'note' }>), completed: true }]
+    }
+    const wrapper = mountBreadcrumb('notes/0001. hello-algo.md')
+    const toggle = wrapper.get('.done-toggle')
+    expect(toggle.classes()).toContain('done')
+    expect(toggle.attributes('aria-label')).toBe('标记为未完成')
+    wrapper.unmount()
+  })
+
+  it('has no toggle for files that are not TOC notes', () => {
+    const workspace = useWorkspaceStore()
+    workspace.knowledgeBase = detail
+    // notes/ 之外的文件
+    const textFile = mountBreadcrumb('README.md')
+    expect(textFile.find('.done-toggle').exists()).toBe(false)
+    textFile.unmount()
+    // notes/ 下但编号不在 TOC 里（被当文本打开的那种）
+    const unknownNote = mountBreadcrumb('notes/0099. 不在目录里.md')
+    expect(unknownNote.find('.done-toggle').exists()).toBe(false)
+    unknownNote.unmount()
   })
 })
