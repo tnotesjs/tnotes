@@ -115,21 +115,33 @@ afterEach(() => document.body.replaceChildren())
 describe('note header', () => {
   it('puts formatting on the same row as the title and view modes', async () => {
     const { wrapper, editor } = setup()
-    const controls = wrapper.get('.view-controls')
-    expect(controls.findAll('button').map((button) => button.attributes('aria-label'))).toEqual([
-      '标准页宽',
-      '隐藏目录',
-      '显示本笔记资源',
-      '可视化编辑',
-      '只读视图',
-      '源码视图'
-    ])
-    expect(controls.element.children[1].className).toBe('view-divider')
-    expect(wrapper.get('.outline-toggle').classes()).toContain('active')
+    // 顺序即验收要求：标题 / 【视图切换 | 格式工具栏】 / 布局开关
     const toolbar = wrapper.get('.document-toolbar')
     expect(
       [...toolbar.element.children].map((node) => node.classList[0] ?? node.nodeName.toLowerCase())
-    ).toEqual(['document-path', 'format-overflow-bar-stub', 'view-controls'])
+    ).toEqual([
+      'document-path',
+      'view-switcher',
+      'view-divider',
+      'format-overflow-bar-stub',
+      'layout-controls'
+    ])
+    expect(
+      wrapper
+        .get('.view-switcher')
+        .findAll('button')
+        .map((button) => button.attributes('aria-label'))
+    ).toEqual(['可视化编辑', '只读视图', '源码视图'])
+    expect(
+      wrapper
+        .get('.layout-controls')
+        .findAll('button')
+        .map((button) => button.attributes('aria-label'))
+    ).toEqual(['标准页宽', '隐藏目录', '显示本笔记资源'])
+    expect(wrapper.get('.view-divider').element.previousElementSibling).toBe(
+      wrapper.get('.view-switcher').element
+    )
+    expect(wrapper.get('.outline-toggle').classes()).toContain('active')
     expect(wrapper.find('.save-button').exists()).toBe(false)
     const width = vi.spyOn(editor, 'toggleNotePageWidth')
     const outline = vi.spyOn(editor, 'toggleNoteOutlineVisible')
@@ -148,7 +160,7 @@ describe('note header', () => {
       const bar = wrapper.getComponent(FormatOverflowBar)
       expect(bar.exists()).toBe(true)
       expect(bar.props('disabled')).toBe(viewMode === 'readonly')
-      expect(wrapper.find('.view-controls').exists()).toBe(true)
+      expect(wrapper.find('.layout-controls').exists()).toBe(true)
       expect(wrapper.find('.save-button').exists()).toBe(false)
     }
     wrapper.unmount()

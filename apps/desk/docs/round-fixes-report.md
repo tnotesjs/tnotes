@@ -839,3 +839,27 @@ nextTop=317, clearance=16`；
 验证：单测断言右键**非活跃**标签后活跃标签切回了它、它的 `noteAssetsVisible` 为 `true`、
 另一个标签仍为 `false`。这条断言做过反向验证 —— 把实现临时改成 `toggleNoteAssetsVisible`
 后只有这一条变红（预期 `true` 实得 `false`），确认不是恒真断言。
+
+## 十八、标题行工具栏重排：视图切换并入格式工具栏左侧，布局开关常显
+
+验收要求：③（视图切换：可视化 / 只读 / 源码）挪到 ①（格式工具栏）**左侧**、中间用竖线隔开；
+②（布局开关：页宽 / 目录 / 资源）不再按宽度条件渲染，改为**始终展示**。
+
+**改法**（`editor-groups/NoteTabPane.vue`，纯结构调整）：
+
+- DOM 顺序由「标题 / 格式工具栏 / [布局开关 | 竖线 | 视图切换]」改为
+  「标题 / 视图切换 / 竖线 / 格式工具栏 / 布局开关」，竖线只负责分隔视图切换与格式工具栏；
+  工具条自身 `gap: 12px`，所以竖线的 `margin` 由 `0 7px` 改为 `0`，两侧间距与其它元素一致；
+- ② 的容器 `.view-controls` 更名为 `.layout-controls`（它现在只装布局开关），仍保留
+  `flex: 1 1 0; justify-content: flex-end` —— 由它吸收右半边空白，格式工具栏才不会跟着跑到
+  最右边（与左端标题区平分空白是既有观感）；
+- **删掉**原来的 `@container desk-note-pane (max-width: 1080px) { .layout-toggles,
+.view-divider { display: none } }`：这就是"按宽度条件渲染"的来源，现在布局开关与竖线常显；
+- 三条按钮样式（base reset / 27×25 尺寸 / svg 尺寸）原先靠 `.view-controls button` 命中视图
+  切换按钮（它们在同一个容器里）；拆开后选择器补上 `.view-switcher button`，否则视图切换会
+  丢掉按钮边框、尺寸与图标描边。
+
+**验证**（单测 `NoteTabPane.test.ts` 27/27）：断言工具条**直接子元素的顺序**为
+`document-path / view-switcher / view-divider / format-overflow-bar-stub / layout-controls`、
+竖线的前一个兄弟节点就是视图切换、两组按钮的 `aria-label` 各自正确；typecheck / lint 0 error。
+排版观感（窄面板下 ② 是否常显、竖线位置）按约定交人工目测。

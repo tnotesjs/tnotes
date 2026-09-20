@@ -497,6 +497,49 @@ function openLink(url: string): void {
         </button>
         <span v-if="session.document.readOnly" class="read-only">只读</span>
       </div>
+      <!-- 视图切换与格式工具栏合成一组：切换在**左**，中间一条竖线隔开 -->
+      <div class="view-switcher" aria-label="笔记视图">
+        <UiTooltip label="可视化编辑">
+          <button
+            type="button"
+            aria-label="可视化编辑"
+            :class="{ active: tab.viewMode === 'visual' }"
+            @click="setMode('visual')"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m4 20 4.2-1 10.6-10.6a2.1 2.1 0 0 0-3-3L5.2 16 4 20Z" />
+              <path d="m14.5 6.7 2.8 2.8" />
+            </svg>
+          </button>
+        </UiTooltip>
+        <UiTooltip label="只读视图">
+          <button
+            type="button"
+            aria-label="只读视图"
+            :class="{ active: tab.viewMode === 'readonly' }"
+            @click="setMode('readonly')"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 5.5A3.5 3.5 0 0 1 7.5 4H11v16H7.5A3.5 3.5 0 0 0 4 21V5.5Z" />
+              <path d="M20 5.5A3.5 3.5 0 0 0 16.5 4H13v16h3.5A3.5 3.5 0 0 1 20 21V5.5Z" />
+            </svg>
+          </button>
+        </UiTooltip>
+        <UiTooltip label="源码视图">
+          <button
+            type="button"
+            aria-label="源码视图"
+            :class="{ active: tab.viewMode === 'source' }"
+            @click="setMode('source')"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m8.5 7-5 5 5 5M15.5 7l5 5-5 5M13.5 4l-3 16" />
+            </svg>
+          </button>
+        </UiTooltip>
+      </div>
+      <span class="view-divider" aria-hidden="true"></span>
+
       <FormatOverflowBar :items="formatActions" :disabled="formatDisabled">
         <template #item="{ item }">
           <UiTooltip v-if="item === 'bold'" label="粗体" shortcut="⌘ B">
@@ -651,7 +694,9 @@ function openLink(url: string): void {
           </UiTooltip>
         </template>
       </FormatOverflowBar>
-      <div class="view-controls">
+      <!-- 布局开关（页宽 / 目录 / 资源）：**始终展示** —— 原先窄面板会整块隐藏。
+           仍留在右端，并继续由它吸收右半边空白，格式工具栏才不会跟着跑到最右边。 -->
+      <div class="layout-controls">
         <div class="layout-toggles">
           <UiTooltip :label="pageWidthLabel">
             <button
@@ -686,47 +731,6 @@ function openLink(url: string): void {
               @click="editor.toggleNoteAssetsVisible(tab.id)"
             >
               <NoteAssetsIcon />
-            </button>
-          </UiTooltip>
-        </div>
-        <span class="view-divider" aria-hidden="true"></span>
-        <div class="view-switcher" aria-label="笔记视图">
-          <UiTooltip label="可视化编辑">
-            <button
-              type="button"
-              aria-label="可视化编辑"
-              :class="{ active: tab.viewMode === 'visual' }"
-              @click="setMode('visual')"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="m4 20 4.2-1 10.6-10.6a2.1 2.1 0 0 0-3-3L5.2 16 4 20Z" />
-                <path d="m14.5 6.7 2.8 2.8" />
-              </svg>
-            </button>
-          </UiTooltip>
-          <UiTooltip label="只读视图">
-            <button
-              type="button"
-              aria-label="只读视图"
-              :class="{ active: tab.viewMode === 'readonly' }"
-              @click="setMode('readonly')"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 5.5A3.5 3.5 0 0 1 7.5 4H11v16H7.5A3.5 3.5 0 0 0 4 21V5.5Z" />
-                <path d="M20 5.5A3.5 3.5 0 0 0 16.5 4H13v16h3.5A3.5 3.5 0 0 1 20 21V5.5Z" />
-              </svg>
-            </button>
-          </UiTooltip>
-          <UiTooltip label="源码视图">
-            <button
-              type="button"
-              aria-label="源码视图"
-              :class="{ active: tab.viewMode === 'source' }"
-              @click="setMode('source')"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="m8.5 7-5 5 5 5M15.5 7l5 5-5 5M13.5 4l-3 16" />
-              </svg>
             </button>
           </UiTooltip>
         </div>
@@ -954,7 +958,6 @@ function openLink(url: string): void {
   padding: 2px 5px;
 }
 
-.view-controls,
 .view-switcher {
   flex: none;
   display: flex;
@@ -964,9 +967,14 @@ function openLink(url: string): void {
   gap: 1px;
 }
 
-.view-controls {
+/* 布局开关（页宽 / 目录 / 资源）的容器：**始终展示** —— 原先窄面板（<=1080px）会把
+   整组连同竖线一起隐藏。它继续吸收右半边空白，格式工具栏才不会跟着跑到最右边
+   （与左端标题区平分空白，是既有的观感）。 */
+.layout-controls {
   flex: 1 1 0;
   min-width: min-content;
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
 }
 
@@ -976,23 +984,16 @@ function openLink(url: string): void {
   gap: 1px;
 }
 
+/* 视图切换与格式工具栏之间的竖线：两侧间距交给工具条的 gap，这里不再额外留白 */
 .view-divider {
   width: 1px;
   height: 16px;
-  margin: 0 7px;
+  margin: 0;
   background: var(--border);
 }
 
-/* Outline needs ~1080px beside the writing column. Below that, both layout
-   toggles do nothing useful, so hide them with the divider. */
-@container desk-note-pane (max-width: 1080px) {
-  .layout-toggles,
-  .view-divider {
-    display: none;
-  }
-}
-
-.view-controls button,
+.layout-controls button,
+.view-switcher button,
 .conflict-banner button,
 :deep(.format-overflow button) {
   border: 0;
@@ -1022,7 +1023,8 @@ function openLink(url: string): void {
   color: var(--text);
 }
 
-.view-controls button {
+.layout-controls button,
+.view-switcher button {
   width: 27px;
   height: 25px;
   display: grid;
@@ -1031,7 +1033,8 @@ function openLink(url: string): void {
   padding: 0;
 }
 
-.view-controls svg {
+.layout-controls svg,
+.view-switcher svg {
   width: 15px;
   height: 15px;
   fill: none;
