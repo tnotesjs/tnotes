@@ -1,3 +1,4 @@
+import { recordBackgroundFailureWithoutTask } from './backgroundFailureLog'
 import { deskLog } from './log'
 import { commandTaskManager, TASK_TITLES } from './commandTaskManager'
 import { workspaceManager } from './workspaceManager'
@@ -91,14 +92,33 @@ export function createBackgroundGitTask(event: {
       }
     }
   } catch (cause) {
-    // 落任务失败不能反过来影响后台流程（容量门禁、workspace 未就绪等）
+    // 落任务失败不能反过来影响后台流程（容量门禁、workspace 未就绪等）。
+    // 但**不能只写日志**：面板里没有这条任务，用户就没有任何入口看到失败。
+    // 所以额外记一条不占标签的记录（设置里可看），保留主进程给出的错误原文。
+    const message = cause instanceof Error ? cause.message : String(cause)
     deskLog('git:background-task', 'claim failed', {
       knowledgeBaseId: event.knowledgeBaseId,
       kind: event.kind,
-      message: cause instanceof Error ? cause.message : String(cause)
+      message
+    })
+    recordBackgroundFailureWithoutTask({
+      knowledgeBaseId: event.knowledgeBaseId,
+      kind: event.kind,
+      reason: claimFailureReason(message),
+      message
     })
     return null
   }
+}
+
+/**
+ * 把"认领失败"的原始错误翻成用户能看懂的原因。
+ *
+ * 容量门禁抛的是中文文案（见 `shared/bottomPanelTabs.ts`），原样透出即可；
+ * 其它情况（workspace 未就绪等）也把原文带上，不吞信息。
+ */
+export function claimFailureReason(message: string): string {
+  return message.trim() === '' ? '主进程未能创建后台任务（原因未提供）' : message
 }
 
 /** 测试用：清掉通知去抖状态，让用例之间互不影响。 */

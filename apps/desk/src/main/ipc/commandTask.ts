@@ -1,5 +1,11 @@
 import { z } from 'zod'
 
+import {
+  clearBackgroundFailures,
+  listBackgroundFailures,
+  onBackgroundFailuresChanged,
+  recordBackgroundFailureWithoutTask
+} from '../backgroundFailureLog'
 import { commandTaskManager, TASK_TITLES } from '../commandTaskManager'
 import { gitManager } from '../gitManager'
 import { launchIde } from '../ide'
@@ -389,6 +395,10 @@ export function registerCommandTask(getWindow: () => BrowserWindow | null): () =
   const offClosed = commandTaskManager.onClosed((taskId) => {
     getWindow()?.webContents.send(IPC_CHANNELS.commandTaskClosed, taskId)
   })
+  // 没建出可见任务的后台失败（容量被拦）：单独一条通道，不占面板标签
+  const offBackgroundFailures = onBackgroundFailuresChanged((items) => {
+    getWindow()?.webContents.send(IPC_CHANNELS.backgroundFailureChanged, items)
+  })
 
   handle(IPC_CHANNELS.commandTaskClaim, getWindow, claimSchema, (input) => {
     const location = workspaceManager.getLocation(input.knowledgeBaseId)
@@ -403,6 +413,30 @@ export function registerCommandTask(getWindow: () => BrowserWindow | null): () =
   })
 
   handle(IPC_CHANNELS.commandTaskList, getWindow, z.undefined(), () => commandTaskManager.list())
+  handle(IPC_CHANNELS.backgroundFailureList, getWindow, z.undefined(), () =>
+    listBackgroundFailures()
+  )
+  handle(IPC_CHANNELS.backgroundFailureClear, getWindow, z.undefined(), () => {
+    clearBackgroundFailures()
+  })
+  // 仅 E2E：后台失败要"容量满 + 真实远端失败"才会自然发生，成本高且不确定。
+  // 用一个**受环境门禁保护**的注入口来验证界面路径；生产构建里直接拒绝。
+  handle(
+    IPC_CHANNELS.backgroundFailureInject,
+    getWindow,
+    z.object({
+      knowledgeBaseId: z.string().min(1),
+      kind: z.enum(['git-fetch', 'git-push']),
+      reason: z.string().min(1).max(400),
+      message: z.string().min(1).max(4000)
+    }),
+    (input) => {
+      if (process.env.DESK_E2E_EXPOSE_INTERNALS !== '1') {
+        throw new Error('backgroundFailureInject 仅在 E2E 下可用')
+      }
+      return recordBackgroundFailureWithoutTask(input)
+    }
+  )
 
   handle(
     IPC_CHANNELS.commandTaskClose,
@@ -489,5 +523,6 @@ export function registerCommandTask(getWindow: () => BrowserWindow | null): () =
     offChanged()
     offLog()
     offClosed()
+    offBackgroundFailures()
   }
 }

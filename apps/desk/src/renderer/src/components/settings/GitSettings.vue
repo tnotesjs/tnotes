@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
+import { useBackgroundFailureStore } from '../../stores/backgroundFailure'
 import { useWorkspaceStore } from '../../stores/workspace'
 
 import type { AppSettings } from '../../../../shared/contracts'
@@ -9,6 +10,17 @@ defineProps<{ draft: AppSettings }>()
 const emit = defineEmits<{ reset: [] }>()
 
 const store = useWorkspaceStore()
+const backgroundFailures = useBackgroundFailureStore()
+
+/** 后台失败里展开「查看错误详情」的那一条（默认全部收起） */
+const expandedFailure = ref<string | null>(null)
+function toggleFailure(id: string): void {
+  expandedFailure.value = expandedFailure.value === id ? null : id
+}
+const KIND_LABEL: Record<'git-fetch' | 'git-push', string> = {
+  'git-fetch': '获取远端更新',
+  'git-push': '推送'
+}
 
 const timeFormat = new Intl.DateTimeFormat('sv-SE', {
   dateStyle: 'short',
@@ -58,6 +70,39 @@ const lastCheck = computed(() => rows.value.find((row) => row.at)?.at ?? null)
         </span>
       </label>
     </div>
+    <!--
+      后台失败但**没能建出可见任务**（当前成因：底部面板标签已达上限）。
+      面板里没有它的任务，所以这里单独给出汇总与详情入口，且不占用面板标签。
+    -->
+    <div
+      v-if="backgroundFailures.failures.length > 0"
+      class="git-failures"
+      data-testid="git-background-failures"
+    >
+      <div class="git-last-check__head">
+        <span>后台操作失败（未占用面板标签）</span>
+        <button type="button" class="git-failures__clear" @click="backgroundFailures.clear()">
+          清空
+        </button>
+      </div>
+      <ul class="git-failures__list">
+        <li v-for="failure in backgroundFailures.failures" :key="failure.id">
+          <div class="git-failures__row">
+            <span class="git-last-check__name">{{ failure.knowledgeBaseName }}</span>
+            <span>{{ KIND_LABEL[failure.kind] }}</span>
+            <span>{{ formatTime(failure.at) }}</span>
+            <span v-if="failure.count > 1">×{{ failure.count }}</span>
+            <button type="button" class="git-failures__detail" @click="toggleFailure(failure.id)">
+              {{ expandedFailure === failure.id ? '收起' : '查看错误详情' }}
+            </button>
+          </div>
+          <p class="git-failures__reason">{{ failure.reason }}</p>
+          <pre v-if="expandedFailure === failure.id" class="git-failures__message">{{
+            failure.message
+          }}</pre>
+        </li>
+      </ul>
+    </div>
     <div class="git-last-check">
       <div class="git-last-check__head">
         <span>上次成功远端检查</span>
@@ -75,6 +120,60 @@ const lastCheck = computed(() => rows.value.find((row) => row.at)?.at ?? null)
 </template>
 
 <style src="./settingsShared.css" scoped></style>
+
+<style scoped>
+.git-failures {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  padding: 9px 11px;
+}
+
+.git-failures__clear,
+.git-failures__detail {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 1px 8px;
+}
+
+.git-failures__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.git-failures__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.git-failures__reason {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.git-failures__message {
+  margin: 4px 0 0;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font: 10px/1.5 var(--font-mono, monospace);
+  color: var(--text);
+}
+</style>
 
 <style scoped>
 .card-toggle {

@@ -648,6 +648,21 @@ export const SUITES = [
     note: '选区浮动工具条开关：默认关闭不弹且不拦截指针事件、设置面板可开、重启后保持、改回关闭后不再出现'
   },
   {
+    name: 'e2e-background-failure-visibility.mjs',
+    area: 'git',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/main/backgroundFailureLog.ts',
+      'apps/desk/src/main/backgroundGitFailure.ts',
+      'apps/desk/src/main/ipc/commandTask.ts',
+      'apps/desk/src/renderer/src/components/settings/GitSettings.vue',
+      'apps/desk/src/renderer/src/stores/backgroundFailure.ts'
+    ],
+    serial: false,
+    smoke: false,
+    note: '面板容量满额时后台失败仍可见：不占标签、设置里有汇总与真实错误详情、同原因只累加计数'
+  },
+  {
     name: 'e2e-packaged-smoke.mjs',
     area: 'packaged',
     tier: 'manual',

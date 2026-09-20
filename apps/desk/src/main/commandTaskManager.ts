@@ -210,7 +210,15 @@ export class CommandTaskManager {
   }): { handle: CommandTaskHandle; dto: CommandTaskDto } {
     const key = `${input.knowledgeBaseId}::${input.kind}`
     const existingId = this.byKey.get(key)
-    const existing = existingId ? this.tasks.get(existingId) : undefined
+    const candidate = existingId ? this.tasks.get(existingId) : undefined
+    // **来源必须一致才复用标签**：手动 fetch 与后台定时 fetch 是同一个
+    // `(知识库, kind)`，若按 key 无条件复用，后台那一轮会挂到用户手动那条标签上、
+    // 给它 `run+1` 并清掉它的输出与结果（反过来也一样）。来源不同就各自独立成一条，
+    // 两条运行因此不会串输出、不会互相提前结算、取消也只作用于自己那一轮。
+    const existing =
+      candidate && Boolean(candidate.dto.background) === Boolean(input.background)
+        ? candidate
+        : undefined
 
     // 统一容量检查：复用已有标签（运行中复用 / 已结束重跑）不占新名额，直接放行；
     // 新建才参与合并计数（终端会话 + 命令任务）。必须在这里判——调用方随后就可能

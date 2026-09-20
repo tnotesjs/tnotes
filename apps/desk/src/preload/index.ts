@@ -56,6 +56,7 @@ import type {
   NoteUpdateConfigRequest,
   PreviewStartResult,
   PreviewStateDto,
+  BackgroundFailureDto,
   CommandTaskClaimRequest,
   CommandTaskDto,
   CommandTaskLogEvent,
@@ -402,6 +403,23 @@ const api: DeskApi = {
         callback(state)
       ipcRenderer.on(IPC_CHANNELS.previewChanged, listener)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.previewChanged, listener)
+    }
+  },
+  backgroundFailures: {
+    list: () => invoke<BackgroundFailureDto[]>(IPC_CHANNELS.backgroundFailureList),
+    clear: () => invoke<void>(IPC_CHANNELS.backgroundFailureClear),
+    /** 仅 E2E 内部使用（主进程按 DESK_E2E_EXPOSE_INTERNALS 门禁） */
+    injectForTest: (request: {
+      knowledgeBaseId: string
+      kind: 'git-fetch' | 'git-push'
+      reason: string
+      message: string
+    }) => invoke<BackgroundFailureDto>(IPC_CHANNELS.backgroundFailureInject, request),
+    onChanged: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, items: BackgroundFailureDto[]): void =>
+        callback(items)
+      ipcRenderer.on(IPC_CHANNELS.backgroundFailureChanged, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.backgroundFailureChanged, listener)
     }
   },
   commandTask: {

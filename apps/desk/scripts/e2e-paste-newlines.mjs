@@ -43,10 +43,16 @@ const fixture = createFixture('paste-newlines', {
         '正文起点',
         ''
       ].join('\n')
+    },
+    {
+      index: '0002',
+      title: '空行',
+      body: ['# 空行', '', '起点', ''].join('\n')
     }
   ]
 })
 const noteFile = fixture.notePath('0001', '粘贴')
+const blankNoteFile = fixture.notePath('0002', '空行')
 
 const app = await launchDesk(fixture)
 const page = await app.firstWindow()
@@ -201,6 +207,134 @@ try {
     '带 HTML 的粘贴仍走富文本（粗体保留，不被纯文本分支接管）',
     richText.includes('粗体') && !richText.includes('纯文本一行'),
     JSON.stringify(richText.slice(0, 120))
+  )
+
+  // ── 场景五 / 六：换到干净的笔记（前面已粘入很多空段落，会污染计数）──
+  await openNote(page, { kbName: fixture.kbName, title: '空行' })
+  await waitFor(
+    async () => (await page.locator('.ProseMirror:visible').first().innerText()).includes('起点'),
+    20000
+  )
+  const blankPm = () => page.locator('.ProseMirror:visible').first()
+  const focusBlankEnd = async () => {
+    await blankPm().locator('p').filter({ hasText: '起点' }).first().click()
+    await page.keyboard.press('End')
+    await new Promise((resolve) => setTimeout(resolve, 150))
+  }
+  const blankDisk = async () => {
+    const text = (await import('node:fs')).readFileSync(blankNoteFile, 'utf8')
+    return text.slice(text.indexOf('---', 3) + 4)
+  }
+
+  // 纯文本：`ALPHA` + 2 个空行 + `BRAVO`
+  await setClipboard('ALPHA\n\n\nBRAVO')
+  await focusBlankEnd()
+  await page.keyboard.press('ControlOrMeta+v')
+  await new Promise((resolve) => setTimeout(resolve, 600))
+  const blankBetween = await blankPm().evaluate((root) => {
+    const text = root.innerText
+    const start = text.indexOf('ALPHA')
+    const end = text.indexOf('BRAVO')
+    return start >= 0 && end > start ? text.slice(start + 'ALPHA'.length, end) : ''
+  })
+  // 编辑器里每个空段落渲染成 2 个换行（段落之间的空行），2 个空段落 = 4 个换行；
+  // 旧的"压成 1 个"实现是 2 个换行。这里要求 ≥4，并核对磁盘侧的具体个数。
+  rec.record(
+    '粘贴的 2 个空行在编辑器里仍是 2 个（不是被压成 1 个）',
+    (blankBetween.match(/\n/g) ?? []).length >= 4,
+    `ALPHA 与 BRAVO 之间=${JSON.stringify(blankBetween)}`
+  )
+  await save()
+  const blankDiskText = await blankDisk()
+  // 磁盘上每个空段落写成一行（`<br />` 或空行）。旧实现把 2/3 个空行压成同一种结果，
+  // 所以这里要求 ALPHA 与 BRAVO 之间**至少有 2 行空行**，而不是恰好隔一行。
+  const blankAge = blankDiskText.slice(blankDiskText.indexOf('ALPHA'))
+  const blankBetweenDisk = blankAge.slice('ALPHA'.length, blankAge.indexOf('BRAVO'))
+  const diskBlankLines = blankBetweenDisk
+    .split('\n')
+    .filter((line) => line.trim() === '' || /^<br\s*\/?>$/.test(line.trim())).length
+  rec.record(
+    '保存后磁盘保留 2 个空行（不是 1 个）',
+    /ALPHA/.test(blankDiskText) &&
+      blankDiskText.indexOf('ALPHA') < blankDiskText.indexOf('BRAVO') &&
+      diskBlankLines >= 2,
+    `空行行数=${diskBlankLines}；${JSON.stringify(blankBetweenDisk)}`
+  )
+
+  // ── 场景六：Markdown 文本仍走原有解析（标题 / 列表 / 围栏代码块）──
+  await setClipboard('## 粘进来的标题\n\n- 甲\n- 乙\n\n```js\nconst z = 9\n```')
+  // Markdown 块语法只会在**空块**上解析：先回车开一个新段落再粘
+  await focusBlankEnd()
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('ControlOrMeta+v')
+  await new Promise((resolve) => setTimeout(resolve, 700))
+  const mdShape = await blankPm().evaluate((root) => ({
+    headings: Array.from(root.querySelectorAll('h2')).map((n) => n.textContent),
+    listItems: Array.from(root.querySelectorAll('li')).map((n) =>
+      (n.textContent ?? '').replace(/\s+/g, ' ').trim()
+    ),
+    codeBlocks: root.querySelectorAll('.milkdown-code-block, pre').length
+  }))
+  rec.record(
+    'Markdown 粘贴仍是标题（不是普通正文）',
+    mdShape.headings.includes('粘进来的标题'),
+    JSON.stringify(mdShape.headings)
+  )
+  rec.record(
+    'Markdown 粘贴仍生成列表项',
+    mdShape.listItems.includes('甲') && mdShape.listItems.includes('乙'),
+    JSON.stringify(mdShape.listItems)
+  )
+  rec.record(
+    'Markdown 粘贴仍生成代码块',
+    mdShape.codeBlocks >= 1,
+    `codeBlocks=${mdShape.codeBlocks}`
+  )
+  const mdDisk = await (async () => {
+    await save()
+    return blankDisk()
+  })()
+  rec.record(
+    'Markdown 粘贴落盘仍是 Markdown（`## ` 与 `- ` 与围栏）',
+    /##\s+粘进来的标题/.test(mdDisk) && /^- 甲$/m.test(mdDisk) && /```/.test(mdDisk),
+    JSON.stringify(mdDisk.slice(mdDisk.indexOf('粘进来的标题')).slice(0, 80))
+  )
+
+  // 重开核对：空行与 Markdown 结构都要还在
+  await save()
+  await page.locator('.toc-row', { hasText: '空行' }).first().click()
+  await new Promise((resolve) => setTimeout(resolve, 900))
+  await waitFor(async () => (await page.locator('.ProseMirror').count()) > 0, 15000)
+  await waitFor(
+    async () => (await page.locator('.ProseMirror:visible').first().innerText()).includes('ALPHA'),
+    20000
+  )
+  const reopenedShape = await page
+    .locator('.ProseMirror:visible')
+    .first()
+    .evaluate((root) => ({
+      text: root.innerText,
+      headings: Array.from(root.querySelectorAll('h2')).map((n) => n.textContent),
+      listItems: Array.from(root.querySelectorAll('li')).map((n) =>
+        (n.textContent ?? '').replace(/\s+/g, ' ').trim()
+      )
+    }))
+  const reopenedBetween = (() => {
+    const start = reopenedShape.text.indexOf('ALPHA')
+    const end = reopenedShape.text.indexOf('BRAVO')
+    return start >= 0 && end > start ? reopenedShape.text.slice(start + 5, end) : ''
+  })()
+  rec.record(
+    '重开后连续空行仍按实际个数保留',
+    (reopenedBetween.match(/\n/g) ?? []).length >= 4,
+    `ALPHA 与 BRAVO 之间=${JSON.stringify(reopenedBetween)}`
+  )
+  rec.record(
+    '重开后 Markdown 结构（标题 + 列表）仍在',
+    reopenedShape.headings.includes('粘进来的标题') &&
+      reopenedShape.listItems.includes('甲') &&
+      reopenedShape.listItems.includes('乙'),
+    JSON.stringify({ headings: reopenedShape.headings, listItems: reopenedShape.listItems })
   )
 
   rec.record('无未捕获页面异常', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 200))

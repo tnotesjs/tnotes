@@ -15,6 +15,7 @@ vi.mock('./settings', () => ({
   loadSettings: () => ({ git: { autoFetch: settingsState.autoFetch } })
 }))
 
+import { commandTaskManager } from './commandTaskManager'
 import { GitManager } from './gitManager'
 import type { CommandResult } from './gitManager'
 import type { GitRepositoryDescriptor } from './workspace/types'
@@ -326,5 +327,156 @@ describe('后台失败分类与退避', () => {
     manager.scheduleBackgroundFetches()
     await sleep(30)
     expect(fake.fetchCalls()).toHaveLength(1)
+  })
+})
+
+/**
+ * 第 5 项验收：**后台与手动操作的运行归属隔离**。
+ *
+ * `claimHandle` 对同一个 `(知识库, kind)` 是复用语义（渲染端与主进程各 claim 一次
+ * 必须复用同一条，否则标签会永远停在「已排队」）。但"后台 fetch"与"手动 fetch"
+ * 恰好是同一个 `(库, kind=git-fetch)`：如果后台在手动任务**运行中**认领，就会
+ * 复用同一条记录、共用同一个 `id/run`，于是：
+ *  - 两边的输出会串到同一个任务里；
+ *  - 后台先结束会把**手动**那一轮提前结算掉；
+ *  - 取消归属也被改写（取消打到别人的运行上）。
+ *
+ * 下面用确定性时序（假执行器可挂起）把两个方向的时序都钉住。
+ */
+describe('后台与手动操作的运行归属隔离（第 5 项）', () => {
+  // 单例 manager 会跨用例保留任务：每条用例先清空，计数才有确定性
+  beforeEach(() => {
+    commandTaskManager.dispose()
+  })
+
+  const claim = (
+    background: boolean,
+    overrides: Partial<{ kind: 'git-fetch' | 'git-push'; knowledgeBaseId: string }> = {}
+  ) =>
+    commandTaskManager.claimHandle({
+      knowledgeBaseId: overrides.knowledgeBaseId ?? 'kb1',
+      knowledgeBaseName: 'TNotes.kb1',
+      kind: overrides.kind ?? 'git-fetch',
+      title: background ? '获取远端更新' : '获取远端更新',
+      cwd: '/tmp/kb1',
+      background
+    })
+
+  it('同一 (库, kind) 但**来源不同**时不复用标签：各自独立成一条', () => {
+    const manual = claim(false)
+    const background = claim(true)
+    expect(background.dto.id).not.toBe(manual.dto.id)
+    expect(background.dto.run).toBe(1)
+    expect(manual.dto.run).toBe(1)
+    expect(manual.dto.background).toBe(false)
+    expect(background.dto.background).toBe(true)
+    expect(commandTaskManager.list().filter((task) => task.kind === 'git-fetch')).toHaveLength(2)
+  })
+
+  it('同一 (库, kind) 且**来源相同**时仍然复用同一条（渲染端与主进程各 claim 一次）', () => {
+    const first = claim(false)
+    const second = claim(false)
+    expect(second.dto.id).toBe(first.dto.id)
+    // 运行中复用不得自增 run（否则渲染端手里的 run 会失效、标签永远停在「已排队」）
+    expect(second.dto.run).toBe(first.dto.run)
+    expect(commandTaskManager.list().filter((task) => task.kind === 'git-fetch')).toHaveLength(1)
+  })
+
+  it('手动任务已结束后，后台同类操作另起一条：手动历史不被改写、输出不串', async () => {
+    // `onLog` 是**单监听**（会替换上一个）：这里先订阅，再按 `id + run` 归属断言
+    const logEvents: { taskId: string; run: number; data: string }[] = []
+    commandTaskManager.onLog((event) => {
+      logEvents.push({ taskId: event.taskId, run: event.run, data: event.data })
+    })
+    const manual = commandTaskManager.claimHandle({
+      knowledgeBaseId: 'kb1',
+      knowledgeBaseName: 'TNotes.kb1',
+      kind: 'git-fetch',
+      title: '获取远端更新',
+      cwd: '/tmp/kb1'
+    })
+    manual.handle.stage('running', '获取远端更新')
+    manual.handle.write('stdout', 'manual-only\n')
+    commandTaskManager.finishRun(manual.dto.id, manual.dto.run, 'done', null)
+
+    const background = commandTaskManager.claimHandle({
+      knowledgeBaseId: 'kb1',
+      knowledgeBaseName: 'TNotes.kb1',
+      kind: 'git-fetch',
+      title: '获取远端更新',
+      cwd: '/tmp/kb1',
+      background: true
+    })
+    // 另起一条：id 与 run 都是新的
+    expect(background.dto.id).not.toBe(manual.dto.id)
+    expect(background.dto.run).toBe(1)
+    background.handle.stage('running', '获取远端更新')
+    background.handle.write('stdout', 'bg-fetch\n')
+    // 日志是**节流冲刷**的（flushIntervalMs），等一次冲刷再断言
+    await sleep(120)
+
+    // 手动那条历史完全没被动过
+    const manualHistory = commandTaskManager.list().find((task) => task.id === manual.dto.id)
+    expect(manualHistory?.status).toBe('done')
+    expect(manualHistory?.error).toBeNull()
+    expect(manualHistory?.run).toBe(manual.dto.run)
+    expect(manualHistory?.background).toBe(false)
+
+    // 输出按 `id + run` 归属，两边不串
+    const manualLogs = logEvents.filter(
+      (event) => event.taskId === manual.dto.id && event.run === manual.dto.run
+    )
+    expect(manualLogs.some((event) => event.data.includes('manual-only'))).toBe(true)
+    expect(manualLogs.some((event) => event.data.includes('bg-fetch'))).toBe(false)
+    const backgroundLogs = logEvents.filter(
+      (event) => event.taskId === background.dto.id && event.run === background.dto.run
+    )
+    expect(backgroundLogs.some((event) => event.data.includes('bg-fetch'))).toBe(true)
+    expect(backgroundLogs.some((event) => event.data.includes('manual-only'))).toBe(false)
+
+    // 反向：后台收尾不得结算手动那一轮（id 不同，天然隔离）
+    commandTaskManager.finishRun(background.dto.id, background.dto.run, 'failed', 'bg 失败')
+    expect(commandTaskManager.list().find((task) => task.id === manual.dto.id)?.status).toBe('done')
+    expect(commandTaskManager.list().find((task) => task.id === background.dto.id)?.status).toBe(
+      'failed'
+    )
+  })
+
+  it('后台轮次运行中时手动开始：后台轮次不被提前结算、取消只作用于自己那一轮', () => {
+    const background = commandTaskManager.claimHandle({
+      knowledgeBaseId: 'kb1',
+      knowledgeBaseName: 'TNotes.kb1',
+      kind: 'git-fetch',
+      title: '获取远端更新',
+      cwd: '/tmp/kb1',
+      background: true
+    })
+    background.handle.stage('running', '获取远端更新')
+
+    const manual = commandTaskManager.claimHandle({
+      knowledgeBaseId: 'kb1',
+      knowledgeBaseName: 'TNotes.kb1',
+      kind: 'git-fetch',
+      title: '获取远端更新',
+      cwd: '/tmp/kb1'
+    })
+    expect(manual.dto.id).not.toBe(background.dto.id)
+
+    // 后台那一轮仍在运行：没有被手动认领提前结算
+    const during = commandTaskManager.list().find((task) => task.id === background.dto.id)
+    expect(during?.status).toBe('running')
+    expect(during?.finishedAt).toBeNull()
+    expect(during?.run).toBe(background.dto.run)
+
+    // 取消手动那一轮不能动到后台那一轮
+    commandTaskManager.cancelQueued(manual.dto.id, manual.dto.run, '用户取消')
+    expect(commandTaskManager.list().find((task) => task.id === background.dto.id)?.status).toBe(
+      'running'
+    )
+
+    // 手动取消后，后台那一轮的"这一轮仍是当前运行"校验仍为真
+    expect(
+      commandTaskManager.reportStageChecked(background.dto.id, background.dto.run, 'running')
+    ).toBe(true)
   })
 })

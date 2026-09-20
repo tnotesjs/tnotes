@@ -136,6 +136,12 @@ export const IPC_CHANNELS = {
   commandTaskFinish: 'command-task:finish',
   commandTaskChanged: 'command-task:changed',
   commandTaskClosed: 'command-task:closed',
+  /** 后台操作因**底部面板容量已满**而没能建出可见任务：单独记一条，不占标签 */
+  backgroundFailureList: 'background-failure:list',
+  backgroundFailureChanged: 'background-failure:changed',
+  backgroundFailureClear: 'background-failure:clear',
+  /** 仅 E2E（`DESK_E2E_EXPOSE_INTERNALS=1`）可用：注入一条"没有可见任务"的后台失败 */
+  backgroundFailureInject: 'background-failure:inject',
   commandTaskLog: 'command-task:log',
   commandTaskReveal: 'command-task:reveal',
   gitStateChanged: 'git:state-changed',
@@ -1386,6 +1392,26 @@ export interface GitRepositoryStateDto {
   error: string | null
 }
 
+/**
+ * 后台操作**没能建出可见任务**时的失败记录（当前只有一种成因：底部面板标签已达上限）。
+ *
+ * 这类失败不能只写日志：面板里没有它的任务、也就没有「查看输出」入口。这里保留
+ * 真实错误原文与发生时间，由设置里的「Git 与远端」分组展示，**不占用面板标签**。
+ */
+export interface BackgroundFailureDto {
+  id: string
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  kind: 'git-fetch' | 'git-push'
+  /** 失败原因（主进程给出的原文，不加工） */
+  message: string
+  /** 为什么没有可见任务（例如"底部面板标签已达上限"） */
+  reason: string
+  at: string
+  /** 同一 (库, 操作, 原因, 消息) 重复发生的次数（重复只累加计数，不刷多条） */
+  count: number
+}
+
 export interface GitOperationResult {
   state: GitRepositoryStateDto
   message: string
@@ -1795,6 +1821,18 @@ export interface DeskApi {
     stop(knowledgeBaseId: string): Promise<DeskResult<PreviewStateDto>>
     list(): Promise<DeskResult<PreviewStateDto[]>>
     onChanged(callback: (state: PreviewStateDto) => void): () => void
+  }
+  backgroundFailures: {
+    list(): Promise<DeskResult<BackgroundFailureDto[]>>
+    clear(): Promise<DeskResult<void>>
+    /** 仅 E2E 内部使用；生产构建里主进程会拒绝（见 backgroundFailureInject 门禁） */
+    injectForTest(request: {
+      knowledgeBaseId: string
+      kind: 'git-fetch' | 'git-push'
+      reason: string
+      message: string
+    }): Promise<DeskResult<BackgroundFailureDto>>
+    onChanged(callback: (failures: BackgroundFailureDto[]) => void): () => void
   }
   commandTask: {
     /** 认领任务：同一 (知识库, 种类) 已有运行中的任务时返回它本身（不重复提交） */

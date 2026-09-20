@@ -28,6 +28,7 @@ import {
 } from './stores/update'
 import { useCommandTaskStore } from './stores/commandTask'
 import { planFailureNotices } from './stores/failureNotice'
+import { useBackgroundFailureStore } from './stores/backgroundFailure'
 import { useTerminalStore } from './stores/terminal'
 import { useWorkspaceStore } from './stores/workspace'
 import { selectAllInRenderer } from './selectAll'
@@ -46,6 +47,7 @@ const store = useWorkspaceStore()
 const editor = useEditorStore()
 const terminalStore = useTerminalStore()
 const commandTaskStore = useCommandTaskStore()
+const backgroundFailureStore = useBackgroundFailureStore()
 const createDialogOpen = ref(false)
 const createKbDialogOpen = ref(false)
 const createKbFolderName = ref('')
@@ -86,6 +88,7 @@ let systemTheme: MediaQueryList | null = null
 let unsubscribeTerminal: (() => void) | null = null
 let unsubscribeTerminalOpen: (() => void) | null = null
 let unsubscribeCommandTask: (() => void) | null = null
+let unsubscribeBackgroundFailures: (() => void) | null = null
 /** 已经通知过的运行，避免同类失败反复弹通知 */
 const notifiedTaskRuns = new Set<string>()
 /**
@@ -574,6 +577,29 @@ watch(
   }
 )
 
+/**
+ * 「后台操作没能建出可见任务」的失败也要让用户知道。
+ *
+ * 这类失败在面板里没有任务、因此没有「查看输出」入口；设置里的「Git 与远端」分组
+ * 有完整明细。这里只在**新出现**一条时提示一次，重复累加（count>1）不再弹。
+ */
+watch(
+  () => backgroundFailureStore.failures.length,
+  (length, previous) => {
+    const latest = backgroundFailureStore.latest
+    if (!latest || length <= (previous ?? 0)) return
+    if (latest.count > 1) return
+    pushActionToast(
+      `${latest.knowledgeBaseName}：后台勾取失败（未占用面板标签）`.replace('勾取', '抓取'),
+      '查看详情',
+      () => {
+        settingsOpen.value = true
+      },
+      'error'
+    )
+  }
+)
+
 watch(
   () => store.error,
   (error) => {
@@ -618,6 +644,8 @@ onMounted(async () => {
   // 已有会话由主进程持有：收起面板/刷新渲染端之后仍然在跑，这里恢复列表
   await terminalStore.load()
   await commandTaskStore.load()
+  await backgroundFailureStore.load()
+  unsubscribeBackgroundFailures = backgroundFailureStore.subscribe()
   applyAppearance()
   await persistSession()
 })
@@ -630,6 +658,8 @@ onUnmounted(() => {
   unsubscribeTerminalOpen = null
   unsubscribeCommandTask?.()
   unsubscribeCommandTask = null
+  unsubscribeBackgroundFailures?.()
+  unsubscribeBackgroundFailures = null
   unsubscribeCommandTaskReveal?.()
   unsubscribeCommandTaskReveal = null
   unsubscribeCommandTaskRetry?.()
