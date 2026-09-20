@@ -674,6 +674,9 @@ async function openHeaderMenu(): Promise<void> {
   gap: 6px;
   padding: 7px 9px;
   border-bottom: 1px solid var(--border);
+  /* 给下方吸顶行留出上方间距：滚动容器顶部不能留 padding（那条带子盖不住、会透出内容），
+     所以留白放在这里 —— 搜索栏在滚动容器之外，怎么留都不会被透视。 */
+  margin-bottom: 7px;
 }
 
 .navigator-top .search-wrap {
@@ -753,10 +756,10 @@ async function openHeaderMenu(): Promise<void> {
    * 顶部**不留 padding**：sticky 只能吸到滚动容器的内容盒上沿，padding-top 会在
    * 容器顶边与吸顶行之间留出一条带子，滚动上来的目录项从那里透出来
    * （实测：`padding-top: 7px` 时该带高 7px，打点命中 `node-label` / `note-index`）。
-   * 需要的视觉留白改用 `scroll-padding-top` —— 它只影响滚动定位/对齐，不产生可透视的带子。
+   * 吸顶行需要的上方留白改由搜索栏的下边距提供（见 `.navigator-top`）——
+   * 那属于非滚动区域，不会被透视。
    */
   padding: 0 7px 7px;
-  scroll-padding-top: 7px;
 }
 
 /*
@@ -783,7 +786,7 @@ async function openHeaderMenu(): Promise<void> {
   position: sticky;
   top: 0;
   z-index: 3;
-  /* 吸顶时必须不透明：容器有 7px padding，否则内容会从边缘透出 */
+  /* 吸顶时必须不透明：否则下方滚动的目录项会透出来 */
   background: var(--panel);
   box-shadow: 0 1px 0 var(--border);
 }
