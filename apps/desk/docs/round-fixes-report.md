@@ -801,3 +801,31 @@ nextTop=317, clearance=16`；
 **验证**：纯样式改动，按约定交人工目测（把窗口/分栏拖到 500px 以下看是否出横向滚动条，
 且内容不再继续压扁、纵向不出现第二条滚动条）。顺带修了 `e2e-image-caption.mjs` 里
 "`.editor-group-body` 是 `overflow: visible`"这句已过期的注释。
+
+## 十七、笔记右键菜单加「显示本笔记资源」
+
+菜单是**主进程的原生菜单**（`main/contextMenus.ts` 拼模板，渲染端只拿到被点的 action id），
+所以这条要三处一起改：
+
+1. `shared/contracts.ts`：`ContextMenuAction` 加 `'show-note-assets'`；
+2. `main/contextMenus.ts`：笔记菜单里插在「在右侧打开」之后（都是"把这个笔记摆出来"这一类）；
+3. `renderer/components/TocNodeList.vue` 的 `runNodeContextAction` 执行它。
+
+**执行语义**（两点是刻意的）：
+
+- **「显示」是命令，不是切换**：面板已经开着时再点一次保持显示。为此把 editor store 的
+  `toggleNoteAssetsVisible` 拆出一个 `setNoteAssetsVisible(tabId, visible)`，toggle 改为调用它
+  —— 工具栏那个图标按钮仍是切换，右键菜单用"设成显示"。
+- **笔记没开着就先打开**，且按「永久打开」（`selectNote(node, undefined, true)`）：命令不该建出
+  一个随后被下一次单击顶掉的预览标签。`selectNote` 顺带改成返回标签页 id（读盘失败把标签页
+  收掉时返回 null），这样"打开之后还要对那个标签页再做一件事"的调用方（本命令、以及原来的
+  「固定」）不用再自己去树里找一遍标签页。
+- 笔记已经开着时，先 `editor.activate(groupId, tabId)` 切过去再开面板：标签页可能藏在另一个
+  分组里、或不是该分组当前的活跃标签，不切过去等于没反应（为此新增
+  `findNoteTabLocation()` 返回"标签页 + 所在分组"，`findNoteTab()` 复用它）。
+
+**验证**（单测 2 个文件 29/29）：
+
+- 主进程菜单模板：笔记菜单项顺序断言里加上「显示本笔记资源」；
+- 渲染端：没开着 → `selectNote(node, undefined, true)` 后把返回的标签页设成显示；
+  已开着且面板已显示 → 不重新打开、`setNoteAssetsVisible(tabId, true)` 后仍为显示（不会被 toggle 关掉）。

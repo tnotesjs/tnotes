@@ -43,17 +43,30 @@ const editor = useEditorStore()
 const tocShowIndex = computed(() => store.settings?.toc?.showNoteIndex !== false)
 const tocShowStatus = computed(() => store.settings?.toc?.showNoteStatus !== false)
 
+/**
+ * 找出某篇笔记已打开的标签页**及其所在分组**。
+ *
+ * 带上分组是因为「显示本笔记资源」这类命令光改标签页状态不够 —— 标签页可能在另一个
+ * 分组里、或不是该分组当前的活跃标签，得先切过去才看得见效果。
+ */
+function findNoteTabLocation(
+  knowledgeBaseId: string,
+  noteUuid: string
+): { groupId: string; tab: EditorTab } | null {
+  for (const group of editor.groups) {
+    const tab = group.tabs.find(
+      (item) =>
+        item.type === 'note' &&
+        item.knowledgeBaseId === knowledgeBaseId &&
+        item.noteUuid === noteUuid
+    )
+    if (tab) return { groupId: group.id, tab }
+  }
+  return null
+}
+
 function findNoteTab(knowledgeBaseId: string, noteUuid: string): EditorTab | null {
-  return (
-    editor.groups
-      .flatMap((group) => group.tabs)
-      .find(
-        (tab) =>
-          tab.type === 'note' &&
-          tab.knowledgeBaseId === knowledgeBaseId &&
-          tab.noteUuid === noteUuid
-      ) ?? null
-  )
+  return findNoteTabLocation(knowledgeBaseId, noteUuid)?.tab ?? null
 }
 
 function parentPathToNote(
@@ -258,6 +271,20 @@ async function runNodeContextAction(
     })
     return
   }
+  if (action === 'show-note-assets') {
+    // 「显示本笔记资源」是命令不是切换：已经显示着就保持显示（toggle 是工具栏那个图标的行为）。
+    // 笔记没开着就先按「永久打开」打开它 —— 命令不该建出一个随后被下一次单击顶掉的预览标签。
+    const opened = findNoteTabLocation(knowledgeBaseId, node.uuid)
+    if (opened) {
+      // 已开着：可能藏在别的分组 / 不是活跃标签，先切过去，否则面板打开了也看不见
+      editor.activate(opened.groupId, opened.tab.id)
+      editor.setNoteAssetsVisible(opened.tab.id, true)
+      return
+    }
+    const tabId = await store.selectNote(node, undefined, true)
+    if (tabId) editor.setNoteAssetsVisible(tabId, true)
+    return
+  }
   if (action === 'open-ide') {
     const result = await window.desk.ide.openNote(knowledgeBaseId, node.uuid)
     if (!result.ok) store.error = result.error.message
@@ -268,14 +295,8 @@ async function runNodeContextAction(
     editor.setPinned(existingTab.id, !existingTab.pinned)
     return
   }
-  await store.selectNote(node, undefined, true)
-  const openedTab = editor.groups
-    .flatMap((group) => group.tabs)
-    .find(
-      (tab) =>
-        tab.type === 'note' && tab.knowledgeBaseId === knowledgeBaseId && tab.noteUuid === node.uuid
-    )
-  if (openedTab) editor.setPinned(openedTab.id, true)
+  const openedTab = await store.selectNote(node, undefined, true)
+  if (openedTab) editor.setPinned(openedTab, true)
 }
 
 function collectBranchIds(nodes: DeskTocNode[]): string[] {

@@ -32,6 +32,7 @@ describe('native context menus', () => {
       '固定',
       'separator',
       '在右侧打开',
+      '显示本笔记资源',
       '历史版本',
       '重命名',
       '标记为完成',

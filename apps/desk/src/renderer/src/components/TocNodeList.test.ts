@@ -4,8 +4,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { DeskTocNode } from '../../../shared/contracts'
+import type { DeskTocNode, KnowledgeBaseDescriptor } from '../../../shared/contracts'
 import TocNodeList from './TocNodeList.vue'
+import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
 
 const showContextMenu = vi.fn()
@@ -183,6 +184,54 @@ describe('TocNodeList', () => {
       knowledgeBaseId: 'kb-a',
       noteUuid: targetNote.uuid
     })
+    wrapper.unmount()
+  })
+
+  it('opens the note when needed and shows its assets for 「显示本笔记资源」', async () => {
+    const wrapper = mountList()
+    const workspace = useWorkspaceStore()
+    const editor = useEditorStore()
+    workspace.selectedKnowledgeBaseId = 'kb-a'
+    const selectNote = vi.spyOn(workspace, 'selectNote').mockResolvedValue('tab-target')
+    // 笔记没开着：先打开（永久打开，不要预览标签），再把面板设成显示
+    const visible = vi.spyOn(editor, 'setNoteAssetsVisible')
+    showContextMenu.mockResolvedValue({ ok: true, value: 'show-note-assets' })
+    await wrapper.findAll('.toc-row')[1].trigger('contextmenu')
+    await flushPromises()
+    expect(selectNote).toHaveBeenCalledExactlyOnceWith(targetNote, undefined, true)
+    expect(visible).toHaveBeenCalledExactlyOnceWith('tab-target', true)
+    wrapper.unmount()
+  })
+
+  it('activates the existing tab and keeps the assets panel shown', async () => {
+    const wrapper = mountList()
+    const workspace = useWorkspaceStore()
+    const editor = useEditorStore()
+    workspace.selectedKnowledgeBaseId = 'kb-a'
+    const descriptor: KnowledgeBaseDescriptor = {
+      id: 'kb-a',
+      configId: 'cfg-a',
+      name: 'kb',
+      rootPath: '/tmp/kb',
+      displayName: 'kb',
+      icon: null,
+      health: 'ready',
+      diagnostics: [],
+      noteCount: 1,
+      snapshotRevision: 'rev-1'
+    }
+    editor.switchKnowledgeBase('kb-a', [targetNote.uuid])
+    const tabId = editor.openNote(descriptor, targetNote.uuid, targetNote.title, 'visual')
+    // 已经显示着：命令语义要求**保持**显示（toggle 会把它关掉）
+    editor.setNoteAssetsVisible(tabId, true)
+    const selectNote = vi.spyOn(workspace, 'selectNote').mockResolvedValue(null)
+    const visible = vi.spyOn(editor, 'setNoteAssetsVisible')
+    showContextMenu.mockResolvedValue({ ok: true, value: 'show-note-assets' })
+    await wrapper.findAll('.toc-row')[1].trigger('contextmenu')
+    await flushPromises()
+    expect(selectNote).not.toHaveBeenCalled()
+    expect(visible).toHaveBeenCalledExactlyOnceWith(tabId, true)
+    expect(editor.groups[0]?.tabs.find((tab) => tab.id === tabId)?.noteAssetsVisible).toBe(true)
     wrapper.unmount()
   })
 

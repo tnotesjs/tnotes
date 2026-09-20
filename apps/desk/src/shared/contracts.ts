@@ -467,6 +467,7 @@ export type ContextMenuAction =
   | 'open-ide'
   | 'open-split'
   | 'show-history'
+  | 'show-note-assets'
   | 'rename'
   | 'toggle-done'
   | 'add-before'

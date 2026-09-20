@@ -588,15 +588,21 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     await syncToActiveTab(true)
   }
 
+  /**
+   * 打开（或激活）笔记，返回它所在的标签页 id；库没就绪、或读盘失败把标签页收掉时返回 null。
+   *
+   * 返回值是给「打开之后还要对这个标签页再做一件事」的调用方用的
+   * （例如右键菜单的「显示本笔记资源」要接着把资源面板打开）；普通点击忽略即可。
+   */
   async function selectNote(
     node: Extract<DeskTocNode, { type: 'note' }>,
     split?: SplitPlacement,
     permanent = false
-  ): Promise<void> {
-    if (!selectedKnowledgeBaseId.value || !selectedKnowledgeBase.value) return
+  ): Promise<string | null> {
+    if (!selectedKnowledgeBaseId.value || !selectedKnowledgeBase.value) return null
     error.value = null
     // Open the tab shell first so chrome can paint while notes.read runs.
-    editor.openNote(
+    const tabId = editor.openNote(
       selectedKnowledgeBase.value,
       node.uuid,
       node.title,
@@ -610,8 +616,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       error.value = cause instanceof Error ? cause.message : String(cause)
       if (!documents.value[documentKey(selectedKnowledgeBaseId.value, node.uuid)]) {
         editor.closeNote(selectedKnowledgeBaseId.value, node.uuid)
+        return null
       }
     }
+    return tabId
   }
 
   async function openNoteByUuid(knowledgeBaseId: string, noteUuid: string): Promise<void> {

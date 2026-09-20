@@ -48,6 +48,7 @@ export function contextMenuTemplate(
       item('toggle-pin', pinLabel),
       { type: 'separator' },
       item('open-split', '在右侧打开'),
+      item('show-note-assets', '显示本笔记资源'),
       item('show-history', '历史版本'),
       item('rename', '重命名'),
       item('toggle-done', request.completed ? '标记为未完成' : '标记为完成'),

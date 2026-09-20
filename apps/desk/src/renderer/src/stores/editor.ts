@@ -1171,16 +1171,28 @@ export const useEditorStore = defineStore('editor', () => {
     }))
   }
 
-  function toggleNoteAssetsVisible(tabId: string): void {
+  /**
+   * 显示 / 隐藏某标签页的「本笔记资源」面板。
+   *
+   * 做成「设成某个值」而不是只有 toggle：右键菜单里的「显示本笔记资源」是**命令**，
+   * 面板已经开着时再点一次不该把它关掉（toggle 只服务于工具栏那个图标按钮）。
+   */
+  function setNoteAssetsVisible(tabId: string, visible: boolean): void {
     const located = findTab(layout.value, tabId)
     if (located?.tab.type !== 'note') return
-    const noteAssetsVisible = located.tab.noteAssetsVisible !== true
+    if ((located.tab.noteAssetsVisible === true) === visible) return
     layout.value = updateGroup(layout.value, located.group.id, (group) => ({
       ...group,
       tabs: group.tabs.map((tab) =>
-        tab.id === tabId && tab.type === 'note' ? { ...tab, noteAssetsVisible } : tab
+        tab.id === tabId && tab.type === 'note' ? { ...tab, noteAssetsVisible: visible } : tab
       )
     }))
+  }
+
+  function toggleNoteAssetsVisible(tabId: string): void {
+    const located = findTab(layout.value, tabId)
+    if (located?.tab.type !== 'note') return
+    setNoteAssetsVisible(tabId, located.tab.noteAssetsVisible !== true)
   }
 
   function moveTab(tabId: string, targetGroupId: string, targetIndex?: number): void {
@@ -1317,6 +1329,7 @@ export const useEditorStore = defineStore('editor', () => {
     setNotePageWidth,
     toggleNotePageWidth,
     toggleNoteOutlineVisible,
+    setNoteAssetsVisible,
     toggleNoteAssetsVisible,
     setNoteDirty,
     keepOpen,
