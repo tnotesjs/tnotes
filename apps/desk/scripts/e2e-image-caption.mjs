@@ -329,6 +329,35 @@ try {
     JSON.stringify(captionBefore)
   )
 
+  // 浮层是绝对定位（必须在 contenteditable 之外），所以它**不占正文流**：
+  // 图片的下外边距必须按浮层实测高度补回来，否则下一个块紧贴图片下沿开始、
+  // 被描述压住（实测缺陷：图片下方的块表头被描述行盖住）。
+  const spacing = await caption().evaluate((el) => {
+    const figure = document.querySelector('.ProseMirror figure.desk-image')
+    const block = figure.closest('p') ?? figure
+    // 下一个**有内容**的块：跳过 ProseMirror 的零宽占位元素
+    let next = block.nextElementSibling
+    while (next && !next.textContent.trim()) next = next.nextElementSibling
+    const captionRect = el.getBoundingClientRect()
+    const figureRect = figure.getBoundingClientRect()
+    const nextRect = next ? next.getBoundingClientRect() : null
+    return {
+      captionHeight: Math.round(captionRect.height),
+      captionBottom: Math.round(captionRect.bottom),
+      figureBottom: Math.round(figureRect.bottom),
+      figureMarginBottom: getComputedStyle(figure).marginBottom,
+      nextTop: nextRect ? Math.round(nextRect.top) : null,
+      nextText: next ? next.textContent.trim().slice(0, 8) : null,
+      // 描述下沿到下一个块上沿的余量：≥0 即二者不重叠
+      clearance: nextRect ? Math.round(nextRect.top - captionRect.bottom) : null
+    }
+  })
+  rec.record(
+    '图片带描述时下方内容被挤开（描述不压住下一个块）',
+    spacing.clearance !== null && spacing.clearance >= 0 && captionBefore.visible,
+    JSON.stringify(spacing)
+  )
+
   // 滚动编辑器：浮层跟随图片（不悬挂在旧位置）
   //
   // 真正的滚动容器是编辑器的 canvas：`.milkdown-markdown-editor__canvas`
@@ -397,6 +426,27 @@ try {
     '点回正文后焦点不在描述浮层（无悬挂焦点）',
     focusInfo.inCaption === false,
     JSON.stringify(focusInfo)
+  )
+
+  // 描述清空 → 浮层收起，补出来的间距必须一起消失（否则图片下方永远白留一段）。
+  // 放在最后：这一步会清掉 alt，后面的步骤不再依赖它。
+  await openCaption()
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.press('Backspace')
+  await page.locator('.ProseMirror h1').first().click()
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  const afterClear = await page.evaluate(() => {
+    const figure = document.querySelector('.ProseMirror figure.desk-image')
+    return {
+      alt: figure.querySelector('img')?.getAttribute('alt') ?? null,
+      visibleCaption: document.querySelectorAll('input.desk-image__caption:not([hidden])').length,
+      marginBottom: getComputedStyle(figure).marginBottom
+    }
+  })
+  rec.record(
+    '清空描述后补出的间距一起消失',
+    afterClear.visibleCaption === 0 && parseFloat(afterClear.marginBottom) === 0,
+    JSON.stringify(afterClear)
   )
 
   // ── 13. 中文输入法（IME）──

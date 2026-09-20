@@ -591,9 +591,38 @@ export function createDeskImageView(options: {
     // 那时元素若还不在文档里，光标会停在 0（实测：后续输入被插到旧描述前面）。
     resolveCaptionHost().append(captionRow)
 
+    /**
+     * 描述浮层占的高度要在正文流里补回来。
+     *
+     * 浮层必须是**绝对定位**（它得在 contenteditable 之外，见上面 `caption` 的说明），
+     * 于是它完全不占布局：figure 的高度只算图片，下一个块紧贴图片下沿开始，
+     * 描述就压在它上面（实测：图片带描述时，下方代码块的表头被描述行盖住）。
+     *
+     * 补法：按浮层**实测高度**把间距写回 figure 的下外边距 ——
+     * 不写死常量，字号 / 行高 / 缩放变化时同样成立；没有描述时清成空串，
+     * 不留多余间距。
+     *
+     * 为什么用 margin 而不是 padding：padding 会算进 figure 自身的盒高，
+     * 而浮层正是按 `figureRect.bottom` 定位的 —— 会自己把自己往下推（正反馈）。
+     * margin 在 border box 之外，`figureRect.bottom` 不受影响，一次收敛。
+     * 外层 `p.desk-standalone-image` 的 `margin: 8px 0` 与本值相邻折叠，
+     * 取较大者，所以"图片下沿 → 下个块"的间距恒 ≥ 本值，不会被它吃掉。
+     */
+    const CAPTION_OFFSET_PX = 4
+    const CAPTION_TAIL_GAP_PX = 8
+    const reserveCaptionSpace = (): void => {
+      // hidden 时 offsetHeight 恒为 0，这里不用再看 hidden
+      const height = captionRow.offsetHeight
+      const next = height > 0 ? `${CAPTION_OFFSET_PX + height + CAPTION_TAIL_GAP_PX}px` : ''
+      if (figure.style.marginBottom !== next) figure.style.marginBottom = next
+    }
+
     const positionCaptionRow = (): void => {
       const host = resolveCaptionHost()
       if (captionRow.parentElement !== host) host.append(captionRow)
+      // 先补间距再定位：两者读的是同一轮布局，顺序不影响结果，
+      // 但隐藏时要靠这一句把间距清掉（下面的 hidden 分支会提前返回）。
+      reserveCaptionSpace()
       // 只接管"本来就是 static"的宿主：宿主若自带定位（例如 canvas 是 relative），
       // 内联写 relative 是等价的；而 destroy 时只清掉自己写的那次，不覆盖别人的值。
       if (getComputedStyle(host).position === 'static') {
@@ -618,7 +647,7 @@ export function createDeskImageView(options: {
         figure.querySelector('.desk-image__frame') ?? figure
       ).getBoundingClientRect()
       captionRow.style.left = `${frameRect.left - hostRect.left + host.scrollLeft}px`
-      captionRow.style.top = `${figureRect.bottom - hostRect.top + host.scrollTop + 4}px`
+      captionRow.style.top = `${figureRect.bottom - hostRect.top + host.scrollTop + CAPTION_OFFSET_PX}px`
       captionRow.style.minWidth = `${frameRect.width}px`
       captionRow.style.maxWidth = `${frameRect.width}px`
       // 同步期间若浏览器把光标留在了开头（聚焦早于挂载/定位时会这样），补到末尾。

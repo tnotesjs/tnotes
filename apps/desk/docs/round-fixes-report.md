@@ -713,3 +713,31 @@ HTML 转义，6 条）、`main/settings.test.ts` 的默认值与分组合并用�
 - **吸顶行上方没有内容透出**：从容器顶边到吸顶行顶边逐点 `elementFromPoint`，只有命中滚动内容（目录项等）才算失败，命中任一吸顶行算正常（「目录」栏上方本就是叠着的「变更」栏）。
 
 两条都做过**反向验证**（把修复临时改回去，只有对应那条断言变红），确认不是恒真断言。
+
+## 十四、图片描述浮层压住下方内容
+
+验收现象：图片带描述时，描述行压在下方的块上（截图里是代码分组的表头被描述盖住）。
+
+**根因**：描述浮层是**绝对定位**（结构上必须如此 —— 它要在 contenteditable 子树之外，
+否则输入的字会被 ProseMirror 当成正文写进图片 `alt`，见 `deskImageView.ts` 里 `caption`
+的说明），于是它**完全不占正文流**：`figure` 的高度只算图片，下一个块紧贴图片下沿开始。
+
+**修法**（比"给图片写死条件下边距"更稳）：在定位浮层的同一个函数里，按浮层**实测高度**
+把间距写回 `figure` 的下外边距：
+
+```
+figure.style.marginBottom = 4（浮层起点）+ captionRow.offsetHeight + 8（余量）
+```
+
+- 不写死常量：字号 / 行高 / 缩放变化时同样成立；
+- 浮层隐藏（没有描述）时清成空串，不留多余间距；
+- 用 `margin` 而不是 `padding`：`padding` 会算进 `figure` 自身盒高，而浮层正是按
+  `figureRect.bottom` 定位的 —— 会自己把自己往下推（正反馈）。`margin` 在 border box
+  之外，`figureRect.bottom` 不受影响，一轮收敛。
+
+**验证**（`scripts/e2e-image-caption.mjs`，28/28）：
+
+- `图片带描述时下方内容被挤开（描述不压住下一个块）`：量"描述下沿 → 下一个有内容的块上沿"
+  的余量，要求 ≥ 0。实测 `captionHeight=20, figureBottom=277, figureMarginBottom=32px,
+nextTop=317, clearance=16`；
+- `清空描述后补出的间距一起消失`：要求浮层不可见且 `marginBottom` 回到 `0px`（防"永久白留一段"）。
