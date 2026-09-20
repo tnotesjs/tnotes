@@ -7,7 +7,6 @@ import {
   buildNoteIndex,
   decideKbPathOpen,
   extensionOf,
-  findTocNoteByIndex,
   foldKbPathSegments,
   formatKbEntryBytes,
   isExcalidrawPath,
@@ -132,27 +131,6 @@ describe('note index', () => {
     expect(index.get('0001')).toEqual({ uuid: 'uuid-1', title: '第一篇' })
     expect(index.get('0002')).toEqual({ uuid: 'uuid-2', title: '子笔记' })
     expect(index.size).toBe(2)
-  })
-
-  it('finds the live note node (completed included) by index, first hit wins', () => {
-    const toc: DeskTocNode[] = [
-      {
-        type: 'group',
-        title: '分组',
-        tocLineIndex: 0,
-        nodeId: 'group-1',
-        folderPath: ['分组'],
-        children: [
-          noteNode('0001', 'uuid-1', '第一篇'),
-          { ...noteNode('0002', 'uuid-2', '子笔记'), completed: true }
-        ]
-      },
-      noteNode('0001', 'uuid-duplicate', '重复编号')
-    ]
-    // 返回的是节点本身（不是 buildNoteIndex 那种快照），所以 completed 一起带回来
-    expect(findTocNoteByIndex(toc, '0002')).toMatchObject({ uuid: 'uuid-2', completed: true })
-    expect(findTocNoteByIndex(toc, '0001')).toMatchObject({ uuid: 'uuid-1' })
-    expect(findTocNoteByIndex(toc, '0099')).toBeNull()
   })
 })
 

@@ -4,6 +4,7 @@ import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, 
 import UiTooltip from '../components/UiTooltip.vue'
 import OutlineIcon from '../components/OutlineIcon.vue'
 import PageWidthIcon from '../components/PageWidthIcon.vue'
+import NoteDoneToggle from '../components/NoteDoneToggle.vue'
 import HeadingMenu from './HeadingMenu.vue'
 import FormatIcon from './FormatIcon.vue'
 import FormatOverflowBar from './FormatOverflowBar.vue'
@@ -67,6 +68,25 @@ const key = computed(() => `${props.tab.knowledgeBaseId}:${props.tab.noteUuid}`)
 const session = computed(() =>
   workspace.getDocumentSession(props.tab.knowledgeBaseId, props.tab.noteUuid)
 )
+
+/**
+ * 标题编号左侧的「完成」开关（与目录树里的圆点同一个组件）。
+ *
+ * 状态直接读会话里的 `document.config.done` —— 主进程就是从 TOC 取的这一位，
+ * 切换完成后 `toggleDone` 会把新的 `mutation.note` 同时写回会话与整棵树，两边天然同步，
+ * 不必再遍历 TOC 找节点。显示与否跟目录树共用同一个设置，只读时置灰（与同排其它按钮一致）。
+ */
+const showNoteDone = computed(() => workspace.settings?.toc?.showNoteStatus !== false)
+const noteDone = computed(() => session.value?.document.config.done === true)
+const noteDoneDisabled = computed(
+  () => Boolean(session.value?.document.readOnly) || props.tab.viewMode === 'readonly'
+)
+
+async function toggleNoteDone(): Promise<void> {
+  if (!session.value) return
+  await workspace.toggleDone({ uuid: props.tab.noteUuid, completed: noteDone.value })
+}
+
 const milkdownMarkdownEditor = ref<MarkdownEditorHandle | null>(null)
 const markdownSourceEditor = ref<MarkdownEditorHandle | null>(null)
 const milkdownFailed = ref(false)
@@ -448,6 +468,12 @@ function openLink(url: string): void {
 
     <div class="document-toolbar">
       <div class="document-path" :title="session.document.filePath">
+        <NoteDoneToggle
+          v-if="showNoteDone"
+          :done="noteDone"
+          :disabled="noteDoneDisabled"
+          @toggle="toggleNoteDone"
+        />
         <span class="note-index">{{ session.document.index }}.</span>
         <input
           v-if="editingTitle"

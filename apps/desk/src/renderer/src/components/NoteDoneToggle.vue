@@ -10,6 +10,8 @@
  */
 defineProps<{
   done: boolean
+  /** 只读 / 不可写时置灰：控制还在，但点不动（与同排的其它按钮一致） */
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -22,6 +24,7 @@ const emit = defineEmits<{
     type="button"
     class="done-toggle"
     :class="{ done }"
+    :disabled="disabled === true"
     :aria-label="done ? '标记为未完成' : '标记为完成'"
     @click="emit('toggle')"
   >
@@ -59,5 +62,10 @@ const emit = defineEmits<{
 .done-toggle.done .done-dot {
   border-color: var(--success);
   background: var(--success);
+}
+
+.done-toggle:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 </style>

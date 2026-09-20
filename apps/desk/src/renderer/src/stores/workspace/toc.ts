@@ -203,19 +203,26 @@ export function createToc(ctx: TocContext) {
     }
   }
 
-  async function toggleDone(node: Extract<DeskTocNode, { type: 'note' }>): Promise<void> {
+  /**
+   * 切换笔记的完成状态。
+   *
+   * 参数只取真正用到的两件事（`uuid` + 当前状态），而不是整个 TOC 节点：
+   * 目录树直接传节点，笔记头部传 `{ uuid, completed }`（它的当前状态来自会话里的
+   * `document.config.done`，与 TOC 同源，不必再遍历一遍树找节点）。
+   */
+  async function toggleDone(note: { uuid: string; completed: boolean }): Promise<void> {
     if (!ctx.knowledgeBase.value || ctx.knowledgeBase.value.health !== 'ready') return
-    const key = documentKey(ctx.knowledgeBase.value.id, node.uuid)
+    const key = documentKey(ctx.knowledgeBase.value.id, note.uuid)
     const loaded =
-      ctx.documents.value[key] ?? (await ctx.ensureDocument(ctx.knowledgeBase.value.id, node.uuid))
+      ctx.documents.value[key] ?? (await ctx.ensureDocument(ctx.knowledgeBase.value.id, note.uuid))
     if (loaded.dirty) await ctx.saveDocument(key)
     const current = ctx.documents.value[key] ?? loaded
     const mutation = resultValue(
       await window.desk.notes.updateConfig({
         knowledgeBaseId: ctx.knowledgeBase.value.id,
-        noteUuid: node.uuid,
+        noteUuid: note.uuid,
         expectedRevision: current.document.revision,
-        updates: { done: !node.completed }
+        updates: { done: !note.completed }
       })
     )
     ctx.applyDetail(mutation.knowledgeBase)

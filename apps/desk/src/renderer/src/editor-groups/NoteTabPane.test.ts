@@ -92,7 +92,12 @@ function setup(readOnly = false) {
     props: { tab: { ...tab }, groupId: 'group-a', active: true },
     global: {
       renderStubDefaultSlot: true,
-      stubs: { MilkdownMarkdownEditor: MilkdownStub, MarkdownSourceEditor: SourceStub }
+      stubs: {
+        MilkdownMarkdownEditor: MilkdownStub,
+        MarkdownSourceEditor: SourceStub,
+        // 完成开关要断言真实 DOM（位置 + 圆点），不能用自动 stub
+        NoteDoneToggle: false
+      }
     }
   })
   return { wrapper, workspace, rename, setNoteViewMode, editor }
@@ -147,6 +152,34 @@ describe('note header', () => {
       expect(wrapper.find('.save-button').exists()).toBe(false)
     }
     wrapper.unmount()
+  })
+
+  it('puts the done toggle right before the note index and routes it to the store', async () => {
+    const { wrapper, workspace } = setup()
+    const toggleDone = vi.spyOn(workspace, 'toggleDone').mockResolvedValue()
+    const index = wrapper.get('.note-index')
+    const toggle = wrapper.get('.done-toggle')
+    // 位置就是验收指的那一格：紧贴编号左侧
+    expect(index.element.previousElementSibling).toBe(toggle.element)
+    // 与目录树同一个组件、同一套 class
+    expect(toggle.find('.done-dot').exists()).toBe(true)
+    expect(toggle.classes()).not.toContain('done')
+    expect(toggle.attributes('aria-label')).toBe('标记为完成')
+    await toggle.trigger('click')
+    expect(toggleDone).toHaveBeenCalledExactlyOnceWith({ uuid: 'note-a', completed: false })
+    wrapper.unmount()
+  })
+
+  it('shows the filled dot for a done note and disables the toggle for a read-only one', async () => {
+    const { wrapper, workspace } = setup()
+    workspace.documents['kb-a:note-a']!.document.config.done = true
+    await flushPromises()
+    expect(wrapper.get('.done-toggle').classes()).toContain('done')
+    wrapper.unmount()
+
+    const readOnly = setup(true)
+    expect(readOnly.wrapper.get('.done-toggle').attributes('disabled')).toBeDefined()
+    readOnly.wrapper.unmount()
   })
 
   it('edits only the title and submits a trimmed name on blur', async () => {

@@ -13,13 +13,11 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } fro
 
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
-import NoteDoneToggle from '../components/NoteDoneToggle.vue'
 import {
   baseNameOf,
   buildKbPathSegments,
   buildNoteIndex,
   decideKbPathOpen,
-  findTocNoteByIndex,
   foldKbPathSegments,
   formatKbEntryBytes,
   isUnderNotesDir,
@@ -167,33 +165,6 @@ const rows = computed<KbMenuRow[]>(() => {
 })
 
 const listboxId = computed(() => `${baseId}-listbox`)
-
-/**
- * 当前文件若是本库 TOC 里的笔记，给出那个**活节点**：面包屑左侧的「完成」开关要用它的
- * `uuid` 与 `completed`。
- *
- * 只用 store 里的实时 TOC，不用 `noteIndexMap`（那份是懒加载快照，切换完成状态后停在旧
- * 值，会显示成反的）。库不是当前库、不在 `notes/` 下、或编号没命中 TOC（例如被当文本
- * 打开的 `notes/*.md`）都返回 null —— 那时开关不该出现，`toggleDone` 也无从执行。
- */
-const currentTocNote = computed(() => {
-  const kb = workspace.knowledgeBase
-  if (!kb || kb.id !== props.knowledgeBaseId) return null
-  if (!isUnderNotesDir(props.relPath)) return null
-  const noteIndex = noteIndexFromFileName(baseNameOf(props.relPath))
-  return noteIndex ? findTocNoteByIndex(kb.toc, noteIndex) : null
-})
-
-/** 与目录里的圆点同源：共用同一个组件，也共用同一个「显示完成状态」设置 */
-const showNoteDone = computed(
-  () => workspace.settings?.toc?.showNoteStatus !== false && currentTocNote.value !== null
-)
-
-async function toggleCurrentNoteDone(): Promise<void> {
-  const note = currentTocNote.value
-  if (!note) return
-  await workspace.toggleDone(note)
-}
 
 function menuIsOpenFor(item: KbBreadcrumbItem): boolean {
   if (!menu.value) return false
@@ -500,12 +471,6 @@ onBeforeUnmount(() => {
 
 <template>
   <nav ref="barRef" class="kb-path-breadcrumb" aria-label="知识库路径" @keydown="onBarKeydown">
-    <NoteDoneToggle
-      v-if="showNoteDone"
-      class="kb-path-done"
-      :done="currentTocNote?.completed === true"
-      @toggle="toggleCurrentNoteDone"
-    />
     <template
       v-for="(item, index) in items"
       :key="'isEllipsis' in item ? 'ellipsis' : item.relPath || 'root'"
@@ -615,13 +580,6 @@ onBeforeUnmount(() => {
   color: var(--muted);
   font: 10px/1.6 var(--font-sans);
   white-space: nowrap;
-}
-
-/* 左侧的「完成」开关与目录里的圆点是同一个组件；这里只补它与首段之间的间距，
-   别让它贴着库名。 */
-.kb-path-done {
-  flex: none;
-  margin-right: 4px;
 }
 
 .kb-path-sep {

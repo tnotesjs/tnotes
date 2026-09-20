@@ -742,30 +742,33 @@ figure.style.marginBottom = 4（浮层起点）+ captionRow.offsetHeight + 8（�
 nextTop=317, clearance=16`；
 - `清空描述后补出的间距一起消失`：要求浮层不可见且 `marginBottom` 回到 `0px`（防"永久白留一段"）。
 
-## 十五、面包屑左侧加「完成」开关（与目录里的圆点同源）
+## 十五、笔记标题行加「完成」开关（与目录里的圆点同源）
 
-验收要求：在笔记面包屑（`test › notes › 0003. 222.md` 那一行）左侧也放一个完成状态开关，
+验收要求：在笔记头部标题行（`0003. 222` 那一行）的**编号左侧**放一个完成状态开关，
 样式与目录树里的一致。
 
 **做法**：把目录树里的圆点抽成共享组件 `components/NoteDoneToggle.vue`
-（`done-toggle` + `done-dot` 两个 class 保持不变），目录树与面包屑**用同一个组件** ——
+（`done-toggle` + `done-dot` 两个 class 保持不变），目录树与笔记头部**用同一个组件** ——
 样式只有一份，两处不会各自漂移；形状仍是主信号（空心环 = 待完成，实心 = 已完成），
 颜色只是强化，`aria-label` 也在组件里统一给。
 
-**面包屑侧的接线**：
+**位置**：`.document-toolbar > .document-path` 里、`.note-index` 之前
+（单测直接断言 `note-index.element.previousElementSibling` 就是这个开关，
+避免"放错行"这类回归 —— 第一版曾放到上面那行面包屑里，被验收打回）。
 
-- 数据只取 store 里的**实时 TOC**（新增纯函数 `findTocNoteByIndex`，返回节点本身而不是
-  `buildNoteIndex` 那种 `{ uuid, title }` 快照）—— 快照在切换完成后会停在旧值，圆点就显示成反的。
-  切换后 `applyDetail` 换掉整棵树，圆点跟着响应式更新；
-- 只在「当前文件是本库 TOC 里的笔记」时出现：不在当前库、不在 `notes/` 下、编号没命中 TOC
-  （例如被当文本打开的 `notes/*.md`）都不显示 —— 那时 `toggleDone` 也无从执行；
+**接线**：
+
+- 状态直接读会话里的 `document.config.done`：主进程就是从 TOC 取的这一位，
+  切换完成后 `toggleDone` 把新的 `mutation.note` 同时写回**会话**与**整棵树**，两边天然同步，
+  不必再遍历 TOC 找节点；
+- `toggleDone` 的参数收窄成 `{ uuid, completed }`（它本来只读这两个字段）：
+  目录树直接传节点，笔记头部传 `{ uuid: tab.noteUuid, completed }`；
 - 沿用目录树同一个「显示完成状态」设置（`settings.toc.showNoteStatus`），两处一起出现/隐藏；
-- 点击走 `workspace.toggleDone(节点)`，与目录树同一个 store 动作。
+- 只读、或标签处于只读视图时置灰（与同排的标题/格式化按钮同一套判据）。
 
-**验证**（单测，3 个文件 48/48）：
+**验证**（单测 4 个文件 71/71）：
 
-- `findTocNoteByIndex`：递归命中、带 `completed`、重复编号取先遇到的，未命中返回 null；
-- 交互：点开关把活节点（`uuid` + 当前 `completed`）交给 `toggleDone`；`completed: true` 时
-  呈现实心且 `aria-label` 变成「标记为未完成」；`README.md` 与编号不在 TOC 里的 `notes/*.md`
-  都不渲染开关；
+- 位置与接线：开关是 `.note-index` 的前一个兄弟节点；点击调用
+  `toggleDone({ uuid: 'note-a', completed: false })`；
+- 已完成呈现实心；只读文档下按钮带 `disabled`；
 - `TocNodeList` 既有断言（`.done-toggle` 数量 / class / `aria-label` / 无 emoji）不变，抽取后仍绿。
