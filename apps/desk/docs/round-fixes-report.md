@@ -1,6 +1,6 @@
 # Desk 本轮需求与 BUG 修复 · 交付报告
 
-**状态：本轮范围已实现，待验收**（第二至第五轮验收意见已逐条处理，见第八至十一节）
+**状态：本轮范围已实现，待验收**（第二至第五轮验收意见 + 0.10.1 回归修复，见第八至十二节）
 
 - 已完成并有真实界面验证：第 1、2、4、5、6、7、9、11 项。
 - 已实现并有界面验证，但**有一项检查未执行**：第 3 项（IME 未实测）、第 8 项（本地页 E2E）。
@@ -366,6 +366,10 @@ HTML 转义，6 条）、`main/settings.test.ts` 的默认值与分组合并用�
 
 ---
 
+---
+
+---
+
 ## 八、第二轮验收意见的处理（逐条证据）
 
 ### 1. 列表第四次 Backspace：**结构与光标**都要对
@@ -606,3 +610,52 @@ HTML 转义，6 条）、`main/settings.test.ts` 的默认值与分组合并用�
 
 第五轮只动复制链路；`backgroundFailureLog` / `gitManager` 的无标签记录实现未改，
 相关套件重跑仍绿（`e2e-background-failure-visibility` 8/8、`e2e-git-background-fetch` 17/17）。
+
+## 十二、0.10.1 回归修复：复制图片丢 `text/plain`
+
+### 1. 回归与影响
+
+**现象**：在 Desk 里复制图片（Cmd+A / Cmd+C）后，系统剪贴板的 `text/plain` 分量丢了 —— `availableFormats()` 只有 `text/html`。
+
+**用户可见影响**（中性探针，不是只看断言）：把复制到的图粘到**只认 `text/plain` 的地方**（外部 IDE、聊天框、页面内普通文本框）得到**空**（实测 `PLAIN_PASTE=""`）。Desk 内部粘贴不受影响（走 `text/html` 里的引用）。
+
+**定位**：worktree 二分，**第一个坏提交是 `6dc6d04`**（图片描述框移出 contenteditable）。机制：在那之前，选区里的描述 `<input>` 会被 Chromium 当作纯文本来源（它的 value 就是 alt）；移出之后选区里只剩 `<img>`，而**图片节点不贡献纯文本** → Chromium 只写 `text/html`。与 `clipboardNewline` / `markCodeCopy` 无关（已用 copy 事件探针证伪：目标不在代码块内、监听器提前 return、三个阶段 `defaultPrevented` 均为 false）。
+
+### 2. 修法
+
+不动原生复制的 `text/html`，**复制完成后只补 `text/plain`**：
+
+- `renderer/markdown/imageCopyText.ts`：算当前选区的纯文本形态（文字原样、图片取 alt、硬换行与块之间转成换行；**与选区里有没有图片无关**，避免同一种内容因有无图片而形态不一致）与 html 载荷（图片带 `src` + `alt`，保留 `.svg` 引用供画布插件识别）；
+- 选区含图片时，`copy` 事件之后调用新通道 `clipboard:set-plain-text`（`main/ipc/clipboard.ts`），由主进程读剪贴板现状并**同时**写 `text/html` + `text/plain`。为什么必须在主进程：实测 `clipboard.write({ text })` 会把 `text/html` 一起清掉，只有两种 flavor 同时写才能保住 html；
+- 代码块内复制不接管（那条有自己的 `application/x-desk-code` 独立格式标记，纯文本里也没有任何注入）。
+
+**试过并放弃的三条路**（记录以免回退）：
+
+1. 只在 `copy` 事件里 `clipboardData.setData('text/plain', alt)` —— 事件对象上读得到，**系统剪贴板拿不到**；
+2. `execCommand('copy')` + 离屏元素重发 —— 在"纯 DOM 选区"下不产生任何 flavor，还会把原生 `text/html` 一起弄丢；
+3. `EditorProps.clipboardTextSerializer` —— 实测这条复制**不经过 ProseMirror 的复制流程**（序列化器从未被调用）。
+
+### 3. 验证（覆盖验收清单）
+
+新增 `e2e-image-copy-plain-text.mjs`，**17/17 通过**，逐条对应：
+
+| 验收项                                              | 结果                                                                                                 |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 单张图片有 alt：系统剪贴板 `text/plain` 与 alt 一致 | ✅ `text="画布甲"`，`formats=["text/plain","text/html"]`                                             |
+| 单张图片有 alt：粘到普通文本框有内容                | ✅ 粘回值 `"画布甲"`                                                                                 |
+| 图片无 alt：明确预期                                | ✅ `alt=""` → `text/plain` 为空；**同时断言 `text/html` 仍带引用**，证明复制本身成功、不是失败       |
+| 图片与正文混选                                      | ✅ `["图片复制","前段文字","画布甲","画布乙","尾段文字","const keep = 1"]`，正文不丢、描述各出现一次 |
+| 多张图片                                            | ✅ alt 出现顺序与文档顺序一致                                                                        |
+| 粘回 Desk（另一篇笔记）                             | ✅ 三张图都粘进来、描述正确、落盘是相对路径引用、**源笔记字节未变**                                  |
+| 不回归：代码复制                                    | ✅ 纯文本仍是代码原文，`application/x-desk-code` 标记仍在                                            |
+| 不回归：图片描述编辑                                | ✅ 逐字输入后 alt 正确（`"新描述"`）                                                                 |
+
+**回归证明**：同一套件在 **0.10.0（未修复）上 7 条失败** —— 那时 `text/plain` 是 `![画布甲](../assets/0001-甲.svg)` 这类内容（粘到普通文本框得到的是这种带标记的行内形式，而不是干净的 alt），修复后 **17/17**。
+
+其他回归：`e2e-excalidraw-copy` **9/9**、`e2e-image-caption` **26/26**、`e2e-paste-newlines` **44/44**；单测 **180 files / 1614 passed**；lint / typecheck / format:check / build 全绿。
+
+### 4. CI 间歇失败（单独记录，原因未确认）
+
+`0.10.0` 那次推送的 CI / E2E 出现失败，但**两次运行失败项不同**（一次 `disposeSpawn.test.ts` 超时、另一次 `e2e-excalidraw-copy` 的画布复制断言），而本地连跑 3 次 `disposeSpawn` 全过、画布复制套件在修好后 9/9 通过。
+
+**结论：原因未确认。** "本地三次通过 + 失败项不同"不足以归因为环境问题；这条**不计入**本次修复的验证结论，也不影响 `0.10.1` 的发布（发布 workflow 与打包均成功）。若后续它阻塞验证，再针对性排查（优先怀疑：并发 Electron 共用系统剪贴板互相污染、CI 机器负载导致的真实超时）。
