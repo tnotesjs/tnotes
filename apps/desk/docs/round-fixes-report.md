@@ -917,3 +917,19 @@ area.height) < 2` 失败）。实测 `clientHeight 737 / offsetHeight 746` —�
 
 （顺带说明：先试过把它们标成 `serial: true`，被注册表单测挡下 —— 那个字段表示"整机独占"，
 是给 manual 套件用的；剪贴板这种单一资源互斥用 `locks`。已按既有约定改回。）
+
+## 二十一、发布记录：desk 0.11.0
+
+- 版本：`0.11.0`（`0.10.1` 之后有两条新功能：笔记/标签页右键菜单的「显示本笔记资源」、
+  笔记标题行的「完成」开关；其余为修复与排版调整，故进次版本号）
+- 提交：`chore(release): desk 0.11.0` → 附注标签 `desk@0.11.0` → `main` 与标签都已推送
+- 发版前本地门禁（全绿）：`lint`（0 error）· 单测 **180 文件 / 1621 条** ·
+  `typecheck` · `electron-vite build` · 根目录 `format:check` ·
+  **全量 E2E 39/39**（`node scripts/run-e2e.mjs`，155s）
+- CI（GitHub Actions）：`CI`(tag) · `CI`(main) · `E2E (desk)`(main) · `Release Desk` **四个 run 全部 success**
+- Release：`TNotes Desk 0.11.0`，标记 **Latest**，8 个资产
+  （macOS dmg+zip、Windows exe、Linux AppImage+deb 及各自 blockmap），
+  macOS 包的签名校验步骤（`codesign --verify --deep --strict` + 授权文件里
+  `disable-library-validation`）通过
+
+本轮修的两个"发版前才暴露"的问题见第 20 节（内容区横向滚动条、剪贴板套件互斥锁）。
