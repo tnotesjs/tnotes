@@ -7,7 +7,7 @@ import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { serializeImageMarkdown } from '@tnotesjs/ui/image-markdown'
 import { createCanvasImageClipboardPlugin } from './canvasImageClipboardPlugin'
-import { withDeskCodeSentinel } from './clipboardNewline'
+import { DESK_CODE_CLIPBOARD_FORMAT } from './clipboardNewline'
 import { noteRelativeAssetPath } from './noteAssetPath'
 import { invalidateCanvasSource, placeholderCanvasSvg } from '../editor/excalidraw/canvasImage'
 import { useEditorStore } from '../stores/editor'
@@ -241,38 +241,74 @@ function deleteCurrentBlock(): void {
 /**
  * 写剪贴板。
  *
- * `markAsCode` 时在**纯文本本身**里加一个不可见哨兵（`DESK_CODE_SENTINEL`），
- * 让粘贴端知道"这是从代码块复制的代码"，从而跳过 Markdown 解析
- * （只靠文本形态无法区分 `# 注释` 与标题）。
+ * `markAsCode` 时通过**独立剪贴板格式**标记来源，`text` 原样写入 ——
+ * **不裁剪末尾换行、不加任何不可见字符**（外部 IDE / 终端不会剥标记，
+ * 往纯文本里塞东西会让它们拿到非法内容）。
  *
- * 为什么不用自定义 MIME：实测 Electron 里 `ClipboardItem.supports('application/x-desk-code')`
- * 为 false（只有 `web application/...` 形式被认），而且 `navigator.clipboard.write`
- * 在没有剪贴板权限时直接抛 `NotAllowedError` —— 自定义格式写不进去就只能退回无标记纯文本。
- * 哨兵放在文本里不依赖任何权限，`writeText` 与 `execCommand('copy')` 两条路都能带上。
+ * 为什么走 `execCommand('copy')` + 一次性捕获监听：
+ *  - `navigator.clipboard.write` 需要剪贴板权限，没有权限直接抛 `NotAllowedError`；
+ *  - Electron 主进程 `clipboard.write({ text, 'application/x-desk-code': ... })`
+ *    实测**忽略自定义键**（`availableFormats()` 里只剩 `text/plain`）；
+ *  - 只有 copy 事件的 `clipboardData.setData(自定义类型, ...)` 能把自定义格式真正
+ *    写进系统剪贴板（实测主进程 `availableFormats()` 里能看到）。
  */
 async function writeClipboard(text: string, options: { markAsCode?: boolean } = {}): Promise<void> {
-  // 去尾部换行后再打哨兵（理由同 deskCodeTabEditor：Electron 会把行尾统一成 CRLF）
-  const payload = options.markAsCode
-    ? withDeskCodeSentinel(text.replace(/\r\n?/g, '\n').replace(/\n+$/, ''))
-    : text
+  if (options.markAsCode && writeViaCopyEvent(text)) return
   if (navigator.clipboard?.writeText) {
     try {
-      await navigator.clipboard.writeText(payload)
+      await navigator.clipboard.writeText(text)
       return
     } catch {
       // Electron can expose Clipboard without granting the renderer's async
-      // Clipboard permission. Fall through to the synchronous user-gesture
-      // path so the menu action still works.
+      // Clipboard permission. Fall through to the synchronous user-gesture path.
     }
   }
   const textarea = document.createElement('textarea')
-  textarea.value = payload
+  textarea.value = text
   textarea.style.position = 'fixed'
   textarea.style.opacity = '0'
   document.body.append(textarea)
   textarea.select()
   document.execCommand('copy')
   textarea.remove()
+}
+
+/**
+ * 用一次性 `copy` 事件把「原样纯文本 + 独立来源格式」写进剪贴板。
+ *
+ * 监听器在**捕获阶段**注册，所以先于页面里其它 `copy` 处理器跑，写完就摘掉。
+ * 返回是否写入成功。
+ */
+function writeViaCopyEvent(text: string): boolean {
+  const onCopy = (event: ClipboardEvent): void => {
+    const data = event.clipboardData
+    if (!data) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    data.setData('text/plain', text)
+    try {
+      data.setData(DESK_CODE_CLIPBOARD_FORMAT, '1')
+    } catch {
+      // 个别平台可能拒绝自定义类型：纯文本仍原样写入，粘贴端退回按文本形态判断
+    }
+  }
+  window.addEventListener('copy', onCopy, true)
+  try {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.append(textarea)
+    textarea.select()
+    const ok = document.execCommand('copy')
+    textarea.remove()
+    return ok
+  } catch {
+    return false
+  } finally {
+    window.removeEventListener('copy', onCopy, true)
+  }
 }
 
 /** CodeMirror splits lines into `.cm-line` divs; parent textContent drops newlines. */

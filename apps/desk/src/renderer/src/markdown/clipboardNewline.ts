@@ -31,37 +31,26 @@ function escapeHtml(text: string): string {
 }
 
 /**
- * Desk 内代码复制时写入的自定义剪贴板类型。
+ * 「这段剪贴板内容是从 Desk 代码块复制的」的独立剪贴板格式。
  *
- * 只靠"文本长什么样"无法区分代码与 Markdown：Python/Shell 的 `# 注释`、C 风格注释里的
- * ` * 内容` 与 Markdown 的标题 / 列表项在字符层面完全一样（反过来只有行内语法的
- * Markdown 又不会被行首规则命中）。所以**应用内复制的代码带明确来源**，粘贴时优先信它。
+ * **`text/plain` 必须保持原始内容**：不裁剪末尾换行、不加任何不可见字符
+ * （第四轮验收意见：往纯文本里注入哨兵会让外部 IDE / 终端拿到非法内容，
+ * 也不能以"粘回 Desk 能剥掉"作为复制正确的标准）。
+ * 来源信息只走这个独立格式，读写名字与主进程一致（见 `main/clipboardFormat.ts`）。
  */
-export const DESK_CODE_CLIPBOARD_TYPE = 'web application/x-desk-code'
+export const DESK_CODE_CLIPBOARD_FORMAT = 'application/x-desk-code'
 
 /**
- * 代码来源的**文本哨兵**（Unicode Tag 区字符，不可见、不参与排版）。
+ * 读取剪贴板里是否存在"这是代码"的标记。
  *
- * 为什么不用自定义 MIME：实测 Electron 里
- * `ClipboardItem.supports('application/x-desk-code') === false`
- * （只有 `web application/...` 这种带 `web ` 前缀的形式被认），而且
- * `navigator.clipboard.write` 在没有剪贴板权限的环境里会直接抛 `NotAllowedError`，
- * 于是自定义格式写不进去、只能退回"无标记纯文本"，又得靠 Markdown 猜测。
- *
- * 改成把哨兵**放进纯文本本身**：不依赖任何权限，`writeText` 就能带上；
- * 粘贴回 Desk 时先剥掉它并跳过 Markdown 解析，粘到外部应用时它也不可见。
+ * 兼容 `web application/...`（`navigator.clipboard.write` 接受的形式）与
+ * 不带前缀的形式（copy 事件与 Electron 主进程 `clipboard.write` 写出的形式）。
  */
-export const DESK_CODE_SENTINEL = '\u{E0000}\u{E0001}desk-code\u{E0001}'
-
-/** 文本是否带"这是 Desk 里复制的代码"标记；返回剥掉哨兵后的正文。 */
-export function stripDeskCodeSentinel(text: string): { isCode: boolean; text: string } {
-  if (!text.startsWith(DESK_CODE_SENTINEL)) return { isCode: false, text }
-  return { isCode: true, text: text.slice(DESK_CODE_SENTINEL.length) }
-}
-
-/** 给要写进剪贴板的代码加哨兵（外部应用看到的仍是正常文本）。 */
-export function withDeskCodeSentinel(text: string): string {
-  return DESK_CODE_SENTINEL + text
+export function hasDeskCodeMarker(data: DataTransfer): boolean {
+  return (
+    data.getData(DESK_CODE_CLIPBOARD_FORMAT).length > 0 ||
+    data.getData(`web ${DESK_CODE_CLIPBOARD_FORMAT}`).length > 0
+  )
 }
 
 /** `looksLikeMarkdown` 的判定结果，便于单测与排查。 */
@@ -171,16 +160,17 @@ function markCodeCopy(dom: HTMLElement): () => void {
     if (!target?.closest?.('.cm-content, .cm-editor')) return
     const data = event.clipboardData
     if (!data) return
-    // 注意：**捕获阶段 `clipboardData` 是空的**（Chromium 只在 copy 事件里填充），
-    // 所以不能想着"读出来再改写"；必须自己拿到文本后 `preventDefault` + `setData`。
+    // 捕获阶段 `clipboardData` 是空的（Chromium 只在 copy 事件里填充），
+    // 所以不能"读出来再改写"；自己取选中文本后原样写入，**不裁剪、不加哨兵**。
     const text = readCodeText(target)
-    if (!text) return
-    // 去尾部换行：Electron 剪贴板会把行尾统一成 CRLF，留着尾部换行会让
-    // "复制 → 粘贴"多一个空行，逐字比对就不相等了
-    const normalized = text.replace(/\r\n?/g, '\n').replace(/\n+$/, '')
-    if (normalized.length === 0) return
+    if (text.length === 0) return
     event.preventDefault()
-    data.setData('text/plain', withDeskCodeSentinel(normalized))
+    data.setData('text/plain', text)
+    try {
+      data.setData(DESK_CODE_CLIPBOARD_FORMAT, '1')
+    } catch {
+      // 个别平台可能拒绝自定义类型：此时只有纯文本，粘贴端会退回按文本形态判断
+    }
   }
   dom.addEventListener('copy', onCopy, true)
   return () => dom.removeEventListener('copy', onCopy, true)
@@ -226,24 +216,18 @@ export const clipboardNewline = $prose(
           // 代码块内粘贴放行（交给 CodeMirror / 默认行为）
           if (view.state.selection.$from.parent.type.spec.code) return false
 
-          const rawText = clipboardData.getData('text/plain')
+          const text = clipboardData.getData('text/plain')
           // 富文本、编辑器来源、空文本：都交回原有流程
           if (
             clipboardData.getData('text/html').length > 0 ||
             clipboardData.getData('vscode-editor-data').length > 0 ||
-            rawText.length === 0
+            text.length === 0
           ) {
             return false
           }
-          // 应用内复制的**代码**：文本哨兵（不依赖剪贴板权限）或自定义类型任一命中，
-          // 都绝不做 Markdown 解析
-          const stripped = stripDeskCodeSentinel(rawText)
-          const markedAsCode =
-            stripped.isCode || clipboardData.getData(DESK_CODE_CLIPBOARD_TYPE).length > 0
-          const text = stripped.text
-          if (text.length === 0) return false
-          // 外部纯文本：只有确实像 Markdown 才交回原有解析（保住既有能力）
-          if (!markedAsCode && looksLikeMarkdown(text)) return false
+          // 应用内复制的**代码**：只认独立格式标记，绝不做 Markdown 解析。
+          // 纯文本本身不含任何标记，所以这里不需要（也不允许）剥离什么。
+          if (!hasDeskCodeMarker(clipboardData) && looksLikeMarkdown(text)) return false
 
           // 用 schema 自建 DOMParser：不依赖 clipboard 插件暴露 parser，
           // 也就不受插件顺序影响。preserveWhitespace 保住行首缩进。

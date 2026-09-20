@@ -1,6 +1,6 @@
 import { CHECK_ICON, COPY_ICON } from '../../markdown/copyIcons'
 import { createCodeExpandButton } from '../../markdown/codeBlockFullscreen'
-import { withDeskCodeSentinel } from '../../markdown/clipboardNewline'
+import { DESK_CODE_CLIPBOARD_FORMAT } from '../../markdown/clipboardNewline'
 import { UNLABELED_CODE_LANGUAGE } from '../../markdown/codeLanguage'
 import {
   createContainerSourceEditor,
@@ -49,26 +49,57 @@ export interface MountCodeTabEditorOptions {
   }
 }
 
+/** 用一次性 `copy` 事件写入「原样纯文本 + 独立来源格式」；返回是否成功。 */
+function writeViaCopyEvent(text: string): boolean {
+  const onCopy = (event: ClipboardEvent): void => {
+    const data = event.clipboardData
+    if (!data) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    data.setData('text/plain', text)
+    try {
+      data.setData(DESK_CODE_CLIPBOARD_FORMAT, '1')
+    } catch {
+      // 自定义类型被拒时纯文本仍原样写入
+    }
+  }
+  window.addEventListener('copy', onCopy, true)
+  try {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', '')
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.append(textarea)
+    textarea.select()
+    const ok = document.execCommand('copy')
+    textarea.remove()
+    return ok
+  } catch {
+    return false
+  } finally {
+    window.removeEventListener('copy', onCopy, true)
+  }
+}
+
 function normalizeLanguageInput(value: string): string {
   return value.trim() || UNLABELED_CODE_LANGUAGE
 }
 
 async function defaultCopy(text: string): Promise<void> {
-  // 代码分组：同样把不可见哨兵放进纯文本（自定义 MIME 在 Electron 里不可用，
-  // 且 clipboard.write 可能没有权限，见 clipboardNewline.ts 的说明）
-  // 去尾部换行后再打哨兵：Electron 剪贴板会把行尾统一成 CRLF，留着尾部换行
-  // 会让"复制→粘贴"多出一个空行，逐字比对就不相等了
-  const payload = withDeskCodeSentinel(text.replace(/\r\n?/g, '\n').replace(/\n+$/, ''))
+  // 代码分组：`text` 原样写入（不裁剪末尾换行、不加任何标记），
+  // 来源走独立剪贴板格式（见 clipboardNewline.ts 的说明）
+  if (writeViaCopyEvent(text)) return
   if (navigator.clipboard?.writeText) {
     try {
-      await navigator.clipboard.writeText(payload)
+      await navigator.clipboard.writeText(text)
       return
     } catch {
       // Fall through — Electron may deny async clipboard without gesture path.
     }
   }
   const textarea = document.createElement('textarea')
-  textarea.value = payload
+  textarea.value = text
   textarea.style.position = 'fixed'
   textarea.style.opacity = '0'
   document.body.append(textarea)
