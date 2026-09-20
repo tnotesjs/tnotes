@@ -362,8 +362,10 @@ try {
   //
   // 真正的滚动容器是编辑器的 canvas：`.milkdown-markdown-editor__canvas`
   // （`overflow-y: auto`，探针实测 scrollHeight > clientHeight）。早先这里滚的是
-  // `.note-editor-area, .editor-group-body` 的第一个 —— 两者都是 `overflow: visible`
-  // 且 scrollTop 恒为 0，等于没滚（滚错容器）。
+  // `.note-editor-area, .editor-group-body` 的第一个 —— 两者纵向都不滚
+  // （`scrollTop` 恒为 0），等于没滚（滚错容器）。
+  // 注：`.editor-group-body` 现在只在**横向**是滚动容器（内容区最小宽度 500px），
+  // 纵向仍是 `overflow-y: hidden`，所以这里的结论不变。
   const scrollCanvas = page.locator('.milkdown-markdown-editor__canvas').first()
   const scrolled = await scrollCanvas.evaluate((el) => {
     el.scrollTop = el.scrollHeight

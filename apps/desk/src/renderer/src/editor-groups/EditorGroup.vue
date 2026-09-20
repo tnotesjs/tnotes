@@ -591,11 +591,19 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
   min-width: 0;
   min-height: 0;
   display: flex;
+  /*
+   * 内容区最窄 500px（见 `.tab-content`）：比这更窄的组不把内容压扁，改为出横向滚动条。
+   * `overflow-y` 必须显式写 `hidden` —— 一条轴是 `auto` 时另一条 `visible` 会被计算成
+   * `auto`，那样这里会多出一个纵向滚动条（内容自己有内部滚动容器）。
+   */
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .tab-content {
   flex: 1;
-  min-width: 0;
+  /* 内容区最小宽度：低于它只出横向滚动条，不继续压缩（标题栏/工具栏/正文都受这个下限保护） */
+  min-width: 500px;
   min-height: 0;
   display: flex;
 }

@@ -772,3 +772,32 @@ nextTop=317, clearance=16`；
   `toggleDone({ uuid: 'note-a', completed: false })`；
 - 已完成呈现实心；只读文档下按钮带 `disabled`；
 - `TocNodeList` 既有断言（`.done-toggle` 数量 / class / `aria-label` / 无 emoji）不变，抽取后仍绿。
+
+## 十六、内容区最小宽度 500px（更窄时出横向滚动条）
+
+验收要求：`tab-content` 内容区最小宽度 500px，比这更窄时出横向滚动条（不把内容压扁）。
+
+**改法**（`editor-groups/EditorGroup.vue`）：
+
+```css
+.editor-group-body {
+  overflow-x: auto;
+  overflow-y: hidden;
+} /* 滚动条挂在这一层 */
+.tab-content {
+  min-width: 500px;
+}
+```
+
+- 滚动条挂在 `.editor-group-body`（标签栏之外、内容区的容器）：标签栏保持组宽，只有内容区横向滚动，
+  这与"内容区最小宽度"的说法一致；
+- `overflow-y` **必须显式写 `hidden`**：一条轴是 `auto`、另一条是 `visible` 时，`visible` 会被计算成
+  `auto`，那样这里会多出一个纵向滚动条（内容自己有内部滚动容器，不能再来一条）；
+- 组外层 `.editor-split > .split-child { overflow: hidden }`，所以横向溢出被收在**本组**里，
+  不会把整个分栏布局撑破；分栏拖拽用的是分隔条容器自己的 rect，不受影响；
+- 标签拖拽的落点判定用 `.editor-group-body` 的 rect + 指针位置（判的是"可见窗格"的三段），
+  与内容横向滚动无关，行为不变。
+
+**验证**：纯样式改动，按约定交人工目测（把窗口/分栏拖到 500px 以下看是否出横向滚动条，
+且内容不再继续压扁、纵向不出现第二条滚动条）。顺带修了 `e2e-image-caption.mjs` 里
+"`.editor-group-body` 是 `overflow: visible`"这句已过期的注释。
