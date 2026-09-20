@@ -89,6 +89,32 @@ const gitProcessesFor = (port: number): string[] =>
     .filter((line) => line.includes('git'))
     .filter((line) => !line.includes('ps -Ao'))
 
+/** 给一个 promise 加超时：超时就把"卡在哪一步"和快照一起抛出来。 */
+async function withTimeout<T>(
+  label: string,
+  work: Promise<T>,
+  ms: number,
+  marks: string[]
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(`卡在 ${label}（>${ms}ms）；阶段=${marks.join(',')}；快照=${snapshot()}`)
+            ),
+          ms
+        )
+      })
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 /**
  * 失败时的诊断快照。
  *
@@ -133,13 +159,14 @@ describe('应用退出终止正在运行的 Git 进程（真实 git + 可控远�
       marks.push(`${label}=${Date.now() - started}ms`)
     }
 
-    const hanging = await makeHangingRepo()
+    // 三段 await 都可能挂：各自限时，失败时能直接看出停在哪
+    const hanging = await withTimeout('makeHangingRepo()', makeHangingRepo(), 20000, marks)
     mark('repoReady')
 
     const id = `kb-${Date.now()}`
     const manager = new GitManager()
     manager.configure([descriptor(id, hanging.root)])
-    await manager.whenQueueIdle(id)
+    await withTimeout('configure 后的 whenQueueIdle()', manager.whenQueueIdle(id), 15000, marks)
     mark('queueIdle')
 
     // 前台 fetch：超时 60s，保证它在 dispose 时还挂着（后台模式 15s 就自己结束了）
@@ -155,7 +182,7 @@ describe('应用退出终止正在运行的 Git 进程（真实 git + 可控远�
       `git 进程未出现在远端端口 ${hanging.port} 上；阶段=${marks.join(',')}；快照=${snapshot()}`
     ).toBeGreaterThan(0)
 
-    await manager.dispose()
+    await withTimeout('manager.dispose()', manager.dispose(), 20000, marks)
     mark('disposed')
     void running
 
