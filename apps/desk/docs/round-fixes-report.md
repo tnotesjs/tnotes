@@ -654,21 +654,33 @@ HTML 转义，6 条）、`main/settings.test.ts` 的默认值与分组合并用�
 
 其他回归：`e2e-excalidraw-copy` **9/9**、`e2e-image-caption` **26/26**、`e2e-paste-newlines` **44/44**；单测 **180 files / 1614 passed**；lint / typecheck / format:check / build 全绿。
 
-### 4. CI 间歇失败（单独记录）
+### 4. CI 失败排查结论（2026-09-20 第 3 次运行后订正）
 
-**失败项**：`apps/desk/src/main/disposeSpawn.test.ts > dispose() 收掉仍在挂着的 git fetch，且不留进程`
-报 `Test timed out in 60000ms`。该测试用**真实 git** + "接受连接但不响应"的本地 HTTP 服务，
-自带 60s 预算。
+#### (a) 两条 E2E 失败：**陈旧脚本的确定性失败**（已修）
 
-**已查到的证据（不做超出证据的归因）**：
+CI 上 `e2e-block-menus.mjs` 与 `e2e-excalidraw-inline.mjs` 连挂两次，且**两次失败项完全一致**；本地也能稳定复现。根因同源：`6dc6d04` 把图片描述 `<input>` 移出 contenteditable 后，它变成**绝对定位浮层**（挂在编辑器 canvas 上，见 `deskImageView.ts` 的 `resolveCaptionHost`），而两个脚本仍按旧结构写：
 
-| 观察               | 数据                                                                                                         |
-| ------------------ | ------------------------------------------------------------------------------------------------------------ |
-| 出现范围           | 最近 3 次失败（`0.10.0` 的 tag/main、`0.10.1` 的 main）**都命中该测试**；此前的 `0.9.0` 及其前两次 CI 均通过 |
-| 同一提交的不同 run | 会不一致：`desk@0.10.1` 的 **tag run 的 CI 通过（3m45s）**，同一提交的 **main run 的 CI 失败（5m7s）**       |
-| 本地复现           | 连续 3 次单独运行全过；**8 路 CPU 满载下仍 1.03s 通过**，与 60s 预算差约 60 倍                               |
-| 与运行时长的相关性 | 通过的那次 CI 3m45s；失败的两次分别 5m7s / 5m13s —— 失败都出现在**明显更慢**的 run 上                        |
+| 脚本                        | 旧写法                                                          | 失败表现                                                                                                                |
+| --------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `e2e-excalidraw-inline.mjs` | `canvasFigure().locator('.desk-image__caption')`（figure 后代） | `locator.fill: Timeout 30000ms`                                                                                         |
+| `e2e-block-menus.mjs`       | `openMenu()` 只把格式工具条当拦截浮层，候选 hover 点取块下沿    | `hover ... <input class="desk-image__caption"> intercepts pointer events`（夹具里 `![Pixel]` 那块的下沿被描述浮层压住） |
 
-**结论：原因未确认。** 因为 3 次失败都落在本轮提交上，**不能**归因为"环境问题"；但本地（含高负载）无法复现，也拿不到失败时刻的进程/网络快照，所以同样不能断言是产品回归。目前把它记成"CI 上偶发、与 run 整体变慢相关、原因未确认"，并**不计入** `0.10.1` 的验证结论（`0.10.1` 的 tag CI 通过、发布 workflow 与打包均成功）。
+修法（只改测试）：前者改用页面级 `input.desk-image__caption` 并先 click；后者把格式工具条与描述浮层**都**收进 overlay 列表判断覆盖，并补一个靠近块上沿的候选点。
 
-**若后续阻塞验证，建议的排查顺序**：先在该 run 里打印失败时刻的 `ps`（`git-remote-http` 是否真出现）、本地服务是否收到连接、以及 `makeHangingRepo()` 各步 `execFileSync` 的耗时，判断是"git 进程没起来"还是"起来了但 dispose 没杀掉"。
+验证：修复后本地 `e2e-excalidraw-inline` 14/14、`e2e-block-menus` 退出码 0；连带 `e2e-image-chrome` / `e2e-image-caption` 26/26 / `e2e-image-copy-plain-text` 17/17 / `e2e-block-interactions` / `e2e-block-ranges` 均过；**推送后 CI 的 E2E (desk) 通过（7m4s）**（此前两次都是 failure）。
+
+#### (b) `disposeSpawn` 超时：仍**原因未确认**（已加自证诊断）
+
+`apps/desk/src/main/disposeSpawn.test.ts > dispose() 收掉仍在挂着的 git fetch，且不留进程` 在 CI 上多次 `Test timed out in 60000ms`，本地从未复现。
+
+已排除的假设与对照实验：
+
+| 假设                              | 实验                                                         | 结果                                                                 |
+| --------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------- |
+| 机器负载导致慢                    | 8 路纯 CPU 满载下运行                                        | 1.03s 通过（预算 60s）                                               |
+| 出口代理挡住宅地连接              | 把 `http_proxy` 指向一个"接受连接但不响应"的本地代理跑该测试 | 0.7s 通过（测试自身设 `NO_PROXY=*`，git 不走代理）                   |
+| 代码回归（本轮改过 `gitManager`） | 同一提交的 tag run 与 main run 结论不一致（一个过、一个挂）  | 说明不是确定性代码缺陷，但**3 次失败都落在本轮提交上**，不能据此排除 |
+
+因为本地（含高负载/代理）都无法复现、也拿不到 CI 失败时刻的进程与网络快照，所以**结论仍是"原因未确认"**，不计入 `0.10.1` 的验证结论。
+
+**已做的改进**：给该测试加了**失败自证**——阶段计时（`repoReady` / `queueIdle` / `gitProcessUp` / `disposed` / `goneChecked`）、失败时打印 `ps` 里的 git 进程快照、`git --version` 与代理相关环境变量。下次 CI 再挂，断言消息会直接区分"git 进程根本没起来"与"起来了但 dispose 没杀掉"，不必再猜。

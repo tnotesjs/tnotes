@@ -89,35 +89,91 @@ const gitProcessesFor = (port: number): string[] =>
     .filter((line) => line.includes('git'))
     .filter((line) => !line.includes('ps -Ao'))
 
+/**
+ * 失败时的诊断快照。
+ *
+ * 这个测试只在 CI 上偶发超时（本地含高负载、含挂死代理都不复现），而 CI 日志里
+ * 只看到"60s 超时"，分不清是"git 进程根本没起来"还是"起来了但 dispose 没杀掉"。
+ * 所以把阶段耗时与进程快照一起打进断言消息，下次失败就能直接判断。
+ */
+function snapshot(): string {
+  let ps = ''
+  try {
+    ps = execFileSync('ps', ['-Ao', 'pid,command'], { encoding: 'utf8' })
+      .split('\n')
+      .filter((line) => line.includes('git') && !line.includes('ps -Ao'))
+      .slice(0, 12)
+      .join(' | ')
+  } catch (error) {
+    ps = `ps failed: ${String(error)}`
+  }
+  let gitVersion = ''
+  try {
+    gitVersion = execFileSync('git', ['--version'], { encoding: 'utf8' }).trim()
+  } catch (error) {
+    gitVersion = `git failed: ${String(error)}`
+  }
+  return JSON.stringify({
+    gitVersion,
+    proxyEnv: {
+      http_proxy: process.env.http_proxy ?? null,
+      HTTP_PROXY: process.env.HTTP_PROXY ?? null,
+      NO_PROXY: process.env.NO_PROXY ?? null,
+      no_proxy: process.env.no_proxy ?? null
+    },
+    gitProcesses: ps
+  })
+}
+
 describe('应用退出终止正在运行的 Git 进程（真实 git + 可控远端）', () => {
   it('dispose() 收掉仍在挂着的 git fetch，且不留进程', async () => {
+    const started = Date.now()
+    const marks: string[] = []
+    const mark = (label: string): void => {
+      marks.push(`${label}=${Date.now() - started}ms`)
+    }
+
     const hanging = await makeHangingRepo()
+    mark('repoReady')
+
     const id = `kb-${Date.now()}`
     const manager = new GitManager()
     manager.configure([descriptor(id, hanging.root)])
     await manager.whenQueueIdle(id)
+    mark('queueIdle')
 
     // 前台 fetch：超时 60s，保证它在 dispose 时还挂着（后台模式 15s 就自己结束了）
     const running = manager.fetch(id, false, {}).catch(() => undefined)
-    // 等真的出现挂着的 git 进程
+    // 等真的出现挂着的 git 进程（CI 上这里可能比本地慢，日志里要能看出来）
     const deadline = Date.now() + 15000
     while (Date.now() < deadline && gitProcessesFor(hanging.port).length === 0) {
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
-    expect(gitProcessesFor(hanging.port).length).toBeGreaterThan(0)
+    mark('gitProcessUp')
+    expect(
+      gitProcessesFor(hanging.port).length,
+      `git 进程未出现在远端端口 ${hanging.port} 上；阶段=${marks.join(',')}；快照=${snapshot()}`
+    ).toBeGreaterThan(0)
 
     await manager.dispose()
+    mark('disposed')
     void running
 
     // 无残留：这个仓库的 git 进程必须都没了
+    let remaining: string[] = []
     const gone = await (async () => {
       const until = Date.now() + 8000
       while (Date.now() < until && gitProcessesFor(hanging.port).length > 0) {
         await new Promise((resolve) => setTimeout(resolve, 100))
       }
-      return gitProcessesFor(hanging.port).length === 0
+      remaining = gitProcessesFor(hanging.port)
+      return remaining.length === 0
     })()
-    expect(gone).toBe(true)
+    mark('goneChecked')
+    expect(
+      gone,
+      `dispose 后仍有残留 git 进程；阶段=${marks.join(',')}；残留=${remaining.join(' | ')}`
+    ).toBe(true)
     hanging.close()
   }, 60000)
 })
