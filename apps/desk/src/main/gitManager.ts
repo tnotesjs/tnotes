@@ -103,6 +103,15 @@ export interface GitRunExtras {
    * 只为单测能快速验证这条兜底而暴露；生产不传。
    */
   cleanupAbsoluteLimitMs?: number
+  /** 仅测试：硬上界到点时上报内部清理状态，便于定位"为何未结算" */
+  onCleanupState?: (state: {
+    childExited: boolean
+    streamsEnded: boolean
+    cleanupConfirmed: boolean
+    groupAlive: boolean
+    stopReason: string | null
+    exitCode: number | null
+  }) => void
   /**
    * 清理超时（`CLEANUP_GRACE_MS` 到点）但仍未确认进程组消失时上报。
    *
@@ -315,12 +324,19 @@ export function runGit(
       let reaped = !detached || !processGroupAlive()
       // 有界兜底：主进程已退出 + 已强杀 + 等满上界 → 认定 pid 已被回收（探测拿到 EPERM），
       // 不再无限轮询。见 CLEANUP_ABSOLUTE_LIMIT_MS 的说明。
-      if (
-        !reaped &&
-        childExited &&
-        terminatedAt !== null &&
-        Date.now() - terminatedAt >= CLEANUP_ABSOLUTE_LIMIT_MS
-      ) {
+      const pastAbsoluteLimit =
+        terminatedAt !== null && Date.now() - terminatedAt >= CLEANUP_ABSOLUTE_LIMIT_MS
+      if (!reaped && pastAbsoluteLimit) {
+        extras.onCleanupState?.({
+          childExited,
+          streamsEnded,
+          cleanupConfirmed,
+          groupAlive: processGroupAlive(),
+          stopReason,
+          exitCode
+        })
+      }
+      if (!reaped && childExited && pastAbsoluteLimit) {
         reaped = true
       }
       if (reaped) {

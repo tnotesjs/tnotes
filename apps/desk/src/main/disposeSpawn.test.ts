@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { GitManager } from './gitManager'
+import { GitManager, runGit } from './gitManager'
 
 import type { GitRepositoryDescriptor } from './workspace/types'
 
@@ -164,7 +164,18 @@ describe('应用退出终止正在运行的 Git 进程（真实 git + 可控远�
     mark('repoReady')
 
     const id = `kb-${Date.now()}`
-    const manager = new GitManager()
+    // 只在 CI 上会挂：把 runGit 的清理状态接出来，失败时能直接看到"卡在哪个条件"
+    const cleanupStates: unknown[] = []
+    const manager = new GitManager((root, args, timeoutMs, extras) =>
+      runGit(root, args, timeoutMs, {
+        ...extras,
+        // 压短硬上界，让诊断尽快到达（生产默认 8000ms）
+        cleanupAbsoluteLimitMs: 3000,
+        onCleanupState: (state) => {
+          cleanupStates.push(state)
+        }
+      })
+    )
     manager.configure([descriptor(id, hanging.root)])
     await withTimeout('configure 后的 whenQueueIdle()', manager.whenQueueIdle(id), 15000, marks)
     mark('queueIdle')
@@ -182,7 +193,13 @@ describe('应用退出终止正在运行的 Git 进程（真实 git + 可控远�
       `git 进程未出现在远端端口 ${hanging.port} 上；阶段=${marks.join(',')}；快照=${snapshot()}`
     ).toBeGreaterThan(0)
 
-    await withTimeout('manager.dispose()', manager.dispose(), 20000, marks)
+    await withTimeout('manager.dispose()', manager.dispose(), 25000, marks).catch(
+      (error: unknown) => {
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}；清理状态=${JSON.stringify(cleanupStates.slice(0, 4))}`
+        )
+      }
+    )
     mark('disposed')
     void running
 
