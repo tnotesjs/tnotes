@@ -749,7 +749,14 @@ async function openHeaderMenu(): Promise<void> {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 7px;
+  /*
+   * 顶部**不留 padding**：sticky 只能吸到滚动容器的内容盒上沿，padding-top 会在
+   * 容器顶边与吸顶行之间留出一条带子，滚动上来的目录项从那里透出来
+   * （实测：`padding-top: 7px` 时该带高 7px，打点命中 `node-label` / `note-index`）。
+   * 需要的视觉留白改用 `scroll-padding-top` —— 它只影响滚动定位/对齐，不产生可透视的带子。
+   */
+  padding: 0 7px 7px;
+  scroll-padding-top: 7px;
 }
 
 /*

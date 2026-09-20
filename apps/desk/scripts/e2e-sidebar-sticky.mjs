@@ -44,6 +44,24 @@ const headingInfo = async (selector) =>
         // 吸顶行的背景必须**不透明**：背景透明时滚动上来的目录项会透过它显示
         // （曾出现：`.section-heading` 的 transparent 与吸顶规则同优先级且更靠后，
         // 覆盖掉了 var(--panel)，计算值变成 rgba(0, 0, 0, 0)）
+        // 吸顶行**上方**到滚动容器顶边的距离，以及那条带子里最顶层的元素
+        gapAbove: Math.round(rect.top - bodyRect.top),
+        bleedAbove: (() => {
+          if (rect.top - bodyRect.top < 1) return null
+          const x = Math.round(rect.left + 20)
+          const probes = []
+          for (let y = Math.round(bodyRect.top) + 1; y < Math.round(rect.top); y += 2) {
+            const hit = document.elementFromPoint(x, y)
+            // 命中任一吸顶行都算正常（「目录」上方就是「变更」行，两行会叠在一起）；
+            // 只有命中滚动内容（目录项等）才算真的透出
+            probes.push(
+              hit?.closest?.('.git-heading, .toc-heading')
+                ? 'heading'
+                : String(hit?.className ?? hit?.tagName ?? '').slice(0, 40)
+            )
+          }
+          return probes
+        })(),
         background: getComputedStyle(el).backgroundColor,
         opaque: !/rgba?\(0, 0, 0, 0\)|transparent/.test(getComputedStyle(el).backgroundColor)
       }
@@ -102,6 +120,16 @@ try {
     '吸顶行背景不透明（滚动内容不会透过它显示）',
     Boolean(gitHeading?.opaque && tocHeading?.opaque),
     `git=${gitHeading?.background} toc=${tocHeading?.background}`
+  )
+
+  // 吸顶行只能吸到**内容盒**上沿：容器若留 padding-top，那条带子盖不住，
+  // 滚动上来的目录项会从吸顶行上方透出（实测 padding-top:7px 时带高 7px，
+  // 打点命中 node-label / note-index）。
+  const bleed = (heading) => (heading?.bleedAbove ?? []).filter((hit) => hit !== 'heading')
+  rec.record(
+    '吸顶行上方没有内容透出（容器顶部不留可透视的 padding 带）',
+    bleed(gitHeading).length === 0 && bleed(tocHeading).length === 0,
+    `git gap=${gitHeading?.gapAbove} bleed=${JSON.stringify(bleed(gitHeading))} toc bleed=${JSON.stringify(bleed(tocHeading))}`
   )
 
   rec.record('吸顶后目录栏操作按钮仍可点', Boolean(clickable))
