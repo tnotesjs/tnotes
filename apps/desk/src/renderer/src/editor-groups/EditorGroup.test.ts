@@ -96,4 +96,24 @@ describe('native tab context menu', () => {
     expect(close).toHaveBeenCalledExactlyOnceWith('all')
     wrapper.unmount()
   })
+
+  it('shows the note assets from the tab menu without toggling them back off', async () => {
+    const editor = useEditorStore()
+    const a = editor.openNote(knowledgeBase, 'a', 'A', 'visual', undefined, 'permanent')
+    const b = editor.openNote(knowledgeBase, 'b', 'B', 'visual', undefined, 'permanent')
+    // 面板已经开着：命令语义要求保持显示（若实现成 toggle，这里会被关掉）
+    editor.setNoteAssetsVisible(a, true)
+    const group = editor.activeGroup!
+    const wrapper = shallowMount(EditorGroup, { props: { group } })
+    showContextMenu.mockResolvedValue({ ok: true, value: 'show-note-assets' })
+    // 右键的是第一个标签，而当前活跃标签是 b：应先切回 a
+    await wrapper.findAll('.tab')[0].trigger('contextmenu')
+    await flushPromises()
+    // 读**当前**布局里的状态（activate 会重建分组对象，不能读动作前抓到的引用）
+    const liveTabs = () => editor.groups.find((item) => item.id === group.id)!.tabs
+    expect(editor.activeTab?.id).toBe(a)
+    expect(liveTabs().find((tab) => tab.id === a)?.noteAssetsVisible).toBe(true)
+    expect(liveTabs().find((tab) => tab.id === b)?.noteAssetsVisible).toBe(false)
+    wrapper.unmount()
+  })
 })

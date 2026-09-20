@@ -95,7 +95,9 @@ describe('native context menus', () => {
         'close-saved',
         'close-all',
         'close-web',
-        ...(tabType === 'note' ? ['copy-path', 'reveal-file', 'reveal-toc'] : []),
+        ...(tabType === 'note'
+          ? ['copy-path', 'reveal-file', 'reveal-toc', 'show-note-assets']
+          : []),
         'toggle-pin'
       ])
       expect(template[0]).toMatchObject({

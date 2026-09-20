@@ -829,3 +829,13 @@ nextTop=317, clearance=16`；
 - 主进程菜单模板：笔记菜单项顺序断言里加上「显示本笔记资源」；
 - 渲染端：没开着 → `selectNote(node, undefined, true)` 后把返回的标签页设成显示；
   已开着且面板已显示 → 不重新打开、`setNoteAssetsVisible(tabId, true)` 后仍为显示（不会被 toggle 关掉）。
+
+### 17.1 标签页自身的右键菜单也加同一条
+
+主进程 `kind: 'tab'` 的笔记分支里加同一项（排在「在目录列表中显示」之后）；渲染端
+`EditorGroup.runTabAction` 里执行它：**先 `editor.activate(props.group.id, tab.id)`**（右键的
+可能不是当前活跃标签，不切过去面板开了也看不见），再 `setNoteAssetsVisible(tab.id, true)`。
+
+验证：单测断言右键**非活跃**标签后活跃标签切回了它、它的 `noteAssetsVisible` 为 `true`、
+另一个标签仍为 `false`。这条断言做过反向验证 —— 把实现临时改成 `toggleNoteAssetsVisible`
+后只有这一条变红（预期 `true` 实得 `false`），确认不是恒真断言。

@@ -69,7 +69,8 @@ export function contextMenuTemplate(
       { type: 'separator' },
       item('copy-path', '复制路径', 'Alt+CommandOrControl+C'),
       item('reveal-file', revealLabel, 'Alt+CommandOrControl+R'),
-      item('reveal-toc', '在目录列表中显示')
+      item('reveal-toc', '在目录列表中显示'),
+      item('show-note-assets', '显示本笔记资源')
     )
   }
   template.push({ type: 'separator' }, item('toggle-pin', `${pinLabel}    ${primary} K ⇧ Enter`))

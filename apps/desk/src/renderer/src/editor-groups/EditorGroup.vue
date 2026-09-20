@@ -192,6 +192,12 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
   else if (tab.type === 'note' && action === 'reveal-file')
     await workspace.revealNoteInFileManager(tab)
   else if (tab.type === 'note' && action === 'reveal-toc') await workspace.revealTabInToc(tab)
+  else if (tab.type === 'note' && action === 'show-note-assets') {
+    // 标签页就在手边：右键的那个可能不是当前活跃标签，先切过去，否则面板开了也看不见。
+    // 与目录树那条同一个语义：**设成显示**而不是切换（已显示时保持显示）。
+    editor.activate(props.group.id, tab.id)
+    editor.setNoteAssetsVisible(tab.id, true)
+  }
 }
 </script>
 
