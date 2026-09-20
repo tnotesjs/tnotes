@@ -145,14 +145,19 @@ const formatDisabled = computed(() => {
   if (props.tab.viewMode === 'readonly') return true
   return props.tab.viewMode !== 'source' && milkdownFailed.value
 })
+/**
+ * 顺序即工具栏顺序。标题三项（级别下拉 / 编号重排 / 移除编号）放在最前：
+ * 它们是**块级**结构操作，与后面的行内格式分开；同时 FormatOverflowBar 是从**尾部**
+ * 开始收进「…」的，放最前也保证窄面板下它们始终在。
+ */
 const formatActions = [
+  'heading',
+  'heading-number',
+  'heading-number-remove',
   'bold',
   'italic',
   'strikethrough',
   'inline-code',
-  'heading',
-  'heading-number',
-  'heading-number-remove',
   'quote',
   'unordered-list',
   'ordered-list',

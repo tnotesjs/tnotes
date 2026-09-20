@@ -863,3 +863,14 @@ nextTop=317, clearance=16`；
 `document-path / view-switcher / view-divider / format-overflow-bar-stub / layout-controls`、
 竖线的前一个兄弟节点就是视图切换、两组按钮的 `aria-label` 各自正确；typecheck / lint 0 error。
 排版观感（窄面板下 ② 是否常显、竖线位置）按约定交人工目测。
+
+## 十九、格式工具栏：标题三项移到最前
+
+验收要求：把「标题级别下拉 / 标题编号（重排）/ 移除标题编号」这三项移到工具栏最前方。
+
+`formatActions` 数组顺序即工具栏顺序，把那三项挪到 `bold` 之前即可（渲染模板按 `item` 分支，
+与顺序无关，所以只动数组）。两点副作用是想要的：
+
+- 它们是**块级**结构操作，与后面的行内格式（粗体 / 斜体 / 行内代码…）在视觉上分开；
+- `FormatOverflowBar` 是从**尾部**开始把条目收进「…」的（`items.slice(0, visibleCount)`），
+  排在最前 = 窄面板下也始终可见（原先它们排在中段，宽度不够时会先被收走）。
