@@ -14,8 +14,22 @@ import {
 } from './e2e-lib.mjs'
 
 const rec = createRecorder()
-const CODE = ['const a = 1', '', 'const b = 2', '    indented', 'const c = 3'].join('\n')
-const GROUP_CODE = ['group1 = true', 'group2 = false', '    grouped'].join('\n')
+// 冲突内容：`##` 像标题、`**` 像粗体、`#` 像注释、`-` 像列表 —— 用来证明
+// 「代码复制」不会因为文本形态像 Markdown 而被解析
+const CODE = [
+  '## 这不是标题',
+  '**这不是粗体**',
+  '# 也不是注释',
+  '- 也不是列表',
+  '    indented',
+  'const c = 3'
+].join('\n')
+const GROUP_CODE = [
+  '## 组内也不是标题',
+  '**组内也不是粗体**',
+  'group2 = false',
+  '    grouped'
+].join('\n')
 const fixture = createFixture('paste-newlines', {
   notes: [
     {
@@ -173,8 +187,17 @@ try {
     (await groupedTabs.count()) > 0,
     `count=${await groupedTabs.count()}`
   )
-  await setClipboard(GROUP_CODE)
+  // 用**真实复制**（Cmd+C → 哨兵）而不是直接写剪贴板：直接写会绕开来源标记，
+  // 等于只测了"按文本形态猜 Markdown"这条旧路
+  await page
+    .locator('.desk-raw-block--code-group-editable .code-group-panel:visible .cm-content')
+    .first()
+    .click()
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.press('ControlOrMeta+c')
+  await new Promise((resolve) => setTimeout(resolve, 400))
   await focusBodyEnd()
+  await page.keyboard.press('Enter')
   await page.keyboard.press('ControlOrMeta+v')
   await new Promise((resolve) => setTimeout(resolve, 600))
   const groupedInEditor = await pastedText()
@@ -207,6 +230,104 @@ try {
     '带 HTML 的粘贴仍走富文本（粗体保留，不被纯文本分支接管）',
     richText.includes('粗体') && !richText.includes('纯文本一行'),
     JSON.stringify(richText.slice(0, 120))
+  )
+
+  // ── 场景四之二（P1）：粘贴事件必须真的收到「代码来源」标记 ──
+  // 复制按钮与 Cmd+C 两条路都要覆盖，且用 `##` / `**` 这类**冲突内容**验证：
+  // 如果标记没生效，文本会被 Markdown 解析成标题/粗体，行边界也会丢。
+  const readCopied = () => app.evaluate(({ clipboard }) => clipboard.readText())
+  const canary = '\u{E0000}\u{E0001}desk-code\u{E0001}'
+
+  // (a) 普通代码块的「复制按钮」
+  await page.locator('.milkdown-code-block .tools .copy-button').first().click()
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  const byButtonRaw = await readCopied()
+  rec.record(
+    '复制按钮写入的纯文本带代码来源哨兵',
+    byButtonRaw.startsWith(canary),
+    JSON.stringify(byButtonRaw.slice(0, 40))
+  )
+  rec.record(
+    '复制按钮带出的正文逐字等于代码块内容（哨兵之外）',
+    byButtonRaw.slice(canary.length).replace(/\r\n?/g, '\n') === CODE,
+    `实得=${JSON.stringify(byButtonRaw.slice(canary.length).slice(0, 80))} 期望=${JSON.stringify(CODE.slice(0, 80))}`
+  )
+
+  // (b) 代码块内 Cmd+A / Cmd+C
+  await page
+    .locator('.milkdown-code-block .preview-toggle-button')
+    .first()
+    .click()
+    .catch(() => {})
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  await page.locator('.milkdown-code-block .cm-content').first().click()
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.press('ControlOrMeta+c')
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  const byKeyRaw = await readCopied()
+  rec.record(
+    '代码块内 Cmd+C 写入的纯文本带代码来源哨兵',
+    byKeyRaw.startsWith(canary),
+    JSON.stringify(byKeyRaw.slice(0, 40))
+  )
+  rec.record(
+    '代码块内 Cmd+C 带出的正文逐字等于代码块内容（哨兵之外）',
+    byKeyRaw.slice(canary.length).replace(/\r\n?/g, '\n') === CODE,
+    `实得=${JSON.stringify(byKeyRaw.slice(canary.length).slice(0, 80))}`
+  )
+
+  // (c) 代码组内 Cmd+A / Cmd+C
+  const groupCm = page
+    .locator('.desk-raw-block--code-group-editable .code-group-panel:visible .cm-content')
+    .first()
+  if ((await groupCm.count()) > 0) {
+    await groupCm.click()
+    await page.keyboard.press('ControlOrMeta+a')
+    await page.keyboard.press('ControlOrMeta+c')
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    const groupRaw = await readCopied()
+    rec.record(
+      '代码组内 Cmd+C 写入的纯文本带代码来源哨兵',
+      groupRaw.startsWith(canary),
+      JSON.stringify(groupRaw.slice(0, 40))
+    )
+    rec.record(
+      '代码组内 Cmd+C 带出的正文逐字等于面板内容（哨兵之外）',
+      groupRaw.slice(canary.length).replace(/\r\n?/g, '\n') === GROUP_CODE,
+      `实得=${JSON.stringify(groupRaw.slice(canary.length).slice(0, 80))}`
+    )
+  }
+
+  // (d) 端到端：把带哨兵的剪贴板原样粘回正文 —— 冲突内容不得变成标题/粗体
+  await focusBodyEnd()
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('ControlOrMeta+v')
+  await new Promise((resolve) => setTimeout(resolve, 700))
+  const markedPaste = await page
+    .locator('.ProseMirror')
+    .first()
+    .evaluate((root) => ({
+      text: root.innerText,
+      headings: Array.from(root.querySelectorAll('h1,h2,h3,h4,h5,h6')).map((n) => n.textContent),
+      strong: Array.from(root.querySelectorAll('strong')).map((n) => n.textContent),
+      listItems: Array.from(root.querySelectorAll('li')).map((n) => (n.textContent ?? '').trim())
+    }))
+  rec.record(
+    '带标记粘贴：`##` 行没有被解析成标题',
+    !markedPaste.headings.some((text) => (text ?? '').includes('这不是标题')),
+    JSON.stringify(markedPaste.headings)
+  )
+  rec.record(
+    '带标记粘贴：`**` 行没有被解析成粗体',
+    !markedPaste.strong.some((text) => (text ?? '').includes('这不是粗体')),
+    JSON.stringify(markedPaste.strong)
+  )
+  rec.record(
+    '带标记粘贴：行边界保留（多行都在）',
+    ['## 这不是标题', '**这不是粗体**', 'const c = 3'].every((line) =>
+      markedPaste.text.includes(line)
+    ),
+    JSON.stringify(markedPaste.text.slice(-160))
   )
 
   // ── 场景五 / 六：换到干净的笔记（前面已粘入很多空段落，会污染计数）──

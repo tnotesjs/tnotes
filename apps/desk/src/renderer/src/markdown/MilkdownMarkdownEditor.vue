@@ -7,7 +7,7 @@ import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { serializeImageMarkdown } from '@tnotesjs/ui/image-markdown'
 import { createCanvasImageClipboardPlugin } from './canvasImageClipboardPlugin'
-import { DESK_CODE_CLIPBOARD_TYPE } from './clipboardNewline'
+import { withDeskCodeSentinel } from './clipboardNewline'
 import { noteRelativeAssetPath } from './noteAssetPath'
 import { invalidateCanvasSource, placeholderCanvasSvg } from '../editor/excalidraw/canvasImage'
 import { useEditorStore } from '../stores/editor'
@@ -239,23 +239,25 @@ function deleteCurrentBlock(): void {
 }
 
 /**
- * 写剪贴板。`markAsCode` 时额外写一个自定义类型，让粘贴端知道"这是从代码块复制的代码"，
- * 从而跳过 Markdown 解析（只靠文本形态无法区分 `# 注释` 与标题）。
+ * 写剪贴板。
+ *
+ * `markAsCode` 时在**纯文本本身**里加一个不可见哨兵（`DESK_CODE_SENTINEL`），
+ * 让粘贴端知道"这是从代码块复制的代码"，从而跳过 Markdown 解析
+ * （只靠文本形态无法区分 `# 注释` 与标题）。
+ *
+ * 为什么不用自定义 MIME：实测 Electron 里 `ClipboardItem.supports('application/x-desk-code')`
+ * 为 false（只有 `web application/...` 形式被认），而且 `navigator.clipboard.write`
+ * 在没有剪贴板权限时直接抛 `NotAllowedError` —— 自定义格式写不进去就只能退回无标记纯文本。
+ * 哨兵放在文本里不依赖任何权限，`writeText` 与 `execCommand('copy')` 两条路都能带上。
  */
 async function writeClipboard(text: string, options: { markAsCode?: boolean } = {}): Promise<void> {
+  // 去尾部换行后再打哨兵（理由同 deskCodeTabEditor：Electron 会把行尾统一成 CRLF）
+  const payload = options.markAsCode
+    ? withDeskCodeSentinel(text.replace(/\r\n?/g, '\n').replace(/\n+$/, ''))
+    : text
   if (navigator.clipboard?.writeText) {
     try {
-      if (options.markAsCode && navigator.clipboard.write) {
-        // 同时写纯文本与自定义类型：纯文本保证粘到外部应用仍可用，
-        // 自定义类型只用于 Desk 自己识别"这是代码"
-        const item = new ClipboardItem({
-          'text/plain': new Blob([text], { type: 'text/plain' }),
-          [DESK_CODE_CLIPBOARD_TYPE]: new Blob([text], { type: DESK_CODE_CLIPBOARD_TYPE })
-        })
-        await navigator.clipboard.write([item])
-        return
-      }
-      await navigator.clipboard.writeText(text)
+      await navigator.clipboard.writeText(payload)
       return
     } catch {
       // Electron can expose Clipboard without granting the renderer's async
@@ -264,7 +266,7 @@ async function writeClipboard(text: string, options: { markAsCode?: boolean } = 
     }
   }
   const textarea = document.createElement('textarea')
-  textarea.value = text
+  textarea.value = payload
   textarea.style.position = 'fixed'
   textarea.style.opacity = '0'
   document.body.append(textarea)

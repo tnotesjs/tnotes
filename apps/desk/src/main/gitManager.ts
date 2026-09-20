@@ -128,7 +128,6 @@ export type BackgroundFailureRecorder = (event: {
   kind: 'git-fetch' | 'git-push'
   reason: string
   message: string
-  id?: string
 }) => { id: string }
 
 /** 后台 fetch 的判定结果（比 `GitOperationResult` 多出"成功/超时"这一层）。 */
@@ -829,28 +828,23 @@ export class GitManager {
       outputTruncated: (bytes) => holder.task?.observer.outputTruncated?.(bytes)
     }
 
-    // 没有可见任务时（容量门禁拦下）也要把**真实执行结果**记下来：
-    // 先记一条"为什么没标签"，执行完再用同一个 id 补上 outcome.message。
-    const missingTask: { id: string | null } = { id: null }
+    // 没有可见任务时（容量门禁拦下）也要把**真实执行结果**记下来。
+    // 只在**最终失败**时记一条：成功不留下任何失败记录，也不会出现"先建后更"的 ×2。
 
     return new Promise<boolean>((resolve) => {
       void this.enqueue<FetchOutcome>(
         knowledgeBaseId,
         async (target, runExtras) => {
           holder.task = this.createBackgroundTask(knowledgeBaseId, 'git-fetch')
-          if (!holder.task) {
-            missingTask.id = this.recordMissingBackgroundTask(knowledgeBaseId, 'git-fetch')
-          }
           const outcome = await this.executeFetch(target, true, runExtras)
-          // 真实结果补记：成功不记（不能把成功的 fetch 展示成 Git 执行失败）
+          // 没有可见任务 + 最终失败 → 记一条（成功不记）
           if (!holder.task && !outcome.ok) {
             this.recordMissingBackgroundTask(
               knowledgeBaseId,
               'git-fetch',
               outcome.timedOut
                 ? `Git 执行超时：${outcome.message ?? 'git fetch 超时'}`
-                : (outcome.message ?? 'git fetch 失败'),
-              missingTask.id ?? undefined
+                : (outcome.message ?? 'git fetch 失败')
             )
           }
           await this.refreshRepository(
@@ -884,8 +878,7 @@ export class GitManager {
             this.recordMissingBackgroundTask(
               knowledgeBaseId,
               'git-fetch',
-              `Git 未执行完成：${message}`,
-              missingTask.id ?? undefined
+              `Git 未执行完成：${message}`
             )
           }
           holder.task?.finish('failed', message)
@@ -904,26 +897,17 @@ export class GitManager {
   private recordMissingBackgroundTask(
     knowledgeBaseId: string,
     kind: 'git-fetch' | 'git-push',
-    message?: string,
-    id?: string
+    message: string
   ): string | null {
-    const reason = '底部面板标签已达上限，无法再开一个后台任务标签'
+    // reason 说明"为什么这条失败没有可见任务"；message 是**真实执行结果**。
+    // 两者分开，聚合才按最终错误走，而不是按容量提示走。
+    const reason = '底部面板标签已达上限，没有可见任务'
     if (!this.backgroundFailureRecorder) {
-      deskLog('git:background-task', 'no visible task', {
-        knowledgeBaseId,
-        kind,
-        message: message ?? reason
-      })
+      deskLog('git:background-task', 'no visible task', { knowledgeBaseId, kind, message })
       return null
     }
     try {
-      return this.backgroundFailureRecorder({
-        knowledgeBaseId,
-        kind,
-        reason,
-        message: message ?? reason,
-        id
-      }).id
+      return this.backgroundFailureRecorder({ knowledgeBaseId, kind, reason, message }).id
     } catch (cause) {
       deskLog('git:background-task', 'failure recorder failed', {
         knowledgeBaseId,
@@ -1048,7 +1032,9 @@ export class GitManager {
           () => {
             this.autoPushTimers.delete(repository.knowledgeBaseId)
             if (this.assetWritePaused.has(repository.knowledgeBaseId)) return
-            // 自动推送也走可见任务：开始前认领、结束后按真实结果结算（失败/超时分类）
+            // 自动推送也走可见任务：开始前认领、结束后按真实结果结算（失败/超时分类）。
+            // 满额时没有可见任务 → 与 fetch 同样处理：**最终失败**才记一条无标签失败，
+            // 否则用户完全看不到自动推送失败。
             const task = this.createBackgroundTask(repository.knowledgeBaseId, 'git-push')
             void this.publish(
               repository.knowledgeBaseId,
@@ -1058,6 +1044,13 @@ export class GitManager {
                 if (outcome.conflict) {
                   const message = outcome.message || '自动推送未完成'
                   deskLog('git:auto-push', 'failed', message)
+                  if (!task) {
+                    this.recordMissingBackgroundTask(
+                      repository.knowledgeBaseId,
+                      'git-push',
+                      message
+                    )
+                  }
                   task?.finish('failed', message)
                   return
                 }
@@ -1066,6 +1059,13 @@ export class GitManager {
               (error) => {
                 const message = operationMessage(error)
                 deskLog('git:auto-push', 'failed', message)
+                if (!task) {
+                  this.recordMissingBackgroundTask(
+                    repository.knowledgeBaseId,
+                    'git-push',
+                    /超时/.test(message) ? `Git 执行超时：${message}` : message
+                  )
+                }
                 task?.finish(/超时/.test(message) ? 'timeout' : 'failed', message)
               }
             )

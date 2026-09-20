@@ -59,6 +59,33 @@ describe('后台失败记录（不占面板标签）', () => {
     expect(items[0].count).toBe(3)
   })
 
+  it('同因连续失败三次只累加计数（一条 ×3），不新增记录', () => {
+    const event = {
+      knowledgeBaseId: 'kb1',
+      kind: 'git-fetch' as const,
+      reason: '底部面板标签已达上限，没有可见任务',
+      message: 'fatal: unable to access remote'
+    }
+    recordBackgroundFailureWithoutTask(event)
+    recordBackgroundFailureWithoutTask(event)
+    recordBackgroundFailureWithoutTask(event)
+    const items = listBackgroundFailures()
+    // 关键：不能出现"一次失败显示 ×2"（旧实现先建占位再更新会 +1 两次）
+    expect(items).toHaveLength(1)
+    expect(items[0].count).toBe(3)
+  })
+
+  it('一次失败只记一次（不存在"先建占位再更新"的 ×2）', () => {
+    recordBackgroundFailureWithoutTask({
+      knowledgeBaseId: 'kb1',
+      kind: 'git-fetch',
+      reason: '底部面板标签已达上限，没有可见任务',
+      message: 'fatal: unable to access remote'
+    })
+    expect(listBackgroundFailures()).toHaveLength(1)
+    expect(listBackgroundFailures()[0].count).toBe(1)
+  })
+
   it('原因或消息变了就是新条目（不吞新问题）', () => {
     recordBackgroundFailureWithoutTask({
       knowledgeBaseId: 'kb1',

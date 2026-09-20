@@ -53,17 +53,23 @@ export function clearBackgroundFailures(): void {
 }
 
 /**
- * 记一条"没能建出可见任务"的后台失败。
+ * 记一条后台失败（含"没能建出可见任务"这一类）。
  *
- * @param reason 为什么没有可见任务（人话，会直接展示给用户）
+ * 生命周期约定（第三轮验收修正）：
+ *  - **只在最终失败时记录**，不再先建一条"运行中占位记录"再更新 —— 那样一次失败
+ *    会先建后更、`count` 变成 2（显示 ×2），而且下一次的占位记录无法按原消息命中
+ *    已变成 Git 错误的旧记录，重复失败会不断新增条目；
+ *  - 聚合键是 `(知识库, 操作, 原因, 最终错误)`：同一个原因+同一个最终错误的重复失败
+ *    只累加 `count`；
+ *  - **成功不记录**：不会留下只写着"标签已满"的失败条目。
+ *
+ * @param reason 这条失败的性质（例如"底部面板标签已达上限"或 Git 执行失败）
  */
 export function recordBackgroundFailureWithoutTask(event: {
   knowledgeBaseId: string
   kind: 'git-fetch' | 'git-push'
   reason: string
   message: string
-  /** 更新已有条目（例如先记录"没能建出任务"，执行完再补上真实 Git 错误） */
-  id?: string
   at?: Date
 }): BackgroundFailureDto {
   const at = (event.at ?? new Date()).toISOString()
@@ -76,18 +82,14 @@ export function recordBackgroundFailureWithoutTask(event: {
   })()
   const existing = failures.find(
     (item) =>
-      (event.id !== undefined && item.id === event.id) ||
-      (event.id === undefined &&
-        item.knowledgeBaseId === event.knowledgeBaseId &&
-        item.kind === event.kind &&
-        item.reason === event.reason &&
-        item.message === event.message)
+      item.knowledgeBaseId === event.knowledgeBaseId &&
+      item.kind === event.kind &&
+      item.reason === event.reason &&
+      item.message === event.message
   )
   if (existing) {
     existing.count += 1
     existing.at = at
-    existing.reason = event.reason
-    existing.message = event.message
     notify()
     return { ...existing }
   }

@@ -1,6 +1,6 @@
 import { CHECK_ICON, COPY_ICON } from '../../markdown/copyIcons'
 import { createCodeExpandButton } from '../../markdown/codeBlockFullscreen'
-import { DESK_CODE_CLIPBOARD_TYPE } from '../../markdown/clipboardNewline'
+import { withDeskCodeSentinel } from '../../markdown/clipboardNewline'
 import { UNLABELED_CODE_LANGUAGE } from '../../markdown/codeLanguage'
 import {
   createContainerSourceEditor,
@@ -54,30 +54,21 @@ function normalizeLanguageInput(value: string): string {
 }
 
 async function defaultCopy(text: string): Promise<void> {
-  if (navigator.clipboard?.write) {
-    try {
-      // 代码分组的独立编辑器：同样带上"这是代码"的来源标记，
-      // 粘贴回正文时才不会被当成 Markdown 折叠换行
-      const item = new ClipboardItem({
-        'text/plain': new Blob([text], { type: 'text/plain' }),
-        [DESK_CODE_CLIPBOARD_TYPE]: new Blob([text], { type: DESK_CODE_CLIPBOARD_TYPE })
-      })
-      await navigator.clipboard.write([item])
-      return
-    } catch {
-      // Fall through — Electron may deny async clipboard without gesture path.
-    }
-  }
+  // 代码分组：同样把不可见哨兵放进纯文本（自定义 MIME 在 Electron 里不可用，
+  // 且 clipboard.write 可能没有权限，见 clipboardNewline.ts 的说明）
+  // 去尾部换行后再打哨兵：Electron 剪贴板会把行尾统一成 CRLF，留着尾部换行
+  // 会让"复制→粘贴"多出一个空行，逐字比对就不相等了
+  const payload = withDeskCodeSentinel(text.replace(/\r\n?/g, '\n').replace(/\n+$/, ''))
   if (navigator.clipboard?.writeText) {
     try {
-      await navigator.clipboard.writeText(text)
+      await navigator.clipboard.writeText(payload)
       return
     } catch {
       // Fall through — Electron may deny async clipboard without gesture path.
     }
   }
   const textarea = document.createElement('textarea')
-  textarea.value = text
+  textarea.value = payload
   textarea.style.position = 'fixed'
   textarea.style.opacity = '0'
   document.body.append(textarea)

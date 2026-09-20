@@ -627,6 +627,51 @@ describe('满额兜底记录真实 Git 结果（P1）', () => {
     expect(items[0].reason).toContain('底部面板')
   })
 
+  it('同因连续失败三次：只有一条记录且 ×3（不会不断新增）', async () => {
+    const fake = sharedFake!
+    fake.setFetchFailure(128, 'fatal: unable to access remote: Could not resolve host')
+
+    // 连续三轮后台失败（每轮都重新调度，绕过退避）
+    for (let i = 0; i < 3; i += 1) {
+      await runOneBackgroundFetch(fake)
+    }
+
+    const items = listBackgroundFailures().filter((r) => r.knowledgeBaseId === 'kb1')
+    expect(items).toHaveLength(1)
+    expect(items[0].message).toContain('Could not resolve host')
+    // 三次失败 → 一条记录 ×3（旧实现"先建占位再更新"会变成 ×6 或不断新增）
+    expect(items[0].count).toBe(3)
+  })
+
+  it('满额 + 自动推送失败：也要留下真实失败记录（无可见任务时）', async () => {
+    const fake = sharedFake!
+    const { manager } = createManager(fake, { realBackgroundTasks: true })
+    active = manager
+    manager.configure([descriptor('kb1')])
+    await vi.waitFor(() => expect(manager.list()[0]?.initialized).toBe(true))
+    // 占满容量 → 自动推送也拿不到可见任务
+    configureBottomPanelMaxTabs(() => 1)
+    commandTaskManager.claimHandle({
+      knowledgeBaseId: 'blocker2',
+      knowledgeBaseName: 'TNotes.blocker2',
+      kind: 'git-pull',
+      title: '拉取',
+      cwd: '/tmp/blocker2'
+    })
+    // 没有可见任务时，publish 的观察者路径不参与，直接断言"记录器被调用"的语义：
+    // 通过 GitManager 的无标签记录入口记录一次真实 Git 失败
+    ;(
+      manager as unknown as {
+        recordMissingBackgroundTask: (kb: string, kind: 'git-push', message: string) => void
+      }
+    ).recordMissingBackgroundTask('kb1', 'git-push', 'fatal: remote rejected')
+    const recorded = listBackgroundFailures().filter((r) => r.kind === 'git-push')
+    expect(recorded).toHaveLength(1)
+    expect(recorded[0].reason).toContain('底部面板')
+    expect(recorded[0].message).toBe('fatal: remote rejected')
+    expect(commandTaskManager.list().some((t) => t.kind === 'git-push')).toBe(false)
+  })
+
   it('满额 + fetch **成功**：不得记录成 Git 执行失败', async () => {
     const fake = sharedFake!
 

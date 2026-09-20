@@ -1,7 +1,13 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest'
 
-import { DESK_CODE_CLIPBOARD_TYPE, looksLikeMarkdown, textToDom } from './clipboardNewline'
+import {
+  DESK_CODE_CLIPBOARD_TYPE,
+  looksLikeMarkdown,
+  stripDeskCodeSentinel,
+  textToDom,
+  withDeskCodeSentinel
+} from './clipboardNewline'
 
 const toHtml = (text: string): string => {
   const host = document.createElement('div')
@@ -125,7 +131,42 @@ describe('Markdown 判定（P2：不能靠行首正则区分代码与 Markdown�
     expect(looksLikeMarkdown('x = a | b')).toBe(false)
   })
 
-  it('应用内代码复制带来源标记（`application/x-desk-code`）', () => {
-    expect(DESK_CODE_CLIPBOARD_TYPE).toBe('application/x-desk-code')
+  it('自定义 MIME 用 Electron 实际认可的形式（`web application/...`）', () => {
+    // 实测 Electron：`ClipboardItem.supports('application/x-desk-code') === false`，
+    // 只有带 `web ` 前缀的形式被认
+    expect(DESK_CODE_CLIPBOARD_TYPE.startsWith('web application/')).toBe(true)
+  })
+})
+
+describe('代码来源哨兵（不依赖剪贴板权限的载体）', () => {
+  it('加哨兵后能识别出来，并剥回原文', () => {
+    const code = '# 计算总和\ndef total(xs):\n    return sum(xs)'
+    const payload = withDeskCodeSentinel(code)
+    expect(payload).not.toBe(code)
+    const stripped = stripDeskCodeSentinel(payload)
+    expect(stripped.isCode).toBe(true)
+    expect(stripped.text).toBe(code)
+  })
+
+  it('普通文本不带哨兵，原样返回', () => {
+    const stripped = stripDeskCodeSentinel('# 计算总和\ndef total():')
+    expect(stripped.isCode).toBe(false)
+    expect(stripped.text).toBe('# 计算总和\ndef total():')
+  })
+
+  it('哨兵本身不贡献可见字符宽度（不可见、不参与排版）', () => {
+    // Unicode Tag 区字符：不可见，粘贴到外部应用也不会显现
+    expect(withDeskCodeSentinel('x').startsWith('\u{E0000}')).toBe(true)
+    expect(withDeskCodeSentinel('x').replace(/[\u{E0000}-\u{E007F}]/gu, '')).toBe('desk-codex')
+  })
+
+  it('带哨兵的代码（含 `##` 与 `**` 冲突内容）必须走保留行边界的路径', () => {
+    const tricky = ['## 这不是标题', '**这不是粗体**', '# 也不是', '- 也不是列表'].join('\n')
+    // 不打哨兵时会被判成 Markdown（`##` / 两行短横线）
+    expect(looksLikeMarkdown(tricky)).toBe(true)
+    // 打上哨兵后粘贴端会跳过 Markdown 判定，直接保留行边界
+    const stripped = stripDeskCodeSentinel(withDeskCodeSentinel(tricky))
+    expect(stripped.isCode).toBe(true)
+    expect(stripped.text).toBe(tricky)
   })
 })
