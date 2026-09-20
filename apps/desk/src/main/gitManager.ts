@@ -1170,7 +1170,21 @@ export class GitManager {
         }
       }
       // 3) 终止正在跑的 git 子进程（等 close 的那一套由 runGit 负责）
+      const killCount = this.disposeKills.size
       for (const kill of [...this.disposeKills]) kill()
+      // 临时诊断（定位 CI 上 dispose() 卡在哪一步）：只写日志，不改行为
+      const nodesSnapshot = [...this.queueNodes.values()]
+        .flat()
+        .map(
+          (node) =>
+            `${node.id}:${node.running ? 'running' : 'idle'}:${node.canceled ? 'canceled' : 'live'}`
+        )
+      deskLog('git:dispose', `pass=${pass}`, {
+        knowledgeBaseId: null,
+        tails: this.operationTails.size,
+        kills: killCount,
+        nodes: nodesSnapshot.join(',')
+      })
       await Promise.allSettled([...this.operationTails.values()])
       const pending = [...this.queueNodes.values()].flat().filter((node) => !node.canceled)
       if (pending.length === 0) break
