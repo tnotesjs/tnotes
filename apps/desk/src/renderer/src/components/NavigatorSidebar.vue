@@ -765,8 +765,14 @@ async function openHeaderMenu(): Promise<void> {
   display: contents;
 }
 
-.git-heading,
-.toc-heading {
+/* 选择器带上 .navigator-body 是有意的：`.section-heading`（下面那条共享基类规则）
+   也设了 `background: transparent`，两条规则**同优先级**时靠后的那条会赢，
+   于是吸顶行变成透明、滚动时下方的目录项会透出来（实测计算值 rgba(0,0,0,0)，
+   枚举命中规则可见 `.section-heading` 覆盖了这里的 `var(--panel)`）。
+   多一层限定把优先级提上去，而不是去删基类的 transparent —— 那是给
+   非吸顶标题（如详情栏那种静态标题）用的。 */
+.navigator-body .git-heading,
+.navigator-body .toc-heading {
   position: sticky;
   top: 0;
   z-index: 3;
@@ -776,7 +782,7 @@ async function openHeaderMenu(): Promise<void> {
 }
 
 /* 目录栏吸在变更栏下方（正常态两栏同时吸顶） */
-.toc-heading {
+.navigator-body .toc-heading {
   top: 27px;
 }
 

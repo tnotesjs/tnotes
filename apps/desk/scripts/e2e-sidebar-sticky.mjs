@@ -40,7 +40,12 @@ const headingInfo = async (selector) =>
         stuckToTop: Math.abs(rect.top - contentTop) <= 1,
         inViewport: rect.top >= contentTop - 1 && rect.bottom <= bodyRect.bottom + 1,
         // 标题位置上最顶层的元素是否是它自己（没被内容盖住）
-        topElementIsHeading: Boolean(at && (el === at || el.contains(at)))
+        topElementIsHeading: Boolean(at && (el === at || el.contains(at))),
+        // 吸顶行的背景必须**不透明**：背景透明时滚动上来的目录项会透过它显示
+        // （曾出现：`.section-heading` 的 transparent 与吸顶规则同优先级且更靠后，
+        // 覆盖掉了 var(--panel)，计算值变成 rgba(0, 0, 0, 0)）
+        background: getComputedStyle(el).backgroundColor,
+        opaque: !/rgba?\(0, 0, 0, 0\)|transparent/.test(getComputedStyle(el).backgroundColor)
       }
     })
 
@@ -93,6 +98,12 @@ try {
     async () => (await collapseAll.isEnabled()) && (await collapseAll.isVisible()),
     5000
   )
+  rec.record(
+    '吸顶行背景不透明（滚动内容不会透过它显示）',
+    Boolean(gitHeading?.opaque && tocHeading?.opaque),
+    `git=${gitHeading?.background} toc=${tocHeading?.background}`
+  )
+
   rec.record('吸顶后目录栏操作按钮仍可点', Boolean(clickable))
   if (clickable) {
     await collapseAll.click()
