@@ -24,7 +24,7 @@ cd /Users/huyouda/tnotesjs/tnotes
 
 # 门禁
 pnpm --filter desk lint          # 0 error / 41 warning（与改动前同量级）
-pnpm --filter desk test          # 185 files / 1692 tests passed
+pnpm --filter desk test          # 187 files / 1713 tests passed
 pnpm --filter desk typecheck     # 0 error
 pnpm --filter desk build
 pnpm format:check                # All matched files use Prettier code style
@@ -32,7 +32,8 @@ pnpm format:check                # All matched files use Prettier code style
 # 真实 MCP 协议链路（先构建：E2E 验的是 out/）
 pnpm --filter desk exec electron-vite build
 node apps/desk/scripts/e2e-mcp-selection.mjs          # 24/24
-node apps/desk/scripts/e2e-mcp-visual-selection.mjs   # 26/26
+node apps/desk/scripts/e2e-mcp-visual-selection.mjs   # 28/28
+node apps/desk/scripts/run-e2e.mjs --only mcp         # 2/2 套件（走 runner）
 ```
 
 两个 E2E 都用**官方 SDK 客户端**（`@modelcontextprotocol/sdk` 1.30.0）走
@@ -48,21 +49,24 @@ node apps/desk/scripts/e2e-mcp-visual-selection.mjs   # 26/26
 | 选区不外泄到 MCP 之外的耦合                  | `selectionService` 不 import 任何 MCP；工具回调只调 `read()`                    |
 | 不读 DOM 文本 / 不截图                       | 源码视图用 Monaco `state`；可视化用 PM `state.selection` / CM `state.selection` |
 | 原子替换（不出现「路径来自 A、文本来自 B」） | 渲染端整包上报，主进程 `snapshot = request` 一次替换                            |
-| 只接受当前活动笔记                           | 渲染端按「活动标签 + 活动分组」过滤，主进程再用 `noteId` 防迟到上报             |
+| 「谁是当前活动编辑器」由**切换代次**判定     | 上报 / 失效 / 清除都带 `generation`，主进程按代次水位 + 已结束代次收消息        |
+| 只接受活动编辑器                             | 渲染端按「活动标签 + 活动分组」过滤，且只有当前归属者能清空 / 失效快照          |
 | 令牌不进日志                                 | `mcp/server.ts` 的 `deskLog` 只记 url / 端口 / 状态，从不记 token               |
 | 只读                                         | 工具链路里没有任何写文件 / 写 Git 调用                                          |
 
 ### 2. 确定性单测（新增 / 受影响）
 
-| 测试文件                                             | 数量 | 覆盖                                                                                     |
-| ---------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------- |
-| `main/selection/selectionService.test.ts`            | 9    | 整包替换、草稿标记、空选区、多选区、超限（**不返回旧快照**）、迟到上报、失效、按笔记清除 |
-| `renderer/src/selection/visualSelection.test.ts`     | 8    | 段落 / 跨段 / 代码块 / 代码组 / NodeSelection / CM 多光标 / raw block 细分类型           |
-| `renderer/src/selection/sourceBlocks.test.ts`        | 5    | 源码视图的行状态机（围栏 / 容器 / 标题 / 列表 / 引用）                                   |
-| `renderer/src/markdown/MarkdownSourceEditor.test.ts` | 14   | 精确范围（1 基行列、0 基偏移、结束不含）、不 trim、emoji、非活动标签不 emit              |
-| `renderer/src/editor-groups/NoteTabPane.test.ts`     | 28   | 其中 1 条：**只有活动分组里的活动标签能写入快照**（多分组隔离的守卫）                    |
+| 测试文件                                             | 数量 | 覆盖                                                                                                                                                                                     |
+| ---------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `main/selection/selectionService.test.ts`            | 15   | 整包替换、草稿标记、空选区、多选区、**两种切换顺序 / 旧代次迟到上报 / 已结束代次不复活**、三个语义上限各自失效并恢复、`overLimit` 标记、按笔记清除、`invalidateNow` 兜底                 |
+| `main/ipc/selection.test.ts`                         | 6    | **IPC 边界**：三个语义上限经真实 handler 进来都要返回 `context_too_large`（不是 `INVALID_REQUEST`）、没有旧正文、缩小后恢复；超传输上限被 schema 挡下也必须失效；旧代次 clear 不清新快照 |
+| `renderer/src/selection/selectionReporter.test.ts`   | 9    | 换归属者才推进代次、`accepted:false` / IPC 失败都不记去重签名（可重试）、超传输上限只报不带正文的超限状态、旧归属者失效被跳过、无上报不发 clear、桥缺失静默降级                          |
+| `renderer/src/selection/visualSelection.test.ts`     | 8    | 段落 / 跨段 / 代码块 / 代码组 / NodeSelection / CM 多光标 / raw block 细分类型                                                                                                           |
+| `renderer/src/selection/sourceBlocks.test.ts`        | 5    | 源码视图的行状态机（围栏 / 容器 / 标题 / 列表 / 引用）                                                                                                                                   |
+| `renderer/src/markdown/MarkdownSourceEditor.test.ts` | 14   | 精确范围（1 基行列、0 基偏移、结束不含）、不 trim、emoji、非活动标签不 emit                                                                                                              |
+| `renderer/src/editor-groups/NoteTabPane.test.ts`     | 28   | 其中 1 条：**只有活动分组里的活动标签能写入快照**（多分组隔离的守卫）                                                                                                                    |
 
-### 3. 真实界面 + 真实 MCP 协议（E2E，共 50 项）
+### 3. 真实界面 + 真实 MCP 协议（E2E，共 52 项）
 
 **`e2e-mcp-selection.mjs`（阶段 A，24/24）**：启动与回环地址、令牌长度、
 无令牌 / 错令牌 401、伪造 `Origin` / 非回环 `Host` 403、`initialize` + `tools/list`（刚好 1 个工具）、
@@ -71,10 +75,11 @@ node apps/desk/scripts/e2e-mcp-visual-selection.mjs   # 26/26
 切笔记失效、工具调用前后磁盘字节不变、令牌轮换（旧令牌 401 + 旧会话断开 + 新令牌可用）、
 关闭开关后停服并释放端口。
 
-**`e2e-mcp-visual-selection.mjs`（阶段 B，26/26）**：段落内 / 跨段落 / 普通代码块 /
+**`e2e-mcp-visual-selection.mjs`（阶段 B，28/28）**：段落内 / 跨段落 / 普通代码块 /
 代码组面板 / 整块思维导图（`raw-block:mindmap` + 完整原文）、失焦后清 DOM 选区不算取消、
 搜索框不冒充正文选区、草稿标记、两个编辑器分组的身份与选区隔离（切过去 / 切回来各一轮）、
-大选区 `context_too_large`（25507 字符 > 20000）与取消后恢复、关闭标签失效、只读（磁盘字节不变）、
+**选字超限**（25507 字符 > 20000）与**相关块超限**（在 65k 单段里只选 2 个字符 → 相关块 65001 字符 > 60000）
+都明确失效、取消 / 缩小后恢复、关闭标签失效、只读（磁盘字节不变）、
 设置界面（地址 / 状态 / 令牌 / 配置示例 / 关闭释放端口 / 重开恢复 / 端口占用明确报错且不顶掉占用方）、
 无未捕获页面异常。
 
@@ -94,6 +99,44 @@ node apps/desk/scripts/e2e-mcp-visual-selection.mjs   # 26/26
 | 4   | raw 块类型只有粗分类（`raw-block:raw-container`）                                                | Agent 分不清「代码组」「思维导图」，等于没有类型信息               | `visualSelection.test.ts` 细分类型用例 + E2E 2 项         |
 | 5   | 选区上报桥缺失时直接解引用 `window.desk.selection`                                               | 单测 / 非 Electron 环境下 mounted 抛异常，整组用例失败             | `MarkdownSourceEditor.test.ts` 14 项恢复全绿              |
 
+## 四之二、复核后修掉的两个 P1（本轮新增）
+
+### P1-1 分组归属保护与主进程拒收逻辑冲突，切换后仍返回旧笔记
+
+- **复现**：A 的选区已写入主进程 → B 先上报（渲染端把归属者改成 B）→ A 随后失效被"只有归属者可以失效"跳过
+  → B 的上报到达主进程又被"当前快照属于另一篇笔记"拒收 → MCP 仍返回 A 的选区（`status: ok`）。
+- **根因**：把"上一个快照的笔记"当成"当前活动笔记"来判新旧，和渲染端的归属者保护叠加成互相拒收；
+  此外渲染端只看 IPC 的 `ok`、不看业务结果 `accepted:false`，并且**在收到结果之前就记了去重签名**，
+  于是被拒的选区再也发不出去。
+- **修法**：统一成**切换代次**（`generation`）——活动编辑器每换一次就 +1，随上报 / 失效 / 清除一起发；
+  主进程只接受「代次 ≥ 水位」的消息，并记录**已结束代次**（结束代次的上报一律丢弃，防"在途上报复活旧内容"）。
+  归属者只用于"谁能清空 / 失效"。渲染端改为：只有 `ok && accepted` 才记去重签名，
+  `accepted:false` / IPC 失败都记诊断并允许重试。
+- **钉住它的证据**：`selectionService.test.ts`（两种切换顺序都不得留下 A 的选区、旧代次迟到上报不覆盖新快照、
+  已结束代次不复活）；`selectionReporter.test.ts`（换归属者才推进代次、`accepted:false` 后可重试）；
+  `e2e-mcp-visual-selection.mjs`（切过去 / 切回来两轮，身份与文本都不串）。
+
+### P1-2 更大的选区被 IPC 提前拒绝，绕过旧快照失效
+
+- **复现**：先上报正常选区，再上报一个 60 001 字符的块 —— 被 schema（`max(60_000)`）拒绝，
+  `selectionService.update()` 没机会执行，MCP 仍返回前一个选区且 `status: ok`。
+- **根因**：IPC 的传输上限与服务的语义上限是同一组数字，schema 抢在服务前面拒收。
+- **修法**：拆成两组常量 —— **语义上限**（20k / 60k / 20，判定只在 `selectionService`）
+  与**传输上限**（1M / 500 / 总量 2M，明显更高）；超过传输上限的负载由渲染端改发
+  **不带正文的超限状态**（`capture.overLimit`）；另外给上报通道加 `onInvalid` 兜底：
+  被 schema 挡下时也让旧快照失效（`invalidateNow`），任何"上报没进来"的情况都不留过期内容。
+- **钉住它的证据**：`main/ipc/selection.test.ts` 三个语义上限都走真实 handler 并返回 `context_too_large`
+  （不是 `INVALID_REQUEST`）、没有旧正文、缩小后恢复；超传输上限被挡下时旧快照失效；
+  `selectionReporter.test.ts` 超传输上限只报不带正文的超限状态、刚超语义上限照常发正文（交给主进程判定）；
+  `e2e-mcp-visual-selection.mjs` 相关块超限用例（65001 字符）。
+
+### 顺带修掉：切笔记 / 切视图瞬间读到已销毁的编辑器视图
+
+E2E 新增用例时暴露的未捕获异常：`refreshSelection` 在切换瞬间拿到 state 已失效的
+ProseMirror / CodeMirror 视图（`Cannot read properties of undefined (reading 'selection')`）。
+现在采集入口对这种死视图直接返回（`captureVisualSelection` / `codeMirrorCapture` / `selectionCapture`），
+让上一步的失效结论成立，而不是去读一个死掉的 state。
+
 ## 五、支持的选区类型与上限（首版）
 
 - **源码视图**：单个非空选区（正 / 反选归一）→ 逐字原文 + 精确范围 + 涉及块行范围；
@@ -104,7 +147,10 @@ node apps/desk/scripts/e2e-mcp-visual-selection.mjs   # 26/26
 - **上限**：选中 20 000 字符 / 相关块 60 000 字符 / 20 块，超出 → `context_too_large` 并说明原因，**不静默截断**。
 - 计数规则：行列为 1 基、偏移 0 基 UTF-16、结束不含、文本不 trim，每个范围都标 `draft` / `disk`。
 - 快照生命周期：失焦保留、取消清除、切笔记 / 切视图 / 关笔记 / 外部改动失效、内容变化按当前选区重报、
+  **当前活动编辑器由切换代次判定**（旧代次的迟到上报 / 失效既不覆盖也不能复活旧内容）、
   只有活动编辑器可更新、非正文输入不算选区。
+- 上限分两组：语义上限（20k / 60k / 20，超限 → `context_too_large` 并失效旧快照）、
+  传输上限（1M / 500 / 总量 2M，超了就不发正文、只报超限状态）。
 
 ## 六、未验证边界（如实列出）
 
