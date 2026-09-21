@@ -129,6 +129,10 @@ export function captureVisualSelection(
   view: EditorView,
   deps: VisualSelectionDeps
 ): EditorSelectionPayload {
+  // 编辑器正在创建 / 销毁（切笔记、切视图的瞬间）时 `state` 可能已经没了：
+  // 这不是"用户没选东西"，但也不能去读一个死掉的视图 —— 当作没有选区处理。
+  if (!view.state) return { empty: true, selectedText: '', blocks: [] }
+
   // 1) 代码块 / 代码组面板里的 CodeMirror 选区
   const cm = deps.codeMirror?.() ?? null
   if (cm && cm.text.length > 0) {

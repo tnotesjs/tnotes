@@ -5,6 +5,7 @@ import { editorViewCtx, commandsCtx, serializerCtx } from '@milkdown/kit/core'
 import { NodeSelection, Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
+import type { EditorSelection } from '@codemirror/state'
 import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { serializeImageMarkdown } from '@tnotesjs/ui/image-markdown'
@@ -818,7 +819,10 @@ function codeMirrorCapture(): {
   if (!cmDom || !(host.value?.contains(cmDom) ?? false)) return null
   const cm = CodeMirrorView.findFromDOM(cmDom as HTMLElement)
   if (!cm) return null
-  const { main, ranges } = cm.state.selection
+  // 编辑器正在销毁时 `state` 已经没了（类型上不可空）：这是旁路能力，不能因此抛异常
+  const selection = (cm.state as unknown as { selection?: EditorSelection } | undefined)?.selection
+  if (!selection) return null
+  const { main, ranges } = selection
   if (main.empty) return null
   return {
     text: cm.state.sliceDoc(main.from, main.to),
@@ -847,10 +851,12 @@ function blockPositionForDom(editorView: EditorView | null, dom: Element): numbe
   return null
 }
 
-/** 采集可视化视图的当前选区（无选区返回 empty） */
+/** 采集可视化视图的当前选区（无选区返回 empty；编辑器还没建好 / 已销毁时返回 null） */
 function selectionCapture(): EditorSelectionPayload | null {
   const current = editorView()
-  if (!current) return null
+  // 切笔记 / 切视图的瞬间可能拿到还没建好或已经销毁的视图：什么都不做，
+  // 让上一步的失效结论成立，而不是去读一个死掉的 state。
+  if (!current?.state) return null
   const serializer = deskEditor?.editor.ctx.get(serializerCtx)
   if (!serializer) return null
   return captureVisualSelection(current, {
