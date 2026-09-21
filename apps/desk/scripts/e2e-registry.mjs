@@ -392,6 +392,19 @@ export const SUITES = [
     note: '知识库文本入口：面包屑浏览 + 只读 Monaco 文本标签页 + 拒绝名单/二进制判定'
   },
   {
+    name: 'e2e-source-unicode-highlight.mjs',
+    area: 'editor',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/renderer/src/monaco/**',
+      'apps/desk/src/renderer/src/markdown/MarkdownSourceEditor.vue',
+      'apps/desk/src/renderer/src/editor-groups/TextFileTabPane.vue'
+    ],
+    serial: false,
+    smoke: false,
+    note: '源码视图 Unicode 高亮：中文全角标点不再黄框，异常不可见/真混淆字符仍提示（深浅主题）'
+  },
+  {
     name: 'e2e-excalidraw-copy.mjs',
     area: 'excalidraw',
     tier: 'regression',

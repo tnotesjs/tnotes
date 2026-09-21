@@ -186,6 +186,20 @@ export function baseEditorOptions(): MonacoApi.editor.IStandaloneEditorConstruct
     padding: { top: 8, bottom: 8 },
     scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
     wordWrap: 'off',
+    /**
+     * Unicode 易混淆字符高亮：显式允许简体 / 繁体中文。
+     *
+     * Monaco 默认只给 `{ _os: true, _vscode: true }`，这两个解析后若都落不到内置语言表上
+     * （`_os` 解析出来是带地区的 `zh-Hans-CN` 这类名字，`_vscode` 在无 nls 的 standalone
+     * 装配下可能为空），就回退到兜底表 `_default` —— 那里把 `（）` `，` `；` `？` 等
+     * **全角标点**判为“与半角字符易混淆”，于是中文笔记的源码视图里满是黄框。
+     * 语言表按 `allowedLocales` 求**交集**，且表里只有 `zh-hans` / `zh-hant`（写 `zh` 命中不了），
+     * 所以两个都要给。不可见字符（`_common`）与西里尔/拉丁这类真混淆字符仍会提示 ——
+     * 行为由 `scripts/e2e-source-unicode-highlight.mjs` 按行断言。
+     */
+    unicodeHighlight: {
+      allowedLocales: { 'zh-hans': true, 'zh-hant': true }
+    },
     // 只读查看不需要这些
     folding: true,
     glyphMargin: false,
