@@ -50,6 +50,11 @@ const BODY = [
   ':::', // 23
   '',
   '组后段', // 25
+  '',
+  '```text', // 27 文档末尾的特殊块
+  'const c = 3', // 28
+  '```', // 29
+  '', // 30 文档最后一个块是**空段落**（尾随空行）
   ''
 ]
 
@@ -195,7 +200,45 @@ try {
   // 4. 代码组：块前段尾 Delete（向前删除）
   await checkDeleteBefore('代码组前', '码后段', 'deskRawBlock')
 
-  // 5. 段内还有字时先正常删字（不接管）
+  // 5. 文档末尾：空段落紧跟在代码块之后（尾随空行场景）——按坐标点进那个空段落
+  const beforeTail = await outlineKinds()
+  const lastCodeBox = await page.locator('.milkdown .milkdown-code-block').last().boundingBox()
+  await page.mouse.click(
+    lastCodeBox.x + lastCodeBox.width / 2,
+    lastCodeBox.y + lastCodeBox.height + 8
+  )
+  await page.waitForTimeout(200)
+  await page.keyboard.press('Backspace')
+  await page.waitForTimeout(250)
+  const tailProbe = await probe()
+  const tailIndex = typeof tailProbe?.block === 'number' ? tailProbe.block : -1
+  rec.record(
+    '文档末尾空段落 + Backspace：第一下落到上一块的块后边界（不改内容）',
+    tailProbe?.selection === 'BlockBoundaryCaret' &&
+      tailProbe?.side === 'after' &&
+      tailProbe?.boundaryKind === 'code_block' &&
+      JSON.stringify(await outlineKinds()) === JSON.stringify(beforeTail),
+    `probe=${JSON.stringify(tailProbe)}`
+  )
+  await page.keyboard.press('Backspace')
+  await page.waitForTimeout(250)
+  const tailAfter = await outlineKinds()
+  const tailExpected =
+    tailIndex >= 0 ? [...beforeTail.slice(0, tailIndex), ...beforeTail.slice(tailIndex + 1)] : []
+  rec.record(
+    '文档末尾空段落 + Backspace：第二下只删掉整块（尾随空段落仍在）',
+    tailIndex >= 0 && JSON.stringify(tailAfter) === JSON.stringify(tailExpected),
+    `index=${tailIndex} after=${JSON.stringify(tailAfter)}`
+  )
+  await page.keyboard.press('ControlOrMeta+z')
+  await page.waitForTimeout(300)
+  rec.record(
+    '文档末尾：一次撤销恢复整块',
+    JSON.stringify(await outlineKinds()) === JSON.stringify(beforeTail),
+    `restored=${JSON.stringify(await outlineKinds())}`
+  )
+
+  // 6. 段内还有字时先正常删字（不接管）
   const paragraph = page.getByText('TIP 后段', { exact: true }).first()
   await paragraph.click()
   await page.keyboard.press('Home')
