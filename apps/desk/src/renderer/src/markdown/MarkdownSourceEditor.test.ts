@@ -34,6 +34,9 @@ class FakeSelection {
   getEndPosition(): { lineNumber: number; column: number } {
     return { lineNumber: this.endLineNumber, column: this.endColumn }
   }
+  isEmpty(): boolean {
+    return this.startLineNumber === this.endLineNumber && this.startColumn === this.endColumn
+  }
 }
 
 class FakeModel {
@@ -79,6 +82,16 @@ class FakeModel {
     return Math.min(offset + position.column - 1, this.value.length)
   }
 
+  /** 与 Monaco 同语义：按选区取原文（不 trim、不折叠空白） */
+  getValueInRange(range: FakeEdit['range']): string {
+    const from = this.getOffsetAt({
+      lineNumber: range.startLineNumber,
+      column: range.startColumn
+    })
+    const to = this.getOffsetAt({ lineNumber: range.endLineNumber, column: range.endColumn })
+    return this.value.slice(Math.min(from, to), Math.max(from, to))
+  }
+
   getFullModelRange(): FakeEdit['range'] {
     const end = this.getPositionAt(this.value.length)
     return {
@@ -115,6 +128,7 @@ const created: FakeEditor[] = []
 class FakeEditor {
   model: FakeModel
   private contentListeners = new Set<() => void>()
+  private cursorSelectionListeners = new Set<() => void>()
   private commands = new Map<number, () => void>()
   private keyDownListeners: Array<(event: { preventDefault(): void }) => void> = []
   selection: FakeSelection
@@ -145,6 +159,16 @@ class FakeEditor {
   }
   onDidChangeModelContent(listener: () => void): void {
     this.contentListeners.add(listener)
+  }
+  onDidChangeCursorSelection(listener: () => void): void {
+    this.cursorSelectionListeners.add(listener)
+  }
+  /** 选区变了 → 通知选区监听器（真实 Monaco 的行为） */
+  private emitCursorSelection(): void {
+    for (const listener of [...this.cursorSelectionListeners]) listener()
+  }
+  getSelections(): FakeSelection[] {
+    return [this.selection]
   }
   onKeyDown(listener: (event: { preventDefault(): void }) => void): void {
     this.keyDownListeners.push(listener)
@@ -177,6 +201,7 @@ class FakeEditor {
       source.endLineNumber ?? source.startLineNumber ?? 1,
       source.endColumn ?? source.startColumn ?? 1
     )
+    this.emitCursorSelection()
   }
   getScrollTop(): number {
     return this.scrollTop
@@ -461,6 +486,73 @@ describe('MarkdownSourceEditor（Monaco）', () => {
     const editor = editorOf()
     wrapper.unmount()
     expect(editor.disposed).toBe(true)
+  })
+})
+
+/** 本机 MCP 选区快照：源码视图这一层给出的编辑器数据（笔记身份由上层补） */
+describe('MarkdownSourceEditor 选区采集（供本机 MCP 使用）', () => {
+  beforeEach(() => {
+    created.length = 0
+  })
+
+  afterEach(() => {
+    document.body.replaceChildren()
+  })
+
+  const capture = (wrapper: VueWrapper): { selectedText: string; range: unknown } =>
+    (
+      wrapper.vm as unknown as {
+        selectionCapture(): { selectedText: string; range: unknown }
+      }
+    ).selectionCapture()
+
+  it('给出一段原文与精确范围（不 trim、emoji 完整、结束不含）', async () => {
+    const content = '# 标题\n\n第一段 emoji 🎯 与末尾空格 \n\n第二段\n'
+    const wrapper = mountEditor(content)
+    await settle()
+    const from = content.indexOf('第一段')
+    const text = '第一段 emoji 🎯 与末尾空格 '
+
+    editorOf().setSelection({
+      startLineNumber: 3,
+      startColumn: 1,
+      endLineNumber: 3,
+      endColumn: text.length + 1,
+      text: ''
+    })
+    await settle()
+    const payload = capture(wrapper)
+    expect(payload.selectedText).toBe(text)
+    expect(payload.range).toMatchObject({
+      startLine: 3,
+      endLine: 3,
+      startOffset: from,
+      endOffset: from + text.length,
+      lineBase: 1,
+      columnBase: 1,
+      endExclusive: true
+    })
+    wrapper.unmount()
+  })
+
+  it('没有选区 → empty；不是活动标签时不 emit', async () => {
+    const wrapper = mountEditor('alpha\nbeta\n')
+    await settle()
+    const vm = wrapper.vm as unknown as { selectionCapture(): { empty: boolean } }
+    expect(vm.selectionCapture()).toMatchObject({ empty: true })
+
+    await wrapper.setProps({ active: false })
+    await settle()
+    editorOf().setSelection({
+      startLineNumber: 1,
+      startColumn: 1,
+      endLineNumber: 1,
+      endColumn: 6,
+      text: ''
+    })
+    await settle()
+    expect(wrapper.emitted('selectionChange')).toBeUndefined()
+    wrapper.unmount()
   })
 })
 

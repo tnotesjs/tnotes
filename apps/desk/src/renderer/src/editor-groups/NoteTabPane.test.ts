@@ -518,3 +518,51 @@ describe('批次 3：说明 / 源码定位 / 诊断信息', () => {
     expect(writeText.mock.calls[0]![0]).toContain('notes/0001. 概述.md')
   })
 })
+
+/**
+ * 本机 MCP 的选区快照来源：只有"活动分组 + 活动标签"的编辑器能写入。
+ * 后台分组（多分组布局里另一个编辑器）的选区变化必须被丢掉，不能覆盖活动编辑器的快照。
+ */
+describe('本机 MCP 选区上报', () => {
+  const flushReporter = async (): Promise<void> => {
+    await flushPromises()
+    // 上报有 80ms 节流；等过它才能断言"写了 / 没写"
+    await new Promise((resolve) => setTimeout(resolve, 160))
+  }
+
+  it('只有活动分组里的活动标签能写入快照', async () => {
+    const report = vi.fn(async () => ({ ok: true, value: { accepted: true } }))
+    const clear = vi.fn(async () => ({ ok: true, value: { cleared: true } }))
+    window.desk = { selection: { report, clear } } as unknown as typeof window.desk
+    const { wrapper, workspace, editor } = setup()
+    workspace.knowledgeBase = {
+      id: 'kb-a',
+      name: 'docs',
+      displayName: 'docs',
+      rootPath: '/tmp/kb'
+    } as never
+
+    // 活动分组是别处：后台编辑器的选区变化一律不写入
+    editor.activeGroupId = 'group-b'
+    wrapper
+      .findComponent(MilkdownStub)
+      .vm.$emit('selectionChange', { empty: false, selectedText: '后台选中的字', blocks: [] })
+    await flushReporter()
+    expect(report).not.toHaveBeenCalled()
+
+    // 成为活动分组（标签也是活动的）：正常写入，身份来自同一篇笔记
+    editor.activeGroupId = 'group-a'
+    wrapper
+      .findComponent(MilkdownStub)
+      .vm.$emit('selectionChange', { empty: false, selectedText: '活动选中的字', blocks: [] })
+    await flushReporter()
+    expect(report).toHaveBeenCalledTimes(1)
+    const request = report.mock.calls[0]![0] as {
+      note: { id: string }
+      capture: { selectedText: string; collector: string }
+    }
+    expect(request.capture.selectedText).toBe('活动选中的字')
+    expect(request.capture.collector).toBe('visual')
+    expect(request.note.id).toBe('note-a')
+  })
+})
