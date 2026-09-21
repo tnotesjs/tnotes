@@ -36,8 +36,13 @@ interface OpenFence {
   startLine: number
   /** 开栏时的引用深度：闭合行必须处在同一个引用里 */
   quoteDepth: number
-  /** 开栏时的"容器内容列"（列表项内容起始列；不在列表里就是围栏自身的缩进） */
-  contentColumn: number
+  /**
+   * 开栏时**所属容器**的内容列：列表项的内容起始列，其余情况（顶层 / 引用里）是 0。
+   * 闭合行的缩进按它算相对值（0–3 才算合法闭合围栏）。
+   */
+  containerColumn: number
+  /** 开栏时是否在列表项里：用来判断"容器是否已经结束" */
+  inList: boolean
 }
 
 /** 一行的容器上下文（引用深度 + 剥掉引用标记后的剩余内容 + 缩进） */
@@ -124,27 +129,44 @@ export function markdownFoldRanges(text: string): MarkdownFoldRange[] {
     const ctx = lineContext(line)
 
     if (fence) {
-      // 闭合判定**必须回到开栏时的容器上下文**：只有同引用深度、且本身不是列表项标记的行
-      // 才可能是闭合围栏。代码内容里的 `> ``` ` / `- ``` ` 属于"代码"，不能剥成闭合围栏
-      // （否则围栏提前结束，后面的代码行会被当成正文、里面的 `#` 又变成章节）。
-      if (ctx.quoteDepth === fence.quoteDepth && !LIST_MARKER_PATTERN.test(ctx.rest)) {
-        const candidate = FENCE_PATTERN.exec(ctx.rest)
-        const closes =
-          candidate !== null &&
-          candidate[1][0] === fence.char &&
-          candidate[1].length >= fence.length &&
-          candidate[2].trim() === '' &&
-          // 闭合围栏的缩进不能比"容器内容列"浅太多，也不能深到出容器
-          (/^ */.exec(ctx.rest)?.[0].length ?? 0) <= fence.contentColumn + 3
-        if (closes) {
-          if (lineNumber > fence.startLine) {
-            ranges.push({ start: fence.startLine, end: lineNumber, kind: 'code', level: null })
-          }
-          fence = null
+      // 1) 容器先结束 → 围栏跟着结束（"未闭合围栏延续到文末"只适用于容器仍然成立的情况）。
+      //    引用：这一行不再带 `>`（空行也算，CommonMark 里空行结束引用）；
+      //    列表项：非空行缩进掉到内容列之前。实测解析器与这条一致：
+      //    `> ```js\n> const x = 1\n\n# Real` → 代码块只有前两行，`# Real` 是文档级标题。
+      const containerEnded =
+        ctx.quoteDepth < fence.quoteDepth ||
+        (fence.inList && ctx.rest.trim() !== '' && ctx.indent < fence.containerColumn)
+      if (containerEnded) {
+        if (lineNumber - 1 > fence.startLine) {
+          ranges.push({ start: fence.startLine, end: lineNumber - 1, kind: 'code', level: null })
         }
+        fence = null
+        // 本行已经不属于那个围栏：按"围栏外"继续处理（它可能就是真正的标题）
+      } else {
+        // 2) 闭合判定：同一引用深度、本身不是列表项标记，且**相对容器内容列**的缩进在 0–3 之间
+        //    （4 空格的闭合行在 `10. ` 这种列表项里是合法闭合，但对顶层围栏就不是）。
+        if (ctx.quoteDepth === fence.quoteDepth && !LIST_MARKER_PATTERN.test(ctx.rest)) {
+          // 先扣掉**所属容器**的内容列（列表项的内容起始列），剩下的缩进才按"合法闭合围栏
+          // 允许 0–3 空格"来判断 —— `10. ` 这种列表项里的闭合行天然是 4 空格。
+          const dedented = ctx.rest.slice(Math.min(fence.containerColumn, ctx.indent))
+          const candidate = FENCE_PATTERN.exec(dedented)
+          const closes =
+            candidate !== null &&
+            candidate[1][0] === fence.char &&
+            candidate[1].length >= fence.length &&
+            candidate[2].trim() === ''
+          if (closes) {
+            if (lineNumber > fence.startLine) {
+              ranges.push({ start: fence.startLine, end: lineNumber, kind: 'code', level: null })
+            }
+            fence = null
+            // 闭合围栏这一行本身属于代码块：消费掉，不能再当开栏行
+            continue
+          }
+        }
+        // 围栏内的行不参与标题 / 容器栈
+        continue
       }
-      // 围栏内的行不参与标题 / 容器栈
-      continue
     }
 
     // 维护列表项内容列栈（空行不结束列表项）
@@ -167,7 +189,9 @@ export function markdownFoldRanges(text: string): MarkdownFoldRange[] {
         length: fenceMatch[1].length,
         startLine: lineNumber,
         quoteDepth: ctx.quoteDepth,
-        contentColumn: listColumns.length > 0 ? listColumns[listColumns.length - 1] : ctx.indent
+        // 容器内容列：列表项取它的内容起始列，顶层 / 引用里取 0
+        containerColumn: listColumns.length > 0 ? listColumns[listColumns.length - 1] : 0,
+        inList: listColumns.length > 0
       }
       continue
     }

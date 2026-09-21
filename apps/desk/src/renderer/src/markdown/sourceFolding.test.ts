@@ -356,3 +356,49 @@ describe('围栏闭合要看容器上下文（复核 P2 之二）', () => {
     ])
   })
 })
+
+describe('列表 / 引用的容器边界（复核第三轮）', () => {
+  it('列表项的 4 空格闭合行按**相对容器**缩进算：合法闭合，后面的标题恢复识别', () => {
+    const text = lines('10. ```js', '    const x = 1', '    ```', '', '# Real', 'body')
+    const ranges = markdownFoldRanges(text)
+    // 闭合围栏的缩进要减掉列表项的内容列（`10. ` = 4），相对缩进才是 0
+    expect(ranges.filter((range) => range.kind === 'code')).toEqual([
+      { start: 1, end: 3, kind: 'code', level: null }
+    ])
+    expect(ranges.filter((range) => range.kind === 'heading')).toEqual([
+      { start: 5, end: 7, kind: 'heading', level: 1 }
+    ])
+  })
+
+  it('引用容器结束后，未闭合的围栏跟着结束（不吞掉外部正文）', () => {
+    const text = lines('> ```js', '> const x = 1', '', '# Real', 'body')
+    const ranges = markdownFoldRanges(text)
+    // 代码块只到引用结束前一行（空行结束了引用）
+    expect(ranges.filter((range) => range.kind === 'code')).toEqual([
+      { start: 1, end: 2, kind: 'code', level: null }
+    ])
+    expect(ranges.filter((range) => range.kind === 'heading')).toEqual([
+      { start: 4, end: 6, kind: 'heading', level: 1 }
+    ])
+  })
+
+  it('引用里的空行带 `>` 时容器仍成立：围栏继续到真正的闭合行', () => {
+    const text = lines('> ```js', '> const x = 1', '>', '> ```', '', '# Real', 'body')
+    expect(markdownFoldRanges(text).filter((range) => range.kind === 'code')).toEqual([
+      { start: 1, end: 4, kind: 'code', level: null }
+    ])
+    expect(markdownFoldRanges(text).filter((range) => range.kind === 'heading')).toEqual([
+      { start: 6, end: 8, kind: 'heading', level: 1 }
+    ])
+  })
+
+  it('列表项在围栏未闭合时就结束：围栏跟着结束', () => {
+    const text = lines('- 项目', '', '  ```js', '  const x = 1', '', '# Real', 'body')
+    expect(markdownFoldRanges(text).filter((range) => range.kind === 'code')).toEqual([
+      { start: 3, end: 5, kind: 'code', level: null }
+    ])
+    expect(markdownFoldRanges(text).filter((range) => range.kind === 'heading')).toEqual([
+      { start: 6, end: 8, kind: 'heading', level: 1 }
+    ])
+  })
+})

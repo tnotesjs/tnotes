@@ -26,6 +26,29 @@ afterEach(async () => {
   document.body.replaceChildren()
 })
 
+/** 顶层代码块的内容（用来对齐"围栏在哪里结束"） */
+async function docCodeBlocks(source: string): Promise<string[]> {
+  const root = document.createElement('div')
+  root.className = 'milkdown'
+  document.body.append(root)
+  const editor = Editor.make()
+    .config((ctx) => {
+      ctx.set(rootCtx, root)
+      ctx.set(defaultValueCtx, projectRawBlocksForMilkdown(source))
+    })
+    .use(commonmark)
+    .use(gfm)
+    .use(rawBlockProjectionPlugins)
+  editors.push(editor)
+  await editor.create()
+  const view = editor.action((ctx) => ctx.get(editorViewCtx))
+  const blocks: string[] = []
+  view.state.doc.descendants((node) => {
+    if (node.type.name === 'code_block') blocks.push(node.textContent)
+  })
+  return blocks
+}
+
 /** 文档级（顶层）标题：`{ level, text }` 列表 */
 async function docHeadings(source: string): Promise<{ level: number; text: string }[]> {
   const root = document.createElement('div')
@@ -67,6 +90,19 @@ describe('可视化解析：文档级标题的判定', () => {
     expect(await docHeadings('---\n# metadata comment\nid: x\n---\n\n# Real\nbody\n')).toEqual([
       { level: 1, text: 'Real' }
     ])
+  })
+
+  it('列表项里 4 空格缩进的闭合围栏：代码块到闭合行结束，后面的标题恢复识别', async () => {
+    const source = '10. ```js\n    const x = 1\n    ```\n\n# Real\nbody\n'
+    // 解析器认为代码块内容只有 `const x = 1`（闭合行是第 3 行），`# Real` 是文档级标题
+    expect(await docCodeBlocks(source)).toEqual(['const x = 1'])
+    expect(await docHeadings(source)).toEqual([{ level: 1, text: 'Real' }])
+  })
+
+  it('引用容器结束后（空行）围栏随之结束：外部标题恢复识别', async () => {
+    const source = '> ```js\n> const x = 1\n\n# Real\nbody\n'
+    expect(await docCodeBlocks(source)).toEqual(['const x = 1'])
+    expect(await docHeadings(source)).toEqual([{ level: 1, text: 'Real' }])
   })
 
   it('代码围栏里的 # 不是标题', async () => {
