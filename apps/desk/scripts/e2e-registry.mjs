@@ -434,6 +434,19 @@ export const SUITES = [
     note: '源码视图折叠：行号槽箭头折标题章节/整块代码围栏，命令面板按级别折叠且不折代码块'
   },
   {
+    name: 'e2e-boundary-delete.mjs',
+    area: 'editor',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/renderer/src/markdown/blockBoundaryCaret.ts',
+      'apps/desk/src/renderer/src/markdown/blockBoundaryNavigation.ts',
+      'apps/desk/src/renderer/src/editor/markdown/deskCallout*'
+    ],
+    serial: false,
+    smoke: false,
+    note: '可视化块边界：特殊块后段首 Backspace / 块前段尾 Delete 先落可见光标，再按才删整块（含撤销）'
+  },
+  {
     name: 'e2e-excalidraw-copy.mjs',
     area: 'excalidraw',
     tier: 'regression',

@@ -20,6 +20,7 @@ import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { Slice } from '@milkdown/kit/prose/model'
+import { isDeskCalloutNode } from '../editor/markdown/deskCallout'
 import { isStandaloneImageParagraph } from '../editor/markdown/standaloneImageParagraph'
 
 export type BlockBoundarySide = 'before' | 'after'
@@ -46,7 +47,7 @@ export class BlockBoundaryCaret extends Selection {
     const pos = mapping.map(this.head)
     if (pos < 0 || pos > doc.content.size) return Selection.near(doc.resolve(0))
     const $pos = doc.resolve(pos)
-    return blockBoundaryTargetAt(doc, pos, this.side)
+    return blockBoundaryTargetAt(doc, pos, this.side, isBoundaryDeleteBlock)
       ? new BlockBoundaryCaret($pos, this.side)
       : Selection.near($pos)
   }
@@ -99,6 +100,21 @@ export function isBoundaryStopBlock(node: ProseMirrorNode | null | undefined): b
   return node.type.name === 'deskRawBlock' && node.attrs.hidden !== true
 }
 
+/**
+ * Backspace / Delete 在段落边缘要落到的「特殊块」：停靠块之外**再算上提示块家族**
+ * （callout / tip / warning 这些容器）。
+ *
+ * 为什么方向键那套（`isBoundaryStopBlock`）不能直接用：callout 内部的正文是可编辑文本流，
+ * 方向键必须能直接进去（`deskCalloutView` 里那套标题 chrome / body 出入口都依赖这一点）。
+ * 但「段首 Backspace / 段尾 Delete」落到它上面时，PM 默认的 joinBackward 会把整个 callout
+ * 选中成一个不明显的块选中态 —— 验收要求这里也统一成"先落到块边界光标、再按一次才删整块"。
+ */
+export function isBoundaryDeleteBlock(node: ProseMirrorNode | null | undefined): boolean {
+  return isBoundaryStopBlock(node) || isDeskCalloutNode(node as { type: { name: string } })
+}
+
+export type BoundaryStopPredicate = (node: ProseMirrorNode | null | undefined) => boolean
+
 export interface BlockBoundaryTarget {
   /** 目标块在父节点里的位置。 */
   blockPos: number
@@ -122,13 +138,14 @@ export function boundarySideAt(doc: ProseMirrorNode, pos: number): BlockBoundary
 export function blockBoundaryTargetAt(
   doc: ProseMirrorNode,
   pos: number,
-  side?: BlockBoundarySide
+  side?: BlockBoundarySide,
+  isStop: BoundaryStopPredicate = isBoundaryStopBlock
 ): BlockBoundaryTarget | null {
   if (pos < 0 || pos > doc.content.size) return null
   const $pos = doc.resolve(pos)
   for (const candidate of side ? [side] : (['before', 'after'] as const)) {
     const node = candidate === 'before' ? $pos.nodeAfter : $pos.nodeBefore
-    if (!node || !isBoundaryStopBlock(node)) continue
+    if (!node || !isStop(node)) continue
     return {
       blockPos: candidate === 'before' ? pos : pos - node.nodeSize,
       node,
@@ -141,17 +158,24 @@ export function blockBoundaryTargetAt(
 export function blockBoundaryCaretAt(
   doc: ProseMirrorNode,
   pos: number,
-  side?: BlockBoundarySide
+  side?: BlockBoundarySide,
+  isStop: BoundaryStopPredicate = isBoundaryStopBlock
 ): BlockBoundaryCaret | null {
-  const target = blockBoundaryTargetAt(doc, pos, side)
+  const target = blockBoundaryTargetAt(doc, pos, side, isStop)
   return target ? new BlockBoundaryCaret(doc.resolve(pos), target.side) : null
 }
 
-/** 当前 boundary caret 贴着的块（没有则 null）。 */
+/**
+ * 当前 boundary caret 贴着的块（没有则 null）。
+ *
+ * 用**宽**集合（含提示块家族）：Backspace / Delete 会把光标停在 callout 边界上，那个状态
+ * 必须能渲染出来、也必须能被键位处理认出来。方向键的落点仍由窄集合把关（见
+ * `isBoundaryStopBlock` 的调用点），所以这不会让方向键在 callout 上多停一站。
+ */
 export function activeBlockBoundaryTarget(state: EditorState): BlockBoundaryTarget | null {
   const { selection } = state
   if (!(selection instanceof BlockBoundaryCaret)) return null
-  return blockBoundaryTargetAt(state.doc, selection.head, selection.side)
+  return blockBoundaryTargetAt(state.doc, selection.head, selection.side, isBoundaryDeleteBlock)
 }
 
 /* ------------------------------------------------------------------ */

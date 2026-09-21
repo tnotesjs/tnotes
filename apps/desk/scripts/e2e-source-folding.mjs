@@ -69,7 +69,7 @@ await page.waitForLoadState('domcontentloaded')
 /** 当前渲染出来的行文本（Monaco 用 \u00a0 画空白，比较前还原） */
 const visibleLines = async () =>
   page
-    .locator('.markdown-source-editor')
+    .locator('.markdown-source-editor:visible')
     .first()
     .evaluate((root) =>
       [...root.querySelectorAll('.view-line')].map((node) =>
@@ -81,12 +81,17 @@ const isVisible = (lines, needle) => lines.some((line) => line.includes(needle))
 
 /** 量出某一行行号槽里的折叠箭头位置（先悬停让箭头显形） */
 const foldControlAt = async (lineText) => {
-  const line = page.locator('.markdown-source-editor .view-line', { hasText: lineText }).first()
+  const line = page
+    .locator('.markdown-source-editor:visible .view-line', { hasText: lineText })
+    .first()
   const box = await line.boundingBox()
   if (box) await page.mouse.move(box.x - 40, box.y + box.height / 2)
   await page.waitForTimeout(200)
   return page.evaluate((text) => {
-    const root = document.querySelector('.markdown-source-editor')
+    // 隐藏标签页的源码编辑器还在 DOM 里（v-show），必须挑可见的那个
+    const root = [...document.querySelectorAll('.markdown-source-editor')].find(
+      (node) => node.offsetParent !== null
+    )
     const lineEl = [...(root?.querySelectorAll('.view-line') ?? [])].find((node) =>
       (node.textContent ?? '').replace(/\u00a0/g, ' ').includes(text)
     )
@@ -127,7 +132,7 @@ const openSourceView = async () => {
     .first()
     .click()
   return waitFor(
-    async () => (await page.locator('.markdown-source-editor .view-lines').count()) > 0,
+    async () => (await page.locator('.markdown-source-editor:visible .view-lines').count()) > 0,
     20000
   )
 }
@@ -283,6 +288,8 @@ try {
   await page.locator('.toc-row', { hasText: '另一篇' }).first().click()
   await page.waitForTimeout(800)
   await openSourceView()
+  // 等到**可见**的那个编辑器真的换成「另一篇」再断言
+  await waitFor(async () => isVisible(await visibleLines(), '正文 X'), 10000)
   const secondBefore = await visibleLines()
   await runPaletteCommand('全部折叠标题')
   const secondAfter = await visibleLines()

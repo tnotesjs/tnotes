@@ -31,6 +31,7 @@ import {
   activeBlockBoundaryTarget,
   blockBoundaryCaretAt,
   blockBoundaryTargetAt,
+  isBoundaryDeleteBlock,
   isBoundaryStopBlock,
   type BlockBoundarySide,
   type BlockBoundaryTarget
@@ -209,6 +210,48 @@ function placeText(view: EditorView, pos: number, bias: -1 | 1): boolean {
   const clamped = Math.max(0, Math.min(pos, doc.content.size))
   const selection = TextSelection.near(doc.resolve(clamped), bias)
   dispatchSelection(view, view.state.tr.setSelection(selection).scrollIntoView())
+  focusProseMirror(view)
+  return true
+}
+
+/**
+ * 段落边缘的 Backspace / Delete：紧邻的是「特殊块」（含提示块家族）时，**先落到它的块边界光标上**。
+ *
+ * 验收确认的交互（两键各一套，完全对称）：
+ *   块后紧邻段落开头 + Backspace → 块右下角落点；再按一次 → 删整块
+ *   块前紧邻段落末尾 + Delete    → 块左上角落点；再按一次 → 删整块
+ *
+ * 这里只算**落点**（纯函数，不改文档）：第一下不许动内容，也不许出现"整块选中"的中间态。
+ * 第二个键由 `handleAtBoundary` 的边界分支处理（那边已经是"删整块"）。
+ *
+ * 只认"紧邻"：中间隔着空段落时不接管（那种情况交给 PM 默认的合并空行）。
+ * 段内还有字（不在段落边缘）时返回 null，正常删字。
+ */
+export function edgeBoundaryTargetForDelete(
+  state: EditorState,
+  key: 'Backspace' | 'Delete'
+): BlockBoundaryTarget | null {
+  const { selection } = state
+  if (!(selection instanceof TextSelection) || !selection.empty) return null
+  const { $head } = selection
+  if ($head.depth < 1 || !$head.parent.isTextblock) return null
+  // 只认「段落」：标题行首的 Backspace 有既定语义（一次直接回正文，见 headingKeymap），
+  // 代码块内部更不该被边界规则接管。
+  if ($head.parent.type.name !== 'paragraph') return null
+  if (key === 'Backspace') {
+    if ($head.parentOffset !== 0) return null
+    return blockBoundaryTargetAt(state.doc, $head.before(1), 'after', isBoundaryDeleteBlock)
+  }
+  if ($head.parentOffset !== $head.parent.content.size) return null
+  return blockBoundaryTargetAt(state.doc, $head.after(1), 'before', isBoundaryDeleteBlock)
+}
+
+/** 把光标停到「可删除边界」（宽集合：停靠块 ∪ 提示块家族）上。 */
+export function placeDeleteBoundaryCaret(view: EditorView, target: BlockBoundaryTarget): boolean {
+  const pos = target.side === 'before' ? target.blockPos : target.blockPos + target.node.nodeSize
+  const caret = blockBoundaryCaretAt(view.state.doc, pos, target.side, isBoundaryDeleteBlock)
+  if (!caret) return false
+  dispatchSelection(view, view.state.tr.setSelection(caret).scrollIntoView())
   focusProseMirror(view)
   return true
 }
@@ -572,6 +615,11 @@ function moveForwardFromBoundary(
   direction: BoundaryArrow
 ): boolean {
   const { doc } = view.state
+  // 提示块家族不是方向键的停靠块，但 Backspace/Delete 会把光标停在它的左上角；
+  // 从这里 ↓/→ 应该进它的标题 chrome（与"从上方段落 ↓ 进 callout"一致）。
+  if (isDeskCalloutNode(target.node) && target.side === 'before') {
+    return focusCalloutTitleInput(view, target.blockPos, 'start')
+  }
   if (target.side === 'before') {
     const after = target.blockPos + target.node.nodeSize
     // 表格在竖向上是「一整行」：块前 ↓ 直接穿到块后，只有 → 才进第一个单元格。
@@ -615,6 +663,10 @@ function moveBackwardFromBoundary(
   direction: BoundaryArrow
 ): boolean {
   const { doc } = view.state
+  // 同理：从 callout 右下角的边界光标 ↑/← 回到它的正文末尾（与"从下方段落 ↑"一致）。
+  if (isDeskCalloutNode(target.node) && target.side === 'after') {
+    return enterCalloutFromBelow(view, target.blockPos)
+  }
   if (target.side === 'after') {
     // 与 ↓/→ 对称：表格块后 ↑ 直接穿回块前，只有 ← 才进最后一个单元格
     if (target.node.type.name === 'table') {
@@ -770,6 +822,20 @@ export function handleBoundaryNavigationKeyDown(
     // Shift+方向键交给「整块/跨块范围选择」通道。
     if (event.shiftKey && event.key in ARROW_KEYS) return false
     return handleAtBoundary(view, event, options, target)
+  }
+
+  // 段落边缘的 Backspace / Delete：先落到特殊块的边界光标上（第二次才删整块）。
+  // 长按重复事件不额外拦截 —— 连按就是"落点 → 删块 → 继续删"，正是验收要的行为。
+  if (
+    (event.key === 'Backspace' || event.key === 'Delete') &&
+    !event.shiftKey &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    view.state.selection instanceof TextSelection
+  ) {
+    const edge = edgeBoundaryTargetForDelete(view.state, event.key)
+    if (edge && placeDeleteBoundaryCaret(view, edge)) return true
   }
 
   if (plainArrow && view.state.selection instanceof TextSelection) {

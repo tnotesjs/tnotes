@@ -23,6 +23,8 @@ import {
 import {
   adjacentBoundaryCaretPosition,
   createBlockBoundaryNavigationPlugin,
+  edgeBoundaryTargetForDelete,
+  handleBoundaryNavigationKeyDown,
   materializeLineAt,
   placeBoundaryCaret
 } from './blockBoundaryNavigation'
@@ -239,5 +241,157 @@ describe('block boundary navigation', () => {
     const index = children.findIndex((child) => child.node.type.name === 'deskRawBlock')
     expect(children[index + 1].node.type.name).toBe('paragraph')
     expect(children[index + 1].node.content.size).toBe(0)
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 段落边缘的 Backspace / Delete → 特殊块边界光标（验收第 5 项）        */
+/* ------------------------------------------------------------------ */
+
+/** 模拟真实按键（repeat 表示长按重复事件，键位处理不许依赖"松开再按"）。 */
+function press(view: EditorView, key: string, repeat = false): boolean {
+  const event = new KeyboardEvent('keydown', { key, repeat })
+  return handleBoundaryNavigationKeyDown(view, event as unknown as KeyboardEvent)
+}
+
+function kinds(view: EditorView): string[] {
+  return childPositions(view.state.doc).map((child) => child.node.type.name)
+}
+
+/** 把光标放到某个块内文本的指定偏移（offset 从该块内容的第 0 个位置算起）。 */
+function caretInBlock(view: EditorView, blockIndex: number, offset: number): void {
+  const child = childPositions(view.state.doc)[blockIndex]
+  view.dispatch(
+    view.state.tr.setSelection(TextSelection.create(view.state.doc, child.pos + 1 + offset))
+  )
+}
+
+describe('段落边缘的方向删除：先落到特殊块边界，再删整块', () => {
+  it('代码块后段落开头 Backspace：先落块右下角（块内容不变），再按才删块', async () => {
+    const view = await setup('前段\n\n```js\nconst a = 1\n```\n\n后段\n')
+    const code = childPositions(view.state.doc).find(
+      (child) => child.node.type.name === 'code_block'
+    )!
+    caretInBlock(view, 2, 0) // 「后段」段首
+    expect(edgeBoundaryTargetForDelete(view.state, 'Backspace')).toMatchObject({
+      blockPos: code.pos,
+      side: 'after'
+    })
+
+    expect(press(view, 'Backspace')).toBe(true)
+    // 只移动光标：不是 NodeSelection（没有"整块选中"的中间态），文档没变
+    expect(view.state.selection).toBeInstanceOf(BlockBoundaryCaret)
+    expect((view.state.selection as BlockBoundaryCaret).side).toBe('after')
+    expect(view.state.selection.head).toBe(code.pos + code.node.nodeSize)
+    expect(kinds(view)).toEqual(['paragraph', 'code_block', 'paragraph'])
+    expect(view.state.doc.textContent).toContain('const a = 1')
+
+    expect(press(view, 'Backspace')).toBe(true)
+    expect(kinds(view)).toEqual(['paragraph', 'paragraph'])
+    expect(view.state.doc.textContent).not.toContain('const a = 1')
+    expect(view.state.selection.from).toBeGreaterThanOrEqual(0)
+  })
+
+  it('长按重复事件（repeat）同样：第一下移动、第二下删块', async () => {
+    const view = await setup('前段\n\n```js\nconst a = 1\n```\n\n后段\n')
+    caretInBlock(view, 2, 0)
+    expect(press(view, 'Backspace', true)).toBe(true)
+    expect(view.state.selection).toBeInstanceOf(BlockBoundaryCaret)
+    expect(press(view, 'Backspace', true)).toBe(true)
+    expect(kinds(view)).toEqual(['paragraph', 'paragraph'])
+  })
+
+  it('代码块前段落末尾 Delete：先落块左上角，再按才删块', async () => {
+    const view = await setup('前段\n\n```js\nconst a = 1\n```\n\n后段\n')
+    const code = childPositions(view.state.doc).find(
+      (child) => child.node.type.name === 'code_block'
+    )!
+    caretInBlock(view, 0, '前段'.length) // 「前段」段尾
+    expect(edgeBoundaryTargetForDelete(view.state, 'Delete')).toMatchObject({
+      blockPos: code.pos,
+      side: 'before'
+    })
+
+    expect(press(view, 'Delete')).toBe(true)
+    expect(view.state.selection).toBeInstanceOf(BlockBoundaryCaret)
+    expect((view.state.selection as BlockBoundaryCaret).side).toBe('before')
+    expect(kinds(view)).toEqual(['paragraph', 'code_block', 'paragraph'])
+
+    expect(press(view, 'Delete')).toBe(true)
+    expect(kinds(view)).toEqual(['paragraph', 'paragraph'])
+  })
+
+  it('独立成段的图片同样适用', async () => {
+    const view = await setup('前段\n\n![图](../assets/a.png)\n\n后段\n')
+    const image = childPositions(view.state.doc).find(
+      (child) => child.node.type.name === 'paragraph' && child.node.child(0)?.type.name === 'image'
+    )!
+    caretInBlock(view, 2, 0) // 「后段」段首
+    expect(edgeBoundaryTargetForDelete(view.state, 'Backspace')).toMatchObject({
+      blockPos: image.pos,
+      side: 'after'
+    })
+    expect(press(view, 'Backspace')).toBe(true)
+    expect(view.state.selection).toBeInstanceOf(BlockBoundaryCaret)
+    expect(press(view, 'Backspace')).toBe(true)
+    expect(kinds(view)).toEqual(['paragraph', 'paragraph'])
+  })
+
+  it('提示块（callout）同样适用：不停在"整块选中"的中间态', async () => {
+    const view = await setup('前段\n\n::: tip 标题\n正文\n:::\n\n后段\n')
+    const callout = childPositions(view.state.doc).find(
+      (child) => child.node.type.name === 'deskCallout'
+    )!
+    caretInBlock(view, 2, 0) // 「后段」段首
+    expect(edgeBoundaryTargetForDelete(view.state, 'Backspace')).toMatchObject({
+      blockPos: callout.pos,
+      side: 'after'
+    })
+    expect(press(view, 'Backspace')).toBe(true)
+    expect(view.state.selection).toBeInstanceOf(BlockBoundaryCaret)
+    expect(kinds(view)).toEqual(['paragraph', 'deskCallout', 'paragraph'])
+
+    expect(press(view, 'Backspace')).toBe(true)
+    expect(kinds(view)).toEqual(['paragraph', 'paragraph'])
+  })
+
+  it('代码组（raw block）前段落末尾 Delete 也适用', async () => {
+    const view = await setup('前段\n\n::: code-group\n```js\nconst a = 1\n```\n:::\n\n后段\n')
+    caretInBlock(view, 0, '前段'.length)
+    expect(press(view, 'Delete')).toBe(true)
+    expect(view.state.selection).toBeInstanceOf(BlockBoundaryCaret)
+    expect(press(view, 'Delete')).toBe(true)
+    expect(kinds(view).some((kind) => kind === 'deskRawBlock')).toBe(false)
+  })
+
+  it('不接管的情况：段落中间、以及相邻是普通段落', async () => {
+    const view = await setup('前段A\n\n前段B\n\n```js\nx\n```\n')
+    // 段落中间：正常删字（不接管）
+    caretInBlock(view, 0, 1)
+    expect(edgeBoundaryTargetForDelete(view.state, 'Backspace')).toBeNull()
+    expect(press(view, 'Backspace')).toBe(false)
+    // 相邻是普通段落：交给 PM 默认的合并（不接管）
+    caretInBlock(view, 1, 0) // 「前段B」段首
+    expect(edgeBoundaryTargetForDelete(view.state, 'Backspace')).toBeNull()
+    expect(press(view, 'Backspace')).toBe(false)
+    // 段尾 Delete（后面是普通段落）：不接管
+    caretInBlock(view, 0, '前段A'.length)
+    expect(edgeBoundaryTargetForDelete(view.state, 'Delete')).toBeNull()
+    expect(press(view, 'Delete')).toBe(false)
+  })
+
+  it('callout 边界上的方向键：回到正文末尾 / 进标题，不会卡住', async () => {
+    const view = await setup('前段\n\n::: tip 标题\n正文\n:::\n\n后段\n')
+    const callout = childPositions(view.state.doc).find(
+      (child) => child.node.type.name === 'deskCallout'
+    )!
+    caretInBlock(view, 2, 0)
+    expect(press(view, 'Backspace')).toBe(true)
+    expect(view.state.selection).toBeInstanceOf(BlockBoundaryCaret)
+    // ↑/← 从块右下角回到 callout 正文末尾（不进 PM 默认的 gapcursor 分支）
+    expect(press(view, 'ArrowUp')).toBe(true)
+    expect(view.state.selection).not.toBeInstanceOf(BlockBoundaryCaret)
+    expect(view.state.selection.from).toBeGreaterThan(callout.pos)
+    expect(view.state.selection.from).toBeLessThan(callout.pos + callout.node.nodeSize)
   })
 })
