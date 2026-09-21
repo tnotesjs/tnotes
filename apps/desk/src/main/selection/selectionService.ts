@@ -7,15 +7,19 @@
  *
  * 设计要点（对应验收里的生命周期规则）：
  * - **原子替换**：一份快照整包写入，绝不出现"路径来自 A、选区来自 B"；
- * - **只接受当前活动笔记的更新**：调用方在渲染端按活动分组/标签过滤，这里再用
- *   `noteId` 做一次防竞态校验（切笔记后迟到的旧上报会被拒）；
+ * - **按切换代次判定"谁是当前活动编辑器"**：渲染端每次换活动编辑器就 +1，这里只接受
+ *   「代次 ≥ 已见最大代次」的上报 / 失效。**不能**拿"上一个快照的笔记"当"当前活动笔记"——
+ *   切换瞬间两个编辑器会互相拒收（新编辑器报到被拒、旧编辑器的失效又被跳过），
+ *   结果是旧笔记的选区一直以 `ok` 返回；
  * - **失效**：切笔记 / 切视图 / 关笔记 / 内容变动 → `invalidate()`，之后读到的是
  *   `selection_invalidated`，**不会**回退成上一次其它笔记的内容；
- * - **上限**：选字与块 Markdown 都有硬上限，超限返回 `context_too_large` 并说明原因，
- *   不静默截断；
+ * - **上限**：选字与块 Markdown 都有硬上限，超限（含渲染端报来的 `overLimit` 状态）
+ *   返回 `context_too_large` 并**先让旧快照失效**，不静默截断、也不回退旧内容；
  * - 空选区、多选区、无法映射都表达成结构化状态，不抛异常。
  */
 import { randomUUID } from 'node:crypto'
+
+import { SELECTION_LIMITS } from '../../shared/contracts'
 
 import type {
   SelectionCaptureDto,
@@ -24,12 +28,7 @@ import type {
   SelectionStatus
 } from '../../shared/contracts'
 
-/** 硬上限：超过就返回 `context_too_large`（明确拒绝，不截断） */
-export const SELECTION_LIMITS = {
-  maxSelectedChars: 20_000,
-  maxBlockChars: 60_000,
-  maxBlocks: 20
-} as const
+export { SELECTION_LIMITS }
 
 interface StoredSnapshot {
   snapshotId: string
@@ -58,6 +57,16 @@ export class SelectionContextService {
   private invalidReason: string | null = null
   /** 最近一次因超限被拒的原因：此后读到的是 `context_too_large`，不回退成上一次的选区 */
   private tooLargeReason: string | null = null
+  /**
+   * 已见最大切换代次（水位）。上报 / 失效 / 清除都必须不小于它才会被处理，
+   * 这样旧编辑器的迟到消息不会覆盖新编辑器的快照，也不会把新快照清掉。
+   */
+  private watermark = 0
+  /**
+   * 已明确结束的最高代次。一个代次一旦被结束（用户取消 / 切笔记 / 切视图 …），
+   * 它的上报就再也不接受 —— 否则"结束"和"在途上报"谁先到都能让旧内容复活。
+   */
+  private endedAt = 0
   private readonly now: () => Date
   private readonly newId: () => string
 
@@ -69,28 +78,27 @@ export class SelectionContextService {
   /**
    * 整包替换快照。
    *
-   * 返回 `accepted:false` 的情形：上报的笔记已经不是当前快照的笔记（切笔记后的迟到上报），
-   * 或者选字/块超限。前者保持不动（避免半新半旧），后者**必须让旧快照失效** ——
-   * 否则工具会把上一次的选区当成当前选区返回（静默给出过期内容）。
+   * 返回 `accepted:false` 的情形：
+   * - **旧代次的迟到上报**（代次已落后或已被结束）：保持不动，避免旧编辑器覆盖新快照；
+   * - **超限**（选中过长 / 块过多 / 块内容过长，或渲染端直接报来 `overLimit`）：
+   *   必须让旧快照失效 —— 否则工具会把上一次的选区当成当前选区返回（静默给出过期内容）。
    */
   update(request: SelectionReportRequest): SelectionReportOutcome {
-    const limitIssue = this.checkLimits(request.capture)
+    if (this.isStale(request.generation)) {
+      return {
+        accepted: false,
+        reason: this.hasEnded(request.generation) ? 'generation-ended' : 'stale-generation',
+        status: this.read().status
+      }
+    }
+    this.watermark = Math.max(this.watermark, request.generation)
+    const limitIssue = request.capture.overLimit ?? this.checkLimits(request.capture)
     if (limitIssue) {
       // 用户当前选中的是一大段：如实说"太大"，绝不回退成上一次的选区
       this.snapshot = null
       this.invalidReason = null
       this.tooLargeReason = limitIssue
       return { accepted: false, reason: limitIssue, status: 'context_too_large' }
-    }
-    const current = this.snapshot
-    if (current && current.request.note.id !== request.note.id) {
-      // 上一个快照属于另一篇笔记：说明这是切换过程中的迟到上报。
-      // 只有当前快照来自同一篇笔记时才允许替换；不同笔记一律先失效再等新上报。
-      return {
-        accepted: false,
-        reason: 'note-changed',
-        status: 'selection_invalidated'
-      }
     }
     this.snapshot = {
       snapshotId: this.newId(),
@@ -108,13 +116,16 @@ export class SelectionContextService {
   }
 
   /** 显式清除（用户主动取消选区）。`noteId` 给定时只清除该笔记的快照。 */
-  clear(noteId?: string): boolean {
+  clear(noteId: string | undefined, generation: number): boolean {
+    if (this.isStale(generation)) return false
+    // 说的不是这篇笔记：不动（也不结束这个代次——那是另一篇笔记的竞态消息）
+    if (this.snapshot && noteId && this.snapshot.request.note.id !== noteId) return false
+    this.settle(generation)
     if (!this.snapshot) {
       // 没有快照时也要收起"上次选区太大"的提示：用户已经取消选择 / 换了内容
       this.tooLargeReason = null
       return false
     }
-    if (noteId && this.snapshot.request.note.id !== noteId) return false
     this.snapshot = null
     this.invalidReason = null
     this.tooLargeReason = null
@@ -124,11 +135,42 @@ export class SelectionContextService {
   /**
    * 使快照失效但**记住原因**：切笔记 / 切视图 / 关笔记 / 内容变动都走这里。
    * 失效后 `read()` 返回 `selection_invalidated`，不会给出过期的文本与范围。
+   *
+   * 旧代次的失效（另一个编辑器已经接管）不会动当前快照。
    */
-  invalidate(reason: string): void {
+  invalidate(reason: string, generation: number): boolean {
+    if (this.isStale(generation)) return false
+    this.settle(generation)
     this.invalidReason = reason
     this.snapshot = null
     this.tooLargeReason = null
+    return true
+  }
+
+  /**
+   * **无条件失效**：主进程内部兜底用（例如上报负载被 schema 挡下、根本没有代次可用）。
+   * 宁可没有快照，也不留过期内容；不动代次水位，避免影响后续正常上报。
+   */
+  invalidateNow(reason: string): void {
+    this.invalidReason = reason
+    this.snapshot = null
+    this.tooLargeReason = null
+  }
+
+  /** 代次是否已落后于水位 */
+  private isStale(generation: number): boolean {
+    return generation < this.watermark || this.hasEnded(generation)
+  }
+
+  /** 这个代次是否已经被明确结束过 */
+  private hasEnded(generation: number): boolean {
+    return generation <= this.endedAt
+  }
+
+  /** 记账：推进水位，并把这个代次标记为已结束 */
+  private settle(generation: number): void {
+    this.watermark = Math.max(this.watermark, generation)
+    this.endedAt = Math.max(this.endedAt, generation)
   }
 
   /** 与协议无关的读取接口（MCP 工具、将来的内置 Agent 都读它） */
