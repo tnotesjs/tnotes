@@ -585,6 +585,43 @@ try {
     configText.slice(0, 80).replace(/\n/g, ' ')
   )
 
+  /* ── 复制按钮：读**系统剪贴板**确认真写进去了 ── */
+  // Desk 主进程拒绝了渲染端的异步剪贴板权限（writeText 会抛 NotAllowedError），
+  // 所以这里必须验证"真的落到系统剪贴板"，只看按钮文案会被静默失败骗过去。
+  await page.getByTestId('mcp-copy-token').click()
+  const copiedToken = await waitFor(async () => {
+    const value = await app.evaluate(({ clipboard }) => clipboard.readText())
+    return value === token ? value : null
+  }, 5000)
+  rec.record(
+    '「复制令牌」真的写进了系统剪贴板',
+    copiedToken === token,
+    `copied=${String(copiedToken).slice(0, 10)}… expected=${token.slice(0, 10)}…`
+  )
+  rec.record(
+    '复制成功后按钮给出「已复制」反馈',
+    (await page.getByTestId('mcp-copy-token').innerText()).includes('已复制'),
+    `label=${await page.getByTestId('mcp-copy-token').innerText()}`
+  )
+
+  await page.getByTestId('mcp-copy-config').click()
+  const copiedConfig = await waitFor(async () => {
+    const value = await app.evaluate(({ clipboard }) => clipboard.readText())
+    return value.includes('streamable-http') ? value : null
+  }, 5000)
+  rec.record(
+    '「复制配置示例」真的写进了系统剪贴板',
+    Boolean(copiedConfig) &&
+      copiedConfig.includes(`http://127.0.0.1:${PORT}/mcp`) &&
+      copiedConfig.includes(token),
+    String(copiedConfig).slice(0, 60).replace(/\n/g, ' ')
+  )
+  rec.record(
+    '复制过程没有出现失败提示',
+    (await page.getByTestId('mcp-copy-error').count()) === 0,
+    `failed=${await page.getByTestId('mcp-copy-error').count()}`
+  )
+
   /* ── 设置界面：关闭 → 端口释放；再打开 → 恢复 ── */
   await page.getByTestId('mcp-enabled').click()
   const disabled = await waitFor(async () => {

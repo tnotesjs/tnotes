@@ -466,6 +466,8 @@ export const SUITES = [
     name: 'e2e-mcp-visual-selection.mjs',
     area: 'mcp',
     tier: 'regression',
+    // 会读系统剪贴板（验设置页「复制令牌 / 复制配置示例」真的写进去了）
+    locks: ['clipboard'],
     globs: [
       'apps/desk/src/main/mcp/**',
       'apps/desk/src/main/selection/**',

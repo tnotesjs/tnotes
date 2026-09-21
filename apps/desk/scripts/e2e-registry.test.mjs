@@ -63,6 +63,7 @@ describe('e2e registry', () => {
         // 这几个也用系统剪贴板做断言：漏了锁会与上面几个互相覆盖
         // （实测：并发跑时「复制路径给的是相对笔记文件的相对路径」读到 null）
         'e2e-image-copy-plain-text.mjs',
+        'e2e-mcp-visual-selection.mjs',
         'e2e-note-assets.mjs',
         'e2e-source-selection-background.mjs'
       ].sort()
