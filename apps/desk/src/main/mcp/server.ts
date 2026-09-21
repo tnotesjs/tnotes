@@ -23,11 +23,9 @@ import { deskLog } from '../log'
 import { selectionContext } from '../selection/selectionService'
 import { ensureToken, rotateToken, tokenMatches } from './token'
 
-import type { McpServerStatusDto, SelectionContextSnapshotDto } from '../../shared/contracts'
+import { MCP_PATH } from '../../shared/contracts'
 
-/** 默认端口：固定值，便于客户端配置长期稳定 */
-export const DEFAULT_MCP_PORT = 39217
-export const MCP_PATH = '/mcp'
+import type { McpServerStatusDto, SelectionContextSnapshotDto } from '../../shared/contracts'
 
 export interface McpServerOptions {
   port: number

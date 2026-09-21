@@ -9,10 +9,10 @@
  */
 import { BrowserWindow } from 'electron'
 
-import { IPC_CHANNELS } from '../../shared/contracts'
+import { DEFAULT_MCP_PORT, IPC_CHANNELS } from '../../shared/contracts'
 import { deskLog } from '../log'
 import { loadSettings } from '../settings'
-import { DEFAULT_MCP_PORT, McpSelectionServer } from './server'
+import { McpSelectionServer } from './server'
 
 import type { McpServerStatusDto } from '../../shared/contracts'
 

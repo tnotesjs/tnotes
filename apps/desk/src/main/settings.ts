@@ -20,10 +20,8 @@ import {
   clampHeadingNumberMaxDepth,
   HEADING_NUMBER_DEFAULT_MAX_DEPTH
 } from '../shared/headingNumbering'
-import { DEFAULT_MCP_PORT } from './mcp/server'
+import { DEFAULT_MCP_PORT, type AppSettings, type KnowledgeBaseSettings } from '../shared/contracts'
 import { strengthFromLegacyOxipngLevel, strengthFromLegacyQuality } from './optimizeStrength'
-
-import type { AppSettings, KnowledgeBaseSettings } from '../shared/contracts'
 
 const knowledgeBaseSettingsSchema = z.object({
   hidden: z.boolean().optional()

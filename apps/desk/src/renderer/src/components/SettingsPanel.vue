@@ -8,12 +8,13 @@ import EditorSettings from './settings/EditorSettings.vue'
 import GeneralSettings from './settings/GeneralSettings.vue'
 import GitSettings from './settings/GitSettings.vue'
 import ImageSettings from './settings/ImageSettings.vue'
+import McpSettings from './settings/McpSettings.vue'
 import ShortcutsSettings from './settings/ShortcutsSettings.vue'
 import TabsSettings from './settings/TabsSettings.vue'
 import TocSettings from './settings/TocSettings.vue'
 import ToolsSettings from './settings/ToolsSettings.vue'
 
-import type { AppSettings } from '../../../shared/contracts'
+import { DEFAULT_MCP_PORT, type AppSettings } from '../../../shared/contracts'
 import { APP_ZOOM_DEFAULT } from '../../../shared/appZoom'
 
 const emit = defineEmits<{ close: [] }>()
@@ -58,6 +59,11 @@ const groups = [
     id: 'image',
     label: '图片与图床',
     icon: 'M5 4h14v16H5zM8 9.5a2 2 0 1 0 3.9 0a2 2 0 1 0-3.9 0M7 17l4-4 3 3 3-3 2 2'
+  },
+  {
+    id: 'mcp',
+    label: '本机 MCP',
+    icon: 'M9 3v6M15 3v6M6 9h12v5a6 6 0 0 1-12 0zM12 20v1'
   },
   {
     id: 'config',
@@ -124,6 +130,9 @@ const groupDefaults: Record<string, Partial<AppSettings>> = {
         outputFormat: 'keep'
       }
     }
+  },
+  mcp: {
+    mcp: { enabled: false, port: DEFAULT_MCP_PORT }
   }
 }
 
@@ -259,6 +268,11 @@ function onSettingsSynced(settings: AppSettings): void {
             v-else-if="activeGroup === 'image'"
             :draft="draft"
             @reset="resetGroup('image')"
+          />
+          <McpSettings
+            v-else-if="activeGroup === 'mcp'"
+            :draft="draft"
+            @reset="resetGroup('mcp')"
           />
           <ConfigSettings
             v-else-if="activeGroup === 'config'"

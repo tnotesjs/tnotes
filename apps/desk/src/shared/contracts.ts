@@ -1733,6 +1733,12 @@ export interface SelectionClearRequest {
   noteId?: string
 }
 
+/** 本机 MCP 服务默认端口：固定值，客户端配置可以长期不变 */
+export const DEFAULT_MCP_PORT = 39217
+
+/** 本机 MCP 服务的 Streamable HTTP 路径 */
+export const MCP_PATH = '/mcp'
+
 export interface McpServerStatusDto {
   /** 设置里的开关（用户意图） */
   enabled: boolean
