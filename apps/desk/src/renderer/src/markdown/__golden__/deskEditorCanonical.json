@@ -7,7 +7,7 @@
   "fenced-code-with-meta": "```js {1,3}\nconst a  =  1\nconst s = 'x'\n```\n\n```txt\n普通文本块\n```\n",
   "math-inline": "行内公式 $x^2$ 与 $a+b$ 混排。\n",
   "math-block": "$$\nE = mc^2\n$$\n\n公式之后。\n",
-  "thematic-break-forms": "上面\n\n***\n\n中间\n\n***\n\n下面\n\n***\n",
+  "thematic-break-forms": "上面\n\n---\n\n中间\n\n---\n\n下面\n\n---\n",
   "blank-line-runs": "第一段\n\n第二段\n",
   "standalone-break": "第一段\n\n<br />\n\n第二段\n",
   "inline-hard-break-forms": "行尾两空格\\\n下一行\n\n反斜杠硬换行\\\n下一行\n\n行内\\\n换行\n",
@@ -20,5 +20,11 @@
   "image-forms": "带 title 的图片：\n\n![带标题](../assets/b.png \"图片 title\")\n\n独占一行的图片：\n\n![](../assets/c.png)\n\n链接图片：[![链接图](../assets/d.png)](https://example.com)\n",
   "escapes": "\\*不是斜体\\* 与 \\_不是强调\\_ 与 \\`不是代码\\`。\n",
   "blockquote": "> 引用第一行\n> 引用第二行\n>\n> 引用第三段\n",
-  "setext-heading": "# Setext 标题\n\n## 小标题\n"
+  "setext-heading": "# Setext 标题\n\n## 小标题\n",
+  "thematic-break-at-start": "---\n\n分割线在文档最前面。\n",
+  "thematic-break-adjacent-paragraphs": "上面\n\n---\n\n下面\n",
+  "thematic-break-before-heading": "上面\n\n---\n\n# 紧跟的标题\n\n正文\n",
+  "thematic-break-in-containers": "- 列表项一\n\n  ---\n\n- 列表项二\n\n> 引用\n>\n> ---\n",
+  "thematic-break-in-code-fence": "```md\n上面\n\n***\n\n---\n```\n\n```text\n___\n```\n",
+  "thematic-break-after-frontmatter": "---\nid: thematic-after-fm\n---\n\n---\n\n# 正文\n"
 }

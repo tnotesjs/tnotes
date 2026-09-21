@@ -56,6 +56,17 @@ export function applyDeskEditorConfigs(editor: Editor, options: DeskEditorConfig
       ...current,
       bullet: '-' as const,
       bulletOther: '*' as const,
+      /**
+       * 分割线统一写 `---`（`mdast-util-to-markdown` 的 `rule` 选项，默认 `*`）。
+       *
+       * 不指定时斜杠菜单插入的分割线会序列化成 `***`，与仓库里既有的写法（以及
+       * Prettier `parser: markdown` 的输出）不一致；`---`/`***`/`___` 三种写法**解析**
+       * 都继续兼容（micromark 层面就支持），这里只改**输出**。
+       * 前后空行由 mdast-util-to-markdown 的 join/unsafe 机制按**节点树**决定（与原始
+       * 输入无关），所以不会因为换成 `-` 就把分割线写成 Setext 标题，也不会贴到
+       * frontmatter 上 —— canonical 快照用例覆盖这些边界。
+       */
+      rule: '-' as const,
       handlers: {
         ...current.handlers,
         deskCallout: serializeDeskCalloutMdast,

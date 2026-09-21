@@ -176,5 +176,35 @@ export const DESK_CANONICAL_CASES: DeskCanonicalCase[] = [
   {
     name: 'setext-heading',
     source: ['Setext 标题', '===', '', '小标题', '---', ''].join('\n')
+  },
+  // ── 分割线输出统一为 `---` 的边界（item 1）────────────────────────────────
+  // 三种写法解析都要兼容，输出只留一种；下面这些用例把「换成 `-` 之后会不会写成
+  // Setext 标题 / 贴到 frontmatter 上 / 被容器或代码围栏改坏」钉在快照里。
+  {
+    name: 'thematic-break-at-start',
+    source: ['***', '', '分割线在文档最前面。', ''].join('\n')
+  },
+  {
+    name: 'thematic-break-adjacent-paragraphs',
+    // 没有空行：树是 [段, 分割线, 段]，序列化必须自己补出空行（否则 `---` 会变成 Setext 标题）
+    source: ['上面', '***', '下面', ''].join('\n')
+  },
+  {
+    name: 'thematic-break-before-heading',
+    source: ['上面', '', '***', '# 紧跟的标题', '', '正文', ''].join('\n')
+  },
+  {
+    name: 'thematic-break-in-containers',
+    source: ['- 列表项一', '', '  ***', '', '- 列表项二', '', '> 引用', '>', '> ___', ''].join('\n')
+  },
+  {
+    name: 'thematic-break-in-code-fence',
+    source: ['```md', '上面', '', '***', '', '---', '```', '', '```text', '___', '```', ''].join(
+      '\n'
+    )
+  },
+  {
+    name: 'thematic-break-after-frontmatter',
+    source: ['---', 'id: thematic-after-fm', '---', '', '***', '', '# 正文', ''].join('\n')
   }
 ]
