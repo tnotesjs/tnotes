@@ -13,6 +13,8 @@
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
+import { writeClipboardText } from '../../clipboardText'
+
 import type { AppSettings, McpServerStatusDto } from '../../../../shared/contracts'
 
 const props = defineProps<{ draft: AppSettings }>()
@@ -20,6 +22,8 @@ const emit = defineEmits<{ reset: [] }>()
 
 const status = ref<McpServerStatusDto | null>(null)
 const copied = ref('')
+/** 复制失败的按钮标签（空 = 没失败）：失败要看得见，不能静默 */
+const copyFailed = ref('')
 const loadFailed = ref(false)
 let offChanged: (() => void) | null = null
 
@@ -78,16 +82,26 @@ const configExample = computed(() =>
   )
 )
 
+/**
+ * 复制到剪贴板。
+ *
+ * **不能只调 `navigator.clipboard.writeText`**：Desk 主进程把 Electron 的权限请求一律拒绝，
+ * 实测这里 `writeText` 会抛 `NotAllowedError: Write permission denied.`，静默 catch 掉就是
+ * "点了复制没反应"。统一走 `writeClipboardText`（异步失败退回同步手势路径），
+ * 并把失败如实显示出来（令牌/配置在界面上可直接手动选中）。
+ */
 async function copy(text: string, label: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text)
-    copied.value = label
-    window.setTimeout(() => {
-      if (copied.value === label) copied.value = ''
-    }, 1500)
-  } catch {
-    copied.value = ''
+  copied.value = ''
+  copyFailed.value = ''
+  const ok = await writeClipboardText(text)
+  if (!ok) {
+    copyFailed.value = label
+    return
   }
+  copied.value = label
+  window.setTimeout(() => {
+    if (copied.value === label) copied.value = ''
+  }, 1500)
 }
 
 async function rotate(): Promise<void> {
@@ -164,6 +178,14 @@ async function rotate(): Promise<void> {
     <p class="mcp-state-detail">
       重置令牌会立刻断开已连接的客户端，旧令牌立即失效；客户端需要用新令牌重新连接。
     </p>
+    <p
+      v-if="copyFailed"
+      class="mcp-state-detail is-error"
+      role="alert"
+      data-testid="mcp-copy-error"
+    >
+      复制「{{ copyFailed }}」失败：系统拒绝了剪贴板写入。上面的内容可以直接选中手动复制。
+    </p>
 
     <details class="mcp-example">
       <summary>客户端接入配置示例与用法说明</summary>
@@ -182,7 +204,7 @@ async function rotate(): Promise<void> {
           <strong>不要按返回的行列坐标直接修改磁盘文件</strong>。
         </p>
         <p>只读：工具不会修改笔记内容、文件或 Git 状态。</p>
-        <button type="button" @click="copy(configExample, '配置')">
+        <button type="button" data-testid="mcp-copy-config" @click="copy(configExample, '配置')">
           {{ copied === '配置' ? '已复制配置' : '复制配置示例' }}
         </button>
       </div>

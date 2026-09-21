@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 
+import { writeClipboardText } from '../clipboardText'
+
 import type { AssetRecordDto, AssetReferenceDto } from '../../../shared/contracts'
 import {
   assetThumbSrc,
@@ -144,13 +146,9 @@ onUnmounted(() => {
 })
 
 async function copyPath(): Promise<void> {
-  try {
-    if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable')
-    await navigator.clipboard.writeText(props.asset.relPath)
-    copyState.value = 'copied'
-  } catch {
-    copyState.value = 'failed'
-  }
+  // 只调 `navigator.clipboard` 在 Desk 里必然失败（权限请求被主进程拒绝），
+  // 统一走带同步兜底的 writeClipboardText
+  copyState.value = (await writeClipboardText(props.asset.relPath)) ? 'copied' : 'failed'
   if (copyResetTimer) clearTimeout(copyResetTimer)
   copyResetTimer = setTimeout(() => {
     copyState.value = 'idle'

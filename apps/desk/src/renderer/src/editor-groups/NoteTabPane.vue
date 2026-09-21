@@ -16,6 +16,7 @@ import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
 
 import { registerHeadingFoldRunner } from '../commands/headingFoldBridge'
+import { writeClipboardText } from '../clipboardText'
 import {
   clearSelection,
   invalidateSelection,
@@ -400,17 +401,19 @@ function openDiagnosticsPreview(): void {
 async function confirmCopy(): Promise<void> {
   const preview = copyPreview.value
   if (!preview) return
-  try {
-    await navigator.clipboard.writeText(preview.text)
-    const title = preview.title
-    copyPreview.value = null
-    workspace.status =
-      title === '复制当前修改'
-        ? '当前修改已复制到剪贴板（未经完整性校验，粘贴前请自行核对）。'
-        : '诊断信息已复制到剪贴板。'
-  } catch {
+  // Desk 里 `navigator.clipboard.writeText` 会因权限被拒而失败：
+  // 统一走带同步兜底的 writeClipboardText，失败时如实提示
+  const ok = await writeClipboardText(preview.text)
+  if (!ok) {
     workspace.status = '复制失败：剪贴板不可用。'
+    return
   }
+  const title = preview.title
+  copyPreview.value = null
+  workspace.status =
+    title === '复制当前修改'
+      ? '当前修改已复制到剪贴板（未经完整性校验，粘贴前请自行核对）。'
+      : '诊断信息已复制到剪贴板。'
 }
 
 /** 「以源码显示」列表里点定位：滚到那个块并短暂高亮。 */
