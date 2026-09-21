@@ -188,6 +188,14 @@ watch(key, () => {
 /** 是否"当前活动编辑器"：活动标签 + 活动分组都满足才行（后台挂载的编辑器不许覆盖） */
 const isActiveEditor = computed(() => props.active && editor.activeGroupId === props.groupId)
 
+/**
+ * 快照归属者：分组 + 标签。
+ *
+ * 切换活动分组时"新活动编辑器上报"与"旧编辑器失效"在同一个 tick 里排队执行、顺序不保证；
+ * 上报模块只允许归属者清空，所以旧编辑器不会把新编辑器刚采集的选区抹掉。
+ */
+const selectionOwner = computed(() => `${props.groupId}:${props.tab.id}`)
+
 const hasUnsavedChanges = computed(() =>
   Boolean(session.value?.dirty || session.value?.unsavedDraft)
 )
@@ -221,10 +229,10 @@ function handleEditorSelection(payload: EditorSelectionPayload): void {
   const identity = selectionIdentity.value
   if (!identity || !isActiveEditor.value) return
   if (payload.empty) {
-    clearSelection(identity.note.id)
+    clearSelection(selectionOwner.value, identity.note.id)
     return
   }
-  reportSelection(identity, payload)
+  reportSelection(selectionOwner.value, identity, payload)
 }
 
 /** 主动采集一次（切回本标签、挂载完成、外部刷新后调用） */
@@ -236,7 +244,8 @@ function refreshSelection(): void {
 
 // 切笔记：旧快照立刻失效（新笔记要等它自己的有效选区）
 watch(key, (_next, previous) => {
-  if (previous && previous !== key.value) invalidateSelection('切换到另一篇笔记')
+  if (previous && previous !== key.value)
+    invalidateSelection(selectionOwner.value, '切换到另一篇笔记')
   void nextTick(refreshSelection)
 })
 
@@ -244,7 +253,7 @@ watch(key, (_next, previous) => {
 watch(
   () => props.tab.viewMode,
   () => {
-    invalidateSelection('切换了编辑视图')
+    invalidateSelection(selectionOwner.value, '切换了编辑视图')
     void nextTick(refreshSelection)
   }
 )
@@ -255,14 +264,14 @@ watch(isActiveEditor, (active, wasActive) => {
     void nextTick(refreshSelection)
     return
   }
-  if (wasActive) invalidateSelection('切换到其它编辑器')
+  if (wasActive) invalidateSelection(selectionOwner.value, '切换到其它编辑器')
 })
 
 // 磁盘内容被外部改动：编辑器内容与磁盘不再一致，范围不可信
 watch(
   () => session.value?.externalConflict,
   (conflict) => {
-    if (conflict) invalidateSelection('磁盘内容已被外部修改')
+    if (conflict) invalidateSelection(selectionOwner.value, '磁盘内容已被外部修改')
   }
 )
 
@@ -285,7 +294,7 @@ watch(
 
 onUnmounted(() => {
   if (props.active) registerHeadingFoldRunner(null)
-  if (isActiveEditor.value) invalidateSelection('关闭了笔记标签')
+  if (isActiveEditor.value) invalidateSelection(selectionOwner.value, '关闭了笔记标签')
 })
 
 async function editTitle(): Promise<void> {
@@ -921,6 +930,7 @@ function openLink(url: string): void {
           @heading-level-change="headingLevel = $event"
           @unsaved-draft-change="handleUnsavedDraftChange"
           @display-limited-change="handleDisplayLimitedChange"
+          @selection-change="handleEditorSelection"
         />
         <div v-else-if="tab.viewMode !== 'source'" class="editor-fatal" role="alert">
           <strong>可视化编辑器加载失败</strong>
