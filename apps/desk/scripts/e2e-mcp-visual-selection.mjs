@@ -58,6 +58,12 @@ const body = [
   ''
 ].join('\n')
 
+/**
+ * 巨块笔记：**一整段** 65k 字符（单行、没有空行）。
+ * 在里面只选两个字符时，选字远小于 20k，但"相关块 Markdown"超过 60k —— 专门验块内容上限。
+ */
+const giantBlockBody = `# 巨块\n\n${'长'.repeat(65_000)}\n`
+
 /** 超长笔记：单块、约 25.5k 字符（超过 20k 的选字上限） */
 const longBody = `# 超长\n\n${Array.from({ length: 3 }, () => '长'.repeat(8500)).join('\n')}\n`
 
@@ -65,7 +71,8 @@ const fixture = createFixture('mcp-visual', {
   notes: [
     { index: '0001', title: '视觉选区', body },
     { index: '0002', title: '另一篇', body: '# 另一篇\n\n别的正文。\n' },
-    { index: '0003', title: '超长', body: longBody }
+    { index: '0003', title: '超长', body: longBody },
+    { index: '0004', title: '巨块', body: giantBlockBody }
   ]
 })
 fixture.writeProfileConfig({ mcp: { enabled: true, port: PORT } })
@@ -75,7 +82,7 @@ const noteBytesBefore = readFileSync(noteFile, 'utf8')
 const app = await launchDesk(fixture)
 const page = await app.firstWindow()
 const pageErrors = []
-page.on('pageerror', (error) => pageErrors.push(String(error)))
+page.on('pageerror', (error) => pageErrors.push(error?.stack ?? String(error)))
 
 const settle = () =>
   page.evaluate(
@@ -340,6 +347,53 @@ try {
   await page.keyboard.press('Meta+z') // 尽力还原；后续断言不依赖它
   await page.waitForTimeout(300)
 
+  /* ── 相关块内容超限：选字很小，但相关块 Markdown 超过 60k ── */
+  await page.locator('.toc-row', { hasText: '巨块' }).first().click()
+  const giantPane = page.locator('.editor-group.active .ProseMirror:visible').first()
+  await waitFor(async () => {
+    if ((await giantPane.count()) === 0) return false
+    return (await giantPane.textContent())?.includes('长长长长长') ?? false
+  }, 30000)
+  // 只在巨块段落里选 2 个字符：选字远小于 20k，但相关块 Markdown 超过 60k
+  await selectInParagraph(
+    page.locator('.editor-group.active .ProseMirror:visible', { hasText: '长长长长长' }).first(),
+    '长长长长长',
+    0,
+    2
+  )
+  const blockLimit = await waitFor(async () => {
+    const value = await readSelection(client)
+    return value.status === 'context_too_large' && String(value.message).includes('相关块内容过长')
+      ? value
+      : null
+  }, 15000)
+  rec.record(
+    '相关块内容超限（>60k）明确失效，不返回旧正文（IPC 边界没有被 schema 提前拒收）',
+    blockLimit?.status === 'context_too_large' &&
+      blockLimit.selection === undefined &&
+      blockLimit.snapshotId === null &&
+      String(blockLimit.message).includes('上限'),
+    `status=${blockLimit?.status} message=${blockLimit?.message}`
+  )
+
+  // 缩到正常范围（换到小笔记里选一段）→ 恢复 ok
+  await page.locator('.toc-row', { hasText: '视觉选区' }).first().click()
+  await page.waitForTimeout(900)
+  await selectInParagraph(
+    page.locator('.editor-group.active .ProseMirror:visible', { hasText: '第二段句子乙' }).first(),
+    '第二段句子乙，用于跨段落选择。'
+  )
+  const recoveredAfterBlockLimit = await waitOk(
+    client,
+    (value) => value.selection?.selectedText === '第二段句子乙，用于跨段落选择。'
+  )
+  rec.record(
+    '缩小到正常选区后恢复 ok（超限状态不残留）',
+    recoveredAfterBlockLimit?.status === 'ok' &&
+      recoveredAfterBlockLimit?.selection?.selectedText === '第二段句子乙，用于跨段落选择。',
+    `status=${recoveredAfterBlockLimit?.status}`
+  )
+
   /* ── 多个编辑器分组：只有活动编辑器能更新 ── */
   await page.getByRole('button', { name: '向右拆分当前标签' }).click()
   await waitFor(async () => (await groups.count()) === 2, 10000)
@@ -577,6 +631,7 @@ try {
   )
   await new Promise((resolve) => busy.close(resolve))
 
+  if (pageErrors.length > 0) console.log('PAGE ERRORS:\n' + pageErrors.join('\n---\n'))
   rec.record('无未捕获页面异常', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 200))
 } catch (error) {
   rec.record('验收脚本执行', false, error instanceof Error ? error.message : String(error))
