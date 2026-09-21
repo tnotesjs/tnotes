@@ -56,6 +56,8 @@ export interface SelectionReportOutcome {
 export class SelectionContextService {
   private snapshot: StoredSnapshot | null = null
   private invalidReason: string | null = null
+  /** 最近一次因超限被拒的原因：此后读到的是 `context_too_large`，不回退成上一次的选区 */
+  private tooLargeReason: string | null = null
   private readonly now: () => Date
   private readonly newId: () => string
 
@@ -68,11 +70,16 @@ export class SelectionContextService {
    * 整包替换快照。
    *
    * 返回 `accepted:false` 的情形：上报的笔记已经不是当前快照的笔记（切笔记后的迟到上报），
-   * 或者选字/块超限。两种都不动已有快照 —— 避免半新半旧。
+   * 或者选字/块超限。前者保持不动（避免半新半旧），后者**必须让旧快照失效** ——
+   * 否则工具会把上一次的选区当成当前选区返回（静默给出过期内容）。
    */
   update(request: SelectionReportRequest): SelectionReportOutcome {
     const limitIssue = this.checkLimits(request.capture)
     if (limitIssue) {
+      // 用户当前选中的是一大段：如实说"太大"，绝不回退成上一次的选区
+      this.snapshot = null
+      this.invalidReason = null
+      this.tooLargeReason = limitIssue
       return { accepted: false, reason: limitIssue, status: 'context_too_large' }
     }
     const current = this.snapshot
@@ -96,15 +103,21 @@ export class SelectionContextService {
       )
     }
     this.invalidReason = null
+    this.tooLargeReason = null
     return { accepted: true, status: 'ok' }
   }
 
   /** 显式清除（用户主动取消选区）。`noteId` 给定时只清除该笔记的快照。 */
   clear(noteId?: string): boolean {
-    if (!this.snapshot) return false
+    if (!this.snapshot) {
+      // 没有快照时也要收起"上次选区太大"的提示：用户已经取消选择 / 换了内容
+      this.tooLargeReason = null
+      return false
+    }
     if (noteId && this.snapshot.request.note.id !== noteId) return false
     this.snapshot = null
     this.invalidReason = null
+    this.tooLargeReason = null
     return true
   }
 
@@ -115,12 +128,14 @@ export class SelectionContextService {
   invalidate(reason: string): void {
     this.invalidReason = reason
     this.snapshot = null
+    this.tooLargeReason = null
   }
 
   /** 与协议无关的读取接口（MCP 工具、将来的内置 Agent 都读它） */
   read(): SelectionContextSnapshotDto {
     const stored = this.snapshot
     if (!stored) {
+      if (this.tooLargeReason) return this.tooLargeSnapshot(this.tooLargeReason)
       return this.emptySnapshot(this.invalidReason ? 'selection_invalidated' : 'no_selection')
     }
     const { request } = stored
@@ -183,6 +198,17 @@ export class SelectionContextService {
       return `相关块内容过长：${blockChars} 字符，上限 ${SELECTION_LIMITS.maxBlockChars} 字符`
     }
     return null
+  }
+
+  /** 选区超限：不给内容、不给坐标，只说明为什么拒绝（并提示怎么继续） */
+  private tooLargeSnapshot(reason: string): SelectionContextSnapshotDto {
+    return {
+      status: 'context_too_large',
+      snapshotId: null,
+      capturedAt: null,
+      message: `${reason}。请让用户缩小选择范围，或分段选择后再试；这里不会截断内容。`,
+      limits: { ...SELECTION_LIMITS }
+    }
   }
 
   private emptySnapshot(status: SelectionStatus): SelectionContextSnapshotDto {

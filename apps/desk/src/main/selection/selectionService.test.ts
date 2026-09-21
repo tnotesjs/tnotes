@@ -145,7 +145,7 @@ describe('选区上下文服务（主进程）', () => {
     expect(snapshot.message).toContain('多个不连续选区')
   })
 
-  it('超限明确拒绝，不静默截断，也不破坏已有快照', () => {
+  it('超限明确拒绝，不静默截断，也不返回上一次的选区', () => {
     const store = service()
     store.update(report())
     const tooLong = store.update(
@@ -159,8 +159,13 @@ describe('选区上下文服务（主进程）', () => {
     )
     expect(tooLong).toMatchObject({ accepted: false, status: 'context_too_large' })
     expect(tooLong.reason).toContain('上限')
-    // 旧快照原样保留（没有被半截新数据替换）
-    expect(store.read().selection?.selectedText).toBe('选中的正文')
+    // 关键：不能把上一次的选区当成"当前选区"返回（那等于静默给出过期内容）
+    const afterLimit = store.read()
+    expect(afterLimit.status).toBe('context_too_large')
+    expect(afterLimit.selection).toBeUndefined()
+    expect(afterLimit.snapshotId).toBeNull()
+    expect(afterLimit.message).toContain('上限')
+    expect(afterLimit.limits).toEqual({ ...SELECTION_LIMITS })
 
     const tooManyBlocks = store.update(
       report({
@@ -176,6 +181,20 @@ describe('选区上下文服务（主进程）', () => {
       })
     )
     expect(tooManyBlocks.status).toBe('context_too_large')
+
+    // 用户重新给一个正常选区 → 恢复 ok；取消选区 → 回到 no_selection（不再卡在 too_large）
+    expect(store.update(report()).status).toBe('ok')
+    store.update(
+      report({
+        capture: {
+          collector: 'source',
+          empty: false,
+          selectedText: 'y'.repeat(SELECTION_LIMITS.maxSelectedChars + 1)
+        }
+      })
+    )
+    store.clear('note-a')
+    expect(store.read().status).toBe('no_selection')
   })
 
   it('切笔记后的迟到上报被拒绝，不混上另一篇笔记的身份', () => {
