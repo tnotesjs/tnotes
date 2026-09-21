@@ -22,6 +22,7 @@ import { matchDeskLanguage } from './codeMirrorLanguages'
 import { codeMirrorRectangularSelection } from './codeMirrorMultiCursor'
 import { createCodeLineHighlightExtension } from './codeLineHighlightExtension'
 import { isEmptyRawBlockSource } from './rawBlockEmpty'
+import { notifyCodeEditorSelection } from '../../selection/codeEditorSelectionBridge'
 
 export interface ContainerSourceEditorHandle {
   getValue(): string
@@ -188,6 +189,9 @@ export function createContainerSourceEditor(
         ...(options.lineWrapping === false ? [] : [EditorView.lineWrapping]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) onChange(update.state.doc.toString())
+          // 代码块 / 代码组面板里的选区变化**不会**产生 ProseMirror 事务，
+          // 单独特通知本机 MCP 的选区上报（只当触发器用，文本仍从 CM state 读）。
+          if (update.selectionSet || update.docChanged) notifyCodeEditorSelection(update.view)
         }),
         EditorView.theme({
           '&': { height: '100%' },

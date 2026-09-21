@@ -4,11 +4,16 @@ import { parserCtx } from '@milkdown/kit/core'
 import { editorViewCtx, commandsCtx, serializerCtx } from '@milkdown/kit/core'
 import { NodeSelection, Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
+import { EditorView as CodeMirrorView } from '@codemirror/view'
+import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { serializeImageMarkdown } from '@tnotesjs/ui/image-markdown'
 import { createCanvasImageClipboardPlugin } from './canvasImageClipboardPlugin'
 import { DESK_CODE_CLIPBOARD_FORMAT } from './clipboardNewline'
 import { noteRelativeAssetPath } from './noteAssetPath'
+import { captureVisualSelection } from '../selection/visualSelection'
+import { onCodeEditorSelection } from '../selection/codeEditorSelectionBridge'
+import type { EditorSelectionPayload } from '../selection/selectionReporter'
 import { invalidateCanvasSource, placeholderCanvasSvg } from '../editor/excalidraw/canvasImage'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
@@ -140,6 +145,8 @@ const emit = defineEmits<{
   unsavedDraftChange: [hasDraft: boolean]
   /** 「这些块以源码显示」的清单（行号 + 类型 + 片段），供父组件渲染可展开提示。 */
   displayLimitedChange: [items: DisplayLimitedItem[]]
+  /** 选区变化（含"变空"）：由上层按活动视图合并上报（MCP 选区上下文） */
+  selectionChange: [payload: EditorSelectionPayload]
 }>()
 
 const host = ref<HTMLElement | null>(null)
@@ -791,7 +798,114 @@ function applyGeneratedTocDisplay(): void {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* 选区上下文（MCP 只读工具用）：以**编辑器状态**为准，不用 DOM 文本推算   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 代码块 / 代码组面板里的 CodeMirror 选区。
+ *
+ * 只在**焦点确实在编辑器内的 CM 里**时才取：设置面板、图片描述框等输入框里的
+ * 选区不会被误当成正文选区（它们不在 `.milkdown` 里）。
+ */
+function codeMirrorCapture(): {
+  text: string
+  ranges: number
+  blockPosition: number | null
+} | null {
+  const active = document.activeElement
+  const cmDom = active instanceof Element ? active.closest('.cm-editor') : null
+  if (!cmDom || !(host.value?.contains(cmDom) ?? false)) return null
+  const cm = CodeMirrorView.findFromDOM(cmDom as HTMLElement)
+  if (!cm) return null
+  const { main, ranges } = cm.state.selection
+  if (main.empty) return null
+  return {
+    text: cm.state.sliceDoc(main.from, main.to),
+    ranges: ranges.length,
+    blockPosition: blockPositionForDom(editorView(), cmDom)
+  }
+}
+
+/** 从 CM 的 DOM 往上找最近的"节点视图 DOM"，拿到它在文档里的位置 */
+function blockPositionForDom(editorView: EditorView | null, dom: Element): number | null {
+  if (!editorView) return null
+  let element: Element | null = dom
+  let found: number | null = null
+  while (element && element !== editorView.dom) {
+    editorView.state.doc.descendants((_node, pos) => {
+      if (found != null) return false
+      if (editorView.nodeDOM(pos) === element) {
+        found = pos
+        return false
+      }
+      return true
+    })
+    if (found != null) return found
+    element = element.parentElement
+  }
+  return null
+}
+
+/** 采集可视化视图的当前选区（无选区返回 empty） */
+function selectionCapture(): EditorSelectionPayload | null {
+  const current = editorView()
+  if (!current) return null
+  const serializer = deskEditor?.editor.ctx.get(serializerCtx)
+  if (!serializer) return null
+  return captureVisualSelection(current, {
+    serializeDocument: (document) => serializer(document),
+    codeMirror: codeMirrorCapture
+  })
+}
+
+function emitSelection(): void {
+  if (!props.active) return
+  const payload = selectionCapture()
+  if (payload) emit('selectionChange', payload)
+}
+
+/**
+ * 代码块 / 代码组面板里的 CM 选区变化：CM 侧主动通知（PM 事务看不到）。
+ * 只处理**发生在自己 host 里**的 CM，避免同一分组里其它标签页的 CM 串味。
+ */
+let detachCodeSelection: (() => void) | null = null
+
+function subscribeCodeEditorSelection(): void {
+  detachCodeSelection?.()
+  detachCodeSelection = onCodeEditorSelection((view) => {
+    if (destroyed || !(host.value?.contains(view.dom) ?? false)) return
+    emitSelection()
+  })
+}
+
+/**
+ * 选区变化的触发用 **ProseMirror 事务**（插件的 `update` 钩子），不看 DOM 选区：
+ * 这样"设置面板 / 图片描述框里选区变化"根本不会触发上报，失焦期间的 DOM 选区变化
+ * 也不会被误当成"用户主动取消选区"。
+ */
+function createSelectionReporterPlugin(): MilkdownPlugin {
+  return $prose(
+    () =>
+      new Plugin({
+        key: new PluginKey('desk-selection-reporter'),
+        view: () => ({
+          update: (editorView, previous) => {
+            if (
+              previous.selection.eq(editorView.state.selection) &&
+              previous.doc.eq(editorView.state.doc)
+            ) {
+              return
+            }
+            emitSelection()
+          }
+        })
+      })
+  )
+}
+
 defineExpose({
+  selectionCapture,
   revealReference,
   insertTextAt,
   wrapSelection,
@@ -1290,6 +1404,7 @@ onMounted(async () => {
   editor.editor.use(createBlockBoundaryCaretPlugin())
   editor.editor.use(createBlockBoundaryNavigationPlugin(boundaryOptions))
   editor.editor.use(createHeadingSectionCollapsePlugin())
+  editor.editor.use(createSelectionReporterPlugin())
   editor.editor.use(createListItemCollapsePlugin())
   editor.editor.use(
     createReadonlyTransactionGuard({
@@ -1365,6 +1480,7 @@ onMounted(async () => {
     session.scheduleFidelityCheck()
     applyReadonlyState()
     applyGeneratedTocDisplay()
+    subscribeCodeEditorSelection()
     if (host.value) {
       blockHandleClickCleanup = installBlockHandleClickController({
         root: host.value,
@@ -1450,6 +1566,8 @@ onBeforeUnmount(() => {
   session?.dispose()
   destroyed = true
   ready = false
+  detachCodeSelection?.()
+  detachCodeSelection = null
   blockHandleClickCleanup?.()
   blockHandleClickCleanup = null
   document.removeEventListener('pointerdown', handleBlockMenuOutsidePointer, {
