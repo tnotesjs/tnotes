@@ -7,6 +7,7 @@ import type {
   McpServerStatusDto,
   SelectionClearRequest,
   SelectionReportRequest,
+  SelectionStatus,
   AttachmentWriteLocalRequest,
   AttachmentWriteLocalResult,
   ExcalidrawDerivedRefDto,
@@ -410,7 +411,10 @@ const api: DeskApi = {
   },
   selection: {
     report: (request: SelectionReportRequest) =>
-      invoke<{ accepted: boolean }>(IPC_CHANNELS.selectionReport, request),
+      invoke<{ accepted: boolean; status: SelectionStatus; reason?: string }>(
+        IPC_CHANNELS.selectionReport,
+        request
+      ),
     clear: (request: SelectionClearRequest) =>
       invoke<{ cleared: boolean }>(IPC_CHANNELS.selectionClear, request)
   },

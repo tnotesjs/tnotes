@@ -1633,6 +1633,33 @@ export type SelectionCollector = 'source' | 'visual' | 'readonly'
 export type SelectionContentSource = 'draft' | 'disk'
 
 /**
+ * 选区**语义**上限：超出即 `context_too_large` 并让旧快照失效，**不静默截断**。
+ *
+ * 判定只在主进程的 `selectionService` 里做（唯一真相）；渲染端也读这份常量，
+ * 但它只是为了在负载过大时不把正文塞进 IPC。
+ */
+export const SELECTION_LIMITS = {
+  maxSelectedChars: 20_000,
+  maxBlockChars: 60_000,
+  maxBlocks: 20
+} as const
+
+/**
+ * IPC **传输**上限：只挡「离谱到会拖垮主进程」的负载，**必须明显高于语义上限**。
+ *
+ * 为什么必须留出余量：schema 一旦把「刚刚超语义上限」的负载挡在门外，
+ * `selectionService` 就没有机会执行，旧快照会继续以 `ok` 返回（过期内容）。
+ * 超过这里的大负载由渲染端改发**不带正文的超限状态**（`capture.overLimit`）。
+ */
+export const SELECTION_TRANSPORT_LIMITS = {
+  maxSelectedTextChars: 1_000_000,
+  maxBlockChars: 1_000_000,
+  maxBlocks: 500,
+  /** 单次上报的正文总量（选中文本 + 所有块）上限 */
+  maxTotalChars: 2_000_000
+} as const
+
+/**
  * 选区坐标。**计数规则**：行列 1-based；offset 0-based、按 UTF-16 code unit 计
  * （与 JS 字符串一致，emoji 等代理对按 2 计）；结束边界**不含**。
  * `source` 标明这份坐标对应草稿还是磁盘内容 —— 两者可能不同，不能混用。
@@ -1706,6 +1733,11 @@ export interface SelectionCaptureDto {
   unsupportedReason?: string
   /** 选区超出上限时由渲染端先算好 */
   selectedChars?: number
+  /**
+   * **不带正文的超限状态**：选区大到不适合塞进 IPC 时，渲染端只报这一句原因
+   * （`selectedText` / `blocks` 一律不带）。主进程据此明确失效，绝不回退旧选区。
+   */
+  overLimit?: string
 }
 
 /**
@@ -1715,6 +1747,13 @@ export interface SelectionCaptureDto {
  * "笔记来自 A、选区文字来自 B"。
  */
 export interface SelectionReportRequest {
+  /**
+   * **切换代次**：活动编辑器每换一次（换分组 / 换标签 / 换笔记 / 换视图）渲染端就 +1。
+   *
+   * 主进程只接受「代次 ≥ 已见最大代次」的上报 / 失效，用它挡住旧编辑器的迟到上报 ——
+   * 而不是拿"上一个快照的笔记"当"当前活动笔记"（那会在切换瞬间互相拒收）。
+   */
+  generation: number
   knowledgeBase: { id: string; name: string; rootPath: string }
   note: { id: string; title: string; absolutePath: string }
   editor: {
@@ -1731,6 +1770,8 @@ export interface SelectionClearRequest {
   reason: string
   /** 只清除"确实是这个笔记"的快照，避免竞态把新快照清掉 */
   noteId?: string
+  /** 见 `SelectionReportRequest.generation`：旧代次的失效不会清掉新编辑器的快照 */
+  generation: number
 }
 
 /** 本机 MCP 服务默认端口：固定值，客户端配置可以长期不变 */
@@ -1991,7 +2032,10 @@ export interface DeskApi {
   }
   /** 本机 MCP：选区快照上报 + 服务状态/开关/令牌 */
   selection: {
-    report(request: SelectionReportRequest): Promise<DeskResult<{ accepted: boolean }>>
+    /** `accepted:false` = 主进程没接受（旧代次迟到上报 / 超出上限），调用方要能看到 */
+    report(
+      request: SelectionReportRequest
+    ): Promise<DeskResult<{ accepted: boolean; status: SelectionStatus; reason?: string }>>
     clear(request: SelectionClearRequest): Promise<DeskResult<{ cleared: boolean }>>
   }
   mcp: {
