@@ -463,6 +463,26 @@ export const SUITES = [
     note: '本机 MCP 选区服务：真实 SDK 客户端 initialize/list/call、鉴权、失焦、失效、令牌轮换、端口释放'
   },
   {
+    name: 'e2e-mcp-visual-selection.mjs',
+    area: 'mcp',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/main/mcp/**',
+      'apps/desk/src/main/selection/**',
+      'apps/desk/src/main/ipc/selection.ts',
+      'apps/desk/src/renderer/src/selection/**',
+      'apps/desk/src/renderer/src/markdown/MilkdownMarkdownEditor.vue',
+      'apps/desk/src/renderer/src/markdown/MarkdownSourceEditor.vue',
+      'apps/desk/src/renderer/src/editor/markdown/containerSourceEditor.ts',
+      'apps/desk/src/renderer/src/editor-groups/NoteTabPane.vue',
+      'apps/desk/src/renderer/src/components/settings/McpSettings.vue',
+      'apps/desk/src/renderer/src/components/SettingsPanel.vue'
+    ],
+    serial: false,
+    smoke: false,
+    note: '本机 MCP 可视化选区：段落/跨段/代码块/代码组/整块组件、失焦与草稿、多分组隔离、大选区拒绝、设置界面（含端口占用）'
+  },
+  {
     name: 'e2e-excalidraw-copy.mjs',
     area: 'excalidraw',
     tier: 'regression',
