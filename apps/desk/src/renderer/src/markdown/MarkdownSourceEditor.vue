@@ -541,8 +541,17 @@ onBeforeUnmount(() => {
   max-width: none;
 }
 
+/*
+ * 让行号槽与正文层跟着容器背景走（Monaco 主题背景与容器同为 `--editor-bg`，视觉一致）。
+ *
+ * `:not(.cslr)` 是必须的：Monaco 画选区圆角时会先向左多画 10px 的选区色块，再用
+ * **带 `monaco-editor-background` 类的遮罩**（`.cslr.monaco-editor-background`，反圆角）
+ * 盖掉多余部分。遮罩被写成 `background: inherit` 就变成透明，那 10px 蓝块原样露出来 ——
+ * 反向跨行选择时会盖住选区起点左侧本来没选中的字（实测：遮罩计算值 rgba(0,0,0,0)，
+ * 采样像素 rgb(173,214,255)，与选区色相同）。遮罩必须保留主题背景色。
+ */
 .markdown-source-editor :deep(.monaco-editor .margin),
-.markdown-source-editor :deep(.monaco-editor .monaco-editor-background) {
+.markdown-source-editor :deep(.monaco-editor .monaco-editor-background:not(.cslr)) {
   background: inherit;
 }
 </style>

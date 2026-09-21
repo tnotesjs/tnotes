@@ -405,6 +405,19 @@ export const SUITES = [
     note: '源码视图 Unicode 高亮：中文全角标点不再黄框，异常不可见/真混淆字符仍提示（深浅主题）'
   },
   {
+    name: 'e2e-source-selection-background.mjs',
+    area: 'editor',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/renderer/src/markdown/MarkdownSourceEditor.vue',
+      'apps/desk/src/renderer/src/monaco/**'
+    ],
+    serial: false,
+    locks: ['clipboard'],
+    smoke: false,
+    note: '源码视图跨行选区几何：选区圆角遮罩不被写成透明（像素级前后对照 + 剪切/撤销对齐选区）'
+  },
+  {
     name: 'e2e-excalidraw-copy.mjs',
     area: 'excalidraw',
     tier: 'regression',
