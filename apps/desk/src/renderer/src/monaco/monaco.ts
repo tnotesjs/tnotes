@@ -14,6 +14,8 @@
  */
 import type * as MonacoApi from 'monaco-editor'
 
+import { markdownFoldRanges } from '../markdown/sourceFolding'
+
 export type Monaco = typeof MonacoApi
 
 const LIGHT_THEME = 'tnotes-light'
@@ -21,6 +23,7 @@ const DARK_THEME = 'tnotes-dark'
 
 let loading: Promise<Monaco> | null = null
 let configured = false
+let markdownFoldingRegistered = false
 
 function cssVar(name: string, fallback: string): string {
   if (typeof document === 'undefined') return fallback
@@ -128,6 +131,24 @@ export function loadMonaco(): Promise<Monaco> {
   return loading
 }
 
+/**
+ * Markdown 折叠范围提供器（源码视图的标题章节 + 围栏代码块）。
+ *
+ * 不注册时 Monaco 会退回**按缩进**折叠：代码围栏的起始行只能折到缩进片段，标题也折不准。
+ * 范围计算在 `markdown/sourceFolding.ts`（纯函数，可单测）；这里只做一次注册。
+ */
+function registerMarkdownFolding(monaco: Monaco): void {
+  if (markdownFoldingRegistered) return
+  markdownFoldingRegistered = true
+  monaco.languages.registerFoldingRangeProvider('markdown', {
+    provideFoldingRanges: (model) =>
+      markdownFoldRanges(model.getValue()).map((range) => ({
+        start: range.start,
+        end: range.end
+      }))
+  })
+}
+
 async function loadMonacoOnce(): Promise<Monaco> {
   return (async () => {
     const monaco = await import('monaco-editor')
@@ -144,6 +165,7 @@ async function loadMonacoOnce(): Promise<Monaco> {
       // 语言特性（json/css/html/typescript）已被 alias 成空模块（见 electron.vite.config.ts）：
       // 做成空模块的目的就是不起 worker，所以这里没有需要"关掉"的默认值了。
     }
+    registerMarkdownFolding(monaco)
     defineTheme(monaco)
     // find widget 的图标是 codicon 字形：字体没到位时会先画成空白小方块
     // （首次按下 Cmd+F 的一两百毫秒）。这里提前把字体拉起来，避免"图标丢失"的观感。

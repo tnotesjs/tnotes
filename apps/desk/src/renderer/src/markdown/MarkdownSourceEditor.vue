@@ -23,6 +23,7 @@ import {
 } from '../monaco/monaco'
 
 import { sourceLineStyleChangesFor } from './clearSourceLineStyles'
+import { headingFoldTargetLines } from './sourceFolding'
 import { DESK_SELECT_ALL_EVENT, shouldHandleDeskSelectAll } from './documentSelection'
 import { renumberHeadings, stripHeadingNumbers } from '../editor/markdown/headingNumbering'
 import {
@@ -34,6 +35,7 @@ import {
   type TextEdit
 } from './sourceEdits'
 
+import type { HeadingFoldCommand } from './headingSectionCollapse'
 import type { NotePageWidth, NoteViewMode } from '../../../shared/contracts'
 import type * as MonacoApi from 'monaco-editor'
 
@@ -249,6 +251,31 @@ function selectAll(): void {
   editor.focus()
 }
 
+/**
+ * 命令面板的标题折叠在源码视图的落点：把命令翻译成"要折叠/展开的标题行"，
+ * 再交给 Monaco 自己的 `editor.fold` / `editor.unfold`。
+ *
+ * 为什么带 `levels: 1, direction: 'down'`：不带这两个参数时 Monaco 的 Fold 命令在
+ * "该行已经折叠"时会**向上折父级**（键盘上连续按 Fold 的语义）；我们按标题行精确操作，
+ * 只动"起始于这一行的范围"，已经折过的行保持原状。
+ *
+ * 只作用标题：`editor.foldAll` 会把代码块也折了，那就不是「全部折叠标题」了。
+ */
+function applyHeadingFold(command: HeadingFoldCommand): boolean {
+  const instance = editor
+  const textModel = model()
+  if (!instance || !textModel) return false
+  const lines = headingFoldTargetLines(command, textModel.getValue())
+  if (lines.length === 0) return false
+  const unfold = command.startsWith('unfold')
+  const action = instance.getAction(unfold ? 'editor.unfold' : 'editor.fold')
+  if (!action) return false
+  void action.run(
+    unfold ? { selectionLines: lines } : { levels: 1, direction: 'down', selectionLines: lines }
+  )
+  return true
+}
+
 defineExpose({
   revealReference,
   revealLine,
@@ -259,6 +286,7 @@ defineExpose({
   insertTable,
   addHeadingNumbers,
   removeHeadingNumbers,
+  applyHeadingFold,
   selectAll
 })
 

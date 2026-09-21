@@ -418,6 +418,22 @@ export const SUITES = [
     note: '源码视图跨行选区几何：选区圆角遮罩不被写成透明（像素级前后对照 + 剪切/撤销对齐选区）'
   },
   {
+    name: 'e2e-source-folding.mjs',
+    area: 'editor',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/renderer/src/markdown/sourceFolding.ts',
+      'apps/desk/src/renderer/src/markdown/MarkdownSourceEditor.vue',
+      'apps/desk/src/renderer/src/monaco/**',
+      'apps/desk/src/renderer/src/commands/headingFoldBridge.ts',
+      'apps/desk/src/renderer/src/commands/paletteCommands.ts',
+      'apps/desk/src/renderer/src/editor-groups/NoteTabPane.vue'
+    ],
+    serial: false,
+    smoke: false,
+    note: '源码视图折叠：行号槽箭头折标题章节/整块代码围栏，命令面板按级别折叠且不折代码块'
+  },
+  {
     name: 'e2e-excalidraw-copy.mjs',
     area: 'excalidraw',
     tier: 'regression',

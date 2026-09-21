@@ -172,19 +172,19 @@ watch(key, () => {
   editingTitle.value = false
 })
 
+/**
+ * 标题折叠命令的执行者按**当前活动视图**分发（`markdownEditor` 就是当前视图的句柄：
+ * 源码视图是 Monaco，其余是可视化编辑器）。命令面板只认识 `runHeadingFold`，不关心视图。
+ */
 watch(
-  [milkdownMarkdownEditor, () => props.active, () => props.tab.viewMode],
+  [markdownEditor, () => props.active],
   () => {
-    if (
-      props.active &&
-      props.tab.viewMode !== 'source' &&
-      milkdownMarkdownEditor.value?.applyHeadingFold
-    ) {
-      const handle = milkdownMarkdownEditor.value
-      registerHeadingFoldRunner((command) => handle.applyHeadingFold?.(command) ?? false)
-    } else if (props.active) {
-      registerHeadingFoldRunner(null)
-    }
+    // 非活动标签页不碰 runner：它可能正被别的标签页注册着
+    if (!props.active) return
+    const handle = markdownEditor.value
+    registerHeadingFoldRunner(
+      handle?.applyHeadingFold ? (command) => handle.applyHeadingFold?.(command) ?? false : null
+    )
   },
   { immediate: true }
 )
