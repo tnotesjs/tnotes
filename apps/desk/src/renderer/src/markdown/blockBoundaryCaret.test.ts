@@ -380,6 +380,21 @@ describe('段落边缘的方向删除：先落到特殊块边界，再删整块'
     expect(press(view, 'Delete')).toBe(false)
   })
 
+  it('表格：块后段首 Backspace 也是先落边界、再删整块', async () => {
+    const view = await setup('| a | b |\n| - | - |\n| 1 | 2 |\n\n表后段\n')
+    const table = childPositions(view.state.doc).find((child) => child.node.type.name === 'table')!
+    caretInBlock(view, 1, 0) // 「表后段」段首
+    expect(edgeBoundaryTargetForDelete(view.state, 'Backspace')).toMatchObject({
+      blockPos: table.pos,
+      side: 'after'
+    })
+    expect(press(view, 'Backspace')).toBe(true)
+    expect(view.state.selection).toBeInstanceOf(BlockBoundaryCaret)
+    expect(kinds(view)).toEqual(['table', 'paragraph'])
+    expect(press(view, 'Backspace')).toBe(true)
+    expect(kinds(view)).toEqual(['paragraph'])
+  })
+
   it('callout 边界上的方向键：回到正文末尾 / 进标题，不会卡住', async () => {
     const view = await setup('前段\n\n::: tip 标题\n正文\n:::\n\n后段\n')
     const callout = childPositions(view.state.doc).find(
@@ -393,5 +408,105 @@ describe('段落边缘的方向删除：先落到特殊块边界，再删整块'
     expect(view.state.selection).not.toBeInstanceOf(BlockBoundaryCaret)
     expect(view.state.selection.from).toBeGreaterThan(callout.pos)
     expect(view.state.selection.from).toBeLessThan(callout.pos + callout.node.nodeSize)
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* 嵌套容器：相邻节点必须取「当前段落所在那一层」                        */
+/* ------------------------------------------------------------------ */
+
+describe('嵌套容器里的段落边缘删除（按当前层级取相邻块）', () => {
+  it('引用里的段落紧跟内部代码块：Backspace 落到内部块，不跳到容器外', async () => {
+    const view = await setup(
+      '```text\nconst a = 1\n```\n\n> ```js\n> const b = 1\n> ```\n>\n> 引用正文\n'
+    )
+    const [outerCode, quote] = childPositions(view.state.doc)
+    const innerCodePos = quote.pos + 1
+    // 光标放到引用内段落「引用正文」的开头
+    const innerParagraphPos = innerCodePos + view.state.doc.nodeAt(innerCodePos)!.nodeSize
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, innerParagraphPos + 1))
+    )
+    const target = edgeBoundaryTargetForDelete(view.state, 'Backspace')
+    expect(target).toMatchObject({ blockPos: innerCodePos, side: 'after' })
+    // 明确不是容器外的那个代码块
+    expect(target?.blockPos).not.toBe(outerCode.pos)
+
+    expect(press(view, 'Backspace')).toBe(true)
+    expect(view.state.selection).toBeInstanceOf(BlockBoundaryCaret)
+    expect(press(view, 'Backspace')).toBe(true)
+    // 只删掉引用内部那个代码块：外层块与引用容器都还在
+    expect(kinds(view)).toEqual(['code_block', 'blockquote'])
+    expect(view.state.doc.textContent).toContain('const a = 1')
+    expect(view.state.doc.textContent).not.toContain('const b = 1')
+  })
+
+  it('列表项里的空段落紧跟内部代码块：Delete（前向）落到内部块', async () => {
+    const view = await setup('```text\nconst a = 1\n```\n\n- ```js\n  const b = 1\n  ```\n\n  \n')
+    const [outerCode, list] = childPositions(view.state.doc)
+    const item = list.pos + 1
+    const emptyParagraphPos = item + 1
+    // 光标放到列表项里那个空段落（在内部代码块之前）的内容末尾
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, emptyParagraphPos + 1))
+    )
+    const target = edgeBoundaryTargetForDelete(view.state, 'Delete')
+    expect(target?.side).toBe('before')
+    expect(target?.node.type.name).toBe('code_block')
+    expect(target?.blockPos).not.toBe(outerCode.pos)
+
+    expect(press(view, 'Delete')).toBe(true)
+    expect(view.state.selection).toBeInstanceOf(BlockBoundaryCaret)
+    expect(press(view, 'Delete')).toBe(true)
+    // 只删掉列表项内部那个代码块
+    expect(view.state.doc.textContent).toContain('const a = 1')
+    expect(view.state.doc.textContent).not.toContain('const b = 1')
+    expect(kinds(view)).toEqual(['code_block', 'bullet_list'])
+  })
+
+  it('提示块里的段落紧跟内部代码块：Backspace 落到内部块', async () => {
+    const view = await setup(
+      '```text\nconst a = 1\n```\n\n::: tip 标题\n```js\nconst b = 1\n```\n\ncallout 后段\n:::\n'
+    )
+    const callout = childPositions(view.state.doc).find(
+      (child) => child.node.type.name === 'deskCallout'
+    )!
+    const innerCodePos = callout.pos + 1
+    const innerCode = view.state.doc.nodeAt(innerCodePos)!
+    view.dispatch(
+      view.state.tr.setSelection(
+        TextSelection.create(view.state.doc, innerCodePos + innerCode.nodeSize + 1)
+      )
+    )
+    expect(edgeBoundaryTargetForDelete(view.state, 'Backspace')).toMatchObject({
+      blockPos: innerCodePos,
+      side: 'after'
+    })
+    expect(press(view, 'Backspace')).toBe(true)
+    expect(press(view, 'Backspace')).toBe(true)
+    expect(view.state.doc.textContent).toContain('const a = 1')
+    expect(view.state.doc.textContent).not.toContain('const b = 1')
+    expect(view.state.doc.textContent).toContain('callout 后段')
+  })
+
+  it('容器内没有相邻特殊块时不接管（不跳到容器外）', async () => {
+    const view = await setup('> 引用正文\n>\n> 后段\n\n```text\nconst a = 1\n```\n')
+    const quote = childPositions(view.state.doc)[0]
+    // 引用里的第二个段落，前一个兄弟是普通段落 → 不接管
+    const secondParagraph = quote.pos + 1 + view.state.doc.nodeAt(quote.pos + 1)!.nodeSize
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, secondParagraph + 1))
+    )
+    expect(edgeBoundaryTargetForDelete(view.state, 'Backspace')).toBeNull()
+    expect(press(view, 'Backspace')).toBe(false)
+    // 第二个段落末尾 Delete：容器内后面没有块 → 同样不跳到容器外
+    const paragraph = view.state.doc.nodeAt(secondParagraph)!
+    view.dispatch(
+      view.state.tr.setSelection(
+        TextSelection.create(view.state.doc, secondParagraph + 1 + paragraph.content.size)
+      )
+    )
+    expect(edgeBoundaryTargetForDelete(view.state, 'Delete')).toBeNull()
+    expect(press(view, 'Delete')).toBe(false)
   })
 })

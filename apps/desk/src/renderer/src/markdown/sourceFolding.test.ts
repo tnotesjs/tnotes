@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { headingFoldTargetLines, markdownFoldRanges } from './sourceFolding'
+import {
+  frontmatterEndLine,
+  headingFoldTargetLines,
+  markdownFoldRanges,
+  stripContainerPrefix
+} from './sourceFolding'
 
 const lines = (...items: string[]): string => `${items.join('\n')}\n`
 
@@ -152,5 +157,126 @@ describe('headingFoldTargetLines：命令 → 标题行（0-based）', () => {
   it('代码块行永远不在目标里（即使命令是 fold-all）', () => {
     const withCode = lines('# 一', '```js', 'const a = 1', '```', '# 二', '正文')
     expect(headingFoldTargetLines('fold-all', withCode)).toEqual([0, 4])
+  })
+})
+
+describe('frontmatter 不算章节（复核 P2）', () => {
+  it('frontmatter 里的 # 注释不被当作标题', () => {
+    const text = lines('---', '# metadata comment', 'id: x', '---', '', '# Real', 'body')
+    expect(markdownFoldRanges(text).filter((range) => range.kind === 'heading')).toEqual([
+      { start: 6, end: 8, kind: 'heading', level: 1 }
+    ])
+    expect(headingFoldTargetLines('fold-all', text)).toEqual([5])
+  })
+
+  it('frontmatterEndLine：闭合、未闭合、无 frontmatter', () => {
+    expect(frontmatterEndLine(['---', 'id: x', '---', '', '# 标题'])).toBe(3)
+    expect(frontmatterEndLine(['---', 'id: x', '...', '正文'])).toBe(3)
+    // 没有闭合行 → 不当 frontmatter（首行那个 --- 是分割线），不吞掉整篇
+    expect(frontmatterEndLine(['---', '# 标题', '正文'])).toBe(0)
+    expect(frontmatterEndLine(['# 标题', '正文'])).toBe(0)
+    expect(frontmatterEndLine([])).toBe(0)
+  })
+
+  it('frontmatter 之后的围栏照常折，且不受 frontmatter 影响', () => {
+    const text = lines(
+      '---',
+      'id: x',
+      '---',
+      '',
+      '```js',
+      'const a = 1',
+      '```',
+      '',
+      '# 标题',
+      '正文'
+    )
+    expect(markdownFoldRanges(text)).toEqual([
+      { start: 5, end: 7, kind: 'code', level: null },
+      { start: 9, end: 11, kind: 'heading', level: 1 }
+    ])
+  })
+})
+
+describe('容器里的 # 与外层章节（复核 P2）', () => {
+  it('引用里的围栏代码块：整块可折，块里的 # 不算外部章节', () => {
+    const text = lines(
+      '# 外层',
+      '正文',
+      '',
+      '> ```md',
+      '> # 引用里的伪标题',
+      '> ```',
+      '',
+      '# 另一个外层'
+    )
+    const ranges = markdownFoldRanges(text)
+    expect(ranges.filter((range) => range.kind === 'code')).toEqual([
+      { start: 4, end: 6, kind: 'code', level: null }
+    ])
+    expect(ranges.filter((range) => range.kind === 'heading')).toEqual([
+      { start: 1, end: 7, kind: 'heading', level: 1 },
+      { start: 8, end: 9, kind: 'heading', level: 1 }
+    ])
+  })
+
+  it('列表项里的围栏代码块同样处理', () => {
+    const text = lines(
+      '- 项目',
+      '  ```js',
+      '  # 伪标题',
+      '  const a = 1',
+      '  ```',
+      '',
+      '# 外层',
+      '正文'
+    )
+    const ranges = markdownFoldRanges(text)
+    expect(ranges.filter((range) => range.kind === 'code')).toEqual([
+      { start: 2, end: 5, kind: 'code', level: null }
+    ])
+    expect(ranges.filter((range) => range.kind === 'heading').map((range) => range.start)).toEqual([
+      7
+    ])
+  })
+
+  it('提示块容器里的 # 不参与章节（避免章节范围伸到容器外）', () => {
+    const text = lines(
+      '# 外层',
+      '正文',
+      '',
+      '::: tip 标题',
+      '# 容器内的标题',
+      '容器正文',
+      ':::',
+      '',
+      '# 另一个外层',
+      '正文'
+    )
+    expect(markdownFoldRanges(text).filter((range) => range.kind === 'heading')).toEqual([
+      // 第一个章节到「下一个一级标题的上一行」（第 8 行）为止
+      { start: 1, end: 8, kind: 'heading', level: 1 },
+      { start: 9, end: 11, kind: 'heading', level: 1 }
+    ])
+    // 容器内的 `# 容器内的标题` 不是章节起点
+    expect(headingFoldTargetLines('fold-all', text)).toEqual([0, 8])
+  })
+
+  it('顶格之外的 # 不算章节（引用 / 缩进）', () => {
+    const text = lines('> # 引用标题', '正文', '  # 缩进标题', '正文', '# 顶格标题', '正文')
+    expect(markdownFoldRanges(text).filter((range) => range.kind === 'heading')).toEqual([
+      { start: 5, end: 7, kind: 'heading', level: 1 }
+    ])
+  })
+
+  it('stripContainerPrefix：支持嵌套的引用与列表标记', () => {
+    expect(stripContainerPrefix('> ```js')).toBe('```js')
+    expect(stripContainerPrefix('> > ```js')).toBe('```js')
+    expect(stripContainerPrefix('- ```js')).toBe('```js')
+    expect(stripContainerPrefix('1. ```js')).toBe('```js')
+    expect(stripContainerPrefix('   ```js')).toBe('   ```js')
+    expect(stripContainerPrefix('正文')).toBe('正文')
+    // 4 空格缩进是缩进代码块，不剥前缀（也不会被当成围栏）
+    expect(stripContainerPrefix('    - ```js')).toBe('    - ```js')
   })
 })

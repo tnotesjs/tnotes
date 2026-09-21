@@ -226,6 +226,11 @@ function placeText(view: EditorView, pos: number, bias: -1 | 1): boolean {
  *
  * 只认"紧邻"：中间隔着空段落时不接管（那种情况交给 PM 默认的合并空行）。
  * 段内还有字（不在段落边缘）时返回 null，正常删字。
+ *
+ * **层级**：相邻节点取的是「当前段落所在那一层」的兄弟（`$head.before/after($head.depth)`），
+ * 不是顶层祖先的边界。用 `before(1)/after(1)` 时，容器里的段落会拿到容器外的邻居 ——
+ * 实测「引用里的空段落紧跟内部代码块」时返回的是引用**外面**的块，第二次删除就删错东西。
+ * 容器内没有相邻特殊块时返回 null（交给 PM 默认，绝不跳到容器外）。
  */
 export function edgeBoundaryTargetForDelete(
   state: EditorState,
@@ -238,12 +243,14 @@ export function edgeBoundaryTargetForDelete(
   // 只认「段落」：标题行首的 Backspace 有既定语义（一次直接回正文，见 headingKeymap），
   // 代码块内部更不该被边界规则接管。
   if ($head.parent.type.name !== 'paragraph') return null
+  // 段落自己那一层的边界（`depth` = 段落的深度）
+  const level = $head.depth
   if (key === 'Backspace') {
     if ($head.parentOffset !== 0) return null
-    return blockBoundaryTargetAt(state.doc, $head.before(1), 'after', isBoundaryDeleteBlock)
+    return blockBoundaryTargetAt(state.doc, $head.before(level), 'after', isBoundaryDeleteBlock)
   }
   if ($head.parentOffset !== $head.parent.content.size) return null
-  return blockBoundaryTargetAt(state.doc, $head.after(1), 'before', isBoundaryDeleteBlock)
+  return blockBoundaryTargetAt(state.doc, $head.after(level), 'before', isBoundaryDeleteBlock)
 }
 
 /** 把光标停到「可删除边界」（宽集合：停靠块 ∪ 提示块家族）上。 */
