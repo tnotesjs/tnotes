@@ -262,10 +262,17 @@ describe('容器里的 # 与外层章节（复核 P2）', () => {
     expect(headingFoldTargetLines('fold-all', text)).toEqual([0, 8])
   })
 
-  it('顶格之外的 # 不算章节（引用 / 缩进）', () => {
-    const text = lines('> # 引用标题', '正文', '  # 缩进标题', '正文', '# 顶格标题', '正文')
+  it('引用里的 # 不算章节；0–3 空格缩进的文档级标题算（CommonMark）', () => {
+    const text = lines('> # 引用标题', '正文', '  # 两空格缩进的标题', '正文', '# 顶格标题', '正文')
     expect(markdownFoldRanges(text).filter((range) => range.kind === 'heading')).toEqual([
+      // 2 个前导空格是合法的文档级 ATX 标题（复核 P2：不能"有缩进就排除"）
+      { start: 3, end: 4, kind: 'heading', level: 1 },
       { start: 5, end: 7, kind: 'heading', level: 1 }
+    ])
+    // 4 个空格是缩进代码块，不是标题
+    const indentedCode = lines('# 一', '正文', '    # 不是标题', '正文二')
+    expect(markdownFoldRanges(indentedCode).filter((range) => range.kind === 'heading')).toEqual([
+      { start: 1, end: 5, kind: 'heading', level: 1 }
     ])
   })
 
@@ -278,5 +285,74 @@ describe('容器里的 # 与外层章节（复核 P2）', () => {
     expect(stripContainerPrefix('正文')).toBe('正文')
     // 4 空格缩进是缩进代码块，不剥前缀（也不会被当成围栏）
     expect(stripContainerPrefix('    - ```js')).toBe('    - ```js')
+  })
+})
+
+describe('围栏闭合要看容器上下文（复核 P2 之二）', () => {
+  it('顶层围栏里的 `> ``` ` 是代码内容，不能当成闭合围栏', () => {
+    const text = lines('```md', '> ```', '# inside code', '```', '', '# Real', 'body')
+    const ranges = markdownFoldRanges(text)
+    expect(ranges.filter((range) => range.kind === 'code')).toEqual([
+      { start: 1, end: 4, kind: 'code', level: null }
+    ])
+    // 代码里的 `#` 不是章节，真正的 `# Real` 才是
+    expect(ranges.filter((range) => range.kind === 'heading')).toEqual([
+      { start: 6, end: 8, kind: 'heading', level: 1 }
+    ])
+  })
+
+  it('列表样式的围栏文本（`- ``` ` / `1. ``` `）同样只是代码内容', () => {
+    const text = lines('```', '- ```', '1. ```', '# 伪标题', '```', '', '# Real', 'body')
+    expect(markdownFoldRanges(text).filter((range) => range.kind === 'code')).toEqual([
+      { start: 1, end: 5, kind: 'code', level: null }
+    ])
+    expect(markdownFoldRanges(text).filter((range) => range.kind === 'heading')).toEqual([
+      { start: 7, end: 9, kind: 'heading', level: 1 }
+    ])
+  })
+
+  it('真正的引用 / 列表里的围栏照常整块折叠', () => {
+    const quoted = lines('> ```js', '> const a = 1', '> ```', '', '# Real', 'body')
+    expect(markdownFoldRanges(quoted).filter((range) => range.kind === 'code')).toEqual([
+      { start: 1, end: 3, kind: 'code', level: null }
+    ])
+    expect(markdownFoldRanges(quoted).filter((range) => range.kind === 'heading')).toEqual([
+      { start: 5, end: 7, kind: 'heading', level: 1 }
+    ])
+
+    const listed = lines('- ```js', '  const a = 1', '  ```', '', '# Real', 'body')
+    expect(markdownFoldRanges(listed).filter((range) => range.kind === 'code')).toEqual([
+      { start: 1, end: 3, kind: 'code', level: null }
+    ])
+    expect(markdownFoldRanges(listed).filter((range) => range.kind === 'heading')).toEqual([
+      { start: 5, end: 7, kind: 'heading', level: 1 }
+    ])
+  })
+
+  it('容器结束后恢复正常标题识别（列表 / 引用里的 # 不参与，之后重新参与）', () => {
+    const listed = lines(
+      '- 项目一',
+      '  # 列表项里的标题（不是文档级）',
+      '  正文',
+      '- 项目二',
+      '',
+      '# 文档级标题',
+      '正文'
+    )
+    expect(markdownFoldRanges(listed).filter((range) => range.kind === 'heading')).toEqual([
+      { start: 6, end: 8, kind: 'heading', level: 1 }
+    ])
+
+    const quoted = lines(
+      '> 引用正文',
+      '> # 引用里的标题（不是文档级）',
+      '> 引用续',
+      '',
+      '# 文档级标题',
+      '正文'
+    )
+    expect(markdownFoldRanges(quoted).filter((range) => range.kind === 'heading')).toEqual([
+      { start: 5, end: 7, kind: 'heading', level: 1 }
+    ])
   })
 })
