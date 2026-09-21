@@ -24,7 +24,7 @@ cd /Users/huyouda/tnotesjs/tnotes
 
 # 门禁
 pnpm --filter desk lint          # 0 error / 41 warning（与改动前同量级）
-pnpm --filter desk test          # 187 files / 1713 tests passed
+pnpm --filter desk test          # 187 files / 1717 tests passed
 pnpm --filter desk typecheck     # 0 error
 pnpm --filter desk build
 pnpm format:check                # All matched files use Prettier code style
@@ -32,7 +32,7 @@ pnpm format:check                # All matched files use Prettier code style
 # 真实 MCP 协议链路（先构建：E2E 验的是 out/）
 pnpm --filter desk exec electron-vite build
 node apps/desk/scripts/e2e-mcp-selection.mjs          # 24/24
-node apps/desk/scripts/e2e-mcp-visual-selection.mjs   # 28/28
+node apps/desk/scripts/e2e-mcp-visual-selection.mjs   # 29/29
 node apps/desk/scripts/run-e2e.mjs --only mcp         # 2/2 套件（走 runner）
 ```
 
@@ -56,17 +56,17 @@ node apps/desk/scripts/run-e2e.mjs --only mcp         # 2/2 套件（走 runner�
 
 ### 2. 确定性单测（新增 / 受影响）
 
-| 测试文件                                             | 数量 | 覆盖                                                                                                                                                                                     |
-| ---------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `main/selection/selectionService.test.ts`            | 15   | 整包替换、草稿标记、空选区、多选区、**两种切换顺序 / 旧代次迟到上报 / 已结束代次不复活**、三个语义上限各自失效并恢复、`overLimit` 标记、按笔记清除、`invalidateNow` 兜底                 |
-| `main/ipc/selection.test.ts`                         | 6    | **IPC 边界**：三个语义上限经真实 handler 进来都要返回 `context_too_large`（不是 `INVALID_REQUEST`）、没有旧正文、缩小后恢复；超传输上限被 schema 挡下也必须失效；旧代次 clear 不清新快照 |
-| `renderer/src/selection/selectionReporter.test.ts`   | 9    | 换归属者才推进代次、`accepted:false` / IPC 失败都不记去重签名（可重试）、超传输上限只报不带正文的超限状态、旧归属者失效被跳过、无上报不发 clear、桥缺失静默降级                          |
-| `renderer/src/selection/visualSelection.test.ts`     | 8    | 段落 / 跨段 / 代码块 / 代码组 / NodeSelection / CM 多光标 / raw block 细分类型                                                                                                           |
-| `renderer/src/selection/sourceBlocks.test.ts`        | 5    | 源码视图的行状态机（围栏 / 容器 / 标题 / 列表 / 引用）                                                                                                                                   |
-| `renderer/src/markdown/MarkdownSourceEditor.test.ts` | 14   | 精确范围（1 基行列、0 基偏移、结束不含）、不 trim、emoji、非活动标签不 emit                                                                                                              |
-| `renderer/src/editor-groups/NoteTabPane.test.ts`     | 28   | 其中 1 条：**只有活动分组里的活动标签能写入快照**（多分组隔离的守卫）                                                                                                                    |
+| 测试文件                                             | 数量 | 覆盖                                                                                                                                                                                                                                |
+| ---------------------------------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `main/selection/selectionService.test.ts`            | 15   | 整包替换、草稿标记、空选区、多选区、**两种切换顺序 / 旧代次迟到上报 / 已结束代次不复活**、三个语义上限各自失效并恢复、`overLimit` 标记、按笔记清除、`invalidateNow` 兜底                                                            |
+| `main/ipc/selection.test.ts`                         | 6    | **IPC 边界**：三个语义上限经真实 handler 进来都要返回 `context_too_large`（不是 `INVALID_REQUEST`）、没有旧正文、缩小后恢复；超传输上限被 schema 挡下也必须失效；旧代次 clear 不清新快照                                            |
+| `renderer/src/selection/selectionReporter.test.ts`   | 13   | 换归属者才推进代次、`accepted:false` / IPC 失败都不记去重签名（可重试）、**超限后原样选回同一内容能恢复**、**旧代次响应迟到不改新代次缓存**、超传输上限只报不带正文的超限状态、旧归属者失效被跳过、无上报不发 clear、桥缺失静默降级 |
+| `renderer/src/selection/visualSelection.test.ts`     | 8    | 段落 / 跨段 / 代码块 / 代码组 / NodeSelection / CM 多光标 / raw block 细分类型                                                                                                                                                      |
+| `renderer/src/selection/sourceBlocks.test.ts`        | 5    | 源码视图的行状态机（围栏 / 容器 / 标题 / 列表 / 引用）                                                                                                                                                                              |
+| `renderer/src/markdown/MarkdownSourceEditor.test.ts` | 14   | 精确范围（1 基行列、0 基偏移、结束不含）、不 trim、emoji、非活动标签不 emit                                                                                                                                                         |
+| `renderer/src/editor-groups/NoteTabPane.test.ts`     | 28   | 其中 1 条：**只有活动分组里的活动标签能写入快照**（多分组隔离的守卫）                                                                                                                                                               |
 
-### 3. 真实界面 + 真实 MCP 协议（E2E，共 52 项）
+### 3. 真实界面 + 真实 MCP 协议（E2E，共 53 项）
 
 **`e2e-mcp-selection.mjs`（阶段 A，24/24）**：启动与回环地址、令牌长度、
 无令牌 / 错令牌 401、伪造 `Origin` / 非回环 `Host` 403、`initialize` + `tools/list`（刚好 1 个工具）、
@@ -75,11 +75,11 @@ node apps/desk/scripts/run-e2e.mjs --only mcp         # 2/2 套件（走 runner�
 切笔记失效、工具调用前后磁盘字节不变、令牌轮换（旧令牌 401 + 旧会话断开 + 新令牌可用）、
 关闭开关后停服并释放端口。
 
-**`e2e-mcp-visual-selection.mjs`（阶段 B，28/28）**：段落内 / 跨段落 / 普通代码块 /
+**`e2e-mcp-visual-selection.mjs`（阶段 B，29/29）**：段落内 / 跨段落 / 普通代码块 /
 代码组面板 / 整块思维导图（`raw-block:mindmap` + 完整原文）、失焦后清 DOM 选区不算取消、
 搜索框不冒充正文选区、草稿标记、两个编辑器分组的身份与选区隔离（切过去 / 切回来各一轮）、
 **选字超限**（25507 字符 > 20000）与**相关块超限**（在 65k 单段里只选 2 个字符 → 相关块 65001 字符 > 60000）
-都明确失效、取消 / 缩小后恢复、关闭标签失效、只读（磁盘字节不变）、
+都明确失效、**超限后原样选回同一段内容可以恢复**、取消后恢复、关闭标签失效、只读（磁盘字节不变）、
 设置界面（地址 / 状态 / 令牌 / 配置示例 / 关闭释放端口 / 重开恢复 / 端口占用明确报错且不顶掉占用方）、
 无未捕获页面异常。
 
@@ -129,6 +129,20 @@ node apps/desk/scripts/run-e2e.mjs --only mcp         # 2/2 套件（走 runner�
   （不是 `INVALID_REQUEST`）、没有旧正文、缩小后恢复；超传输上限被挡下时旧快照失效；
   `selectionReporter.test.ts` 超传输上限只报不带正文的超限状态、刚超语义上限照常发正文（交给主进程判定）；
   `e2e-mcp-visual-selection.mjs` 相关块超限用例（65001 字符）。
+
+### P2 超限后重新选回原来的内容被去重缓存拦住
+
+- **复现**：上报正常选区 A（成功，写入去重签名）→ 同一编辑器上报 20 001 字符（主进程清快照、
+  返回 `context_too_large`）→ 再次上报**与 A 完全相同**的内容 → 渲染端认为"签名没变"直接跳过 →
+  MCP 一直停在 `context_too_large`。原有恢复用例换了另一段内容，所以没盖住这个分支。
+- **根因**：被拒时只"不记录新签名"，却留着**已不代表主进程当前状态**的旧成功签名。
+- **修法**：去重缓存改成「主进程确认接受过的内容 + 它所属的代次」：只有 `ok && accepted` 才写入；
+  被拒 / IPC 失败立刻作废；异步结果先核对代次，迟到的响应既不写、也不清新代次的缓存。
+  超限（语义与传输两种）之后原样重报都能恢复。
+- **钉住它的证据**：`selectionReporter.test.ts` 新增 4 条 —— 语义超限后原样选回恢复、
+  传输超限（不带正文状态）后原样选回恢复、旧代次的接受响应迟到不顶掉新代次缓存、
+  旧代次的失败响应迟到不清新代次缓存；E2E 新增「超限之前先建立成功快照 → 相关块超限 →
+  原样选回同一段 → 恢复 ok」。把缓存逻辑临时退回旧行为时，这 3 条单测立刻变红。
 
 ### 顺带修掉：切笔记 / 切视图瞬间读到已销毁的编辑器视图
 
