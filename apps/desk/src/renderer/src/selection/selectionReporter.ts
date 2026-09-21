@@ -9,7 +9,8 @@
  *   （那会在切换瞬间互相拒收，旧笔记的选区会一直以 ok 返回）；
  * - 归属者（`分组:标签`）只用于"本编辑器还有没有发言权"：不是归属者的编辑器不许清空 / 失效，
  *   但**不是**靠它来决定主进程能不能收下新编辑器的上报（那是代次的事）；
- * - 节流合并：同一批变化只发最后一次；与**已成功落地**的内容完全相同就跳过；
+ * - 节流合并：同一批变化只发最后一次；与**主进程确认接受过**的内容（同一代次 + 同一签名）
+ *   完全相同才跳过；被拒 / 失败之后缓存立刻作废，保证"重新选回原来的内容"还能上报；
  * - 只发选区本身与相关块，**不发整篇文档**；大到不适合塞进 IPC 时只发不带正文的超限状态；
  * - `accepted:false` 是业务结果，要和 IPC 失败一样处理（不记去重签名，允许重试）；
  * - 失败只记诊断，不影响编辑（选区服务是旁路能力）。
@@ -62,8 +63,17 @@ let owner: string | null = null
 let generation = 0
 let timer: ReturnType<typeof setTimeout> | null = null
 let pending: SelectionReportRequest | null = null
-/** 只记录**已成功落地**的上报签名，避免"上报被拒后同一内容再也发不出去" */
-let lastSignature = ''
+/**
+ * 去重缓存：**主进程确认接受过**的那一份内容（带它所属的代次）。
+ *
+ * 两条纪律：
+ * - 只有「IPC 成功 **且** `accepted:true`」才写缓存 —— 被拒 / 失败之后主进程里的
+ *   状态已经不代表这份内容了（超限还会把旧快照失效），缓存必须立刻作废，
+ *   否则用户重新选回同一段内容会被去重逻辑拦掉，一直卡在 `context_too_large`；
+ * - 缓存带代次：迟到的响应回来时如果上下文已经换过，既不能写缓存、也不能清缓存
+ *   （那是新上下文的状态）。
+ */
+let lastAccepted: { generation: number; signature: string } | null = null
 /**
  * 主进程那边是否可能有本上下文的状态（快照 / 超限提示）。
  *
@@ -112,24 +122,34 @@ function flush(): void {
   timer = null
   if (!request) return
   const signature = signatureOf(request)
-  if (signature === lastSignature) return
+  // 缓存只对「同一代次 + 同一内容」有效
+  if (lastAccepted?.generation === request.generation && lastAccepted.signature === signature) {
+    return
+  }
+  const reportedGeneration = request.generation
   dirty = true
   void selectionBridge()
     ?.report(request)
     .then((result) => {
+      // 迟到的响应：上下文已经换过，不能拿它更新新上下文的去重缓存
+      if (reportedGeneration !== generation) return
       if (!result.ok) {
-        // 上报失败要能被看见，但绝不能影响编辑；也不记签名，允许下次重试
+        // 上报失败要能被看见，但绝不能影响编辑；缓存作废，允许下次重试
+        lastAccepted = null
         console.warn('[desk] 选区快照上报失败', result.error.message)
         return
       }
       if (!result.value.accepted) {
-        // 主进程没收下（旧代次迟到 / 超限）：不能当成成功，否则同一内容再也发不出去
+        // 主进程没收下（超限 / 旧代次）：它已经不代表主进程当前状态，缓存作废
+        lastAccepted = null
         console.warn('[desk] 选区快照未被接受', result.value.reason ?? result.value.status)
         return
       }
-      lastSignature = signature
+      lastAccepted = { generation: reportedGeneration, signature }
     })
     .catch((error: unknown) => {
+      if (reportedGeneration !== generation) return
+      lastAccepted = null
       console.warn('[desk] 选区快照上报异常', error)
     })
 }
@@ -214,7 +234,7 @@ function endContext(): number | null {
     timer = null
   }
   pending = null
-  lastSignature = ''
+  lastAccepted = null
   owner = null
   dirty = false
   generation += 1

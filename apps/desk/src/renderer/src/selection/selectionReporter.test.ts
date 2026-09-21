@@ -22,28 +22,45 @@ import type { SelectionClearRequest, SelectionReportRequest } from '../../../sha
 const reportCalls: SelectionReportRequest[] = []
 const clearCalls: SelectionClearRequest[] = []
 /** 可切换的"主进程"行为 */
-const remote = { accepted: true, ok: true }
+const remote = { accepted: true, ok: true, manual: false }
+/** `remote.manual = true` 时上报的响应挂起，由用例按顺序 resolve（验迟到响应） */
+const deferred: Array<(result: unknown) => void> = []
+
+type ReportResult =
+  | { ok: true; value: { accepted: boolean; status: 'ok' | 'context_too_large'; reason?: string } }
+  | { ok: false; error: { code: string; message: string } }
+
+function reportResult(): ReportResult {
+  if (!remote.ok) {
+    return { ok: false as const, error: { code: 'INTERNAL_ERROR', message: 'boom' } }
+  }
+  return {
+    ok: true as const,
+    value: {
+      accepted: remote.accepted,
+      status: remote.accepted ? ('ok' as const) : ('context_too_large' as const),
+      reason: remote.accepted ? undefined : '选中内容过长'
+    }
+  }
+}
 
 function installBridge(): void {
   reportCalls.length = 0
   clearCalls.length = 0
+  deferred.length = 0
   remote.accepted = true
   remote.ok = true
+  remote.manual = false
   window.desk = {
     selection: {
-      report: vi.fn(async (request: SelectionReportRequest) => {
+      report: vi.fn((request: SelectionReportRequest) => {
         reportCalls.push(request)
-        if (!remote.ok) {
-          return { ok: false as const, error: { code: 'INTERNAL_ERROR', message: 'boom' } }
+        if (remote.manual) {
+          return new Promise<ReportResult>((resolve) => {
+            deferred.push((result) => resolve(result as ReportResult))
+          })
         }
-        return {
-          ok: true as const,
-          value: {
-            accepted: remote.accepted,
-            status: remote.accepted ? ('ok' as const) : ('context_too_large' as const),
-            reason: remote.accepted ? undefined : '选中内容过长'
-          }
-        }
+        return Promise.resolve(reportResult())
       }),
       clear: vi.fn(async (request: SelectionClearRequest) => {
         clearCalls.push(request)
@@ -56,6 +73,11 @@ function installBridge(): void {
 const settle = async (): Promise<void> => {
   // 上报有 80ms 节流
   await new Promise((resolve) => setTimeout(resolve, 130))
+}
+
+/** 让已 resolve 的 promise 回调（微任务）跑完 */
+const drain = async (): Promise<void> => {
+  for (let tick = 0; tick < 4; tick += 1) await Promise.resolve()
 }
 
 const identity = (noteId = 'note-a'): SelectionReportIdentity => ({
@@ -113,6 +135,101 @@ describe('选区上报（渲染端）', () => {
     reportSelection('owner-c', identity(), payload('被拒的那段'))
     await settle()
     expect(reportCalls).toHaveLength(3)
+  })
+
+  it('语义超限被拒后，原样重报同一段内容也能恢复（缓存必须作废）', async () => {
+    reportSelection('owner-n', identity(), payload('正常内容'))
+    await settle()
+    expect(reportCalls).toHaveLength(1)
+
+    // 同一编辑器里选了一大段：主进程清除快照并返回 context_too_large
+    remote.accepted = false
+    reportSelection(
+      'owner-n',
+      identity(),
+      payload('x'.repeat(SELECTION_LIMITS.maxSelectedChars + 1))
+    )
+    await settle()
+    expect(reportCalls).toHaveLength(2)
+
+    // 用户重新选回**与第一次完全相同**的内容：不能被去重缓存拦下
+    remote.accepted = true
+    reportSelection('owner-n', identity(), payload('正常内容'))
+    await settle()
+    expect(reportCalls).toHaveLength(3)
+    expect(reportCalls[2]!.capture.selectedText).toBe('正常内容')
+
+    // 恢复之后，同样的内容再报一次才去重
+    reportSelection('owner-n', identity(), payload('正常内容'))
+    await settle()
+    expect(reportCalls).toHaveLength(3)
+  })
+
+  it('不带正文的传输超限状态被拒后，原样重报同一段内容也能恢复', async () => {
+    reportSelection('owner-o', identity(), payload('正常内容'))
+    await settle()
+    expect(reportCalls).toHaveLength(1)
+
+    // 大到超过传输上限：只发超限状态（不带正文），主进程同样返回 context_too_large
+    remote.accepted = false
+    reportSelection(
+      'owner-o',
+      identity(),
+      payload('x'.repeat(SELECTION_TRANSPORT_LIMITS.maxSelectedTextChars + 1))
+    )
+    await settle()
+    expect(reportCalls).toHaveLength(2)
+    expect(reportCalls[1]!.capture.overLimit).toContain('选中内容过长')
+
+    remote.accepted = true
+    reportSelection('owner-o', identity(), payload('正常内容'))
+    await settle()
+    expect(reportCalls).toHaveLength(3)
+    expect(reportCalls[2]!.capture.selectedText).toBe('正常内容')
+  })
+
+  it('旧代次的响应迟到：不写新代次的缓存，也不清新代次的缓存', async () => {
+    remote.manual = true
+    reportSelection('owner-p1', identity('note-p1'), payload('P1 的正文'))
+    await settle()
+    expect(reportCalls).toHaveLength(1)
+    expect(deferred).toHaveLength(1)
+
+    // 旧响应还没回来就换了上下文：新代次照常上报并落地
+    invalidateSelection('owner-p1', '切换到另一篇笔记')
+    reportSelection('owner-p2', identity('note-p2'), payload('P2 的正文'))
+    await settle()
+    expect(reportCalls).toHaveLength(2)
+    deferred[1]!(reportResult())
+    await drain()
+
+    // 旧代次的响应（接受）迟到：不能顶掉新代次的去重缓存
+    deferred[0]!(reportResult())
+    await drain()
+    reportSelection('owner-p2', identity('note-p2'), payload('P2 的正文'))
+    await settle()
+    expect(reportCalls).toHaveLength(2)
+  })
+
+  it('旧代次的失败响应迟到：也不能清新代次的去重缓存', async () => {
+    remote.manual = true
+    reportSelection('owner-q1', identity('note-q1'), payload('Q1 的正文'))
+    await settle()
+    expect(reportCalls).toHaveLength(1)
+
+    invalidateSelection('owner-q1', '切换到另一篇笔记')
+    reportSelection('owner-q2', identity('note-q2'), payload('Q2 的正文'))
+    await settle()
+    expect(reportCalls).toHaveLength(2)
+    deferred[1]!(reportResult())
+    await drain()
+
+    // 旧代次的响应这次是"被拒 / 失败"：同样不许动新代次的缓存
+    deferred[0]!({ ok: false, error: { code: 'INTERNAL_ERROR', message: 'late boom' } })
+    await drain()
+    reportSelection('owner-q2', identity('note-q2'), payload('Q2 的正文'))
+    await settle()
+    expect(reportCalls).toHaveLength(2)
   })
 
   it('IPC 失败（ok=false）同样不记签名，允许重试', async () => {
