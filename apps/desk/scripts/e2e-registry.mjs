@@ -447,6 +447,22 @@ export const SUITES = [
     note: '可视化块边界：特殊块后段首 Backspace / 块前段尾 Delete 先落可见光标，再按才删整块（含撤销）'
   },
   {
+    name: 'e2e-mcp-selection.mjs',
+    area: 'mcp',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/main/mcp/**',
+      'apps/desk/src/main/selection/**',
+      'apps/desk/src/main/ipc/selection.ts',
+      'apps/desk/src/renderer/src/selection/**',
+      'apps/desk/src/renderer/src/markdown/MarkdownSourceEditor.vue',
+      'apps/desk/src/renderer/src/editor-groups/NoteTabPane.vue'
+    ],
+    serial: false,
+    smoke: false,
+    note: '本机 MCP 选区服务：真实 SDK 客户端 initialize/list/call、鉴权、失焦、失效、令牌轮换、端口释放'
+  },
+  {
     name: 'e2e-excalidraw-copy.mjs',
     area: 'excalidraw',
     tier: 'regression',

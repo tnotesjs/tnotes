@@ -22,6 +22,8 @@ import {
   refreshMonacoTheme
 } from '../monaco/monaco'
 
+import { sourceBlocksForOffsets } from '../selection/sourceBlocks'
+import type { EditorSelectionPayload } from '../selection/selectionReporter'
 import { sourceLineStyleChangesFor } from './clearSourceLineStyles'
 import { headingFoldTargetLines } from './sourceFolding'
 import { DESK_SELECT_ALL_EVENT, shouldHandleDeskSelectAll } from './documentSelection'
@@ -57,6 +59,8 @@ const emit = defineEmits<{
   openLink: [url: string]
   openNote: [noteUuid: string]
   pasteImage: [file: File, insertAt: number]
+  /** 选区变化（含"变空"）：上下文快照由上层按活动视图合并上报 */
+  selectionChange: [payload: EditorSelectionPayload]
 }>()
 
 const host = ref<HTMLElement | null>(null)
@@ -100,6 +104,63 @@ const isEffectivelyReadOnly = (): boolean => props.readOnly || props.mode === 'r
 
 function model(): MonacoApi.editor.ITextModel | null {
   return editor?.getModel() ?? null
+}
+
+/**
+ * 采集当前选区（源码视图）。
+ *
+ * 位置只从 **Monaco 模型 + selection** 读，不用 DOM 文本、不截图推算；
+ * 多个非空选区首版明确不支持（返回 unsupportedReason），不悄悄取其中一个。
+ */
+function selectionCapture(): EditorSelectionPayload | null {
+  const textModel = model()
+  const instance = editor
+  if (!textModel || !instance) return null
+  const selections = (instance.getSelections() ?? []).filter((selection) => !selection.isEmpty())
+  if (selections.length === 0) return { empty: true, selectedText: '', blocks: [] }
+  if (selections.length > 1) {
+    return {
+      empty: false,
+      selectedText: '',
+      blocks: [],
+      unsupportedReason: `首版不支持多个不连续选区（当前 ${selections.length} 处）`
+    }
+  }
+  const selection = selections[0]
+  const startOffset = textModel.getOffsetAt(selection.getStartPosition())
+  const endOffset = textModel.getOffsetAt(selection.getEndPosition())
+  // 原文逐字返回：不 trim、不折叠空白（末尾换行也照原样带出）
+  const selectedText = textModel.getValueInRange(selection)
+  const blocks = sourceBlocksForOffsets(textModel.getValue(), startOffset, endOffset).map(
+    (block) => ({
+      kind: block.kind,
+      markdown: block.markdown,
+      sourceRange: { startLine: block.startLine, endLine: block.endLine }
+    })
+  )
+  return {
+    empty: false,
+    selectedText,
+    range: {
+      startLine: selection.startLineNumber,
+      startColumn: selection.startColumn,
+      endLine: selection.endLineNumber,
+      endColumn: selection.endColumn,
+      startOffset,
+      endOffset,
+      lineBase: 1,
+      columnBase: 1,
+      endExclusive: true
+    },
+    blocks
+  }
+}
+
+/** 上报（节流在 selectionReporter 里做） */
+function emitSelection(): void {
+  if (!props.active) return
+  const payload = selectionCapture()
+  if (payload) emit('selectionChange', payload)
 }
 
 /** 选区（0 基偏移）→ 供纯函数使用的区间 */
@@ -277,6 +338,8 @@ function applyHeadingFold(command: HeadingFoldCommand): boolean {
 }
 
 defineExpose({
+  /** 让上层在内容变化（如外部刷新）后主动重新采集一次 */
+  selectionCapture,
   revealReference,
   revealLine,
   insertTextAt,
@@ -384,7 +447,11 @@ function createEditor(current: HTMLElement): void {
     if (syncing) return
     const textModel = model()
     if (textModel) emit('change', textModel.getValue())
+    // 内容变了：用**当前**选区重新上报（Monaco 自己会把选区映射到新位置），
+    // 避免留下过期范围；选区已空则上报"空"。
+    emitSelection()
   })
+  editor.onDidChangeCursorSelection(() => emitSelection())
 
   pasteListener = handlePaste
   editor.getContainerDomNode().addEventListener('paste', pasteListener, true)

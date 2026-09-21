@@ -16,6 +16,7 @@ import { createBackgroundGitTask } from './backgroundGitFailure'
 import { configureBottomPanelMaxTabs } from './bottomPanelTabs'
 import { gitManager } from './gitManager'
 import { registerIpc } from './ipc'
+import { mcpManager } from './mcp/manager'
 import { commandTaskManager } from './commandTaskManager'
 import { terminalManager } from './terminalManager'
 import { deskLog } from './log'
@@ -235,6 +236,8 @@ if (!hasSingleInstanceLock) {
     scheduleSearchRefresh()
     handleAssetProtocol()
     unregisterIpc = registerIpc(() => mainWindow)
+    // 本机 MCP：默认关闭，按设置启动（失败原因如实进状态，不影响主流程）
+    void mcpManager.applySettings()
     // 底部面板（终端/命令任务）的容量上限来自设置，惰性读取：改设置后下一次新建即生效
     configureBottomPanelMaxTabs(() => loadSettings().bottomPanel.maxTabs)
     updateManager.configure(loadSettings().updates.autoCheck)
@@ -286,6 +289,8 @@ app.on('will-quit', () => {
   unregisterSearchRefresh = null
   unregisterIpc?.()
   unregisterIpc = null
+  // 退出时停止 MCP 服务：释放端口、关闭现有会话
+  void mcpManager.dispose()
   updateManager.stop()
   void workspaceManager.dispose()
   void searchManager.dispose()

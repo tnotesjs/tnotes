@@ -4,6 +4,9 @@ import { IPC_CHANNELS } from '../shared/contracts'
 
 import type {
   AppSettings,
+  McpServerStatusDto,
+  SelectionClearRequest,
+  SelectionReportRequest,
   AttachmentWriteLocalRequest,
   AttachmentWriteLocalResult,
   ExcalidrawDerivedRefDto,
@@ -403,6 +406,23 @@ const api: DeskApi = {
         callback(state)
       ipcRenderer.on(IPC_CHANNELS.previewChanged, listener)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.previewChanged, listener)
+    }
+  },
+  selection: {
+    report: (request: SelectionReportRequest) =>
+      invoke<{ accepted: boolean }>(IPC_CHANNELS.selectionReport, request),
+    clear: (request: SelectionClearRequest) =>
+      invoke<{ cleared: boolean }>(IPC_CHANNELS.selectionClear, request)
+  },
+  mcp: {
+    status: () => invoke<McpServerStatusDto>(IPC_CHANNELS.mcpStatus),
+    setEnabled: (enabled: boolean) =>
+      invoke<McpServerStatusDto>(IPC_CHANNELS.mcpSetEnabled, { enabled }),
+    rotateToken: () => invoke<McpServerStatusDto>(IPC_CHANNELS.mcpRotateToken),
+    onChanged: (callback: (status: McpServerStatusDto) => void) => {
+      const listener = (_event: unknown, status: McpServerStatusDto): void => callback(status)
+      ipcRenderer.on(IPC_CHANNELS.mcpChanged, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.mcpChanged, listener)
     }
   },
   clipboard: {

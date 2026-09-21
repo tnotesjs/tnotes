@@ -37,6 +37,7 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@jsquash/oxipng": "^2.3.0",
     "@milkdown/kit": "7.22.1",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "@tnotesjs/kb": "workspace:^",
     "@tnotesjs/mindmap-core": "workspace:^",
     "@tnotesjs/ssg": "workspace:^",

@@ -20,6 +20,7 @@ import {
   clampHeadingNumberMaxDepth,
   HEADING_NUMBER_DEFAULT_MAX_DEPTH
 } from '../shared/headingNumbering'
+import { DEFAULT_MCP_PORT } from './mcp/server'
 import { strengthFromLegacyOxipngLevel, strengthFromLegacyQuality } from './optimizeStrength'
 
 import type { AppSettings, KnowledgeBaseSettings } from '../shared/contracts'
@@ -100,6 +101,13 @@ const settingsSchema = z.object({
       selectionToolbar: z.boolean().default(false)
     })
     .default({ selectionToolbar: false }),
+  // 本机 MCP 服务：默认关闭；端口固定（占用即报错，不自动改端口）
+  mcp: z
+    .object({
+      enabled: z.boolean().default(false),
+      port: z.number().int().min(1024).max(65535).default(DEFAULT_MCP_PORT)
+    })
+    .default({ enabled: false, port: DEFAULT_MCP_PORT }),
   imageUpload: z
     .object({
       defaultTarget: z.enum(['local', 'github']).default('local'),

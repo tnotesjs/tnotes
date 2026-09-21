@@ -4,6 +4,7 @@ import { z } from 'zod'
 
 import { encodeManager } from '../encodeManager'
 import { gitManager } from '../gitManager'
+import { mcpManager } from '../mcp/manager'
 import { validateGitHubImageSettings } from '../imageBed'
 import { clearGitHubToken, imageTokenStatus, saveGitHubToken } from '../imageSecret'
 import { toEncodeImageOptions } from '../optimizeStrength'
@@ -24,6 +25,8 @@ import type { AppSettings } from '../../shared/contracts'
 
 export function registerSettings(getWindow: GetWindow): void {
   function applyRuntimeSettings(settings: AppSettings): AppSettings {
+    // 本机 MCP：开关 / 端口变化时幂等地重新应用（端口没变且已在跑就不动）
+    void mcpManager.applySettings()
     gitManager.applyAutoPushSchedules(true)
     // 后台自动抓取开关：关掉立刻停定时器与等待队列，打开则立刻安排一轮
     gitManager.applyBackgroundFetchPreference()

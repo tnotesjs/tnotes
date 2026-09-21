@@ -151,7 +151,16 @@ export const IPC_CHANNELS = {
   updateCheck: 'update:check',
   updateOpenRelease: 'update:open-release',
   updateChanged: 'update:changed',
-  log: 'desk:log'
+  log: 'desk:log',
+  /** 渲染端上报"当前活动编辑器的选区"（快照的唯一来源） */
+  selectionReport: 'selection:report',
+  /** 渲染端显式清除（用户主动取消选区 / 关闭笔记等） */
+  selectionClear: 'selection:clear',
+  /** 本机 MCP 服务的状态查询与开关 */
+  mcpStatus: 'mcp:status',
+  mcpSetEnabled: 'mcp:set-enabled',
+  mcpRotateToken: 'mcp:rotate-token',
+  mcpChanged: 'mcp:changed'
 } as const
 
 export interface DeskError {
@@ -659,6 +668,16 @@ export interface AppSettings {
   /** 编辑器行为。`selectionToolbar` 默认关闭（选中文字不弹浮动格式条）。 */
   editor: {
     selectionToolbar: boolean
+  }
+  /**
+   * 本机 MCP 选区上下文服务。
+   *
+   * 默认**关闭**；`port` 固定（默认 39217）——端口被占用时如实报错，不自动换端口，
+   * 否则已经配好的客户端会失联。令牌单独存在系统凭据存储里，不写进这里。
+   */
+  mcp: {
+    enabled: boolean
+    port: number
   }
   imageUpload: ImageUploadSettings
   updates: {
@@ -1596,6 +1615,145 @@ export interface ExternalNoteChangeEvent {
   noteUuid: string
 }
 
+/* ------------------------------------------------------------------ */
+/* 本机 MCP 选区上下文服务（只读）                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 快照状态。**没有选区 / 不支持 / 已失效 / 超出上限都是结构化结果**，
+ * 不作为服务器异常，也不回退成"整篇笔记"或"上一次别的笔记的内容"。
+ */
+export type SelectionStatus =
+  'ok' | 'no_selection' | 'unsupported_selection' | 'selection_invalidated' | 'context_too_large'
+
+/** 采集来源：源码视图（Monaco）/ 可视化视图（ProseMirror）/ 只读视图。 */
+export type SelectionCollector = 'source' | 'visual' | 'readonly'
+
+/** 内容来自编辑器草稿还是磁盘上已保存的版本。 */
+export type SelectionContentSource = 'draft' | 'disk'
+
+/**
+ * 选区坐标。**计数规则**：行列 1-based；offset 0-based、按 UTF-16 code unit 计
+ * （与 JS 字符串一致，emoji 等代理对按 2 计）；结束边界**不含**。
+ * `source` 标明这份坐标对应草稿还是磁盘内容 —— 两者可能不同，不能混用。
+ */
+export interface SelectionRangeDto {
+  startLine: number
+  startColumn: number
+  endLine: number
+  endColumn: number
+  startOffset: number
+  endOffset: number
+  lineBase: 1
+  columnBase: 1
+  endExclusive: true
+  source: SelectionContentSource
+}
+
+/** 选区涉及的相关块（只含涉及的块，不附带整篇笔记）。 */
+export interface SelectionBlockDto {
+  /** 块类型：paragraph / heading / code / blockquote / list / container / raw-block … */
+  kind: string
+  /** 该块的 Markdown */
+  markdown: string
+  /**
+   * `raw`：与编辑器里的原文逐字一致（源码视图）；
+   * `reserialized`：编辑器重新序列化得到的，**未必**与原文件逐字相同（可视化视图）。
+   */
+  source: 'raw' | 'reserialized'
+  /** 块在源码里的行范围（能可靠给出时才给） */
+  sourceRange?: { startLine: number; endLine: number }
+}
+
+export interface SelectionContextSnapshotDto {
+  status: SelectionStatus
+  /** 每次有效快照一个 id；失效 / 清除后不再提供旧内容 */
+  snapshotId: string | null
+  /** ISO 时间戳，只用于展示，**不是**版本标识 */
+  capturedAt: string | null
+  /** status 不是 ok 时的人类可读原因 */
+  message?: string
+  knowledgeBase?: { id: string; name: string; rootPath: string }
+  note?: { id: string; title: string; absolutePath: string }
+  editor?: {
+    viewMode: NoteViewMode
+    collector: SelectionCollector
+    contentSource: SelectionContentSource
+    hasUnsavedChanges: boolean
+    /** 内容版本（笔记文档 revision，草稿变动时递增），**不是**时间戳 */
+    revision: string
+  }
+  selection?: {
+    selectedText: string
+    /** `source-range`：能精确映射到源码；`block`：只有块级上下文 */
+    mapping: 'source-range' | 'block'
+    sourceRange?: SelectionRangeDto
+    blocks: SelectionBlockDto[]
+  }
+  /** 上限（超限时给出，便于 Agent 提示用户缩小选区） */
+  limits: { maxSelectedChars: number; maxBlockChars: number; maxBlocks: number }
+}
+
+/** 渲染端上报的选区（编辑器层：只描述"选了什么"） */
+export interface SelectionCaptureDto {
+  collector: SelectionCollector
+  /** 空选区 = 用户取消了选区 */
+  empty: boolean
+  selectedText?: string
+  sourceRange?: SelectionRangeDto
+  blocks?: SelectionBlockDto[]
+  /** 不支持的原因（多选区 / 无法可靠映射 …） */
+  unsupportedReason?: string
+  /** 选区超出上限时由渲染端先算好 */
+  selectedChars?: number
+}
+
+/**
+ * 渲染端上报的完整快照（笔记身份 + 编辑器状态 + 选区）。
+ *
+ * **原子性**：这些字段必须来自同一次读取，主进程按整包替换，不会出现
+ * "笔记来自 A、选区文字来自 B"。
+ */
+export interface SelectionReportRequest {
+  knowledgeBase: { id: string; name: string; rootPath: string }
+  note: { id: string; title: string; absolutePath: string }
+  editor: {
+    viewMode: NoteViewMode
+    contentSource: SelectionContentSource
+    hasUnsavedChanges: boolean
+    revision: string
+  }
+  capture: SelectionCaptureDto
+}
+
+export interface SelectionClearRequest {
+  /** 便于诊断：为什么清除（用户取消 / 关闭笔记 / 切走 …） */
+  reason: string
+  /** 只清除"确实是这个笔记"的快照，避免竞态把新快照清掉 */
+  noteId?: string
+}
+
+export interface McpServerStatusDto {
+  /** 设置里的开关（用户意图） */
+  enabled: boolean
+  /** 进程内实际是否在监听 */
+  running: boolean
+  /** 实际连接地址（Streamable HTTP endpoint），未运行时为 null */
+  url: string | null
+  /** 连接令牌（明文只给渲染端设置界面展示 / 复制；不写日志） */
+  token: string
+  /** 启动失败原因（端口占用等），成功时为 null */
+  error: string | null
+  /** 当前保持中的客户端会话数 */
+  sessions: number
+  /** 最近一次工具调用时间（ISO） */
+  lastCallAt: string | null
+}
+
+export interface McpRotateTokenResult {
+  status: McpServerStatusDto
+}
+
 export interface DeskApi {
   bootstrap(): Promise<DeskResult<BootstrapPayload>>
   app: {
@@ -1824,6 +1982,17 @@ export interface DeskApi {
     stop(knowledgeBaseId: string): Promise<DeskResult<PreviewStateDto>>
     list(): Promise<DeskResult<PreviewStateDto[]>>
     onChanged(callback: (state: PreviewStateDto) => void): () => void
+  }
+  /** 本机 MCP：选区快照上报 + 服务状态/开关/令牌 */
+  selection: {
+    report(request: SelectionReportRequest): Promise<DeskResult<{ accepted: boolean }>>
+    clear(request: SelectionClearRequest): Promise<DeskResult<{ cleared: boolean }>>
+  }
+  mcp: {
+    status(): Promise<DeskResult<McpServerStatusDto>>
+    setEnabled(enabled: boolean): Promise<DeskResult<McpServerStatusDto>>
+    rotateToken(): Promise<DeskResult<McpServerStatusDto>>
+    onChanged(callback: (status: McpServerStatusDto) => void): () => void
   }
   clipboard: {
     /**

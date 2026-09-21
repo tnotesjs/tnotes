@@ -16,6 +16,13 @@ import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
 
 import { registerHeadingFoldRunner } from '../commands/headingFoldBridge'
+import {
+  clearSelection,
+  invalidateSelection,
+  reportSelection,
+  type EditorSelectionPayload,
+  type SelectionReportIdentity
+} from '../selection/selectionReporter'
 import { findTab } from './layoutModel'
 import { decideViewSwitch } from './noteViewSwitch'
 import type { DisplayLimitedItem } from '../editor/markdown/projectionFidelity'
@@ -43,6 +50,8 @@ interface MarkdownEditorHandle {
   addHeadingNumbers(maxDepth: number): void
   removeHeadingNumbers(): void
   applyHeadingFold?(command: HeadingFoldCommand): boolean
+  /** 采集当前选区的编辑器层数据（源码视图已实现；可视化视图见阶段 B） */
+  selectionCapture?(): EditorSelectionPayload | null
   flush(): void
 }
 
@@ -172,6 +181,91 @@ watch(key, () => {
   editingTitle.value = false
 })
 
+/* ------------------------------------------------------------------ */
+/* 本机 MCP：选区快照上报（渲染端是快照的唯一来源）                     */
+/* ------------------------------------------------------------------ */
+
+/** 是否"当前活动编辑器"：活动标签 + 活动分组都满足才行（后台挂载的编辑器不许覆盖） */
+const isActiveEditor = computed(() => props.active && editor.activeGroupId === props.groupId)
+
+const hasUnsavedChanges = computed(() =>
+  Boolean(session.value?.dirty || session.value?.unsavedDraft)
+)
+
+/** 快照的身份部分：笔记 / 知识库 / 编辑器状态，必须来自同一次读取（原子） */
+const selectionIdentity = computed<SelectionReportIdentity | null>(() => {
+  const document = session.value?.document
+  const kb = workspace.knowledgeBase
+  if (!document || !kb || kb.id !== props.tab.knowledgeBaseId) return null
+  const collector =
+    props.tab.viewMode === 'source'
+      ? 'source'
+      : props.tab.viewMode === 'readonly'
+        ? 'readonly'
+        : 'visual'
+  return {
+    knowledgeBase: { id: kb.id, name: kb.displayName || kb.name, rootPath: kb.rootPath },
+    note: { id: document.uuid, title: document.title, absolutePath: document.filePath },
+    editor: {
+      viewMode: props.tab.viewMode,
+      contentSource: hasUnsavedChanges.value ? 'draft' : 'disk',
+      hasUnsavedChanges: hasUnsavedChanges.value,
+      revision: document.revision,
+      collector
+    }
+  }
+})
+
+/** 编辑器报告选区变化：只有活动编辑器才写入快照 */
+function handleEditorSelection(payload: EditorSelectionPayload): void {
+  const identity = selectionIdentity.value
+  if (!identity || !isActiveEditor.value) return
+  if (payload.empty) {
+    clearSelection(identity.note.id)
+    return
+  }
+  reportSelection(identity, payload)
+}
+
+/** 主动采集一次（切回本标签、挂载完成、外部刷新后调用） */
+function refreshSelection(): void {
+  if (!isActiveEditor.value) return
+  const payload = markdownEditor.value?.selectionCapture?.()
+  if (payload) handleEditorSelection(payload)
+}
+
+// 切笔记：旧快照立刻失效（新笔记要等它自己的有效选区）
+watch(key, (_next, previous) => {
+  if (previous && previous !== key.value) invalidateSelection('切换到另一篇笔记')
+  void nextTick(refreshSelection)
+})
+
+// 切编辑视图：范围对应的是另一份内容，旧快照一律失效
+watch(
+  () => props.tab.viewMode,
+  () => {
+    invalidateSelection('切换了编辑视图')
+    void nextTick(refreshSelection)
+  }
+)
+
+// 活动编辑器易主：本编辑器成为活动方时重新采集；不再是活动方时让旧快照失效
+watch(isActiveEditor, (active, wasActive) => {
+  if (active) {
+    void nextTick(refreshSelection)
+    return
+  }
+  if (wasActive) invalidateSelection('切换到其它编辑器')
+})
+
+// 磁盘内容被外部改动：编辑器内容与磁盘不再一致，范围不可信
+watch(
+  () => session.value?.externalConflict,
+  (conflict) => {
+    if (conflict) invalidateSelection('磁盘内容已被外部修改')
+  }
+)
+
 /**
  * 标题折叠命令的执行者按**当前活动视图**分发（`markdownEditor` 就是当前视图的句柄：
  * 源码视图是 Monaco，其余是可视化编辑器）。命令面板只认识 `runHeadingFold`，不关心视图。
@@ -191,6 +285,7 @@ watch(
 
 onUnmounted(() => {
   if (props.active) registerHeadingFoldRunner(null)
+  if (isActiveEditor.value) invalidateSelection('关闭了笔记标签')
 })
 
 async function editTitle(): Promise<void> {
@@ -848,6 +943,7 @@ function openLink(url: string): void {
           :page-width="tab.pageWidth"
           @change="updateContent"
           @paste-image="pasteImage"
+          @selection-change="handleEditorSelection"
         />
       </div>
       <NoteAssetsPanel
