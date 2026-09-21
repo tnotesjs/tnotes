@@ -348,6 +348,22 @@ try {
   await page.waitForTimeout(300)
 
   /* ── 相关块内容超限：选字很小，但相关块 Markdown 超过 60k ── */
+  // 先在正常内容上建立一份**成功快照**：后面要用完全相同的选区验证"原样选回也能恢复"
+  await selectInParagraph(
+    page.locator('.editor-group.active .ProseMirror:visible', { hasText: '第二段句子乙' }).first(),
+    '第二段句子乙，用于跨段落选择。'
+  )
+  const beforeBlockLimit = await waitOk(
+    client,
+    (value) => value.selection?.selectedText === '第二段句子乙，用于跨段落选择。'
+  )
+  rec.record(
+    '超限之前先建立一份成功快照（下面用它验"原样选回也能恢复"）',
+    beforeBlockLimit?.status === 'ok' &&
+      beforeBlockLimit?.selection?.selectedText === '第二段句子乙，用于跨段落选择。',
+    `status=${beforeBlockLimit?.status}`
+  )
+
   await page.locator('.toc-row', { hasText: '巨块' }).first().click()
   const giantPane = page.locator('.editor-group.active .ProseMirror:visible').first()
   await waitFor(async () => {
@@ -376,7 +392,7 @@ try {
     `status=${blockLimit?.status} message=${blockLimit?.message}`
   )
 
-  // 缩到正常范围（换到小笔记里选一段）→ 恢复 ok
+  // 选回**与超限之前完全相同**的那段内容 → 必须恢复 ok（去重缓存不能拦住恢复）
   await page.locator('.toc-row', { hasText: '视觉选区' }).first().click()
   await page.waitForTimeout(900)
   await selectInParagraph(
@@ -388,7 +404,7 @@ try {
     (value) => value.selection?.selectedText === '第二段句子乙，用于跨段落选择。'
   )
   rec.record(
-    '缩小到正常选区后恢复 ok（超限状态不残留）',
+    '原样选回超限前那段内容后恢复 ok（去重缓存不拦恢复、超限状态不残留）',
     recoveredAfterBlockLimit?.status === 'ok' &&
       recoveredAfterBlockLimit?.selection?.selectedText === '第二段句子乙，用于跨段落选择。',
     `status=${recoveredAfterBlockLimit?.status}`
