@@ -53,11 +53,22 @@ export function toDeskError(error: unknown): DeskError {
   }
 }
 
+export interface HandleOptions {
+  /**
+   * 参数校验失败时的兜底（仍会照常把 `INVALID_REQUEST` 回给渲染端）。
+   *
+   * 给"不能留下过期状态"的通道用：例如选区上报被 schema 挡下时，
+   * 必须让主进程里的旧快照失效，否则工具会一直返回上一次的选区。
+   */
+  onInvalid?: (error: unknown) => void
+}
+
 export function handle<TInput, TOutput>(
   channel: string,
   getWindow: () => BrowserWindow | null,
   schema: z.ZodType<TInput>,
-  operation: (input: TInput) => Promise<TOutput> | TOutput
+  operation: (input: TInput) => Promise<TOutput> | TOutput,
+  options: HandleOptions = {}
 ): void {
   ipcMain.handle(channel, async (event, rawInput): Promise<DeskResult<TOutput>> => {
     try {
@@ -65,6 +76,13 @@ export function handle<TInput, TOutput>(
       const input = schema.parse(rawInput)
       return { ok: true, value: await operation(input) }
     } catch (error) {
+      try {
+        options.onInvalid?.(error)
+      } catch (fallbackError) {
+        deskLog('ipc:onInvalid', channel, {
+          message: fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+        })
+      }
       return { ok: false, error: toDeskError(error) }
     }
   })
