@@ -112,11 +112,13 @@ export class PinnedContextService {
     const { request } = current
     if (request.editor.contentSource !== 'disk') return false
     const anchor = request.anchor
-    // 只认**位置锚**：同一偏移范围上还是不是同一段文字。
-    // 用全文搜索（includes）会让"A 移位"或"别处有相同文字"逃过校验。
-    const range = anchor.textRange
+    // 只认**位置锚**：每个偏移范围上都还是不是同一段文字。
+    // 用全文搜索（includes）会让"A 移位"或"别处有相同文字"逃过校验；
+    // 跨段落固定有多个范围，任何一段变了都要失效。
+    const ranges = [...(anchor.ranges ?? []), ...(anchor.textRange ? [anchor.textRange] : [])]
     const matched =
-      Boolean(range) && content.slice(range!.startOffset, range!.endOffset) === range!.expected
+      ranges.length > 0 &&
+      ranges.every((range) => content.slice(range.startOffset, range.endOffset) === range.expected)
     if (matched) return true
     this.invalidateWith(pinId, '磁盘上的来源笔记已被外部修改，固定时的位置或内容已经对不上')
     return false
@@ -242,7 +244,11 @@ export class PinnedContextService {
     if (!capture.selectedText) return '当前没有可固定的正文选区'
     // **位置锚是硬要求**：没有它就只能靠全文搜索猜位置，而"坐标变化"就验不出来了。
     // 拿不到就明确拒绝固定，而不是固定一份以后验不了的上下文。
-    if (!anchor.textRange || anchor.textRange.endOffset <= anchor.textRange.startOffset) {
+    const positionRanges = [
+      ...(anchor.ranges ?? []),
+      ...(anchor.textRange ? [anchor.textRange] : [])
+    ].filter((range) => range.endOffset > range.startOffset)
+    if (positionRanges.length === 0) {
       return '这个选区拿不到可校验的位置信息，无法固定为 Agent 上下文（首版不猜坐标、也不做全文搜索）'
     }
     if (anchor.kind === 'source-range') {

@@ -29,23 +29,31 @@ export interface AnchorCheck {
 }
 
 /**
- * 位置判据：同一偏移范围上是否还是同一段文字。
+ * 位置判据：**每一个**位置范围上都还是不是同一段文字。
  *
  * **不做全文搜索**：所以"A 前插入内容 → 坐标变化"会失效，"原 A 被删除、别处还有相同文字"
- * 也会失效；"只改 A 后方"不会。
+ * 也会失效；"只改 A 后方（选区之外）"不会。
+ *
+ * 跨段落固定会带来多个范围：任何一段变了都要失效。
  */
 export function validateTextAnchor(
   text: string,
   anchor: PinnedSelectionAnchor
 ): AnchorCheck | null {
-  const range = anchor.textRange
-  if (!range) return null
-  const current = text.slice(range.startOffset, range.endOffset)
-  if (current === range.expected) return { valid: true }
-  return {
-    valid: false,
-    reason: `固定的位置（偏移 ${range.startOffset}–${range.endOffset}）上已经不是原来那段内容（内容或坐标变了）`
+  const ranges = [...(anchor.ranges ?? []), ...(anchor.textRange ? [anchor.textRange] : [])].filter(
+    (range) => range.endOffset > range.startOffset
+  )
+  if (ranges.length === 0) return null
+  for (const range of ranges) {
+    const current = text.slice(range.startOffset, range.endOffset)
+    if (current !== range.expected) {
+      return {
+        valid: false,
+        reason: `固定的位置（偏移 ${range.startOffset}–${range.endOffset}）上已经不是原来那段内容（内容或坐标变了）`
+      }
+    }
   }
+  return { valid: true }
 }
 
 /**

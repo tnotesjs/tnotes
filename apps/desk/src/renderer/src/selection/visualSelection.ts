@@ -17,7 +17,7 @@ import { serializeBlockForClipboard } from '../markdown/blockActionMenu'
 
 import type { Node as ProseMirrorNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import type { PinnedBlockAnchor } from '../../../shared/contracts'
+import type { PinnedBlockAnchor, PinnedTextAnchor } from '../../../shared/contracts'
 import type { EditorSelectionPayload } from './selectionReporter'
 
 /** 代码块/代码组面板内部的 CodeMirror 选区（由组件从 DOM 找到后传进来） */
@@ -35,6 +35,11 @@ export interface CodeMirrorCapture {
 export interface VisualSelectionDeps {
   /** 把文档（或片段）序列化成 Markdown —— 用编辑器自己的 serializer */
   serializeDocument: (document: ProseMirrorNode) => string
+  /**
+   * 这篇笔记**源码文本**（可视化编辑器就是用它建出来的；未编辑块与磁盘字节一致）。
+   * 位置锚必须落在这份文本的坐标系里 —— 跨视图与磁盘复核读的也是它。
+   */
+  sourceText?: string
   /** 代码编辑器里的选区（没有焦点在 CM 里时返回 null） */
   codeMirror?: () => CodeMirrorCapture | null
 }
@@ -132,45 +137,64 @@ function blocksIntersecting(
 }
 
 /**
- * 涉及块的**文档文本位置锚**：用"序列化到该块为止"的长度算偏移，
- * 保证是位置而不是全文搜索（A 前插入内容 → 偏移变了 → 校验失败）。
+ * 位置锚（可视化）：把**选区**投影成笔记源码文本里的若干范围。
  *
- * 这是"序列化文档坐标系"，不是从可视化视图编造出来的源码行列。
+ * 为什么按块逐段：可视化视图的可靠信息是"块的位置 + 块文本 + 选区的纯文本偏移"，
+ * 而源码文本里既有块间分隔符、也可能有行内标记，纯文本偏移不等于源码偏移。
+ * 做法是从上到下**顺序**定位每个涉及的块（下一块只从上一块结束处往后找），
+ * 再在每个块里定位选区那一段 —— 是"按结构顺序的位置推导"，不是全文搜索：
+ * - 任何一块移动 / 内容变化 → 对应范围对不上 → 失效（跨段落时每一段都覆盖）；
+ * - 同一块里**选区之外**的改动（例如只固定 AAA，后面 BBB 改成 CCC）→ 该范围不变 → 保留。
+ *
+ * 定位不出来（块文本在源码里对不上）就返回 null：调用方据此**拒绝固定**，
+ * 而不是固定一份只能靠搜索猜位置的上下文。
  */
-function blockTextRange(
+function sourceRangesForSelection(
   view: EditorView,
   blocks: { pos: number; node: ProseMirrorNode }[],
   deps: VisualSelectionDeps,
-  expected: string
-): { startOffset: number; endOffset: number; expected: string } | null {
-  const first = blocks[0]
-  if (!first) return null
-  // 位置锚必须来自"整篇序列化"的坐标系（和源码视图的文本、磁盘内容同一套坐标）。
-  // 做法：在第一个相关块**前面**临时插一个带哨兵的段落，序列化整篇，再从这个哨兵之后
-  // 找到该块 Markdown 的起点 —— 插入不落盘、也不进文档，只用来定位。
-  const sentinel = 'DESK-PIN-ANCHOR-9f3c'
-  try {
-    const paragraph = view.state.schema.nodes.paragraph
-    if (!paragraph) return null
-    const tr = view.state.tr.insert(
-      first.pos,
-      paragraph.create(null, view.state.schema.text(sentinel))
-    )
-    const marked = deps.serializeDocument(tr.doc)
-    const marker = marked.indexOf(sentinel)
-    if (marker < 0) return null
-    // 哨兵段落占的正是"该块在整篇序列化里的起点"（插入段落本身不改变前面的字节）。
-    // 期望文本直接取**文档自身**在这一段上的内容：位置锚与文档坐标系天然一致，
-    // 不依赖"块序列化结果与整篇序列化逐字相同"这种假设。
-    const startOffset = marker
-    const whole = deps.serializeDocument(view.state.doc)
-    const endOffset = startOffset + expected.length
-    const slice = whole.slice(startOffset, endOffset)
-    if (!slice.trim() || slice.length !== expected.length) return null
-    return { startOffset, endOffset, expected: slice }
-  } catch {
-    return null
+  range: { from: number; to: number },
+  code?: { from: number; to: number; expected: string }
+): PinnedTextAnchor[] | null {
+  const text = deps.sourceText
+  if (!text) return null
+  const located: { start: number; end: number; markdown: string }[] = []
+  let cursor = 0
+  for (const { pos, node } of blocks) {
+    const markdown = blockMarkdown(view, pos, node, deps).markdown
+    if (!markdown) return null
+    const at = text.indexOf(markdown, cursor)
+    if (at < 0) return null
+    located.push({ start: at, end: at + markdown.length, markdown })
+    cursor = at + markdown.length
   }
+
+  const ranges: PinnedTextAnchor[] = []
+  for (const [index] of located.entries()) {
+    const { pos, node } = blocks[index]!
+    const block = located[index]!
+    // 该块里被选中的那一段纯文本（首块可能只选中前半段，末块只选中后半段）
+    const innerStart = index === 0 ? Math.max(0, range.from - (pos + 1)) : 0
+    const innerEnd =
+      index === located.length - 1
+        ? Math.min(node.nodeSize - 1, Math.max(innerStart, range.to - (pos + 1)))
+        : node.nodeSize - 1
+    // 代码块 / 代码组面板内部：选区是 CodeMirror 自己的坐标，直接用它的选中文字
+    const plain =
+      code && blocks.length === 1
+        ? code.expected
+        : view.state.doc.textBetween(pos + 1 + innerStart, pos + 1 + innerEnd, '\n', '\n')
+    if (!plain) continue
+    // 在**这个块**的源码里定位这一段（从纯文本偏移附近起找，容忍行内标记带来的位移）
+    let inner = block.markdown.indexOf(plain, code ? 0 : Math.max(0, innerStart))
+    if (inner < 0) inner = block.markdown.indexOf(plain)
+    if (inner < 0) return null
+    const startOffset = block.start + inner
+    const expected = text.slice(startOffset, startOffset + plain.length)
+    if (!expected) return null
+    ranges.push({ startOffset, endOffset: startOffset + plain.length, expected })
+  }
+  return ranges.length > 0 ? ranges : null
 }
 
 function payloadFromBlocks(
@@ -182,7 +206,7 @@ function payloadFromBlocks(
   code?: { from: number; to: number; expected: string }
 ): EditorSelectionPayload {
   const blockAnchors = blocks.map(({ pos, node }) => blockAnchorFor(view, pos, node, deps))
-  const textRange = blockTextRange(view, blocks, deps, blockAnchors[0]?.markdown ?? '')
+  const ranges = sourceRangesForSelection(view, blocks, deps, range, code)
   return {
     empty: false,
     selectedText,
@@ -195,7 +219,7 @@ function payloadFromBlocks(
     anchor: {
       view: 'visual',
       kind: 'block',
-      ...(textRange ? { textRange } : {}),
+      ...(ranges ? { ranges } : {}),
       blocks: blockAnchors,
       from: range.from,
       to: range.to,

@@ -230,6 +230,50 @@ describe('固定选区上下文服务（主进程）', () => {
     expect(context.selection).toBeUndefined()
   })
 
+  it('磁盘位置复核：多范围锚点里任何一段变化都要失效（跨段落）', () => {
+    const store = service()
+    store.pin(
+      pinRequest({
+        anchor: {
+          view: 'visual',
+          kind: 'block',
+          ranges: [
+            { startOffset: 0, endOffset: 3, expected: 'AAA' },
+            { startOffset: 5, endOffset: 8, expected: 'BBB' }
+          ],
+          blocks: [
+            { pos: 0, kind: 'paragraph', markdown: 'AAA\n' },
+            { pos: 5, kind: 'paragraph', markdown: 'BBB\n' }
+          ],
+          from: 1,
+          to: 12
+        }
+      })
+    )
+    const content = 'AAA\n\nBBB\n'
+    expect(store.revalidateAgainst(content, 'pin-1')).toBe(true)
+    // 第二段变了（之前漏判的场景）→ 失效
+    expect(store.revalidateAgainst('AAA\n\nCCC\n', 'pin-1')).toBe(false)
+    expect(store.read().state).toBe('invalidated')
+
+    // 只改选区之外（第二段末尾追加）→ 保留
+    const tailStore = service()
+    tailStore.pin(
+      pinRequest({
+        anchor: {
+          view: 'visual',
+          kind: 'block',
+          ranges: [{ startOffset: 0, endOffset: 3, expected: 'AAA' }],
+          blocks: [{ pos: 0, kind: 'paragraph', markdown: 'AAA\n' }],
+          from: 1,
+          to: 4
+        }
+      })
+    )
+    expect(tailStore.revalidateAgainst('AAA CCC\n', 'pin-1')).toBe(true)
+    expect(tailStore.read().state).toBe('pinned')
+  })
+
   it('磁盘位置复核：只认位置锚（移位 / 别处有相同文字都要失效）', () => {
     const store = service()
     store.pin(pinRequest())

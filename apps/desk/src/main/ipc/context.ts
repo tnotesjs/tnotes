@@ -49,6 +49,16 @@ const anchorSchema = z.object({
       expected: z.string().max(1_000_000)
     })
     .optional(),
+  ranges: z
+    .array(
+      z.object({
+        startOffset: z.number().int().min(0),
+        endOffset: z.number().int().min(0),
+        expected: z.string().max(1_000_000)
+      })
+    )
+    .max(200)
+    .optional(),
   code: z
     .object({
       from: z.number().int().min(0),

@@ -1849,8 +1849,16 @@ export interface PinnedSelectionAnchor {
   kind: 'source-range' | 'block'
   /** 源码视图：精确范围（含 draft/disk 归属） */
   sourceRange?: SelectionRangeDto
-  /** 位置锚（跨视图与磁盘复核的唯一判据；两者都缺就明确失效） */
+  /**
+   * 位置锚（跨视图与磁盘复核的唯一判据；两者都缺就明确失效）。
+   *
+   * - 源码固定：一个范围（选区本身）；
+   * - 可视化固定：**每个涉及的块一个范围**（按块在该笔记源码文本里的实际位置推导），
+   *   所以跨段落选区里任何一段变化都会失效，而同段落的未选中后缀变化不会。
+   */
   textRange?: PinnedTextAnchor
+  /** 可视化固定的多段范围（至少一段；跨段落时每段都有） */
+  ranges?: PinnedTextAnchor[]
   /** 可视化视图：涉及的块（给 Agent 的块级上下文 + 位置/类型校验） */
   blocks?: PinnedBlockAnchor[]
   /**

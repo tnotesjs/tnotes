@@ -869,6 +869,8 @@ function selectionCapture(): EditorSelectionPayload | null {
   if (!serializer) return null
   return captureVisualSelection(current, {
     serializeDocument: (document) => serializer(document),
+    // 位置锚落在**笔记源码文本**坐标系里（跨视图与磁盘复核读的是同一份文本）
+    sourceText: props.content,
     codeMirror: codeMirrorCapture
   })
 }

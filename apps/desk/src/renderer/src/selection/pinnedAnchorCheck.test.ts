@@ -32,6 +32,8 @@ afterEach(async () => {
 async function setup(
   source: string
 ): Promise<{ view: EditorView; deps: Parameters<typeof validateVisualAnchor>[3] }> {
+  // 默认把"笔记源码文本"当作位置锚的坐标系（与真实编辑器一致）
+  const sourceText = source
   const root = document.createElement('div')
   root.className = 'milkdown'
   document.body.append(root)
@@ -47,7 +49,10 @@ async function setup(
   await handle.editor.create()
   const view = handle.editor.action((ctx) => ctx.get(editorViewCtx))
   const serialize = handle.editor.action((ctx) => ctx.get(serializerCtx))
-  return { view, deps: { serializeDocument: (document) => serialize(document) } }
+  return {
+    view,
+    deps: { serializeDocument: (document) => serialize(document), sourceText }
+  }
 }
 
 function selectText(view: EditorView, needle: string): { from: number; to: number } {
@@ -73,6 +78,76 @@ function pinAnchor(view: EditorView, deps: Parameters<typeof validateVisualAncho
   if (!payload.anchor) throw new Error('没有锚点')
   return { anchor: payload.anchor as PinnedSelectionAnchor, text: payload.selectedText }
 }
+
+describe('真实采集 → 跨视图 / 磁盘复核（位置范围来自编辑器）', () => {
+  it('跨段落固定：第二段变化也失效（每个块都有范围）', async () => {
+    const body = 'AAA\n\nBBB\n'
+    const { view, deps } = await setup(body)
+    const from = selectText(view, 'AAA').from
+    const to = selectText(view, 'BBB').to
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)))
+    const payload = captureVisualSelection(view, deps)
+    const anchor = payload.anchor as PinnedSelectionAnchor
+    expect(anchor.ranges?.length).toBe(2)
+
+    // 原样：两个范围都对得上
+    expect(validateTextAnchor(body, anchor)).toEqual({ valid: true })
+    // 第一段变 → 失效
+    expect(validateTextAnchor('XXX\n\nBBB\n', anchor)?.valid).toBe(false)
+    // 第二段变 → **也要失效**（这正是之前漏掉的）
+    expect(validateTextAnchor('AAA\n\nCCC\n', anchor)?.valid).toBe(false)
+    // 在选区结束之后追加（第二段末尾）：选中的内容与坐标都没变 → 保留
+    expect(validateTextAnchor('AAA\n\nBBB 尾部\n', anchor)).toEqual({ valid: true })
+  })
+
+  it('同段落只固定 AAA：未选中后缀变化仍保留（跨视图 / 磁盘同一条判据）', async () => {
+    const body = 'AAA BBB\n'
+    const { view, deps } = await setup(body)
+    selectText(view, 'AAA')
+    const payload = captureVisualSelection(view, deps)
+    const anchor = payload.anchor as PinnedSelectionAnchor
+    expect(anchor.ranges?.length).toBe(1)
+    expect(validateTextAnchor(body, anchor)).toEqual({ valid: true })
+    // 后缀 BBB → CCC：A 的内容与坐标都没变 → 保留
+    expect(validateTextAnchor('AAA CCC\n', anchor)).toEqual({ valid: true })
+    // A 自己变了 → 失效
+    expect(validateTextAnchor('AAX BBB\n', anchor)?.valid).toBe(false)
+    // 前面插入内容 → 坐标变化 → 失效
+    expect(validateTextAnchor('前缀 AAA BBB\n', anchor)?.valid).toBe(false)
+    // 原位置被删、别处有同样文字 → 失效
+    expect(validateTextAnchor('XXX BBB\n\nAAA\n', anchor)?.valid).toBe(false)
+  })
+
+  it('同一代码块只固定 const：未选中后缀变化仍保留', async () => {
+    const body = '```js\nconst a = 1\n```\n'
+    const { view, deps } = await setup(body)
+    const payload = captureVisualSelection(view, {
+      ...deps,
+      codeMirror: () => ({ text: 'const', ranges: 1, blockPosition: 0, from: 0, to: 5 })
+    })
+    const anchor = payload.anchor as PinnedSelectionAnchor
+    expect(anchor.ranges?.length).toBe(1)
+    expect(validateTextAnchor(body, anchor)).toEqual({ valid: true })
+    // 选区后面的 ` a = 1` 改成别的：保留
+    expect(validateTextAnchor('```js\nconst b = 2\n```\n', anchor)).toEqual({ valid: true })
+    // 选区内部变了：失效
+    expect(validateTextAnchor('```js\nXonst a = 1\n```\n', anchor)?.valid).toBe(false)
+  })
+
+  it('跨段落固定：同视图内第二段变化也失效（可视化判据）', async () => {
+    const body = 'AAA\n\nBBB\n'
+    const { view, deps } = await setup(body)
+    const from = selectText(view, 'AAA').from
+    const to = selectText(view, 'BBB').to
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, to)))
+    const payload = captureVisualSelection(view, deps)
+    const anchor = payload.anchor as PinnedSelectionAnchor
+    expect(validateVisualAnchor(view, anchor, payload.selectedText, deps)).toEqual({ valid: true })
+    const second = view.state.doc.textContent.indexOf('BBB')
+    view.dispatch(view.state.tr.insertText('X', second + 1))
+    expect(validateVisualAnchor(view, anchor, payload.selectedText, deps)?.valid).toBe(false)
+  })
+})
 
 describe('位置判据（跨视图 / 磁盘复核）', () => {
   const anchor: PinnedSelectionAnchor = {
@@ -177,16 +252,18 @@ describe('可视化判据（同视图内）', () => {
     expect(validateVisualAnchor(view, anchor, 'const', withCode(null))).toBeNull()
   })
 
-  it('位置锚（序列化偏移）随文档前部插入而失效', async () => {
-    const { view, deps } = await setup('AAA\n\nBBB\n')
+  it('位置锚落在笔记源码文本的坐标系里（不是序列化结果）', async () => {
+    const body = '# 标题\n\nAAA\n\nBBB\n'
+    const { view, deps } = await setup(body)
     selectText(view, 'AAA')
     const { anchor } = pinAnchor(view, deps)
-    const range = anchor.textRange!
-    const text = deps.serializeDocument(view.state.doc)
-    expect(text.slice(range.startOffset, range.endOffset)).toBe(range.expected)
+    const range = anchor.ranges![0]!
+    // 锚点直接能在**源码文本**上取到那段文字
+    expect(body.slice(range.startOffset, range.endOffset)).toBe(range.expected)
+    expect(range.expected).toBe('AAA')
 
-    view.dispatch(view.state.tr.insertText('新段落。\n\n', 1))
-    const shifted = deps.serializeDocument(view.state.doc)
+    // 在文档最前面插入一整段：每个范围都后移 → 失效
+    const shifted = `新段落。\n\n${body}`
     expect(validateTextAnchor(shifted, anchor)?.valid).toBe(false)
   })
 })
