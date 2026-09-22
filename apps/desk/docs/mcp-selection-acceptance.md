@@ -24,7 +24,7 @@ cd /Users/huyouda/tnotesjs/tnotes
 
 # 门禁
 pnpm --filter desk lint          # 0 error / 41 warning（与改动前同量级）
-pnpm --filter desk test          # 188 files / 1720 tests passed
+pnpm --filter desk test          # 194 files / 1745 tests passed
 pnpm --filter desk typecheck     # 0 error
 pnpm --filter desk build
 pnpm format:check                # All matched files use Prettier code style
@@ -99,6 +99,63 @@ node apps/desk/scripts/run-e2e.mjs --only mcp         # 2/2 套件（走 runner�
 | 3   | 选区超限时只拒绝本次上报、**旧快照原样保留**                                                     | 工具把上一次的选区当成「当前选区」返回（静默给出过期内容）         | `selectionService.test.ts` 超限用例 + E2E 大选区用例      |
 | 4   | raw 块类型只有粗分类（`raw-block:raw-container`）                                                | Agent 分不清「代码组」「思维导图」，等于没有类型信息               | `visualSelection.test.ts` 细分类型用例 + E2E 2 项         |
 | 5   | 选区上报桥缺失时直接解引用 `window.desk.selection`                                               | 单测 / 非 Electron 环境下 mounted 抛异常，整组用例失败             | `MarkdownSourceEditor.test.ts` 14 项恢复全绿              |
+
+## 四之三、本轮五项需求（固定上下文 / 当前笔记工具 / 两态视图）
+
+### 1. 固定选区上下文（临时固定，不持久化）
+
+- **实现**：主进程 `main/context/pinnedContextService.ts`（与 MCP 协议层分离）+ 渲染端
+  `renderer/src/context/pinnedContextStore.ts` 与全局状态条 `PinnedContextBar.vue`；
+  触发入口是正文选区右键菜单（Monaco 自带菜单 + 可视化自定义菜单）、`⌘K P`、命令面板。
+- **证据**：`pinnedContextService.test.ts` 10 条（快照/替换/拒绝与保留/校验失效/旧 pinId 竞态/
+  显式解除/来源删除/磁盘复核/广播）；`tabShortcuts.test.ts` +2（`⌘K P`、`⌘K V` 映射）；
+  E2E `e2e-mcp-pinned-context.mjs` **26/26** 走真实 MCP 协议，逐条对应验收清单：
+  固定 A→选 B 仍返回 A、切标签/分组/失焦仍返回 A、多次调用不消费、改 A 文字失效、
+  在 A 前插入（坐标变化）失效、改 A 后方保留、外部改文件按磁盘复核失效、
+  切视图不失效、代码块可固定、超限拒绝、状态条查看/解除、关同笔记另一份标签保留、
+  关来源标签失效、固定与 `get_current_note` 相互独立。
+- **限制（如实说明）**：可视化视图的锚点是 PM 文档位置 + 块 Markdown（不伪造源码坐标），
+  因此**切到另一个视图时**用的是"固定时那段文字仍能在当前文档里找到"的内容级兜底；
+  无法可靠校验的选区（多选区、落在块之间）直接拒绝固定，不静默给过期上下文。
+- **快捷键的验证方式**：`⌘K P` / `⌘K V` 的按键映射由 `tabShortcuts.test.ts` 覆盖；
+  E2E 里走的是同一入口的命令面板（Playwright 的合成按键走 CDP，到不了 Electron 的
+  `before-input-event`，端到端无法验物理按键）。
+
+### 2. `get_current_note`（当前活动笔记）
+
+- **实现**：主进程 `main/context/activeNoteService.ts` + `renderer/src/context/activeNoteReporter.ts`；
+  MCP 工具 `get_current_note`；只保存定位信息，不做文件读写。
+- **证据**：`activeNoteService.test.ts` 7 条 + `main/ipc/context.test.ts` 3 条；
+  E2E `e2e-mcp-current-note.mjs` **14/14**：笔记返回绝对路径、失焦仍可读、切笔记、
+  多分组只认活动分组的活动标签、非笔记标签（知识库设置）返回 `no_focused_note`、
+  关闭活动标签后不返回旧路径、未保存标记、调用不写文件（字节与 mtime 不变）。
+- **另**：固定甲、活动笔记乙时 `get_current_note` 返回乙（见 pin E2E）。
+
+### 3. 移除只读阅读视图
+
+- `NoteViewMode` 只剩 `visual | source`；工具栏入口、格式禁用分支、采集来源
+  `SelectionCollector`、设置里的默认视图、IPC/MCP 契约里的枚举一并删除；
+  旧会话里存的 `readonly` 由 `sanitizeLayout` 迁移到 `visual`。
+- **「文件不可写」的只读保护保留**：编辑器只看 `props.readOnly`。
+  新增 E2E `e2e-note-readonly.mjs` **8/8**（用"知识库 error 诊断 → 文档 readOnly"制造不可写）：
+  可视化与源码视图都不可编辑、格式工具条禁用、按键不改磁盘、只读不锁视图切换。
+- 相关 E2E 已同步：`e2e-note-header`（两态开关 + 行布局）、`e2e-empty-break-deletion` /
+  `e2e-clear-line-styles` / `e2e-image-chrome` / `e2e-typography` 去掉只读视图用例。
+
+### 4. 两态整体开关
+
+- 两个图标（可视化 / 源码）点任意一个都切到另一个；滑块高亮跟随当前视图（150ms 位移 + 淡入，
+  尊重 `prefers-reduced-motion`）；提示文案按"接下来会发生什么"写；新增 `⌘K V`。
+- **证据**：`NoteTabPane.test.ts` 新增 2 条（点自己那侧也切走、高亮/滑块跟随、只读下格式禁用）；
+  `e2e-note-header.mjs` 端到端验"点任意一个都切 + 高亮/滑块跟随 + 切一次只切一次"。
+- 切换保护沿用原逻辑（未保存草稿时拒绝切并说明原因，单测既有 4 条仍绿）。
+
+### 5. 缩小大视口下工具栏组间空白
+
+- 根因：`.format-overflow` 是 `flex: 1` + `justify-content: center`，视口越宽，
+  视图开关与「正文」之间就多出"它分到的自由空间的一半"；空白改由右端布局开关吸收。
+- **证据**：`e2e-note-header.mjs` 断言工具条五块同一行、左右顺序、右侧贴边
+  （`toolbar.right - layout.right < 20`），并在 1600×1000 与窄分栏下跑通。
 
 ## 四之二、复核后修掉的两个 P1（本轮新增）
 
@@ -184,12 +241,19 @@ ProseMirror / CodeMirror 视图（`Cannot read properties of undefined (reading 
 
 ## 六、未验证边界（如实列出）
 
-1. **真实客户端联调（阶段 C）**：未安装 / 未配置任何实际客户端，因此
-   「客户端能否解析配置、能否带自定义请求头、初始化后能否稳定调用」尚未验证。
-   计划（需授权后执行）：在本机已安装的 MCP 客户端里配置 `http://127.0.0.1:39217/mcp` +
-   Bearer 令牌，实跑「用户提到当前选区 → 调用工具 → 转述结果」；
-   至少一个是真实 Agent 客户端，另一个可以是只读探测工具；只读盘点客户端清单不需要授权。
+1. **真实客户端联调（阶段 C）仍然没做**：本机只读盘点结果是 ——
+   **Cursor.app 已安装**，且 `~/.cursor/mcp.json` 里已经有一条
+   `tnotes-desk`（`url: http://127.0.0.1:39217/mcp`，**没有 Authorization 头**），
+   按现在的鉴权它只会拿到 401；`~/.claude.json` 的 `mcpServers` 为空；
+   `~/.codex/config.toml` 有 `[mcp_servers]` 段但没有本服务的条目。
+   **要完成这一项需要用户授权修改客户端配置**（在 `~/.cursor/mcp.json` 的 `tnotes-desk`
+   上补 `headers.Authorization: Bearer <Desk 设置里复制的令牌>`，必要时补
+   `"type": "streamable-http"`），然后在 Cursor 里实跑
+   「提到 Desk 当前选区 / 当前笔记 → 调用工具 → 转述结果」；
+   只读盘点不需要授权，写入客户端配置需要授权，因此**本轮未做**，单列待验。
+   官方 SDK 客户端 + 裸 HTTP 的协议测试**不能**替代这一项。
 2. **源码视图多光标（多处选区）**：只有单测覆盖（`getSelections()` 分支）；E2E 没有触发真实多光标。
+   固定上下文同理：多选区会被**拒绝固定**（有单测与实现），但没有真实多光标的端到端用例。
 3. **只读视图（`viewMode: readonly`）的选区**：采集路径同可视化，但未在真实界面单独验。
 4. **非正文输入的其它形态**：只验了侧栏搜索框；图片描述框、callout 标题输入框等按设计不触发
    （不在 `.milkdown` 里、也不是 CM 焦点），未逐个真实界面验证。
@@ -200,6 +264,13 @@ ProseMirror / CodeMirror 视图（`Cannot read properties of undefined (reading 
 8. **Windows / Linux**：未验（本轮只在 macOS）；服务本身与平台无关，但凭据存储与打包差异未测。
 9. **端口占用后的客户端侧表现**：Desk 侧文案明确（不偷偷换端口），客户端如何报错未验。
 10. **令牌轮换后的客户端重连**：Desk 侧旧令牌 401 + 旧会话断开已验证；客户端重连行为未验。
+11. **固定上下文的快捷键**：物理按键（`⌘K P` / `⌘K V`）只能由 `tabShortcuts.test.ts` 钉住映射；
+    E2E 无法驱动 Electron 的 `before-input-event`（Playwright 合成按键走 CDP），
+    端到端只验到"命令 → 活动标签页固定/切换"这一段。
+12. **可视化锚点的跨视图校验**：切到另一个视图后用内容级兜底（"那段文字还能找到"），
+    不是 PM 位置级校验；重复文本等极端情况可能漏判。
+13. **`get_current_note` 与外部工具的真实联调**：只验到 MCP 协议层；真实 Agent 客户端读路径后
+    自己改文件的链路未验（本服务本身不写文件）。
 
 ## 七、工作约定遵循情况
 
