@@ -460,7 +460,13 @@ export interface WorkspaceOverview {
   allKnowledgeBases: KnowledgeBaseDescriptor[]
 }
 
-export type NoteViewMode = 'visual' | 'readonly' | 'source'
+/**
+ * 笔记视图：只保留**可视化编辑**与**源码**两态。
+ *
+ * 旧的只读阅读视图已移除（恢复旧会话时由 `sanitizeLayout` 迁移到 `visual`）；
+ * 「文件不可写」的只读保护由编辑器自身的 `readOnly` 承担，与视图模式无关。
+ */
+export type NoteViewMode = 'visual' | 'source'
 export type NotePageWidth = 'standard' | 'wide'
 export type NoteTocDisplay = 'hidden' | 'collapsed' | 'expanded'
 export type TabCloseChoice = 'save' | 'discard' | 'cancel'
@@ -1626,8 +1632,8 @@ export interface ExternalNoteChangeEvent {
 export type SelectionStatus =
   'ok' | 'no_selection' | 'unsupported_selection' | 'selection_invalidated' | 'context_too_large'
 
-/** 采集来源：源码视图（Monaco）/ 可视化视图（ProseMirror）/ 只读视图。 */
-export type SelectionCollector = 'source' | 'visual' | 'readonly'
+/** 采集来源：源码视图（Monaco）/ 可视化视图（ProseMirror）。 */
+export type SelectionCollector = 'source' | 'visual'
 
 /** 内容来自编辑器草稿还是磁盘上已保存的版本。 */
 export type SelectionContentSource = 'draft' | 'disk'

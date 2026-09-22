@@ -107,6 +107,8 @@ function sanitizeLayout(
           ? {
               preview: Boolean(tab.preview),
               dirty: Boolean(tab.dirty),
+              // 旧会话可能存着已移除的 `readonly` 视图：迁移到可视化，别让标签页打不开
+              viewMode: tab.viewMode === 'source' ? ('source' as const) : ('visual' as const),
               pageWidth:
                 tab.pageWidth === 'standard' || tab.pageWidth === 'wide'
                   ? tab.pageWidth

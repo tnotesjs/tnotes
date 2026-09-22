@@ -216,8 +216,8 @@ describe('MilkdownMarkdownEditor synchronization', () => {
     wrapper.unmount()
   })
 
-  it('treats the readonly view mode as effectively read-only', async () => {
-    const wrapper = await mountEditor('alpha\n', { mode: 'readonly', readOnly: false })
+  it('is effectively read-only while the file is not writable', async () => {
+    const wrapper = await mountEditor('alpha\n', { readOnly: true })
     const editor = wrapper.vm as unknown as EditorHandle
 
     expect(wrapper.get('.ProseMirror').attributes('contenteditable')).toBe('false')
@@ -227,7 +227,7 @@ describe('MilkdownMarkdownEditor synchronization', () => {
 
     expect(wrapper.emitted('change')).toBeUndefined()
     expect(wrapper.get('.ProseMirror').text()).toContain('external')
-    await wrapper.setProps({ mode: 'visual' })
+    await wrapper.setProps({ readOnly: false })
     await vi.waitFor(() =>
       expect(wrapper.get('.ProseMirror').attributes('contenteditable')).toBe('true')
     )
@@ -236,7 +236,7 @@ describe('MilkdownMarkdownEditor synchronization', () => {
 
   it('blocks edits to empty paragraphs while readonly', async () => {
     const source = 'before\n\n<br />\n\nafter\n'
-    const wrapper = await mountEditor(source, { mode: 'readonly' })
+    const wrapper = await mountEditor(source, { readOnly: true })
 
     expect(wrapper.get('.milkdown-markdown-editor').classes()).toContain('is-readonly')
     expect(wrapper.findAll('[data-type="desk-raw-block"]')).toHaveLength(0)
@@ -323,7 +323,7 @@ describe('MilkdownMarkdownEditor synchronization', () => {
   })
 
   it('opens a fullscreen preview on image click in readonly mode without a selected state', async () => {
-    const wrapper = await mountEditor('![](https://example.com/a.png)\n', { mode: 'readonly' })
+    const wrapper = await mountEditor('![](https://example.com/a.png)\n', { readOnly: true })
     const requests: Event[] = []
     const onPreview = (event: Event): void => {
       requests.push(event)
@@ -341,7 +341,7 @@ describe('MilkdownMarkdownEditor synchronization', () => {
   })
 
   it('opens links directly in readonly mode and requires a modifier while editing', async () => {
-    const readonly = await mountEditor('[Open](https://example.com)\n', { mode: 'readonly' })
+    const readonly = await mountEditor('[Open](https://example.com)\n', { readOnly: true })
     await readonly.get('.ProseMirror a').trigger('click')
     expect(readonly.emitted<string[]>('openLink')).toEqual([['https://example.com']])
     readonly.unmount()

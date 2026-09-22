@@ -124,10 +124,10 @@ describe('container inline source editor', () => {
     wrapper.unmount()
   })
 
-  it('keeps tip body when switching to readonly after visual typing', async () => {
+  it('keeps tip body when switching to read-only after visual typing', async () => {
     const wrapper = await mountEmptyTip()
     await typeTipBody(wrapper, '**333**')
-    await wrapper.setProps({ mode: 'readonly' })
+    await wrapper.setProps({ readOnly: true })
     await vi.waitFor(() => {
       expect(wrapper.emitted<string[]>('change')?.at(-1)?.[0]).toContain('**333**')
     })
@@ -481,7 +481,7 @@ describe('container inline source editor', () => {
     await wrapper.find('.desk-raw-block__edit').trigger('click')
     expect(wrapper.find('.desk-raw-block__editor-cm .cm-editor').exists()).toBe(true)
 
-    await wrapper.setProps({ mode: 'readonly' })
+    await wrapper.setProps({ readOnly: true })
     await vi.waitFor(() => {
       expect(wrapper.find('.desk-raw-block__editor').isVisible()).toBe(false)
     })

@@ -202,8 +202,13 @@ try {
     '✓ headings, body, bold and italic actually render bundled Inter (not a system fallback)'
   )
 
-  for (const mode of ['可视化编辑', '只读视图']) {
-    await page.getByRole('button', { name: mode, exact: true }).click()
+  for (const mode of ['可视化编辑']) {
+    // 两态视图是整体开关：当前不是目标视图才点（点任意一个图标都会切走）
+    const current = await page
+      .locator('.view-switcher button.active')
+      .first()
+      .getAttribute('aria-label')
+    if (current !== mode) await page.getByRole('button', { name: mode, exact: true }).click()
     await pm.waitFor()
     const styles = await pm.evaluate((element) => {
       const read = (selector) => {

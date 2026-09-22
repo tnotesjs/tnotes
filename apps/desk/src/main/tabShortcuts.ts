@@ -65,6 +65,9 @@ export class TabShortcutResolver {
           command: input.shift ? 'toggle-pin-active-tab' : 'keep-active-tab-open'
         }
       }
+      if (!input.alt && !input.shift && key === 'v') {
+        return { handled: true, command: 'toggle-note-view' }
+      }
     } else {
       this.chordExpiresAt = 0
     }

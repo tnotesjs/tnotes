@@ -174,7 +174,7 @@ const blockActionMenu = ref<BlockActionMenuState | null>(null)
 let addBelowMenuOpened = false
 
 function isEffectivelyReadOnly(): boolean {
-  return props.readOnly || props.mode === 'readonly'
+  return props.readOnly
 }
 
 /** 当前笔记的文档会话（剪贴板归属判断与相对路径都要用）。 */

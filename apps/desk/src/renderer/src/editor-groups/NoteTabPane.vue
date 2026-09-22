@@ -16,6 +16,7 @@ import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
 
 import { registerHeadingFoldRunner } from '../commands/headingFoldBridge'
+import { registerViewToggleRunner } from '../commands/viewToggleBridge'
 import { writeClipboardText } from '../clipboardText'
 import {
   clearSelection,
@@ -88,9 +89,7 @@ const session = computed(() =>
  */
 const showNoteDone = computed(() => workspace.settings?.toc?.showNoteStatus !== false)
 const noteDone = computed(() => session.value?.document.config.done === true)
-const noteDoneDisabled = computed(
-  () => Boolean(session.value?.document.readOnly) || props.tab.viewMode === 'readonly'
-)
+const noteDoneDisabled = computed(() => Boolean(session.value?.document.readOnly))
 
 async function toggleNoteDone(): Promise<void> {
   if (!session.value) return
@@ -152,7 +151,6 @@ const renaming = ref(false)
 const headingLevel = ref<number | null>(null)
 const formatDisabled = computed(() => {
   if (!session.value?.document || session.value.document.readOnly) return true
-  if (props.tab.viewMode === 'readonly') return true
   return props.tab.viewMode !== 'source' && milkdownFailed.value
 })
 /**
@@ -206,12 +204,7 @@ const selectionIdentity = computed<SelectionReportIdentity | null>(() => {
   const document = session.value?.document
   const kb = workspace.knowledgeBase
   if (!document || !kb || kb.id !== props.tab.knowledgeBaseId) return null
-  const collector =
-    props.tab.viewMode === 'source'
-      ? 'source'
-      : props.tab.viewMode === 'readonly'
-        ? 'readonly'
-        : 'visual'
+  const collector = props.tab.viewMode === 'source' ? 'source' : 'visual'
   return {
     knowledgeBase: { id: kb.id, name: kb.displayName || kb.name, rootPath: kb.rootPath },
     note: { id: document.uuid, title: document.title, absolutePath: document.filePath },
@@ -293,8 +286,19 @@ watch(
   { immediate: true }
 )
 
+// 视图开关（⌘K V）的执行者：活动标签页登记自己的 toggleMode（含草稿保护）
+watch(
+  () => props.active,
+  () => {
+    if (!props.active) return
+    registerViewToggleRunner(toggleMode)
+  },
+  { immediate: true }
+)
+
 onUnmounted(() => {
   if (props.active) registerHeadingFoldRunner(null)
+  if (props.active) registerViewToggleRunner(null)
   if (isActiveEditor.value) invalidateSelection(selectionOwner.value, '关闭了笔记标签')
 })
 
@@ -338,6 +342,21 @@ function onTitleKeydown(event: KeyboardEvent): void {
 onMounted(() => {
   void workspace.ensureDocument(props.tab.knowledgeBaseId, props.tab.noteUuid)
 })
+
+/**
+ * 视图开关的提示：点**任意**一个图标都会切到"另一个视图"，
+ * 所以两个图标的提示都按"接下来会发生什么"来写（而不是按"这个图标是什么"）。
+ */
+const viewToggleHint = computed(() =>
+  props.tab.viewMode === 'source'
+    ? '切换到可视化编辑（⌘K V）· 当前：源码视图'
+    : '切换到源码视图（⌘K V）· 当前：可视化编辑'
+)
+
+/** 整体开关：当前是可视化就切源码，当前是源码就切可视化 */
+function toggleMode(): void {
+  setMode(props.tab.viewMode === 'source' ? 'visual' : 'source')
+}
 
 function setMode(mode: NoteViewMode): void {
   if (mode === props.tab.viewMode) return
@@ -611,12 +630,17 @@ function openLink(url: string): void {
       </div>
       <!-- 视图切换与格式工具栏合成一组：切换在**左**，中间一条竖线隔开 -->
       <div class="view-switcher" aria-label="笔记视图">
-        <UiTooltip label="可视化编辑">
+        <!--
+          两个图标是**一个整体开关**：点哪一个都切到"另一个视图"。
+          滑块（thumb）滑到当前视图一侧，动画只做位移/淡入，不动编辑区布局。
+        -->
+        <UiTooltip :label="viewToggleHint">
           <button
             type="button"
             aria-label="可视化编辑"
+            data-testid="view-visual"
             :class="{ active: tab.viewMode === 'visual' }"
-            @click="setMode('visual')"
+            @click="toggleMode()"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="m4 20 4.2-1 10.6-10.6a2.1 2.1 0 0 0-3-3L5.2 16 4 20Z" />
@@ -624,31 +648,24 @@ function openLink(url: string): void {
             </svg>
           </button>
         </UiTooltip>
-        <UiTooltip label="只读视图">
-          <button
-            type="button"
-            aria-label="只读视图"
-            :class="{ active: tab.viewMode === 'readonly' }"
-            @click="setMode('readonly')"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 5.5A3.5 3.5 0 0 1 7.5 4H11v16H7.5A3.5 3.5 0 0 0 4 21V5.5Z" />
-              <path d="M20 5.5A3.5 3.5 0 0 0 16.5 4H13v16h3.5A3.5 3.5 0 0 1 20 21V5.5Z" />
-            </svg>
-          </button>
-        </UiTooltip>
-        <UiTooltip label="源码视图">
+        <UiTooltip :label="viewToggleHint">
           <button
             type="button"
             aria-label="源码视图"
+            data-testid="view-source"
             :class="{ active: tab.viewMode === 'source' }"
-            @click="setMode('source')"
+            @click="toggleMode()"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="m8.5 7-5 5 5 5M15.5 7l5 5-5 5M13.5 4l-3 16" />
             </svg>
           </button>
         </UiTooltip>
+        <span
+          class="view-switcher__thumb"
+          :class="{ 'is-source': tab.viewMode === 'source' }"
+          aria-hidden="true"
+        />
       </div>
       <span class="view-divider" aria-hidden="true"></span>
 
@@ -1073,12 +1090,40 @@ function openLink(url: string): void {
 }
 
 .view-switcher {
+  position: relative;
   flex: none;
   display: flex;
   align-items: center;
   border-radius: 6px;
   padding: 2px;
   gap: 1px;
+  background: var(--hover);
+}
+
+/* 滑动高亮：只动它自己，编辑区不参与动画（避免切换时整屏跳动） */
+.view-switcher__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 25px;
+  border-radius: 5px;
+  background: var(--selected);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-strong) 24%, transparent);
+  transition:
+    transform 150ms ease,
+    opacity 150ms ease;
+  pointer-events: none;
+}
+
+.view-switcher__thumb.is-source {
+  transform: translateX(28px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-switcher__thumb {
+    transition: none;
+  }
 }
 
 /* 布局开关（页宽 / 目录 / 资源）的容器：**始终展示** —— 原先窄面板（<=1080px）会把
@@ -1160,8 +1205,16 @@ function openLink(url: string): void {
 
 .view-switcher button.active,
 .outline-toggle.active {
-  background: var(--selected);
   color: var(--accent-strong);
+}
+
+.view-switcher button {
+  position: relative;
+  z-index: 1;
+}
+
+.outline-toggle.active {
+  background: var(--selected);
 }
 
 .outline-toggle svg {

@@ -412,17 +412,8 @@ try {
     .evaluate((element) => element.style.width)
   assert.match(resized, /px$/, `expected pixel width after drag, got "${resized}"`)
 
-  await page.getByRole('button', { name: '只读视图', exact: true }).click()
-  const readonlyLarge = page.locator('.milkdown .ProseMirror figure.desk-image').nth(0)
-  await readonlyLarge.locator('img').click()
-  await page.locator('.tn-image-preview').waitFor()
-  await page.screenshot({ path: join(shots, '06-readonly-preview.png') })
-  await page.keyboard.press('Escape')
-  await page.locator('.tn-image-preview').waitFor({ state: 'detached' })
-  assert.equal(await visible(readonlyLarge.locator('.desk-image__chrome')), false)
-  assert.equal(await visible(readonlyLarge.locator('.desk-image__handle--br')), false)
-
-  await page.getByRole('button', { name: '可视化编辑', exact: true }).click()
+  // 只读阅读视图已移除；只读状态下的图片"无工具条、点开预览"改由单测覆盖
+  // （MilkdownMarkdownEditor.test.ts 的 readOnly 用例），真实界面的只读保护见 e2e-note-readonly。
   await page.keyboard.press('ControlOrMeta+s')
   await page.waitForTimeout(300)
   const saved = readFileSync(noteFile, 'utf8')

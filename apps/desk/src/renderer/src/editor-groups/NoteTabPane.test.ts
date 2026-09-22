@@ -131,7 +131,7 @@ describe('note header', () => {
         .get('.view-switcher')
         .findAll('button')
         .map((button) => button.attributes('aria-label'))
-    ).toEqual(['可视化编辑', '只读视图', '源码视图'])
+    ).toEqual(['可视化编辑', '源码视图'])
     expect(
       wrapper
         .get('.layout-controls')
@@ -155,14 +155,52 @@ describe('note header', () => {
     await wrapper.setProps({ tab: { ...tab, outlineVisible: false } })
     expect(wrapper.get('.outline-toggle').classes()).not.toContain('active')
     expect(wrapper.get('.outline-toggle').attributes('aria-label')).toBe('显示目录')
-    for (const viewMode of ['source', 'readonly', 'visual'] as const) {
+    for (const viewMode of ['source', 'visual'] as const) {
       await wrapper.setProps({ tab: { ...tab, viewMode } })
       const bar = wrapper.getComponent(FormatOverflowBar)
       expect(bar.exists()).toBe(true)
-      expect(bar.props('disabled')).toBe(viewMode === 'readonly')
+      expect(bar.props('disabled')).toBe(false)
       expect(wrapper.find('.layout-controls').exists()).toBe(true)
       expect(wrapper.find('.save-button').exists()).toBe(false)
     }
+    wrapper.unmount()
+  })
+
+  it('两个图标是一个整体开关：点任意一个都切到另一个视图，高亮跟随当前视图', async () => {
+    const { wrapper, editor } = setup()
+    const view = vi.spyOn(editor, 'setNoteViewMode')
+
+    // 当前可视化：点"可视化"图标也切到源码
+    await wrapper.get('[data-testid="view-visual"]').trigger('click')
+    expect(view).toHaveBeenLastCalledWith('tab-a', 'source')
+    // 当前可视化：点"源码"图标同样切到源码
+    await wrapper.get('[data-testid="view-source"]').trigger('click')
+    expect(view).toHaveBeenLastCalledWith('tab-a', 'source')
+    expect(view).toHaveBeenCalledTimes(2)
+
+    // 当前源码：点任意一个都切回可视化
+    await wrapper.setProps({ tab: { ...tab, viewMode: 'source' } })
+    await wrapper.get('[data-testid="view-source"]').trigger('click')
+    expect(view).toHaveBeenLastCalledWith('tab-a', 'visual')
+    await wrapper.get('[data-testid="view-visual"]').trigger('click')
+    expect(view).toHaveBeenLastCalledWith('tab-a', 'visual')
+    expect(view).toHaveBeenCalledTimes(4)
+
+    // 高亮与滑块位置跟随当前视图
+    await wrapper.setProps({ tab: { ...tab, viewMode: 'visual' } })
+    expect(wrapper.get('[data-testid="view-visual"]').classes()).toContain('active')
+    expect(wrapper.get('[data-testid="view-source"]').classes()).not.toContain('active')
+    expect(wrapper.get('.view-switcher__thumb').classes()).not.toContain('is-source')
+    await wrapper.setProps({ tab: { ...tab, viewMode: 'source' } })
+    expect(wrapper.get('[data-testid="view-source"]').classes()).toContain('active')
+    expect(wrapper.get('[data-testid="view-visual"]').classes()).not.toContain('active')
+    expect(wrapper.get('.view-switcher__thumb').classes()).toContain('is-source')
+    wrapper.unmount()
+  })
+
+  it('只读文档仍然禁用格式操作（与视图模式无关）', async () => {
+    const { wrapper } = setup(true)
+    expect(wrapper.getComponent(FormatOverflowBar).props('disabled')).toBe(true)
     wrapper.unmount()
   })
 

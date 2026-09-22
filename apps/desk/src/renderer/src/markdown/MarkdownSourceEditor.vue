@@ -100,7 +100,7 @@ function reloadWindow(): void {
   window.location.reload()
 }
 
-const isEffectivelyReadOnly = (): boolean => props.readOnly || props.mode === 'readonly'
+const isEffectivelyReadOnly = (): boolean => props.readOnly
 
 function model(): MonacoApi.editor.ITextModel | null {
   return editor?.getModel() ?? null

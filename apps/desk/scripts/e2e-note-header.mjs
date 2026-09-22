@@ -44,6 +44,19 @@ const app = await _electron.launch({
   env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true' }
 })
 
+/**
+ * 两态视图是整体开关：点任意一个图标都会切到"另一个视图"。
+ * 需要"确保在某个视图"时，先看高亮，只有当前不是目标才点一次。
+ */
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+async function ensureView(page, mode) {
+  const current = await page
+    .locator('.view-switcher button.active')
+    .first()
+    .getAttribute('aria-label')
+  if (current !== mode) await page.getByRole('button', { name: mode, exact: true }).click()
+}
+
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 async function waitUntil(predicate) {
   const deadline = Date.now() + 10000
@@ -67,8 +80,15 @@ try {
   await pm.waitFor()
   const title = page.getByRole('button', { name: '重命名笔记', exact: true })
   const input = page.getByRole('textbox', { name: '笔记名称', exact: true })
-  for (const mode of ['可视化编辑', '只读视图', '源码视图']) {
-    await page.getByRole('button', { name: mode, exact: true }).click()
+  for (const mode of ['可视化编辑', '源码视图']) {
+    // 两态是**一个整体开关**：进入目标视图要先确保当前不是它
+    const current = await page
+      .locator('.view-switcher button.active')
+      .first()
+      .getAttribute('aria-label')
+    if (current !== mode) {
+      await page.getByRole('button', { name: mode, exact: true }).click()
+    }
     assert.equal(await page.locator('.note-pane .save-button').count(), 0)
     // 标题行从左到右固定是：标题 | 视图切换 | 竖线 | 格式工具条 | 布局开关。
     // 布局开关**始终展示**（原先窄面板会整组连竖线一起隐藏），所以四块都要可见；
@@ -111,13 +131,38 @@ try {
     const formatDisabled = await formatBar
       .first()
       .evaluate((node) => node.classList.contains('format-overflow--disabled'))
-    assert.equal(formatDisabled, mode === '只读视图')
+    // 两态都不再是"只读"：文件不可写时才禁用格式（另有 e2e-note-readonly 覆盖）
+    assert.equal(formatDisabled, false)
     if (mode === '可视化编辑') {
       const format = await formatBar.first().boundingBox()
       assert.ok(format.width > 0)
     }
+    // 高亮与滑块位置跟当前视图一致
+    assert.equal(
+      await page.locator('.view-switcher button.active').first().getAttribute('aria-label'),
+      mode
+    )
+    assert.equal(
+      await page
+        .locator('.view-switcher__thumb')
+        .evaluate((node) => node.classList.contains('is-source')),
+      mode === '源码视图'
+    )
     await page.screenshot({ path: join(shots, `${mode}.png`) })
   }
+
+  // 整体开关：点"自己那一侧"的图标也会切到另一个视图
+  await page.getByRole('button', { name: '可视化编辑', exact: true }).click() // 源码 → 可视化
+  await pm.waitFor({ timeout: 20000 })
+  await page.getByRole('button', { name: '可视化编辑', exact: true }).click() // 可视化 → 源码
+  await page.locator('.markdown-source-editor .view-lines').first().waitFor({ timeout: 20000 })
+  await page.getByRole('button', { name: '源码视图', exact: true }).click() // 源码 → 可视化
+  await pm.waitFor({ timeout: 20000 })
+  assert.equal(
+    await page.locator('.view-switcher button.active').first().getAttribute('aria-label'),
+    '可视化编辑'
+  )
+  console.log('✓ 视图开关：点任意一个图标都切到另一个视图，高亮/滑块跟随当前视图')
   console.log('✓ 标题行：路径 | 视图切换 | 格式工具条 | 布局开关 同一行，右侧贴边，无保存按钮')
   // 格式工具条内部的按钮/溢出/标题菜单/表格行为已由 FormatOverflowBar 与
   // NoteTabPane 的单测覆盖；这里的端到端只保留标题行布局、视图模式与重命名链路。
@@ -131,11 +176,11 @@ try {
   assert.equal(await title.innerText(), '概述')
   await title.click()
   await input.fill('   ')
-  await page.getByRole('button', { name: '只读视图', exact: true }).click()
+  await page.locator('.view-divider').click()
   assert.equal(await title.innerText(), '概述')
 
   // Make a real unsaved body edit, then rename on blur. Renaming must save it first.
-  await page.getByRole('button', { name: '可视化编辑', exact: true }).click()
+  await ensureView(page, '可视化编辑')
   await pm.getByText('Initial content.', { exact: true }).click()
   await page.keyboard.press('End')
   await page.keyboard.type(' KEEP-DRAFT')
@@ -144,7 +189,7 @@ try {
   await input.fill('  新的名称  ')
   await page.screenshot({ path: join(shots, 'inline-title.png') })
   assert.equal(existsSync(noteFile), true)
-  await page.getByRole('button', { name: '只读视图', exact: true }).click()
+  await page.locator('.view-divider').click()
   const renamedNoteFile = join(kb, 'notes', '0001. 新的名称.md')
   await waitUntil(() => existsSync(renamedNoteFile))
   await page.waitForFunction(
@@ -164,8 +209,8 @@ try {
     '✓ blur trims/renames the note file, TOC and tab; index/UUID and unsaved text preserved'
   )
 
-  // Rename works in readonly view too: the view mode does not lock metadata.
-  await page.getByRole('button', { name: '只读视图', exact: true }).click()
+  // 重命名与视图模式无关（元数据不被视图锁住）：在源码视图下也能改标题
+  await ensureView(page, '源码视图')
   await title.click()
   await input.fill('最终名称')
   await input.press('Enter')
@@ -174,7 +219,8 @@ try {
   await page.waitForFunction(
     () => document.querySelector('.note-title-button')?.textContent.trim() === '最终名称'
   )
-  await page.getByRole('button', { name: '可视化编辑', exact: true }).click()
+  await ensureView(page, '可视化编辑')
+  await pm.waitFor({ timeout: 20000 })
   await pm.getByText(/KEEP-DRAFT/).click()
   await page.keyboard.type(' SHORTCUT-SAVED')
   await page.waitForFunction(() => document.querySelector('.tab.is-dirty, .tab .dirty-dot'))
@@ -192,7 +238,7 @@ try {
     document.documentElement.dataset.theme = 'dark'
   })
   await page.screenshot({ path: join(shots, 'renamed-dark.png') })
-  console.log('✓ readonly-view rename via Enter, width toggle and Cmd/Ctrl+S still work')
+  console.log('✓ Enter 重命名 / 页宽开关 / Cmd+S 保存仍然正常')
 } catch (error) {
   const page = await app.firstWindow()
   await page.screenshot({ path: join(shots, 'failure.png') }).catch(() => undefined)

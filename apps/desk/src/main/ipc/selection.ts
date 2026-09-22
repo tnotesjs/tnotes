@@ -44,7 +44,7 @@ const blockSchema = z.object({
 
 const captureSchema = z
   .object({
-    collector: z.enum(['source', 'visual', 'readonly']),
+    collector: z.enum(['source', 'visual']),
     empty: z.boolean(),
     // 传输上限：真正的语义上限（20k / 60k / 20）在 selectionService 里统一判定
     selectedText: z.string().max(SELECTION_TRANSPORT_LIMITS.maxSelectedTextChars).optional(),
@@ -77,7 +77,7 @@ const reportSchema = z.object({
     absolutePath: z.string().min(1)
   }),
   editor: z.object({
-    viewMode: z.enum(['visual', 'readonly', 'source']),
+    viewMode: z.enum(['visual', 'source']),
     contentSource: z.enum(['draft', 'disk']),
     hasUnsavedChanges: z.boolean(),
     revision: z.string()

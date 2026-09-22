@@ -31,7 +31,7 @@ const settingsSchema = z.object({
   version: z.literal(1).default(1),
   theme: z.enum(['system', 'light', 'dark']).default('system'),
   density: z.enum(['compact', 'comfortable']).default('comfortable'),
-  defaultNoteView: z.enum(['visual', 'readonly', 'source']).default('visual'),
+  defaultNoteView: z.enum(['visual', 'source']).default('visual'),
   defaultNotePageWidth: z.enum(['standard', 'wide']).default('standard'),
   noteTocDisplay: z.enum(['hidden', 'collapsed', 'expanded']).default('expanded'),
   headingNumberMaxDepth: z

@@ -62,7 +62,6 @@ async function checkNow(): Promise<void> {
         <span>笔记默认视图</span>
         <select v-model="draft.defaultNoteView">
           <option value="visual">可视化编辑</option>
-          <option value="readonly">只读</option>
           <option value="source">源码</option>
         </select>
       </label>

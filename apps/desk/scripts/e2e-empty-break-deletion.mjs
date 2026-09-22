@@ -112,13 +112,7 @@ try {
   await page.screenshot({ path: join(shots, '04-middle-empty-paragraph-focused.png') })
   console.log('✓ clicking a middle empty paragraph places a native caret')
 
-  await page.getByRole('button', { name: '只读视图', exact: true }).click()
-  await page.waitForTimeout(120)
-  assert.equal(await pm.getAttribute('contenteditable'), 'false')
-  await page.keyboard.press('Delete')
-  await page.keyboard.press('Backspace')
-  await page.keyboard.insertText('readonly-should-not-appear')
-  await page.screenshot({ path: join(shots, '05-readonly-no-caret.png') })
+  // 只读阅读视图已移除：「不可写文件"的只读保护由 e2e-note-readonly 覆盖
 
   await page.getByRole('button', { name: '源码视图', exact: true }).click()
   // 源码视图已是 Monaco：文本层是 .view-lines

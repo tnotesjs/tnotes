@@ -105,11 +105,7 @@ try {
   await second.locator('strong').waitFor()
   console.log('✓ visual caret / multiline shortcut clears full lines; other styles and undo work')
 
-  await page.getByRole('button', { name: '只读视图', exact: true }).click()
-  await select('first', 'second')
-  await page.keyboard.press('ControlOrMeta+Backslash')
-  assert.equal(await first.locator('strong, em, del').count(), 3)
-  assert.equal(await second.locator('strong, em, del').count(), 3)
+  // 只读阅读视图已移除；「不可写文件」下格式快捷键不动内容见 e2e-note-readonly
 
   await page.getByRole('button', { name: '源码视图', exact: true }).click()
   // 源码视图已是 Monaco：点文本层聚焦，读它的 innerText

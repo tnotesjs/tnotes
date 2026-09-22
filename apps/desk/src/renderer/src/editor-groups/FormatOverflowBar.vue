@@ -185,10 +185,15 @@ watch(
 <style scoped>
 .format-overflow {
   position: relative;
-  flex: 1 1 0;
+  /*
+   * 不抢空白、不居中：视口越宽，视图开关与「正文」下拉之间的缝就越大 —— 那段空白
+   * 其实是这里 `flex: 1` + `justify-content: center` 分到的自由空间的一半。
+   * 改成"按内容宽、靠左"，空白统一交给右端的布局开关吸收。
+   */
+  flex: 0 1 auto;
   min-width: 0;
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 /*
