@@ -447,6 +447,21 @@ export const SUITES = [
     note: '可视化块边界：特殊块后段首 Backspace / 块前段尾 Delete 先落可见光标，再按才删整块（含撤销）'
   },
   {
+    name: 'e2e-note-readonly.mjs',
+    area: 'editor',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/shared/contracts.ts',
+      'apps/desk/src/renderer/src/editor-groups/NoteTabPane.vue',
+      'apps/desk/src/renderer/src/markdown/MilkdownMarkdownEditor.vue',
+      'apps/desk/src/renderer/src/markdown/MarkdownSourceEditor.vue',
+      'apps/desk/src/main/workspace/dto.ts'
+    ],
+    serial: false,
+    smoke: false,
+    note: '不可写文件（知识库 error 诊断）的只读保护：两态视图都不可编辑、格式禁用、按键不改磁盘'
+  },
+  {
     name: 'e2e-mcp-selection.mjs',
     area: 'mcp',
     tier: 'regression',
@@ -461,6 +476,22 @@ export const SUITES = [
     serial: false,
     smoke: false,
     note: '本机 MCP 选区服务：真实 SDK 客户端 initialize/list/call、鉴权、失焦、失效、令牌轮换、端口释放'
+  },
+  {
+    name: 'e2e-mcp-current-note.mjs',
+    area: 'mcp',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/main/context/**',
+      'apps/desk/src/main/ipc/context.ts',
+      'apps/desk/src/main/mcp/**',
+      'apps/desk/src/renderer/src/context/**',
+      'apps/desk/src/renderer/src/App.vue',
+      'apps/desk/src/shared/contracts.ts'
+    ],
+    serial: false,
+    smoke: false,
+    note: '本机 MCP get_current_note：活动标签识别、多分组、失焦、非笔记标签、关闭后不返回旧路径、不触发保存'
   },
   {
     name: 'e2e-mcp-visual-selection.mjs',

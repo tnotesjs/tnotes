@@ -8,6 +8,8 @@ import type {
   SelectionClearRequest,
   SelectionReportRequest,
   SelectionStatus,
+  ActiveNoteClearRequest,
+  ActiveNoteReportRequest,
   AttachmentWriteLocalRequest,
   AttachmentWriteLocalResult,
   ExcalidrawDerivedRefDto,
@@ -432,6 +434,12 @@ const api: DeskApi = {
   clipboard: {
     setPlainText: (text: string, html?: string) =>
       invoke<{ text: string; html: string }>(IPC_CHANNELS.clipboardSetPlainText, { text, html })
+  },
+  context: {
+    reportActiveNote: (request: ActiveNoteReportRequest) =>
+      invoke<{ accepted: boolean }>(IPC_CHANNELS.contextActiveNoteReport, request),
+    clearActiveNote: (request: ActiveNoteClearRequest) =>
+      invoke<{ cleared: boolean }>(IPC_CHANNELS.contextActiveNoteClear, request)
   },
   backgroundFailures: {
     list: () => invoke<BackgroundFailureDto[]>(IPC_CHANNELS.backgroundFailureList),

@@ -8,6 +8,7 @@ import { registerExcalidraw } from './ipc/excalidraw'
 import { registerKbFiles } from './ipc/kbFiles'
 import { registerHistory } from './ipc/history'
 import { registerRecovery } from './ipc/recovery'
+import { registerContext } from './ipc/context'
 import { registerSelection } from './ipc/selection'
 import { registerSettings } from './ipc/settings'
 import { registerClipboard } from './ipc/clipboard'
@@ -33,6 +34,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): () => void {
   const offCommandTask = registerCommandTask(getWindow)
   registerClipboard(getWindow)
   registerSelection(getWindow)
+  registerContext(getWindow)
 
   return () => {
     offWorkspace()

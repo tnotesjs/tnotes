@@ -157,6 +157,9 @@ export const IPC_CHANNELS = {
   /** 渲染端显式清除（用户主动取消选区 / 关闭笔记等） */
   selectionClear: 'selection:clear',
   /** 本机 MCP 服务的状态查询与开关 */
+  /** 渲染端上报"当前活动笔记"（get_current_note 的唯一来源） */
+  contextActiveNoteReport: 'context:active-note-report',
+  contextActiveNoteClear: 'context:active-note-clear',
   mcpStatus: 'mcp:status',
   mcpSetEnabled: 'mcp:set-enabled',
   mcpRotateToken: 'mcp:rotate-token',
@@ -528,6 +531,8 @@ export type TabShortcutCommand =
   | 'close-all-tabs'
   | 'keep-active-tab-open'
   | 'toggle-pin-active-tab'
+  /** 整体切换「可视化 / 源码」视图（`⌘K V`） */
+  | 'toggle-note-view'
   | 'copy-active-note-path'
   | 'reveal-active-note-in-file-manager'
   | 'next-tab'
@@ -1780,6 +1785,46 @@ export interface SelectionClearRequest {
   generation: number
 }
 
+/* ------------------------------------------------------------------ */
+/* 当前活动笔记（get_current_note）                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * `get_current_note` 的状态。
+ *
+ * - `no_focused_note`：**调用时**活动分组里的活动标签不是笔记（网页 / 设置 / 资源 …），
+ *   或者根本没有活动笔记。此时**不回退**到上一次笔记，也不返回任何路径。
+ */
+export type ActiveNoteStatus = 'ok' | 'no_focused_note'
+
+/** 渲染端上报的活动笔记（活动分组 + 活动标签；与选区无关） */
+export interface ActiveNoteReportRequest {
+  /**
+   * 切换代次：每次「活动笔记变了」+1。主进程只接受不小于水位的上报，
+   * 并记住已结束的代次，避免关闭活动笔记后迟到的上报把旧路径放回来。
+   */
+  generation: number
+  knowledgeBase: { id: string; name: string; rootPath: string }
+  note: { id: string; title: string; absolutePath: string; relPath: string }
+  editor: { viewMode: NoteViewMode; hasUnsavedChanges: boolean }
+}
+
+export interface ActiveNoteClearRequest {
+  reason: string
+  generation: number
+}
+
+/** `get_current_note` 的返回（只给定位所需信息，不含正文） */
+export interface ActiveNoteContextDto {
+  status: ActiveNoteStatus
+  message?: string
+  /** ISO 时间戳，仅用于展示 */
+  capturedAt: string | null
+  knowledgeBase?: { id: string; name: string; rootPath: string }
+  note?: { id: string; title: string; absolutePath: string; relPath: string }
+  editor?: { viewMode: NoteViewMode; hasUnsavedChanges: boolean }
+}
+
 /** 本机 MCP 服务默认端口：固定值，客户端配置可以长期不变 */
 export const DEFAULT_MCP_PORT = 39217
 
@@ -2043,6 +2088,11 @@ export interface DeskApi {
       request: SelectionReportRequest
     ): Promise<DeskResult<{ accepted: boolean; status: SelectionStatus; reason?: string }>>
     clear(request: SelectionClearRequest): Promise<DeskResult<{ cleared: boolean }>>
+  }
+  context: {
+    /** 上报当前活动笔记（活动分组 + 活动标签；网页 / 设置等非笔记标签要 clear） */
+    reportActiveNote(request: ActiveNoteReportRequest): Promise<DeskResult<{ accepted: boolean }>>
+    clearActiveNote(request: ActiveNoteClearRequest): Promise<DeskResult<{ cleared: boolean }>>
   }
   mcp: {
     status(): Promise<DeskResult<McpServerStatusDto>>

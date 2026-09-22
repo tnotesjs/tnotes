@@ -12,6 +12,7 @@ import CommandPalette from './commands/CommandPalette.vue'
 import TerminalPanel from './terminal/TerminalPanel.vue'
 import { useEditorStore } from './stores/editor'
 import { findTab, tabAtNumber } from './editor-groups/layoutModel'
+import { syncActiveNote } from './context/activeNoteReporter'
 import {
   clampSidebarWidth,
   KNOWLEDGE_SIDEBAR_MAX,
@@ -41,10 +42,29 @@ import type {
   TabShortcutCommand
 } from '../../shared/contracts'
 import { deleteConsequenceLines, isEmptyDeletePreview } from './deletePreview'
+import { runViewToggle } from './commands/viewToggleBridge'
 import { focusDialogInput } from './dialogInputFocus'
 
 const store = useWorkspaceStore()
 const editor = useEditorStore()
+/**
+ * 上报「当前活动笔记」给主进程（`get_current_note` 的唯一来源）。
+ *
+ * 只看 store 里的活动标签（活动分组中的活动标签），与窗口焦点无关：
+ * Desk 失焦、切到外部 Agent 都不改变 Desk 内部的活动标签身份。
+ * 网页 / 设置等非笔记标签会上报"清除"，主进程返回 no_focused_note，不回退到上一篇。
+ */
+const activeNoteSource = computed<Parameters<typeof syncActiveNote>[0]>(() => {
+  const tab = editor.activeTab
+  if (tab?.type !== 'note') return { tab: tab ?? null, knowledgeBase: null, session: null }
+  const knowledgeBase = store.knowledgeBase
+  if (!knowledgeBase || knowledgeBase.id !== tab.knowledgeBaseId) {
+    return { tab, knowledgeBase: null, session: null }
+  }
+  const session = store.getDocumentSession(tab.knowledgeBaseId, tab.noteUuid) ?? null
+  return { tab, knowledgeBase, session }
+})
+watch(activeNoteSource, (source) => syncActiveNote(source), { immediate: true })
 const terminalStore = useTerminalStore()
 const commandTaskStore = useCommandTaskStore()
 const backgroundFailureStore = useBackgroundFailureStore()
@@ -279,6 +299,11 @@ async function handleTabShortcut(command: TabShortcutCommand): Promise<void> {
   }
   if (command === 'close-all-tabs') {
     await store.requestCloseTabs('all')
+    return
+  }
+  if (command === 'toggle-note-view') {
+    // 交给活动标签页自己的 toggleMode：草稿保护与 flush 顺序都在那里
+    runViewToggle()
     return
   }
   if (command === 'keep-active-tab-open') {

@@ -163,11 +163,13 @@ try {
   const client = await connect(token)
   const tools = await client.listTools()
   rec.record(
-    '标准 MCP 客户端完成 initialize + tools/list',
-    tools.tools.some((tool) => tool.name === TOOL) && tools.tools.length === 1,
+    '标准 MCP 客户端完成 initialize + tools/list（选区 + 当前笔记两个只读工具）',
+    tools.tools.some((tool) => tool.name === TOOL) &&
+      tools.tools.some((tool) => tool.name === 'get_current_note') &&
+      tools.tools.length === 2,
     `tools=${tools.tools.map((tool) => tool.name).join(',')}`
   )
-  const description = tools.tools[0]?.description ?? ''
+  const description = tools.tools.find((tool) => tool.name === TOOL)?.description ?? ''
   rec.record(
     '工具说明告知"草稿可能与磁盘不同、别按草稿坐标改磁盘"',
     description.includes('draft') && description.includes('磁盘'),

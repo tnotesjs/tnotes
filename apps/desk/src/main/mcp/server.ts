@@ -19,13 +19,18 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 import { randomUUID } from 'node:crypto'
 
+import { activeNoteService } from '../context/activeNoteService'
 import { deskLog } from '../log'
 import { selectionContext } from '../selection/selectionService'
 import { ensureToken, rotateToken, tokenMatches } from './token'
 
 import { MCP_PATH } from '../../shared/contracts'
 
-import type { McpServerStatusDto, SelectionContextSnapshotDto } from '../../shared/contracts'
+import type {
+  ActiveNoteContextDto,
+  McpServerStatusDto,
+  SelectionContextSnapshotDto
+} from '../../shared/contracts'
 
 export interface McpServerOptions {
   port: number
@@ -48,8 +53,23 @@ const TOOL_DESCRIPTION = [
   '此时不要按返回的行列坐标直接去修改磁盘文件；请以磁盘内容为准重新定位。'
 ].join('')
 
+/** `get_current_note` 的工具说明：只给定位信息，且磁盘内容可能落后于未保存编辑 */
+const NOTE_TOOL_DESCRIPTION = [
+  '读取 TNotes Desk 里**当前活动笔记**（活动分组中的活动标签）的定位信息：',
+  '知识库、笔记标题、绝对路径、相对路径、当前视图与是否有未保存修改。',
+  '不需要参数，也不接受路径参数；只回答"调用时"的当前笔记。',
+  '只有笔记标签会返回路径；网页 / 设置 / 资源等标签会返回 status=no_focused_note，',
+  '并且不回退到上一次的笔记。',
+  '注意：这里不返回正文。按返回的路径读到的是**磁盘内容**，可能不包含尚未保存的编辑',
+  '（editor.hasUnsavedChanges 会标出来）；这个工具不会保存、也不会写入任何文件。'
+].join('')
+
 function snapshotText(snapshot: SelectionContextSnapshotDto): string {
   return JSON.stringify(snapshot, null, 2)
+}
+
+function noteText(context: ActiveNoteContextDto): string {
+  return JSON.stringify(context, null, 2)
 }
 
 /**
@@ -250,8 +270,10 @@ export class McpSelectionServer {
       { name: 'tnotes-desk-selection', version: '0.1.0' },
       {
         instructions:
-          'TNotes Desk 的只读选区上下文服务。用户提到"Desk 当前选区 / 我选中的内容"时，' +
-          '先调用 get_current_selection；没有有效选区就如实告知用户（status 不是 ok），不要臆测内容。'
+          'TNotes Desk 的只读上下文服务。用户提到"Desk 当前选区 / 我选中的内容"时，' +
+          '先调用 get_current_selection；没有有效选区就如实告知用户（status 不是 ok），不要臆测内容。' +
+          '用户提到"当前笔记 / 这篇笔记"时调用 get_current_note 取路径；' +
+          '按路径读到的是磁盘内容，可能不含未保存编辑。'
       }
     )
     server.registerTool(
@@ -263,6 +285,18 @@ export class McpSelectionServer {
         return {
           content: [{ type: 'text' as const, text: snapshotText(snapshot) }],
           structuredContent: snapshot as unknown as Record<string, unknown>,
+          isError: false
+        }
+      }
+    )
+    server.registerTool(
+      'get_current_note',
+      { title: '读取 Desk 当前笔记', description: NOTE_TOOL_DESCRIPTION, inputSchema: {} },
+      () => {
+        const context = activeNoteService.read()
+        return {
+          content: [{ type: 'text' as const, text: noteText(context) }],
+          structuredContent: context as unknown as Record<string, unknown>,
           isError: false
         }
       }
