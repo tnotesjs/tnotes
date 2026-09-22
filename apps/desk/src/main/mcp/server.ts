@@ -20,6 +20,7 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 import { randomUUID } from 'node:crypto'
 
 import { activeNoteService } from '../context/activeNoteService'
+import { pinnedContext } from '../context/pinnedContextService'
 import { deskLog } from '../log'
 import { selectionContext } from '../selection/selectionService'
 import { ensureToken, rotateToken, tokenMatches } from './token'
@@ -29,6 +30,7 @@ import { MCP_PATH } from '../../shared/contracts'
 import type {
   ActiveNoteContextDto,
   McpServerStatusDto,
+  PinnedContextDto,
   SelectionContextSnapshotDto
 } from '../../shared/contracts'
 
@@ -45,10 +47,16 @@ interface Session {
 
 /** 工具说明：明确草稿与磁盘的区别，避免 Agent 拿草稿坐标去改磁盘文件 */
 const TOOL_DESCRIPTION = [
-  '读取 TNotes Desk 里用户**当前选中**的笔记内容及其上下文。',
+  '读取 TNotes Desk 里用户的选中内容及其上下文。',
   '不需要参数，也不接受文件路径；返回的是用户在 Desk 里的选择。',
-  'status=ok 时给出笔记身份、编辑器视图、内容版本、选中文本与范围/相关块。',
-  'status 也可能是 no_selection / unsupported_selection / selection_invalidated / context_too_large。',
+  '两种模式：source=live 是**当前实时选区**；source=pinned 是用户用「固定为 Agent 上下文」',
+  '临时固定的一份快照（不随后续选择变化，多次调用不会消费掉它）。',
+  'status=ok 时给出笔记身份、编辑器视图、内容版本、选中文本与范围/相关块，',
+  '并用 source / pinnedAt 标明这份上下文是实时还是固定的。',
+  'status 也可能是 no_selection / unsupported_selection / selection_invalidated /',
+  'context_too_large / pinned_invalidated：**都不是服务器错误**，而是结构化结果。',
+  'pinned_invalidated 表示固定上下文已被解除、来源标签关闭或校验失效 ——',
+  '此时不要回退去读用户当前选中的别的内容，如实告知用户并等他们重新选择。',
   '注意：contentSource=draft 表示内容来自编辑器草稿（可能与磁盘不同），',
   '此时不要按返回的行列坐标直接去修改磁盘文件；请以磁盘内容为准重新定位。'
 ].join('')
@@ -66,6 +74,53 @@ const NOTE_TOOL_DESCRIPTION = [
 
 function snapshotText(snapshot: SelectionContextSnapshotDto): string {
   return JSON.stringify(snapshot, null, 2)
+}
+
+/** 固定上下文 → MCP 返回：有效时给不可变快照，失效时只给状态与原因（不给旧正文） */
+function pinnedSnapshot(pinned: PinnedContextDto): SelectionContextSnapshotDto {
+  const limits = { ...pinned.limits }
+  if (pinned.state === 'invalidated') {
+    return {
+      status: 'pinned_invalidated',
+      snapshotId: null,
+      capturedAt: null,
+      source: 'pinned',
+      ...(pinned.pinnedAt ? { pinnedAt: pinned.pinnedAt } : {}),
+      ...(pinned.knowledgeBase ? { knowledgeBase: { ...pinned.knowledgeBase } } : {}),
+      ...(pinned.note ? { note: { ...pinned.note } } : {}),
+      message: `${pinned.reason ?? '固定上下文已失效'}。固定内容已不再返回，也不会改读当前选中的其它内容；请让用户重新固定或重新选择。`,
+      limits
+    }
+  }
+  return {
+    status: 'ok',
+    snapshotId: pinned.pinId,
+    capturedAt: pinned.pinnedAt,
+    source: 'pinned',
+    ...(pinned.pinnedAt ? { pinnedAt: pinned.pinnedAt } : {}),
+    ...(pinned.knowledgeBase ? { knowledgeBase: { ...pinned.knowledgeBase } } : {}),
+    ...(pinned.note ? { note: { ...pinned.note } } : {}),
+    ...(pinned.editor
+      ? {
+          editor: {
+            viewMode: pinned.editor.viewMode,
+            collector: pinned.editor.viewMode === 'source' ? 'source' : 'visual',
+            contentSource: pinned.editor.contentSource,
+            hasUnsavedChanges: pinned.editor.hasUnsavedChanges,
+            revision: pinned.editor.revision
+          }
+        }
+      : {}),
+    selection: {
+      selectedText: pinned.selection?.selectedText ?? '',
+      mapping: pinned.selection?.mapping ?? 'block',
+      ...(pinned.selection?.sourceRange
+        ? { sourceRange: { ...pinned.selection.sourceRange } }
+        : {}),
+      blocks: (pinned.selection?.blocks ?? []).map((block) => ({ ...block }))
+    },
+    limits
+  }
 }
 
 function noteText(context: ActiveNoteContextDto): string {
@@ -280,7 +335,9 @@ export class McpSelectionServer {
       'get_current_selection',
       { title: '读取 Desk 当前选区', description: TOOL_DESCRIPTION, inputSchema: {} },
       () => {
-        const snapshot = service.read()
+        const pinned = pinnedContext.read()
+        const snapshot: SelectionContextSnapshotDto =
+          pinned.state === 'none' ? { ...service.read(), source: 'live' } : pinnedSnapshot(pinned)
         this.lastCallAt = new Date().toISOString()
         return {
           content: [{ type: 'text' as const, text: snapshotText(snapshot) }],

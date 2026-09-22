@@ -19,8 +19,10 @@ import { SELECTION_LIMITS, SELECTION_TRANSPORT_LIMITS } from '../../../shared/co
 
 import type {
   DeskApi,
+  PinnedSelectionAnchor,
   SelectionBlockDto,
   SelectionCaptureDto,
+  SelectionContentSource,
   SelectionRangeDto,
   SelectionReportRequest
 } from '../../../shared/contracts'
@@ -34,6 +36,14 @@ export type EditorSelectionBlock = Omit<SelectionBlockDto, 'source'> & {
   source?: SelectionBlockDto['source']
 }
 
+/**
+ * 编辑器层给出的定位锚点（固定上下文用）。`sourceRange.source` 由上层按
+ * `contentSource` 补上（编辑器不知道自己读的是草稿还是磁盘）。
+ */
+export type EditorSelectionAnchor = Omit<PinnedSelectionAnchor, 'sourceRange'> & {
+  sourceRange?: Omit<SelectionRangeDto, 'source'>
+}
+
 /** 编辑器层给出的选区（只描述"选了什么"，不含笔记身份与草稿状态） */
 export interface EditorSelectionPayload {
   empty: boolean
@@ -43,6 +53,11 @@ export interface EditorSelectionPayload {
   blocks: EditorSelectionBlock[]
   /** 不支持的原因（多选区等） */
   unsupportedReason?: string
+  /**
+   * 可校验的定位锚点（源码范围 / 可视化块）。没有它就不能固定为 Agent 上下文 ——
+   * 固定之后要能判断"内容或坐标是否变了"，验不了就不许固定。
+   */
+  anchor?: EditorSelectionAnchor
 }
 
 export interface SelectionReportIdentity {
@@ -178,6 +193,49 @@ function overLimitReason(selectedChars: number, blocks: SelectionBlockDto[]): st
   return null
 }
 
+/**
+ * 编辑器采集结果 → 上报/固定共用的 DTO。
+ *
+ * 源码视图给的是原文切片（`raw`），可视化视图自己标了 `reserialized`；
+ * 范围与锚点都要带上"这份坐标属于草稿还是磁盘"。
+ */
+export function captureDtoFromPayload(
+  identity: SelectionReportIdentity,
+  capture: EditorSelectionPayload
+): SelectionCaptureDto {
+  const contentSource = identity.editor.contentSource
+  const blocks: SelectionBlockDto[] = capture.blocks.map((block) => ({
+    ...block,
+    source: block.source ?? 'raw'
+  }))
+  const selectedText = capture.empty ? '' : capture.selectedText
+  const overLimit = capture.empty ? null : overLimitReason(selectedText.length, blocks)
+  return {
+    collector: identity.editor.collector,
+    empty: capture.empty,
+    ...(overLimit
+      ? { overLimit, selectedChars: selectedText.length }
+      : {
+          ...(capture.empty ? {} : { selectedText }),
+          ...(capture.range ? { sourceRange: { ...capture.range, source: contentSource } } : {}),
+          ...(capture.unsupportedReason ? { unsupportedReason: capture.unsupportedReason } : {}),
+          blocks
+        })
+  }
+}
+
+/** 编辑器锚点 → 契约锚点（补上草稿/磁盘归属） */
+export function anchorWithSource(
+  anchor: EditorSelectionAnchor,
+  contentSource: SelectionContentSource
+): PinnedSelectionAnchor {
+  const { sourceRange, ...rest } = anchor
+  return {
+    ...rest,
+    ...(sourceRange ? { sourceRange: { ...sourceRange, source: contentSource } } : {})
+  }
+}
+
 /** 上报一次有效选区（节流合并）。`ownerKey` 是上报的编辑器（分组:标签） */
 export function reportSelection(
   ownerKey: string,
@@ -185,36 +243,17 @@ export function reportSelection(
   capture: EditorSelectionPayload
 ): void {
   claim(ownerKey)
-  const contentSource = identity.editor.contentSource
-  const blocks: SelectionBlockDto[] = capture.blocks.map((block) => ({
-    ...block,
-    // 源码视图给的是原文切片；可视化视图自己标了 reserialized
-    source: block.source ?? 'raw'
-  }))
-  const selectedText = capture.empty ? '' : capture.selectedText
-  const overLimit = capture.empty ? null : overLimitReason(selectedText.length, blocks)
   pending = {
     generation,
     knowledgeBase: identity.knowledgeBase,
     note: identity.note,
     editor: {
       viewMode: identity.editor.viewMode,
-      contentSource,
+      contentSource: identity.editor.contentSource,
       hasUnsavedChanges: identity.editor.hasUnsavedChanges,
       revision: identity.editor.revision
     },
-    capture: {
-      collector: identity.editor.collector,
-      empty: capture.empty,
-      ...(overLimit
-        ? { overLimit, selectedChars: selectedText.length }
-        : {
-            ...(capture.empty ? {} : { selectedText }),
-            ...(capture.range ? { sourceRange: { ...capture.range, source: contentSource } } : {}),
-            ...(capture.unsupportedReason ? { unsupportedReason: capture.unsupportedReason } : {}),
-            blocks
-          })
-    }
+    capture: captureDtoFromPayload(identity, capture)
   }
   if (timer) return
   timer = setTimeout(flush, THROTTLE_MS)

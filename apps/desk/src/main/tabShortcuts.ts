@@ -68,6 +68,9 @@ export class TabShortcutResolver {
       if (!input.alt && !input.shift && key === 'v') {
         return { handled: true, command: 'toggle-note-view' }
       }
+      if (!input.alt && !input.shift && key === 'p') {
+        return { handled: true, command: 'pin-current-selection' }
+      }
     } else {
       this.chordExpiresAt = 0
     }

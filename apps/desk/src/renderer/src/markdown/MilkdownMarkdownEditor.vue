@@ -12,9 +12,10 @@ import { serializeImageMarkdown } from '@tnotesjs/ui/image-markdown'
 import { createCanvasImageClipboardPlugin } from './canvasImageClipboardPlugin'
 import { DESK_CODE_CLIPBOARD_FORMAT } from './clipboardNewline'
 import { noteRelativeAssetPath } from './noteAssetPath'
-import { captureVisualSelection } from '../selection/visualSelection'
+import { blockAnchorFor, captureVisualSelection } from '../selection/visualSelection'
+import { showEditorContextMenu } from './editorContextMenu'
 import { onCodeEditorSelection } from '../selection/codeEditorSelectionBridge'
-import type { EditorSelectionPayload } from '../selection/selectionReporter'
+import type { EditorSelectionAnchor, EditorSelectionPayload } from '../selection/selectionReporter'
 import { invalidateCanvasSource, placeholderCanvasSvg } from '../editor/excalidraw/canvasImage'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
@@ -148,6 +149,8 @@ const emit = defineEmits<{
   displayLimitedChange: [items: DisplayLimitedItem[]]
   /** 选区变化（含"变空"）：由上层按活动视图合并上报（MCP 选区上下文） */
   selectionChange: [payload: EditorSelectionPayload]
+  /** 右键菜单 / 快捷键要求把当前选区固定为 Agent 上下文 */
+  pinSelection: []
 }>()
 
 const host = ref<HTMLElement | null>(null)
@@ -865,6 +868,82 @@ function selectionCapture(): EditorSelectionPayload | null {
   })
 }
 
+/**
+ * 可固定的选区：采集结果 + 定位锚点。
+ *
+ * 可视化视图的锚点是 PM 文档位置 + 块 Markdown（raw 块是逐字原文），
+ * **不伪造源码坐标**；拿不到锚点（多选区 / 落在块之间）就返回 null。
+ */
+function pinnableSelection(): {
+  capture: EditorSelectionPayload
+  anchor: EditorSelectionAnchor
+} | null {
+  const payload = selectionCapture()
+  if (!payload || payload.empty || payload.unsupportedReason || !payload.anchor) return null
+  return { capture: payload, anchor: payload.anchor }
+}
+
+/**
+ * 校验固定锚点是否仍然有效（块的位置与内容都要对得上）。
+ * 返回 `null` 表示当前视图验不了（例如固定来自源码视图的偏移锚点）。
+ */
+function validatePinnedAnchor(
+  anchor: EditorSelectionAnchor,
+  expected: string
+): { valid: boolean; reason?: string } | null {
+  const current = editorView()
+  if (!current?.state || anchor.kind !== 'block' || !anchor.blocks?.length) return null
+  const serializer = deskEditor?.editor.ctx.get(serializerCtx)
+  if (!serializer) return null
+  const deps = {
+    serializeDocument: (document: Parameters<typeof serializer>[0]) => serializer(document)
+  }
+  for (const [index, block] of anchor.blocks.entries()) {
+    const node = current.state.doc.nodeAt(block.pos)
+    if (!node) {
+      return {
+        valid: false,
+        reason: `固定的第 ${index + 1} 个相关块已经不在原来的位置了（坐标变了）`
+      }
+    }
+    const now = blockAnchorFor(current, block.pos, node, deps)
+    if (now.kind !== block.kind || now.markdown !== block.markdown) {
+      return { valid: false, reason: `固定的第 ${index + 1} 个相关块内容已变化` }
+    }
+  }
+  if (expected && !current.state.doc.textContent.includes(expected)) {
+    // 块层面的内容没变但这个文本找不到了：多半是选区跨块且其中一段被改
+    return { valid: false, reason: '固定时选中的文字在当前笔记里已经找不到了（内容已变化）' }
+  }
+  return { valid: true }
+}
+
+/** 「查看」固定上下文：把固定时的位置重新选出来并滚动到可见 */
+function revealPinnedAnchor(anchor: EditorSelectionAnchor): boolean {
+  const current = editorView()
+  if (!current?.state || anchor.kind !== 'block' || anchor.from == null || anchor.to == null) {
+    return false
+  }
+  const size = current.state.doc.content.size
+  const from = Math.max(0, Math.min(anchor.from, size))
+  const to = Math.max(from, Math.min(anchor.to, size))
+  try {
+    current.dispatch(
+      current.state.tr.setSelection(
+        anchor.nodeSelection
+          ? NodeSelection.create(current.state.doc, from)
+          : TextSelection.create(current.state.doc, from, to)
+      )
+    )
+  } catch {
+    return false
+  }
+  current.focus()
+  const dom = current.nodeDOM(from)
+  if (dom instanceof HTMLElement) dom.scrollIntoView({ block: 'center' })
+  return true
+}
+
 function emitSelection(): void {
   if (!props.active) return
   const payload = selectionCapture()
@@ -912,6 +991,9 @@ function createSelectionReporterPlugin(): MilkdownPlugin {
 
 defineExpose({
   selectionCapture,
+  pinnableSelection,
+  validatePinnedAnchor,
+  revealPinnedAnchor,
   revealReference,
   insertTextAt,
   wrapSelection,
@@ -1331,6 +1413,19 @@ function applyHeadingFold(command: HeadingFoldCommand): boolean {
   return true
 }
 
+/**
+ * 右键菜单：只有**有效正文选区**（能固定、能校验）时才弹出来，
+ * 其它情况保持默认（不干扰系统/编辑器自己的菜单）。
+ */
+function handleEditorContextMenu(event: MouseEvent): void {
+  if (isEffectivelyReadOnly()) return
+  const pinnable = pinnableSelection()
+  if (!pinnable) return
+  showEditorContextMenu(event, [{ id: 'pin-selection', label: '固定为 Agent 上下文' }], (id) => {
+    if (id === 'pin-selection') emit('pinSelection')
+  })
+}
+
 onMounted(async () => {
   if (!host.value) return
   // 会话的初始原文 = 创建编辑器用的那份 props.content。两者必须是同一个值，
@@ -1488,6 +1583,7 @@ onMounted(async () => {
     applyGeneratedTocDisplay()
     subscribeCodeEditorSelection()
     if (host.value) {
+      host.value.addEventListener('contextmenu', handleEditorContextMenu)
       blockHandleClickCleanup = installBlockHandleClickController({
         root: host.value,
         getView: editorView,
@@ -1564,6 +1660,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  host.value?.removeEventListener('contextmenu', handleEditorContextMenu)
   if (host.value) exitCodeBlockFullscreen(host.value)
   // Switching to source unmounts the visual editor; flush first so pending raw-block
   // drafts and in-progress visual edits are committed, then retire the session

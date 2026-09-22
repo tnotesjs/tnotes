@@ -11,8 +11,17 @@ type ViewToggleRunner = () => void
 
 let runner: ViewToggleRunner | null = null
 
-export function registerViewToggleRunner(next: ViewToggleRunner | null): void {
+/**
+ * 登记执行者；返回**只注销自己**的函数。
+ *
+ * 多分组时每个分组都有"组内活动标签"，只有真正活动的那个编辑器才该持有执行者；
+ * 注销时也要确认当前登记的仍是自己，避免把刚接手的新活动编辑器注销掉。
+ */
+export function registerViewToggleRunner(next: ViewToggleRunner | null): () => void {
   runner = next
+  return () => {
+    if (runner === next) runner = null
+  }
 }
 
 export function runViewToggle(): boolean {

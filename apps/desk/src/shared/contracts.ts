@@ -158,6 +158,11 @@ export const IPC_CHANNELS = {
   selectionClear: 'selection:clear',
   /** 本机 MCP 服务的状态查询与开关 */
   /** 渲染端上报"当前活动笔记"（get_current_note 的唯一来源） */
+  contextPinSelection: 'context:pin-selection',
+  contextPinValidate: 'context:pin-validate',
+  contextPinRevalidateFromDisk: 'context:pin-revalidate-from-disk',
+  contextPinClear: 'context:pin-clear',
+  contextPinChanged: 'context:pin-changed',
   contextActiveNoteReport: 'context:active-note-report',
   contextActiveNoteClear: 'context:active-note-clear',
   mcpStatus: 'mcp:status',
@@ -533,6 +538,8 @@ export type TabShortcutCommand =
   | 'toggle-pin-active-tab'
   /** 整体切换「可视化 / 源码」视图（`⌘K V`） */
   | 'toggle-note-view'
+  /** 把当前选区固定为 Agent 上下文（`⌘K P`） */
+  | 'pin-current-selection'
   | 'copy-active-note-path'
   | 'reveal-active-note-in-file-manager'
   | 'next-tab'
@@ -1635,7 +1642,13 @@ export interface ExternalNoteChangeEvent {
  * 不作为服务器异常，也不回退成"整篇笔记"或"上一次别的笔记的内容"。
  */
 export type SelectionStatus =
-  'ok' | 'no_selection' | 'unsupported_selection' | 'selection_invalidated' | 'context_too_large'
+  | 'ok'
+  | 'no_selection'
+  | 'unsupported_selection'
+  | 'selection_invalidated'
+  | 'context_too_large'
+  /** 固定上下文被解除 / 来源关闭 / 校验失效：**不返回旧正文，也不改读别的选区** */
+  | 'pinned_invalidated'
 
 /** 采集来源：源码视图（Monaco）/ 可视化视图（ProseMirror）。 */
 export type SelectionCollector = 'source' | 'visual'
@@ -1728,6 +1741,12 @@ export interface SelectionContextSnapshotDto {
     sourceRange?: SelectionRangeDto
     blocks: SelectionBlockDto[]
   }
+  /**
+   * 这份上下文从哪来：`live` = 当前实时选区，`pinned` = 用户**固定**的选区（不随后续选择变化）。
+   */
+  source?: SelectionSource
+  /** 固定时间（仅 `source: pinned` 时给出） */
+  pinnedAt?: string
   /** 上限（超限时给出，便于 Agent 提示用户缩小选区） */
   limits: { maxSelectedChars: number; maxBlockChars: number; maxBlocks: number }
 }
@@ -1783,6 +1802,105 @@ export interface SelectionClearRequest {
   noteId?: string
   /** 见 `SelectionReportRequest.generation`：旧代次的失效不会清掉新编辑器的快照 */
   generation: number
+}
+
+/* ------------------------------------------------------------------ */
+/* 固定选区上下文（临时固定，不持久化）                                 */
+/* ------------------------------------------------------------------ */
+
+/** 上下文来源：实时选区 / 用户固定的选区 */
+export type SelectionSource = 'live' | 'pinned'
+
+/** 固定上下文状态 */
+export type PinnedContextState = 'none' | 'pinned' | 'invalidated'
+
+/**
+ * 固定时的**定位锚点**（用于校验固定内容是否仍然有效）。
+ *
+ * - 源码视图给**准确的源码范围**（行列 + 偏移 + 逐字文本）；
+ * - 可视化视图只用编辑器模型里的可靠位置与内容（PM 文档位置 + 块 Markdown），
+ *   **不伪造源码坐标**。
+ */
+export interface PinnedBlockAnchor {
+  /** PM 文档位置（块起点） */
+  pos: number
+  /** 块类型（`visualBlockKind`） */
+  kind: string
+  /** 块 Markdown（raw 块是逐字原文） */
+  markdown: string
+}
+
+export interface PinnedSelectionAnchor {
+  view: 'source' | 'visual'
+  kind: 'source-range' | 'block'
+  /** 源码视图：精确范围（含 draft/disk 归属） */
+  sourceRange?: SelectionRangeDto
+  /** 可视化视图：涉及的块（逐个校验位置与内容） */
+  blocks?: PinnedBlockAnchor[]
+  /** 可视化视图：恢复选区用（PM 文档位置，锚点有效时才有意义） */
+  from?: number
+  to?: number
+  nodeSelection?: boolean
+}
+
+/** 固定请求：不可变快照 + 校验锚点 + 归属（分组 / 标签） */
+export interface PinSelectionRequest {
+  /**
+   * 归属到具体分组与标签：
+   * 关闭**来源标签**才解除；关掉同一笔记的另一个标签不能误清。
+   */
+  owner: { groupId: string; tabId: string; knowledgeBaseId: string; noteUuid: string }
+  knowledgeBase: { id: string; name: string; rootPath: string }
+  note: { id: string; title: string; absolutePath: string }
+  editor: {
+    viewMode: NoteViewMode
+    contentSource: SelectionContentSource
+    hasUnsavedChanges: boolean
+    revision: string
+  }
+  capture: SelectionCaptureDto
+  anchor: PinnedSelectionAnchor
+}
+
+/** 渲染端对固定锚点的校验结果（内容变化 / 坐标变化 → 失效） */
+export interface PinValidateRequest {
+  pinId: string
+  valid: boolean
+  /** 失效原因（`valid:false` 时给出） */
+  reason?: string
+}
+
+/** 外部修改了磁盘文件后，用**磁盘内容**复核固定锚点（草稿固定不看磁盘） */
+export interface PinDiskRevalidateRequest {
+  pinId: string
+  knowledgeBaseId: string
+  noteUuid: string
+}
+
+export interface PinClearRequest {
+  /** 用户显式解除 / 关闭来源标签 … */
+  reason: string
+}
+
+/** 固定上下文对外 DTO（状态栏与 MCP 都读它） */
+export interface PinnedContextDto {
+  state: PinnedContextState
+  pinId: string | null
+  pinnedAt: string | null
+  /** `invalidated` 时的原因（不返回旧正文） */
+  reason?: string
+  owner?: PinSelectionRequest['owner']
+  knowledgeBase?: PinSelectionRequest['knowledgeBase']
+  note?: PinSelectionRequest['note']
+  editor?: PinSelectionRequest['editor']
+  selection?: {
+    selectedText: string
+    mapping: 'source-range' | 'block'
+    sourceRange?: SelectionRangeDto
+    blocks: SelectionBlockDto[]
+  }
+  anchor?: PinnedSelectionAnchor
+  limits: { maxSelectedChars: number; maxBlockChars: number; maxBlocks: number }
 }
 
 /* ------------------------------------------------------------------ */
@@ -2090,6 +2208,19 @@ export interface DeskApi {
     clear(request: SelectionClearRequest): Promise<DeskResult<{ cleared: boolean }>>
   }
   context: {
+    /** 把当前选区固定为 Agent 上下文（全局只留一份；再次固定即替换） */
+    pinSelection(
+      request: PinSelectionRequest
+    ): Promise<DeskResult<{ accepted: boolean; reason?: string }>>
+    /** 校验固定锚点是否仍然有效（内容 / 坐标变化 → 自动解除并提示） */
+    validatePin(request: PinValidateRequest): Promise<DeskResult<{ state: PinnedContextState }>>
+    /** 来源笔记被外部修改后，用磁盘内容复核（对不上就失效） */
+    revalidatePinFromDisk(
+      request: PinDiskRevalidateRequest
+    ): Promise<DeskResult<{ state: PinnedContextState }>>
+    /** 用户显式解除固定（显式恢复实时模式，不由自动解除悄悄回退） */
+    clearPin(request: PinClearRequest): Promise<DeskResult<{ cleared: boolean }>>
+    onPinChanged(callback: (context: PinnedContextDto) => void): () => void
     /** 上报当前活动笔记（活动分组 + 活动标签；网页 / 设置等非笔记标签要 clear） */
     reportActiveNote(request: ActiveNoteReportRequest): Promise<DeskResult<{ accepted: boolean }>>
     clearActiveNote(request: ActiveNoteClearRequest): Promise<DeskResult<{ cleared: boolean }>>

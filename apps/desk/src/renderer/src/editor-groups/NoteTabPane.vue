@@ -19,12 +19,21 @@ import { registerHeadingFoldRunner } from '../commands/headingFoldBridge'
 import { registerViewToggleRunner } from '../commands/viewToggleBridge'
 import { writeClipboardText } from '../clipboardText'
 import {
+  anchorWithSource,
+  captureDtoFromPayload,
   clearSelection,
   invalidateSelection,
   reportSelection,
+  type EditorSelectionAnchor,
   type EditorSelectionPayload,
   type SelectionReportIdentity
 } from '../selection/selectionReporter'
+import {
+  pinnedContext,
+  reportPinValidation,
+  revalidatePinFromDisk
+} from '../context/pinnedContextStore'
+import { registerPinSelectionRunner } from '../commands/pinSelectionBridge'
 import { findTab } from './layoutModel'
 import { decideViewSwitch } from './noteViewSwitch'
 import type { DisplayLimitedItem } from '../editor/markdown/projectionFidelity'
@@ -32,7 +41,12 @@ import { insertableImageMarkdown } from './noteAssets'
 import { pastedImageMarkdown } from '../editor/markdown/pasteImageWidth'
 import { HEADING_NUMBER_DEFAULT_MAX_DEPTH } from '../../../shared/headingNumbering'
 
-import type { NoteEditorTab, NoteViewMode } from '../../../shared/contracts'
+import type {
+  NoteEditorTab,
+  NoteViewMode,
+  PinSelectionRequest,
+  PinnedSelectionAnchor
+} from '../../../shared/contracts'
 import type { HeadingFoldCommand } from '../markdown/headingSectionCollapse'
 
 interface MarkdownEditorHandle {
@@ -54,6 +68,15 @@ interface MarkdownEditorHandle {
   applyHeadingFold?(command: HeadingFoldCommand): boolean
   /** 采集当前选区的编辑器层数据（源码视图已实现；可视化视图见阶段 B） */
   selectionCapture?(): EditorSelectionPayload | null
+  /** 可固定的选区（采集结果 + 可校验锚点）；拿不到锚点时返回 null */
+  pinnableSelection?(): { capture: EditorSelectionPayload; anchor: EditorSelectionAnchor } | null
+  /** 校验固定锚点；返回 null 表示当前视图验不了（交给内容级兜底） */
+  validatePinnedAnchor?(
+    anchor: EditorSelectionAnchor,
+    expected: string
+  ): { valid: boolean; reason?: string } | null
+  /** 「查看」固定上下文：重新选出固定时的范围并滚到可见 */
+  revealPinnedAnchor?(anchor: EditorSelectionAnchor): boolean
   flush(): void
 }
 
@@ -286,12 +309,165 @@ watch(
   { immediate: true }
 )
 
-// 视图开关（⌘K V）的执行者：活动标签页登记自己的 toggleMode（含草稿保护）
+/* ------------------------------------------------------------------ */
+/* 固定选区上下文（临时固定给 Agent 用，不跟随活动选区）               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 这个标签页是不是当前固定上下文的来源。
+ *
+ * 归属记的是「分组 + 标签」（DTO 里都存着），但判定只认**标签 id**：
+ * 拆分 / 拖拽会重建分组，分组 id 变了并不代表来源标签被关掉；
+ * 反过来，同一笔记的**另一份**标签 id 不同，不会被误清。
+ */
+const pinOwner = computed(() => {
+  const context = pinnedContext.value
+  if (!context?.owner) return null
+  return context.owner.tabId === props.tab.id ? context : null
+})
+
+/**
+ * 把当前选区固定为 Agent 上下文（右键菜单 / 快捷键 / 命令面板共用）。
+ *
+ * 固定的是**不可变快照 + 校验锚点**：拿不到可靠锚点时明确拒绝，
+ * 而不是固定一份以后验不了的上下文。
+ */
+async function pinCurrentSelection(): Promise<void> {
+  const identity = selectionIdentity.value
+  const handle = markdownEditor.value
+  if (!identity || !handle?.pinnableSelection) {
+    workspace.status = '当前没有可固定的正文选区。'
+    return
+  }
+  const pinnable = handle.pinnableSelection()
+  if (!pinnable) {
+    workspace.status = '当前选区无法固定：多选区、空选区，或这种块拿不到可靠位置（首版不猜坐标）。'
+    return
+  }
+  const request: PinSelectionRequest = {
+    owner: {
+      groupId: props.groupId,
+      tabId: props.tab.id,
+      knowledgeBaseId: props.tab.knowledgeBaseId,
+      noteUuid: props.tab.noteUuid
+    },
+    knowledgeBase: identity.knowledgeBase,
+    note: identity.note,
+    editor: {
+      viewMode: identity.editor.viewMode,
+      contentSource: identity.editor.contentSource,
+      hasUnsavedChanges: identity.editor.hasUnsavedChanges,
+      revision: identity.editor.revision
+    },
+    capture: captureDtoFromPayload(identity, pinnable.capture),
+    anchor: anchorWithSource(
+      pinnable.anchor,
+      identity.editor.contentSource
+    ) as PinnedSelectionAnchor
+  }
+  const result = await window.desk.context.pinSelection(request)
+  if (!result.ok) {
+    workspace.status = `固定失败：${result.error.message}`
+    return
+  }
+  if (!result.value.accepted) {
+    workspace.status = `固定失败：${result.value.reason ?? '未知原因'}`
+    return
+  }
+  workspace.status = '已固定为 Agent 上下文（状态条里可以查看或解除）。'
+}
+
+/**
+ * 校验固定上下文是否仍然有效。
+ *
+ * 触发点：内容变化（revision）、磁盘被外部改动、切视图、编辑器重建、固定状态变化 ——
+ * **不只监听光标选区**。当前视图能精确校验就用精确锚点；视图不匹配时退到内容级
+ * （固定时那段文字还得在当前文档里找得到），绝不假装有效。
+ */
+async function validatePinnedContext(): Promise<void> {
+  const context = pinOwner.value
+  if (!context || context.state !== 'pinned' || !context.anchor || !context.pinId) return
+  const expected = context.selection?.selectedText ?? ''
+  const precise = markdownEditor.value?.validatePinnedAnchor?.(context.anchor, expected) ?? null
+  if (precise) {
+    if (!precise.valid) await reportPinValidation(context.pinId, false, precise.reason)
+    return
+  }
+  const content = session.value?.content ?? ''
+  if (expected && content && !content.includes(expected)) {
+    await reportPinValidation(
+      context.pinId,
+      false,
+      '固定时选中的文字在当前文档里找不到了（内容已变化）'
+    )
+  }
+}
+
+// 内容变化就校验：`content` 覆盖未保存草稿（revision 只在保存时变），
+// 不能只靠光标选区或"整篇版本号"
 watch(
-  () => props.active,
+  () => [session.value?.content, session.value?.document.revision, session.value?.dirty],
+  () => void validatePinnedContext()
+)
+watch(pinnedContext, () => void validatePinnedContext())
+watch(
+  () => session.value?.externalConflict,
+  (conflict) => {
+    const context = pinOwner.value
+    if (!conflict || !context) return
+    // 外部改了来源笔记：请主进程按**磁盘内容**复核（草稿固定不看磁盘），
+    // 对不上就明确失效——不拿编辑器里的旧内容当作"还有效"
+    if (context.state === 'pinned' && context.pinId) {
+      void revalidatePinFromDisk(context.pinId, props.tab.knowledgeBaseId, props.tab.noteUuid).then(
+        () => validatePinnedContext()
+      )
+      return
+    }
+    void validatePinnedContext()
+  }
+)
+watch(
+  () => props.tab.viewMode,
   () => {
-    if (!props.active) return
-    registerViewToggleRunner(toggleMode)
+    // 切视图本身**不失效**：等新编辑器挂载好再按新视图校验一次
+    void nextTick(validatePinnedContext)
+  }
+)
+
+// 「查看」固定上下文：来源标签页收到请求后把固定时的范围重新选出来
+watch(
+  () => editor.revealRequest,
+  (request) => {
+    if (!request || request.tabId !== props.tab.id) return
+    void nextTick(() => {
+      markdownEditor.value?.revealPinnedAnchor?.(request.anchor)
+    })
+  }
+)
+
+/**
+ * 固定上下文（⌘K P）的执行者：只有**当前活动编辑器**（活动标签 + 活动分组）才登记，
+ * 否则多分组时后挂载的组内标签会把执行者抢走，快捷键会作用到没有选区的那个面板上。
+ */
+let unregisterPinRunner: (() => void) | null = null
+watch(
+  isActiveEditor,
+  (active) => {
+    if (!active) return
+    unregisterPinRunner?.()
+    unregisterPinRunner = registerPinSelectionRunner(() => void pinCurrentSelection())
+  },
+  { immediate: true }
+)
+
+// 视图开关（⌘K V）的执行者：同样只认当前活动编辑器
+let unregisterViewRunner: (() => void) | null = null
+watch(
+  isActiveEditor,
+  (active) => {
+    if (!active) return
+    unregisterViewRunner?.()
+    unregisterViewRunner = registerViewToggleRunner(toggleMode)
   },
   { immediate: true }
 )
@@ -299,6 +475,21 @@ watch(
 onUnmounted(() => {
   if (props.active) registerHeadingFoldRunner(null)
   if (props.active) registerViewToggleRunner(null)
+  unregisterPinRunner?.()
+  unregisterPinRunner = null
+  unregisterViewRunner?.()
+  unregisterViewRunner = null
+  // 关闭**来源标签**→ 固定失效（不静默回到实时选区）。
+  // 注意：拆分 / 拖拽会重建分组并让面板重建（unmount 不代表标签被关），
+  // 所以这里要确认"标签真的不在布局里了"才失效。
+  const context = pinOwner.value
+  if (context?.state === 'pinned' && context.pinId) {
+    const located = findTab(editor.layout, props.tab.id)
+    const stillOpen = located?.tab.type === 'note' && located.tab.noteUuid === props.tab.noteUuid
+    if (!stillOpen) {
+      void reportPinValidation(context.pinId, false, '固定上下文的来源标签已关闭')
+    }
+  }
   if (isActiveEditor.value) invalidateSelection(selectionOwner.value, '关闭了笔记标签')
 })
 
@@ -341,6 +532,8 @@ function onTitleKeydown(event: KeyboardEvent): void {
 
 onMounted(() => {
   void workspace.ensureDocument(props.tab.knowledgeBaseId, props.tab.noteUuid)
+  // 编辑器重建 / 重新打开笔记后也要校验固定上下文
+  void nextTick(validatePinnedContext)
 })
 
 /**
@@ -951,6 +1144,7 @@ function openLink(url: string): void {
           @unsaved-draft-change="handleUnsavedDraftChange"
           @display-limited-change="handleDisplayLimitedChange"
           @selection-change="handleEditorSelection"
+          @pin-selection="pinCurrentSelection"
         />
         <div v-else-if="tab.viewMode !== 'source'" class="editor-fatal" role="alert">
           <strong>可视化编辑器加载失败</strong>
@@ -974,6 +1168,7 @@ function openLink(url: string): void {
           @change="updateContent"
           @paste-image="pasteImage"
           @selection-change="handleEditorSelection"
+          @pin-selection="pinCurrentSelection"
         />
       </div>
       <NoteAssetsPanel

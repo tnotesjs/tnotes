@@ -44,6 +44,7 @@ import type {
   NoteEditorTab,
   NotePageWidth,
   NoteViewMode,
+  PinnedSelectionAnchor,
   PreviewStateDto,
   WebEditorTab,
   WebTabState,
@@ -204,6 +205,17 @@ export const useEditorStore = defineStore('editor', () => {
   const wrapTabs = ref(true)
   const defaultNotePageWidth = ref<NotePageWidth>('standard')
   const activeKnowledgeBaseId = ref<string | null>(null)
+  /**
+   * 「查看固定上下文」请求：由状态条发起，目标标签页收到后把自己的锚点选出来。
+   * `seq` 保证反复点「查看」每次都会重新触发。
+   */
+  const revealRequest = ref<{
+    seq: number
+    tabId: string
+    groupId: string
+    anchor: PinnedSelectionAnchor
+  } | null>(null)
+  let revealSequence = 0
   const knowledgeBaseEditors = ref<Record<string, KnowledgeBaseEditorSession>>({})
   const lastNoteByGroup = ref<Record<string, { noteUuid: string; noteTitle: string }>>({})
   let unsubscribeWebState: (() => void) | null = null
@@ -451,6 +463,12 @@ export const useEditorStore = defineStore('editor', () => {
     knowledgeBaseEditors.value = {}
     lastNoteByGroup.value = {}
     webStates.value = {}
+  }
+
+  /** 请求某个标签页把固定上下文的位置重新选出来（配合状态条的「查看」） */
+  function requestReveal(groupId: string, tabId: string, anchor: PinnedSelectionAnchor): void {
+    revealSequence += 1
+    revealRequest.value = { seq: revealSequence, tabId, groupId, anchor }
   }
 
   function activate(groupId: string, tabId: string): void {
@@ -1341,6 +1359,8 @@ export const useEditorStore = defineStore('editor', () => {
     splitTab,
     splitActive,
     resizeSplit,
-    toSession
+    toSession,
+    revealRequest,
+    requestReveal
   }
 })

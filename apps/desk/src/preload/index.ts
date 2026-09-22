@@ -10,6 +10,12 @@ import type {
   SelectionStatus,
   ActiveNoteClearRequest,
   ActiveNoteReportRequest,
+  PinClearRequest,
+  PinDiskRevalidateRequest,
+  PinnedContextDto,
+  PinnedContextState,
+  PinSelectionRequest,
+  PinValidateRequest,
   AttachmentWriteLocalRequest,
   AttachmentWriteLocalResult,
   ExcalidrawDerivedRefDto,
@@ -436,6 +442,20 @@ const api: DeskApi = {
       invoke<{ text: string; html: string }>(IPC_CHANNELS.clipboardSetPlainText, { text, html })
   },
   context: {
+    pinSelection: (request: PinSelectionRequest) =>
+      invoke<{ accepted: boolean; reason?: string }>(IPC_CHANNELS.contextPinSelection, request),
+    validatePin: (request: PinValidateRequest) =>
+      invoke<{ state: PinnedContextState }>(IPC_CHANNELS.contextPinValidate, request),
+    revalidatePinFromDisk: (request: PinDiskRevalidateRequest) =>
+      invoke<{ state: PinnedContextState }>(IPC_CHANNELS.contextPinRevalidateFromDisk, request),
+    clearPin: (request: PinClearRequest) =>
+      invoke<{ cleared: boolean }>(IPC_CHANNELS.contextPinClear, request),
+    onPinChanged: (callback: (context: PinnedContextDto) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, context: PinnedContextDto): void =>
+        callback(context)
+      ipcRenderer.on(IPC_CHANNELS.contextPinChanged, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.contextPinChanged, listener)
+    },
     reportActiveNote: (request: ActiveNoteReportRequest) =>
       invoke<{ accepted: boolean }>(IPC_CHANNELS.contextActiveNoteReport, request),
     clearActiveNote: (request: ActiveNoteClearRequest) =>

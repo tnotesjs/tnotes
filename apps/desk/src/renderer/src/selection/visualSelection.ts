@@ -17,6 +17,7 @@ import { serializeBlockForClipboard } from '../markdown/blockActionMenu'
 
 import type { Node as ProseMirrorNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
+import type { PinnedBlockAnchor } from '../../../shared/contracts'
 import type { EditorSelectionPayload } from './selectionReporter'
 
 /** 代码块/代码组面板内部的 CodeMirror 选区（由组件从 DOM 找到后传进来） */
@@ -94,6 +95,25 @@ function blockMarkdown(
   return { markdown: markdown ?? '', source: 'reserialized' }
 }
 
+/**
+ * 单个块的锚点：位置 + 类型 + Markdown（raw 块是逐字原文）。
+ *
+ * 固定上下文（以及它的校验）用它做"内容或坐标是否变了"的判据 ——
+ * 这是可视化视图里可靠的位置与内容信息，不是伪造的源码坐标。
+ */
+export function blockAnchorFor(
+  view: EditorView,
+  pos: number,
+  node: ProseMirrorNode,
+  deps: VisualSelectionDeps
+): PinnedBlockAnchor {
+  return {
+    pos,
+    kind: visualBlockKind(node),
+    markdown: blockMarkdown(view, pos, node, deps).markdown
+  }
+}
+
 /** 与 [from, to] 相交的文档级块 */
 function blocksIntersecting(
   view: EditorView,
@@ -112,7 +132,8 @@ function payloadFromBlocks(
   view: EditorView,
   blocks: { pos: number; node: ProseMirrorNode }[],
   deps: VisualSelectionDeps,
-  selectedText: string
+  selectedText: string,
+  range: { from: number; to: number; nodeSelection?: boolean }
 ): EditorSelectionPayload {
   return {
     empty: false,
@@ -120,7 +141,17 @@ function payloadFromBlocks(
     blocks: blocks.map(({ pos, node }) => {
       const { markdown, source } = blockMarkdown(view, pos, node, deps)
       return { kind: visualBlockKind(node), markdown, source }
-    })
+    }),
+    // 校验锚点：只用编辑器模型里的可靠位置与内容（PM 位置 + 块 Markdown），
+    // 不伪造源码坐标
+    anchor: {
+      view: 'visual',
+      kind: 'block',
+      blocks: blocks.map(({ pos, node }) => blockAnchorFor(view, pos, node, deps)),
+      from: range.from,
+      to: range.to,
+      ...(range.nodeSelection ? { nodeSelection: true } : {})
+    }
   }
 }
 
@@ -145,22 +176,17 @@ export function captureVisualSelection(
       }
     }
     const node = cm.blockPosition == null ? null : view.state.doc.nodeAt(cm.blockPosition)
-    return {
-      empty: false,
-      selectedText: cm.text,
-      blocks:
-        node && cm.blockPosition != null
-          ? [
-              {
-                kind: visualBlockKind(node),
-                // 代码编辑器里的选区坐标是 CM 自己的，映射不到源码 → 只给块级上下文
-                markdown: blockMarkdown(view, cm.blockPosition, node, deps).markdown,
-                // raw block 的源码是逐字原文，普通代码块是序列化结果
-                source: node.type.name === 'deskRawBlock' ? 'raw' : 'reserialized'
-              }
-            ]
-          : []
+    if (!node || cm.blockPosition == null) {
+      return { empty: false, selectedText: cm.text, blocks: [] }
     }
+    return payloadFromBlocks(
+      view,
+      [{ pos: cm.blockPosition, node }],
+      deps,
+      cm.text,
+      // 代码编辑器里的选区坐标是 CM 自己的：恢复选区时用整块范围
+      { from: cm.blockPosition, to: cm.blockPosition + node.nodeSize }
+    )
   }
 
   const selection = view.state.selection
@@ -168,7 +194,11 @@ export function captureVisualSelection(
   // 2) 整块节点选中态（特殊组件）
   if (selection instanceof NodeSelection) {
     const node = selection.node
-    return payloadFromBlocks(view, [{ pos: selection.from, node }], deps, node.textContent || '')
+    return payloadFromBlocks(view, [{ pos: selection.from, node }], deps, node.textContent || '', {
+      from: selection.from,
+      to: selection.from + node.nodeSize,
+      nodeSelection: true
+    })
   }
 
   // 3) 普通文本选区（含跨段落）
@@ -186,5 +216,5 @@ export function captureVisualSelection(
       unsupportedReason: '选区没有落在可识别的块上（首版只给块级上下文）'
     }
   }
-  return payloadFromBlocks(view, blocks, deps, selectedText)
+  return payloadFromBlocks(view, blocks, deps, selectedText, { from, to })
 }

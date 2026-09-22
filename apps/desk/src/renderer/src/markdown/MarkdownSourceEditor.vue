@@ -23,7 +23,7 @@ import {
 } from '../monaco/monaco'
 
 import { sourceBlocksForOffsets } from '../selection/sourceBlocks'
-import type { EditorSelectionPayload } from '../selection/selectionReporter'
+import type { EditorSelectionAnchor, EditorSelectionPayload } from '../selection/selectionReporter'
 import { sourceLineStyleChangesFor } from './clearSourceLineStyles'
 import { headingFoldTargetLines } from './sourceFolding'
 import { DESK_SELECT_ALL_EVENT, shouldHandleDeskSelectAll } from './documentSelection'
@@ -61,6 +61,8 @@ const emit = defineEmits<{
   pasteImage: [file: File, insertAt: number]
   /** 选区变化（含"变空"）：上下文快照由上层按活动视图合并上报 */
   selectionChange: [payload: EditorSelectionPayload]
+  /** 右键菜单 / 快捷键要求把当前选区固定为 Agent 上下文 */
+  pinSelection: []
 }>()
 
 const host = ref<HTMLElement | null>(null)
@@ -154,6 +156,61 @@ function selectionCapture(): EditorSelectionPayload | null {
     },
     blocks
   }
+}
+
+/**
+ * 可固定的选区：捕获取舍 + 定位锚点。
+ *
+ * 锚点用的是**精确源码范围**（偏移 + 逐字文本），固定之后按它校验
+ * "内容或坐标是否变了"；拿不到（多选区 / 空选区）就返回 null，明确不固定。
+ */
+function pinnableSelection(): {
+  capture: EditorSelectionPayload
+  anchor: EditorSelectionAnchor
+} | null {
+  const payload = selectionCapture()
+  if (!payload || payload.empty || payload.unsupportedReason || !payload.range) return null
+  return {
+    capture: payload,
+    anchor: { view: 'source', kind: 'source-range', sourceRange: payload.range }
+  }
+}
+
+/**
+ * 校验固定锚点是否仍然有效。
+ *
+ * 返回 `null` 表示**这个视图验不了**（例如固定来自可视化视图的块锚点），
+ * 由上层退到内容级校验 —— 不猜、也不假装有效。
+ */
+function validatePinnedAnchor(
+  anchor: EditorSelectionAnchor,
+  expected: string
+): { valid: boolean; reason?: string } | null {
+  const textModel = model()
+  if (!textModel || anchor.kind !== 'source-range' || !anchor.sourceRange) return null
+  const { startOffset, endOffset } = anchor.sourceRange
+  const current = textModel.getValue().slice(startOffset, endOffset)
+  if (current === expected) return { valid: true }
+  return {
+    valid: false,
+    reason: `固定时的源码范围（偏移 ${startOffset}–${endOffset}）现在已经不是原来那段内容（内容或坐标变了）`
+  }
+}
+
+/** 「查看」固定上下文：把固定时的源码选区重新选出来并滚到可见 */
+function revealPinnedAnchor(anchor: EditorSelectionAnchor): boolean {
+  const instance = editor
+  if (!instance || anchor.kind !== 'source-range' || !anchor.sourceRange) return false
+  const range = {
+    startLineNumber: anchor.sourceRange.startLine,
+    startColumn: anchor.sourceRange.startColumn,
+    endLineNumber: anchor.sourceRange.endLine,
+    endColumn: anchor.sourceRange.endColumn
+  }
+  instance.setSelection(range)
+  instance.revealRangeInCenter(range)
+  instance.focus()
+  return true
 }
 
 /** 上报（节流在 selectionReporter 里做） */
@@ -340,6 +397,9 @@ function applyHeadingFold(command: HeadingFoldCommand): boolean {
 defineExpose({
   /** 让上层在内容变化（如外部刷新）后主动重新采集一次 */
   selectionCapture,
+  pinnableSelection,
+  validatePinnedAnchor,
+  revealPinnedAnchor,
   revealReference,
   revealLine,
   insertTextAt,
@@ -443,6 +503,17 @@ function createEditor(current: HTMLElement): void {
   })
   syncing = false
   bindKeybindings(editor)
+  // 源码视图的右键菜单走 Monaco 自带菜单：有选区时才出现「固定为 Agent 上下文」
+  editor.addAction({
+    id: 'desk-pin-selection',
+    label: '固定为 Agent 上下文',
+    contextMenuGroupId: '1_modification',
+    contextMenuOrder: 1.5,
+    precondition: 'editorHasSelection',
+    run: () => {
+      emit('pinSelection')
+    }
+  })
   editor.onDidChangeModelContent(() => {
     if (syncing) return
     const textModel = model()

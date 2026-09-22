@@ -19,6 +19,79 @@ function input(overrides: Partial<Electron.Input> = {}): Electron.Input {
   }
 }
 
+describe('⌘K 组合键：视图开关与固定上下文', () => {
+  it('⌘K 之后按 V 切换视图，按 P 固定上下文', () => {
+    const resolver = new TabShortcutResolver()
+    const now = 1_000
+    const primary = process.platform === 'darwin' ? { meta: true } : { control: true }
+    const key = (k) => ({
+      type: 'keyDown',
+      key: k,
+      shift: false,
+      control: false,
+      alt: false,
+      meta: false,
+      isComposing: false,
+      ...primary
+    })
+    // 组合键的第二个键是**不带修饰键**的（⌘K 之后再按 V / P）
+    const plain = (k: string) => ({
+      type: 'keyDown',
+      key: k,
+      shift: false,
+      control: false,
+      alt: false,
+      meta: false,
+      isComposing: false
+    })
+    // 起手：⌘K 只进入组合键窗口，不发命令
+    expect(resolver.resolve(key('k'), process.platform, now)).toEqual({
+      handled: true,
+      command: null
+    })
+    // 1.5s 内：V → 视图开关，P → 固定上下文
+    expect(resolver.resolve(plain('v'), process.platform, now + 100).command).toBe(
+      'toggle-note-view'
+    )
+    resolver.resolve(key('k'), process.platform, now + 200)
+    expect(resolver.resolve(plain('p'), process.platform, now + 300).command).toBe(
+      'pin-current-selection'
+    )
+  })
+
+  it('组合键窗口过期后不再触发', () => {
+    const resolver = new TabShortcutResolver()
+    const now = 1_000
+    const primary = process.platform === 'darwin' ? { meta: true } : { control: true }
+    const key = (k) => ({
+      type: 'keyDown',
+      key: k,
+      shift: false,
+      control: false,
+      alt: false,
+      meta: false,
+      isComposing: false,
+      ...primary
+    })
+    resolver.resolve(key('k'), process.platform, now)
+    expect(
+      resolver.resolve(
+        {
+          type: 'keyDown',
+          key: 'p',
+          shift: false,
+          control: false,
+          alt: false,
+          meta: false,
+          isComposing: false
+        },
+        process.platform,
+        now + 2_000
+      ).command
+    ).toBeNull()
+  })
+})
+
 describe('tab shortcuts', () => {
   it('maps unmodified primary+1…9 to one-based tab positions on each platform', () => {
     for (const platform of ['darwin', 'win32', 'linux'] as const) {

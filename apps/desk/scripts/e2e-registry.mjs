@@ -494,6 +494,24 @@ export const SUITES = [
     note: '本机 MCP get_current_note：活动标签识别、多分组、失焦、非笔记标签、关闭后不返回旧路径、不触发保存'
   },
   {
+    name: 'e2e-mcp-pinned-context.mjs',
+    area: 'mcp',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/main/context/**',
+      'apps/desk/src/main/ipc/context.ts',
+      'apps/desk/src/main/mcp/**',
+      'apps/desk/src/renderer/src/context/**',
+      'apps/desk/src/renderer/src/components/PinnedContextBar.vue',
+      'apps/desk/src/renderer/src/selection/**',
+      'apps/desk/src/renderer/src/editor-groups/NoteTabPane.vue',
+      'apps/desk/src/renderer/src/stores/editor.ts'
+    ],
+    serial: false,
+    smoke: false,
+    note: '本机 MCP 固定选区上下文：固定/替换、来源标签归属、内容与坐标精确失效、外部修改复核、查看与解除'
+  },
+  {
     name: 'e2e-mcp-visual-selection.mjs',
     area: 'mcp',
     tier: 'regression',

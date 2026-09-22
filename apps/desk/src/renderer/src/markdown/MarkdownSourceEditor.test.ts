@@ -176,6 +176,30 @@ class FakeEditor {
   addCommand(key: number, handler: () => void): void {
     this.commands.set(key, handler)
   }
+  /** 右键菜单动作（固定为 Agent 上下文走这里） */
+  actions: Array<{
+    id: string
+    label: string
+    contextMenuGroupId?: string
+    precondition?: string
+    run: () => void
+  }> = []
+  addAction(action: {
+    id: string
+    label: string
+    contextMenuGroupId?: string
+    precondition?: string
+    run: () => void
+  }): { dispose(): void } {
+    this.actions.push(action)
+    return { dispose: () => undefined }
+  }
+  runAction(id: string): boolean {
+    const action = this.actions.find((item) => item.id === id)
+    if (!action) return false
+    action.run()
+    return true
+  }
   runCommand(key: number): void {
     this.commands.get(key)?.()
   }
@@ -532,6 +556,20 @@ describe('MarkdownSourceEditor 选区采集（供本机 MCP 使用）', () => {
       columnBase: 1,
       endExclusive: true
     })
+    wrapper.unmount()
+  })
+
+  it('右键菜单注册了「固定为 Agent 上下文」，触发后 emit pinSelection', async () => {
+    const wrapper = mountEditor('alpha\nbeta\n')
+    await settle()
+    const editor = editorOf()
+    const action = editor.actions.find((item) => item.id === 'desk-pin-selection')
+    expect(action?.label).toBe('固定为 Agent 上下文')
+    expect(action?.contextMenuGroupId).toBe('1_modification')
+    expect(action?.precondition).toBe('editorHasSelection')
+
+    editor.runAction('desk-pin-selection')
+    expect(wrapper.emitted('pinSelection')).toHaveLength(1)
     wrapper.unmount()
   })
 

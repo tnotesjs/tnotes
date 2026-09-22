@@ -6,6 +6,7 @@ import EditorPane from './components/EditorPane.vue'
 import KnowledgeSidebar from './components/KnowledgeSidebar.vue'
 import NavigatorSidebar from './components/NavigatorSidebar.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
+import PinnedContextBar from './components/PinnedContextBar.vue'
 import ToastHost from './components/ToastHost.vue'
 import AppZoomFeedback from './components/AppZoomFeedback.vue'
 import CommandPalette from './commands/CommandPalette.vue'
@@ -13,6 +14,8 @@ import TerminalPanel from './terminal/TerminalPanel.vue'
 import { useEditorStore } from './stores/editor'
 import { findTab, tabAtNumber } from './editor-groups/layoutModel'
 import { syncActiveNote } from './context/activeNoteReporter'
+import { installPinnedContextSync } from './context/pinnedContextStore'
+import { runPinSelection } from './commands/pinSelectionBridge'
 import {
   clampSidebarWidth,
   KNOWLEDGE_SIDEBAR_MAX,
@@ -76,6 +79,8 @@ const createKbPackageJson = ref(false)
 const createKbGithubPages = ref(false)
 const createKbReadme = ref(false)
 const createKbGitInit = ref(false)
+let unsubscribePinnedContext: (() => void) | null = null
+
 const settingsOpen = ref(false)
 const paletteOpen = ref(false)
 const commandPalette = ref<{
@@ -299,6 +304,11 @@ async function handleTabShortcut(command: TabShortcutCommand): Promise<void> {
   }
   if (command === 'close-all-tabs') {
     await store.requestCloseTabs('all')
+    return
+  }
+  if (command === 'pin-current-selection') {
+    // 交给活动标签页：只有它有当前编辑器句柄与笔记身份
+    if (!runPinSelection()) store.status = '当前没有可固定的正文选区。'
     return
   }
   if (command === 'toggle-note-view') {
@@ -636,6 +646,7 @@ watch(
 )
 
 onMounted(async () => {
+  unsubscribePinnedContext = installPinnedContextSync()
   window.addEventListener('keydown', onKeydown)
   unsubscribeTabShortcut = window.desk.app.onTabShortcut((command) => {
     void handleTabShortcut(command)
@@ -676,6 +687,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  unsubscribePinnedContext?.()
+  unsubscribePinnedContext = null
   window.removeEventListener('keydown', onKeydown)
   unsubscribeTerminal?.()
   unsubscribeTerminal = null
@@ -776,6 +789,8 @@ onUnmounted(() => {
       </button>
       <button type="button" aria-label="忽略本次更新" @click="dismissUpdateBanner">×</button>
     </div>
+
+    <PinnedContextBar v-if="store.hasWorkspace" />
 
     <main
       v-if="store.hasWorkspace"
