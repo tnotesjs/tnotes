@@ -6,13 +6,15 @@ import { NodeSelection, Plugin, PluginKey, TextSelection } from '@milkdown/kit/p
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 import type { EditorSelection } from '@codemirror/state'
+import type { Node as ProseMirrorNode } from '@milkdown/kit/prose/model'
 import type { MilkdownPlugin } from '@milkdown/kit/ctx'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { serializeImageMarkdown } from '@tnotesjs/ui/image-markdown'
 import { createCanvasImageClipboardPlugin } from './canvasImageClipboardPlugin'
 import { DESK_CODE_CLIPBOARD_FORMAT } from './clipboardNewline'
 import { noteRelativeAssetPath } from './noteAssetPath'
-import { blockAnchorFor, captureVisualSelection } from '../selection/visualSelection'
+import { captureVisualSelection, type CodeMirrorCapture } from '../selection/visualSelection'
+import { validateVisualAnchor } from '../selection/pinnedAnchorCheck'
 import { showEditorContextMenu } from './editorContextMenu'
 import { onCodeEditorSelection } from '../selection/codeEditorSelectionBridge'
 import type { EditorSelectionAnchor, EditorSelectionPayload } from '../selection/selectionReporter'
@@ -109,7 +111,12 @@ import {
   type BlockBoundaryNavigationOptions
 } from './blockBoundaryNavigation'
 
-import type { NotePageWidth, NoteTocDisplay, NoteViewMode } from '../../../shared/contracts'
+import type {
+  NotePageWidth,
+  NoteTocDisplay,
+  NoteViewMode,
+  PinnedSelectionAnchor
+} from '../../../shared/contracts'
 import type { DisplayLimitedItem } from '../editor/markdown/projectionFidelity'
 
 const props = withDefaults(
@@ -812,11 +819,7 @@ function applyGeneratedTocDisplay(): void {
  * 只在**焦点确实在编辑器内的 CM 里**时才取：设置面板、图片描述框等输入框里的
  * 选区不会被误当成正文选区（它们不在 `.milkdown` 里）。
  */
-function codeMirrorCapture(): {
-  text: string
-  ranges: number
-  blockPosition: number | null
-} | null {
+function codeMirrorCapture(): CodeMirrorCapture | null {
   const active = document.activeElement
   const cmDom = active instanceof Element ? active.closest('.cm-editor') : null
   if (!cmDom || !(host.value?.contains(cmDom) ?? false)) return null
@@ -830,7 +833,9 @@ function codeMirrorCapture(): {
   return {
     text: cm.state.sliceDoc(main.from, main.to),
     ranges: ranges.length,
-    blockPosition: blockPositionForDom(editorView(), cmDom)
+    blockPosition: blockPositionForDom(editorView(), cmDom),
+    from: main.from,
+    to: main.to
   }
 }
 
@@ -884,38 +889,38 @@ function pinnableSelection(): {
 }
 
 /**
- * 校验固定锚点是否仍然有效（块的位置与内容都要对得上）。
- * 返回 `null` 表示当前视图验不了（例如固定来自源码视图的偏移锚点）。
+ * 校验固定锚点是否仍然有效。
+ *
+ * 同视图时用编辑器模型里的位置与选区文本（`validateVisualAnchor`）；
+ * 锚点来自另一个视图（例如固定时在源码视图）时返回 null，
+ * 由上层用**位置锚**（`textRange`）对文档文本做偏移校验 —— 都不做全文搜索。
  */
 function validatePinnedAnchor(
   anchor: EditorSelectionAnchor,
   expected: string
 ): { valid: boolean; reason?: string } | null {
   const current = editorView()
-  if (!current?.state || anchor.kind !== 'block' || !anchor.blocks?.length) return null
+  if (!current?.state) return null
   const serializer = deskEditor?.editor.ctx.get(serializerCtx)
   if (!serializer) return null
   const deps = {
-    serializeDocument: (document: Parameters<typeof serializer>[0]) => serializer(document)
-  }
-  for (const [index, block] of anchor.blocks.entries()) {
-    const node = current.state.doc.nodeAt(block.pos)
-    if (!node) {
-      return {
-        valid: false,
-        reason: `固定的第 ${index + 1} 个相关块已经不在原来的位置了（坐标变了）`
-      }
-    }
-    const now = blockAnchorFor(current, block.pos, node, deps)
-    if (now.kind !== block.kind || now.markdown !== block.markdown) {
-      return { valid: false, reason: `固定的第 ${index + 1} 个相关块内容已变化` }
+    serializeDocument: (document: Parameters<typeof serializer>[0]) => serializer(document),
+    codeText: (pos: number, node: ProseMirrorNode) => {
+      // 用块自己的 DOM 找里面的 CodeMirror：**不依赖焦点**，这样内容变化时也能校验
+      const dom = current.nodeDOM(pos)
+      const host = dom instanceof HTMLElement ? dom : null
+      const cmDom = host?.querySelector('.cm-editor')
+      if (!cmDom) return null
+      const cm = CodeMirrorView.findFromDOM(cmDom as HTMLElement)
+      const state = (cm?.state as unknown as { doc?: { toString(): string } } | undefined)?.doc
+      void node
+      return state ? state.toString() : null
     }
   }
-  if (expected && !current.state.doc.textContent.includes(expected)) {
-    // 块层面的内容没变但这个文本找不到了：多半是选区跨块且其中一段被改
-    return { valid: false, reason: '固定时选中的文字在当前笔记里已经找不到了（内容已变化）' }
-  }
-  return { valid: true }
+  const visual = validateVisualAnchor(current, anchor as PinnedSelectionAnchor, expected, deps)
+  if (visual) return visual
+  // 可视化视图验不了源码偏移锚点：交给位置锚（上层）校验
+  return null
 }
 
 /** 「查看」固定上下文：把固定时的位置重新选出来并滚动到可见 */

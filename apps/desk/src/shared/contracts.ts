@@ -1830,13 +1830,34 @@ export interface PinnedBlockAnchor {
   markdown: string
 }
 
+/**
+ * **位置锚**：在"文档文本"坐标系里的偏移与期望文本。
+ *
+ * 跨视图 / 磁盘复核都只认它 —— 校验的是"同一段文字还在不在原来的位置上"，
+ * 而不是"全文里还能不能搜到这段文字"（后者会让坐标变化逃过校验，
+ * 也会让别处的相同文字顶替原位置）。
+ */
+export interface PinnedTextAnchor {
+  startOffset: number
+  endOffset: number
+  /** 该范围里应当出现的文本（源码固定=选中文字；可视化固定=涉及块的 Markdown） */
+  expected: string
+}
+
 export interface PinnedSelectionAnchor {
   view: 'source' | 'visual'
   kind: 'source-range' | 'block'
   /** 源码视图：精确范围（含 draft/disk 归属） */
   sourceRange?: SelectionRangeDto
-  /** 可视化视图：涉及的块（逐个校验位置与内容） */
+  /** 位置锚（跨视图与磁盘复核的唯一判据；两者都缺就明确失效） */
+  textRange?: PinnedTextAnchor
+  /** 可视化视图：涉及的块（给 Agent 的块级上下文 + 位置/类型校验） */
   blocks?: PinnedBlockAnchor[]
+  /**
+   * 可视化视图里**代码块 / 代码组面板内部**的选区：用 CodeMirror 自己的坐标校验
+   * （不映射成源码坐标，也不退化成全文搜索）。
+   */
+  code?: { from: number; to: number; expected: string }
   /** 可视化视图：恢复选区用（PM 文档位置，锚点有效时才有意义） */
   from?: number
   to?: number

@@ -41,6 +41,21 @@ const anchorSchema = z.object({
   view: z.enum(['source', 'visual']),
   kind: z.enum(['source-range', 'block']),
   sourceRange: rangeSchema.optional(),
+  // 位置锚：跨视图 / 磁盘复核的唯一判据（漏掉它固定会被拒，所以这里必须有）
+  textRange: z
+    .object({
+      startOffset: z.number().int().min(0),
+      endOffset: z.number().int().min(0),
+      expected: z.string().max(1_000_000)
+    })
+    .optional(),
+  code: z
+    .object({
+      from: z.number().int().min(0),
+      to: z.number().int().min(0),
+      expected: z.string().max(1_000_000)
+    })
+    .optional(),
   blocks: z
     .array(
       z.object({

@@ -35,6 +35,7 @@ import {
 } from '../context/pinnedContextStore'
 import { registerPinSelectionRunner } from '../commands/pinSelectionBridge'
 import { findTab } from './layoutModel'
+import { validateTextAnchor } from '../selection/pinnedAnchorCheck'
 import { decideViewSwitch } from './noteViewSwitch'
 import type { DisplayLimitedItem } from '../editor/markdown/projectionFidelity'
 import { insertableImageMarkdown } from './noteAssets'
@@ -393,18 +394,22 @@ async function validatePinnedContext(): Promise<void> {
     if (!precise.valid) await reportPinValidation(context.pinId, false, precise.reason)
     return
   }
-  const content = session.value?.content ?? ''
-  if (expected && content && !content.includes(expected)) {
+  // 当前视图验不了这个锚点（例如固定在可视化、现在在源码视图）：用**位置锚**校验，
+  // 只认"同一偏移范围上还是不是同一段文字" —— 不做全文搜索，
+  // 否则"A 前插入内容导致坐标变化"会因为还能搜到而逃过校验。
+  const text = session.value?.content ?? ''
+  const positional = validateTextAnchor(text, context.anchor)
+  if (!positional) {
     await reportPinValidation(
       context.pinId,
       false,
-      '固定时选中的文字在当前文档里找不到了（内容已变化）'
+      '固定锚点缺少可校验的位置信息，无法确认它还在原处'
     )
+    return
   }
+  if (!positional.valid) await reportPinValidation(context.pinId, false, positional.reason)
 }
 
-// 内容变化就校验：`content` 覆盖未保存草稿（revision 只在保存时变），
-// 不能只靠光标选区或"整篇版本号"
 watch(
   () => [session.value?.content, session.value?.document.revision, session.value?.dirty],
   () => void validatePinnedContext()

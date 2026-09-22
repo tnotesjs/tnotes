@@ -27,6 +27,9 @@ export interface CodeMirrorCapture {
   ranges: number
   /** 所在块的文档位置（找不到时为 null） */
   blockPosition: number | null
+  /** CM 自己的选区坐标（校验时按它比对，不映射成源码坐标） */
+  from: number
+  to: number
 }
 
 export interface VisualSelectionDeps {
@@ -128,13 +131,58 @@ function blocksIntersecting(
   return blocks
 }
 
+/**
+ * 涉及块的**文档文本位置锚**：用"序列化到该块为止"的长度算偏移，
+ * 保证是位置而不是全文搜索（A 前插入内容 → 偏移变了 → 校验失败）。
+ *
+ * 这是"序列化文档坐标系"，不是从可视化视图编造出来的源码行列。
+ */
+function blockTextRange(
+  view: EditorView,
+  blocks: { pos: number; node: ProseMirrorNode }[],
+  deps: VisualSelectionDeps,
+  expected: string
+): { startOffset: number; endOffset: number; expected: string } | null {
+  const first = blocks[0]
+  if (!first) return null
+  // 位置锚必须来自"整篇序列化"的坐标系（和源码视图的文本、磁盘内容同一套坐标）。
+  // 做法：在第一个相关块**前面**临时插一个带哨兵的段落，序列化整篇，再从这个哨兵之后
+  // 找到该块 Markdown 的起点 —— 插入不落盘、也不进文档，只用来定位。
+  const sentinel = 'DESK-PIN-ANCHOR-9f3c'
+  try {
+    const paragraph = view.state.schema.nodes.paragraph
+    if (!paragraph) return null
+    const tr = view.state.tr.insert(
+      first.pos,
+      paragraph.create(null, view.state.schema.text(sentinel))
+    )
+    const marked = deps.serializeDocument(tr.doc)
+    const marker = marked.indexOf(sentinel)
+    if (marker < 0) return null
+    // 哨兵段落占的正是"该块在整篇序列化里的起点"（插入段落本身不改变前面的字节）。
+    // 期望文本直接取**文档自身**在这一段上的内容：位置锚与文档坐标系天然一致，
+    // 不依赖"块序列化结果与整篇序列化逐字相同"这种假设。
+    const startOffset = marker
+    const whole = deps.serializeDocument(view.state.doc)
+    const endOffset = startOffset + expected.length
+    const slice = whole.slice(startOffset, endOffset)
+    if (!slice.trim() || slice.length !== expected.length) return null
+    return { startOffset, endOffset, expected: slice }
+  } catch {
+    return null
+  }
+}
+
 function payloadFromBlocks(
   view: EditorView,
   blocks: { pos: number; node: ProseMirrorNode }[],
   deps: VisualSelectionDeps,
   selectedText: string,
-  range: { from: number; to: number; nodeSelection?: boolean }
+  range: { from: number; to: number; nodeSelection?: boolean },
+  code?: { from: number; to: number; expected: string }
 ): EditorSelectionPayload {
+  const blockAnchors = blocks.map(({ pos, node }) => blockAnchorFor(view, pos, node, deps))
+  const textRange = blockTextRange(view, blocks, deps, blockAnchors[0]?.markdown ?? '')
   return {
     empty: false,
     selectedText,
@@ -142,15 +190,17 @@ function payloadFromBlocks(
       const { markdown, source } = blockMarkdown(view, pos, node, deps)
       return { kind: visualBlockKind(node), markdown, source }
     }),
-    // 校验锚点：只用编辑器模型里的可靠位置与内容（PM 位置 + 块 Markdown），
+    // 校验锚点：位置（PM 位置 + 序列化偏移）+ 内容（块 Markdown / 代码编辑器坐标），
     // 不伪造源码坐标
     anchor: {
       view: 'visual',
       kind: 'block',
-      blocks: blocks.map(({ pos, node }) => blockAnchorFor(view, pos, node, deps)),
+      ...(textRange ? { textRange } : {}),
+      blocks: blockAnchors,
       from: range.from,
       to: range.to,
-      ...(range.nodeSelection ? { nodeSelection: true } : {})
+      ...(range.nodeSelection ? { nodeSelection: true } : {}),
+      ...(code ? { code } : {})
     }
   }
 }
@@ -185,7 +235,9 @@ export function captureVisualSelection(
       deps,
       cm.text,
       // 代码编辑器里的选区坐标是 CM 自己的：恢复选区时用整块范围
-      { from: cm.blockPosition, to: cm.blockPosition + node.nodeSize }
+      { from: cm.blockPosition, to: cm.blockPosition + node.nodeSize },
+      // 校验用 CM 自己的坐标（同视图内精确；跨视图走块位置锚）
+      { from: cm.from, to: cm.to, expected: cm.text }
     )
   }
 

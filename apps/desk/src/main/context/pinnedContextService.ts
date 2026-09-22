@@ -103,6 +103,7 @@ export class PinnedContextService {
    * 只对"固定时来自磁盘"的锚点有意义：草稿固定的坐标属于编辑器草稿，拿磁盘比会误判，
    * 那种情况交给编辑器内容那一路校验。
    *
+   * 判据是**位置锚（偏移 + 期望文本）**：全文搜索命中不能代替原位置校验。
    * 返回值是"复核之后固定是否仍然有效"。
    */
   revalidateAgainst(content: string, pinId: string): boolean {
@@ -110,13 +111,12 @@ export class PinnedContextService {
     if (!current || current.pinId !== pinId || current.state !== 'pinned') return false
     const { request } = current
     if (request.editor.contentSource !== 'disk') return false
-    const expected = request.capture.selectedText ?? ''
     const anchor = request.anchor
+    // 只认**位置锚**：同一偏移范围上还是不是同一段文字。
+    // 用全文搜索（includes）会让"A 移位"或"别处有相同文字"逃过校验。
+    const range = anchor.textRange
     const matched =
-      anchor.kind === 'source-range' && anchor.sourceRange
-        ? content.slice(anchor.sourceRange.startOffset, anchor.sourceRange.endOffset) === expected
-        : (anchor.blocks ?? []).length > 0 &&
-          (anchor.blocks ?? []).every((block) => content.includes(block.markdown.trim()))
+      Boolean(range) && content.slice(range!.startOffset, range!.endOffset) === range!.expected
     if (matched) return true
     this.invalidateWith(pinId, '磁盘上的来源笔记已被外部修改，固定时的位置或内容已经对不上')
     return false
@@ -175,14 +175,16 @@ export class PinnedContextService {
   private invalidateWith(pinId: string, reason: string): boolean {
     const current = this.current
     if (!current || current.pinId !== pinId) return false
-    // 失效时清掉正文，只留定位信息与原因
+    // 失效时清掉正文与定位信息，只留身份、时间与原因
+    // （锚点里的期望文本、块 Markdown 也是内容，一并丢掉）
     this.current = {
       state: 'invalidated',
       pinId: current.pinId,
       pinnedAt: current.pinnedAt,
       request: {
         ...current.request,
-        capture: { collector: current.request.capture.collector, empty: true }
+        capture: { collector: current.request.capture.collector, empty: true },
+        anchor: { view: current.request.anchor.view, kind: current.request.anchor.kind }
       },
       reason
     }
@@ -238,6 +240,11 @@ export class PinnedContextService {
   private checkAnchor(request: PinSelectionRequest): string | null {
     const { anchor, capture } = request
     if (!capture.selectedText) return '当前没有可固定的正文选区'
+    // **位置锚是硬要求**：没有它就只能靠全文搜索猜位置，而"坐标变化"就验不出来了。
+    // 拿不到就明确拒绝固定，而不是固定一份以后验不了的上下文。
+    if (!anchor.textRange || anchor.textRange.endOffset <= anchor.textRange.startOffset) {
+      return '这个选区拿不到可校验的位置信息，无法固定为 Agent 上下文（首版不猜坐标、也不做全文搜索）'
+    }
     if (anchor.kind === 'source-range') {
       const range = anchor.sourceRange
       if (!range || range.endOffset <= range.startOffset) {

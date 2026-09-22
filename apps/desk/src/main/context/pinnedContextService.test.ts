@@ -42,6 +42,8 @@ function pinRequest(overrides: Partial<PinSelectionRequest> = {}): PinSelectionR
     anchor: {
       view: 'source',
       kind: 'source-range',
+      // 位置锚：偏移 10–15 上应当是「固定的正文」
+      textRange: { startOffset: 10, endOffset: 15, expected: '固定的正文' },
       sourceRange: {
         startLine: 3,
         startColumn: 1,
@@ -106,6 +108,7 @@ describe('固定选区上下文服务（主进程）', () => {
       anchor: {
         view: 'visual',
         kind: 'block',
+        textRange: { startOffset: 0, endOffset: 6, expected: 'B 的选区' },
         blocks: [{ pos: 3, kind: 'paragraph', markdown: 'B 的选区' }],
         from: 4,
         to: 9
@@ -157,7 +160,22 @@ describe('固定选区上下文服务（主进程）', () => {
       pinRequest({ anchor: { view: 'visual', kind: 'block', blocks: [] } })
     )
     expect(noAnchor.accepted).toBe(false)
-    expect(noAnchor.reason).toContain('可靠的块位置')
+    expect(noAnchor.reason).toContain('位置信息')
+
+    // 没有位置锚（只能靠全文搜索）→ 明确拒绝固定
+    const noPosition = store.pin(
+      pinRequest({
+        anchor: {
+          view: 'visual',
+          kind: 'block',
+          blocks: [{ pos: 3, kind: 'paragraph', markdown: '固定的正文' }],
+          from: 4,
+          to: 9
+        }
+      })
+    )
+    expect(noPosition.accepted).toBe(false)
+    expect(noPosition.reason).toContain('位置信息')
 
     const emptyCapture = store.pin(pinRequest({ capture: { collector: 'source', empty: false } }))
     expect(emptyCapture.accepted).toBe(false)
@@ -212,25 +230,29 @@ describe('固定选区上下文服务（主进程）', () => {
     expect(context.selection).toBeUndefined()
   })
 
-  it('磁盘复核：A 后方变化保留、A 变化失效、草稿固定不看磁盘', () => {
+  it('磁盘位置复核：只认位置锚（移位 / 别处有相同文字都要失效）', () => {
     const store = service()
     store.pin(pinRequest())
-    // 锚点是偏移 10–15 上的「固定的正文」（见上面的 pinRequest）
-    const source = '0123456789固定的正文甲段二。（外部追加）'
-    // 只动 A 后方：仍然有效
-    expect(store.revalidateAgainst(source, 'pin-1')).toBe(true)
+    // A 的偏移是 10–15
+    const same = '0123456789固定的正文甲段二。（外部追加）'
+    expect(store.revalidateAgainst(same, 'pin-1')).toBe(true)
     expect(store.read().state).toBe('pinned')
 
-    // A 的内容被外部改掉：明确失效（丢正文）
-    const changed = '0123456789固定的正X甲段二。'
-    expect(store.revalidateAgainst(changed, 'pin-1')).toBe(false)
-    const context = store.read()
-    expect(context.state).toBe('invalidated')
-    expect(context.reason).toContain('外部修改')
-    expect(context.selection).toBeUndefined()
-    expect(JSON.stringify(context)).not.toContain('固定的正文')
+    // 前面插入内容 → 坐标变化 → 失效（不是"全文还能搜到"）
+    const shifted = '前面插了一段。0123456789固定的正文甲段二。'
+    expect(store.revalidateAgainst(shifted, 'pin-1')).toBe(false)
+    expect(store.read().state).toBe('invalidated')
+    expect(store.read().selection).toBeUndefined()
+    expect(JSON.stringify(store.read())).not.toContain('固定的正文')
 
-    // 草稿固定：坐标属于编辑器草稿，磁盘复核不参与（不误判）
+    // 原位置被别的文字占掉、别处仍有同样文字 → 仍然失效
+    const replaced = '0123456789XXXXX甲段二。后面还有 固定的正文'
+    const second = service()
+    second.pin(pinRequest())
+    expect(second.revalidateAgainst(replaced, 'pin-1')).toBe(false)
+    expect(second.read().state).toBe('invalidated')
+
+    // 草稿固定：磁盘复核不参与（不误判）
     const draftStore = service()
     draftStore.pin(
       pinRequest({
