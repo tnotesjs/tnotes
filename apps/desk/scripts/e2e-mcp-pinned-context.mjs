@@ -53,7 +53,9 @@ const fixture = createFixture('mcp-pinned', {
       body: '# 戊笔记\n\n戊段一。\n\n```js\nconst pinned = 1\n```\n'
     },
     // "原位置被删除、别处仍有相同文字"用例：也要一篇干净笔记（丙笔记那时已经写不回源码）
-    { index: '0007', title: '己笔记', body: '# 己笔记\n\n己段一。\n\n己段二。\n' }
+    { index: '0007', title: '己笔记', body: '# 己笔记\n\n己段一。\n\n己段二。\n' },
+    // 块内位置映射：链接地址与正文里有同名文字（`[x](AAA) AAA`）
+    { index: '0008', title: '辛笔记', body: '# 辛笔记\n\n[x](AAA) AAA\n' }
   ]
 })
 fixture.writeProfileConfig({ mcp: { enabled: true, port: PORT } })
@@ -113,6 +115,11 @@ async function pinViaPalette() {
   await palette.fill('>固定为 Agent 上下文')
   await page.locator('.command-palette__item', { hasText: '固定为 Agent 上下文' }).first().click()
   await page.waitForTimeout(500)
+}
+
+/** 按 n 次某个方向键（Monaco 里定位光标：Desk 的 ⌘F 是站内搜索，不能用查找框） */
+async function pressKey(times, key) {
+  for (let index = 0; index < times; index += 1) await page.keyboard.press(key)
 }
 
 /** 用合成 contextmenu 打开正文右键菜单（不改选区），点「固定为 Agent 上下文」 */
@@ -668,6 +675,96 @@ try {
   )
   await page.getByTestId('pinned-context-clear').click()
   await page.waitForTimeout(300)
+
+  /* ── 块内映射：链接地址里的同名文字不能顶替选中的正文 ── */
+  // 回归自复核：`[x](AAA) AAA` 里选中链接后面的 `AAA`，之前锚点会落到链接地址里的
+  // 那个 `AAA`（块内偏移 4），于是"把真正选中的正文改成 CCC"在跨视图校验里仍判有效。
+  await page.locator('.toc-row', { hasText: '辛笔记' }).first().click()
+  await page.waitForTimeout(900)
+  await page.evaluate(() => {
+    const pane = window.visibleNotePane()
+    const paragraph = [...(pane?.querySelectorAll('p') ?? [])].find((item) =>
+      item.textContent?.includes('AAA')
+    )
+    const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT)
+    let last = null
+    while (walker.nextNode()) last = walker.currentNode
+    const text = last?.textContent ?? ''
+    // 段落里最后一个文本节点是链接后面的 ` AAA`：只选 `AAA` 那三个字符
+    if (last && text.trim() === 'AAA') {
+      window.getSelection()?.setBaseAndExtent(last, text.length - 3, last, text.length)
+    }
+  })
+  await settle()
+  await pinViaPalette()
+  const pinnedAfterLink = await waitFor(async () => {
+    const value = await read(client)
+    return value.source === 'pinned' ? value : null
+  }, 8000)
+  rec.record(
+    '链接后面的正文能被固定（正文里只有链接文字与那段文字）',
+    pinnedAfterLink?.selection?.selectedText === 'AAA',
+    `text=${JSON.stringify(pinnedAfterLink?.selection?.selectedText)}`
+  )
+
+  await viewButton('源码视图').click()
+  await page.locator('.markdown-source-editor .view-lines').first().waitFor({ timeout: 20000 })
+  await page.waitForTimeout(400)
+  const afterLinkViewSwitch = await read(client)
+  rec.record(
+    '固定链接后面的正文 → 切到源码视图：固定仍然有效',
+    afterLinkViewSwitch.source === 'pinned' && afterLinkViewSwitch.status === 'ok',
+    `source=${afterLinkViewSwitch.source} status=${afterLinkViewSwitch.status}`
+  )
+  // 先在文档末尾追加一段（选区之外、坐标不变）→ 跨视图路径上固定保留。
+  // 先点一下编辑器把焦点拿回来：切视图是点工具栏按钮，焦点还在按钮上
+  await page
+    .locator('.markdown-source-editor .monaco-editor')
+    .first()
+    .click({ position: { x: 200, y: 60 } })
+  await page.keyboard.press('Control+g')
+  await page.waitForTimeout(300)
+  await page.keyboard.type('99')
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(200)
+  await page.keyboard.type('（末尾追加）')
+  await page.waitForTimeout(700)
+  const afterTailAppend = await read(client)
+  rec.record(
+    '跨视图路径上，选区**之外**（文档末尾）的追加 → 固定保留',
+    afterTailAppend.source === 'pinned' && afterTailAppend.selection?.selectedText === 'AAA',
+    `source=${afterTailAppend.source} status=${afterTailAppend.status} message=${String(afterTailAppend?.message).slice(0, 40)}`
+  )
+  // 改掉**真正选中的**那段正文：修复前锚点在链接地址里，改正文不会失效 ——
+  // 这一条就是那个缺陷的回归证据。笔记带 front-matter，正文那一行是第 7 行：
+  // 用 Monaco 的「转到行」（Ctrl+G）定位，再按列走到行尾的 `AAA`。
+  await page
+    .locator('.markdown-source-editor .monaco-editor')
+    .first()
+    .click({ position: { x: 200, y: 60 } })
+  await page.keyboard.press('Control+g')
+  await page.waitForTimeout(300)
+  await page.keyboard.type('7')
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(300)
+  await pressKey(9, 'ArrowRight') // `[x](AAA) ` 之后就是正文那个 AAA
+  await pressKey(3, 'Shift+ArrowRight')
+  await page.keyboard.type('CCC')
+  const afterSelectedEdit = await waitFor(async () => {
+    const value = await read(client)
+    return value.status === 'pinned_invalidated' ? value : null
+  }, 10000)
+  rec.record(
+    '改掉真正选中的那段正文 → 跨视图校验失效（不再被链接地址里的同名文字顶替）',
+    afterSelectedEdit?.status === 'pinned_invalidated' && afterSelectedEdit.selection === undefined,
+    `status=${afterSelectedEdit?.status} message=${String(afterSelectedEdit?.message).slice(0, 40)}`
+  )
+  await page.getByTestId('pinned-context-clear').click()
+  await page.waitForTimeout(300)
+  if ((await page.locator('.markdown-source-editor').count()) > 0) {
+    await viewButton('可视化编辑').click()
+    await waitFor(async () => (await page.locator('.milkdown .ProseMirror').count()) > 0, 20000)
+  }
 
   /* ── 超限拒绝 ── */
   await page.locator('.toc-row', { hasText: '巨块' }).first().click()
