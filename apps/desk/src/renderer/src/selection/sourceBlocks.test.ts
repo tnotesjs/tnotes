@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { scanSourceBlocks, sourceBlocksForOffsets } from './sourceBlocks'
+import { nthFenceBodyRange, scanSourceBlocks, sourceBlocksForOffsets } from './sourceBlocks'
 
 describe('源码视图相关块扫描', () => {
   const text = [
@@ -66,6 +66,37 @@ describe('源码视图相关块扫描', () => {
     ])
     const emptyAt = text.indexOf('尾段')
     expect(sourceBlocksForOffsets(text, emptyAt, emptyAt)).toHaveLength(1)
+  })
+
+  it('第 n 个围栏正文：按结构数围栏（两份一模一样的代码也不会串到第一个）', () => {
+    const group = [
+      '::: code-group',
+      '```js',
+      'const same = 1',
+      '```',
+      '```js',
+      'const same = 1',
+      '```',
+      ':::',
+      ''
+    ].join('\n')
+    const first = nthFenceBodyRange(group, 0)
+    const second = nthFenceBodyRange(group, 1)
+    expect(first).not.toBeNull()
+    expect(second).not.toBeNull()
+    expect(group.slice(first!.startOffset, first!.endOffset)).toBe('const same = 1\n')
+    expect(group.slice(second!.startOffset, second!.endOffset)).toBe('const same = 1\n')
+    // 两处正文的偏移不同（不是同一个位置）
+    expect(first!.startOffset).not.toBe(second!.startOffset)
+    // 越界 / 负数：拿不到就返回 null（调用方据此拒绝固定）
+    expect(nthFenceBodyRange(group, 2)).toBeNull()
+    expect(nthFenceBodyRange(group, -1)).toBeNull()
+  })
+
+  it('第 n 个围栏正文：未闭合的围栏正文一直到文档末尾', () => {
+    const open = ['```js', 'const a = 1', 'const b = 2', ''].join('\n')
+    const body = nthFenceBodyRange(open, 0)
+    expect(open.slice(body!.startOffset, body!.endOffset)).toBe('const a = 1\nconst b = 2\n')
   })
 
   it('未闭合围栏折到文末（块不会吞掉后续块之外的内容）', () => {

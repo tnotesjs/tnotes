@@ -149,6 +149,107 @@ describe('真实采集 → 跨视图 / 磁盘复核（位置范围来自编辑�
   })
 })
 
+describe('块身份：重复内容不会指错位置（真实采集）', () => {
+  it('两个一模一样的段落：选中第二个 → 锚点落在第二个的偏移上', async () => {
+    const body = 'AAA\n\nAAA\n'
+    const { view, deps } = await setup(body)
+    // 选中**第二个**段落（按文档位置，不按文字）
+    let secondPos = -1
+    view.state.doc.forEach((node, pos) => {
+      if (node.textContent === 'AAA' && pos > 0) secondPos = pos
+    })
+    expect(secondPos).toBeGreaterThan(0)
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, secondPos + 1, secondPos + 4))
+    )
+    const payload = captureVisualSelection(view, deps)
+    const anchor = payload.anchor as PinnedSelectionAnchor
+    const range = anchor.ranges![0]!
+    // 先断言偏移确实对应**所选位置**（第二个段落在源码里的偏移是 5）
+    expect(range.startOffset).toBe(5)
+    expect(body.slice(range.startOffset, range.endOffset)).toBe('AAA')
+
+    // 改第二段 → 失效
+    expect(validateTextAnchor('AAA\n\nCCC\n', anchor)?.valid).toBe(false)
+    // 改第一段（未选中）→ 保留
+    expect(validateTextAnchor('CCC\n\nAAA\n', anchor)).toEqual({ valid: true })
+  })
+
+  it('同一代码块里第二个相同的词：按 CM 坐标落点，不按首次匹配', async () => {
+    const body = '```js\nfoo foo\n```\n'
+    const { view, deps } = await setup(body)
+    // 第二个 foo：CM 偏移 4–7
+    const payload = captureVisualSelection(view, {
+      ...deps,
+      codeMirror: () => ({ text: 'foo', ranges: 1, blockPosition: 0, from: 4, to: 7 })
+    })
+    const anchor = payload.anchor as PinnedSelectionAnchor
+    const range = anchor.ranges![0]!
+    // 第一个 foo 的偏移是 7（围栏 + 换行之后），第二个应当是 11
+    expect(body.slice(range.startOffset, range.endOffset)).toBe('foo')
+    // 围栏正文从 '```js\n' 之后开始（偏移 6），第二个 foo 是正文里的 4 → 10
+    expect(range.startOffset).toBe(10)
+
+    // 改第二个（选中那个）→ 失效；只改第一个 → 保留
+    expect(validateTextAnchor('```js\nfoo XXX\n```\n', anchor)?.valid).toBe(false)
+    expect(validateTextAnchor('```js\nXXX foo\n```\n', anchor)).toEqual({ valid: true })
+  })
+
+  it('不同代码组面板里的相同文字：按面板序号（结构）定位', async () => {
+    const body = [
+      '::: code-group',
+      '',
+      '```js [a.js]',
+      'same',
+      '```',
+      '',
+      '```ts [b.ts]',
+      'same',
+      '```',
+      '',
+      ':::',
+      ''
+    ].join('\n')
+    const { view, deps } = await setup(body)
+    const rawPos = 0
+    // 第二个面板（panelIndex: 1）
+    const payload = captureVisualSelection(view, {
+      ...deps,
+      codeMirror: () => ({
+        text: 'same',
+        ranges: 1,
+        blockPosition: rawPos,
+        from: 0,
+        to: 4,
+        panelIndex: 1
+      })
+    })
+    const anchor = payload.anchor as PinnedSelectionAnchor
+    const range = anchor.ranges![0]!
+    const secondOccurrence = body.indexOf('same', body.indexOf('same') + 1)
+    expect(range.startOffset).toBe(secondOccurrence)
+
+    // 只改第二个面板 → 失效；只改第一个面板 → 保留
+    const editedSecond = body.replace('```ts [b.ts]\nsame', '```ts [b.ts]\nXXXX')
+    const editedFirst = body.replace('```js [a.js]\nsame', '```js [a.js]\nXXXX')
+    expect(validateTextAnchor(editedSecond, anchor)?.valid).toBe(false)
+    expect(validateTextAnchor(editedFirst, anchor)).toEqual({ valid: true })
+  })
+
+  it('结构对不上（顶层块数不一致）→ 拿不到锚点（拒绝固定，而不是猜位置）', async () => {
+    const body = 'AAA\n\nBBB\n'
+    const { view, deps } = await setup(body)
+    selectText(view, 'BBB')
+    const payload = captureVisualSelection(view, {
+      ...deps,
+      // 源码文本与文档结构不一致（少了一段）
+      sourceText: '只有一段\n'
+    })
+    // 拿不到位置范围：服务端会据此**拒绝固定**，而不是猜一个位置出来
+    expect((payload.anchor as PinnedSelectionAnchor | undefined)?.ranges).toBeUndefined()
+  })
+})
+
 describe('位置判据（跨视图 / 磁盘复核）', () => {
   const anchor: PinnedSelectionAnchor = {
     view: 'visual',
@@ -238,7 +339,7 @@ describe('可视化判据（同视图内）', () => {
       codeMirror: () => ({ text: 'const', ranges: 1, blockPosition: 0, from: 0, to: 5 })
     })
     const anchor = payload.anchor!
-    expect(anchor.code).toEqual({ from: 0, to: 5, expected: 'const' })
+    expect(anchor.code).toMatchObject({ from: 0, to: 5 })
 
     const withCode = (text: string | null) => ({ ...deps, codeText: () => text })
     expect(validateVisualAnchor(view, anchor, 'const', withCode('const a = 1'))?.valid).toBe(true)

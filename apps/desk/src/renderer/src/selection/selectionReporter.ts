@@ -40,8 +40,10 @@ export type EditorSelectionBlock = Omit<SelectionBlockDto, 'source'> & {
  * 编辑器层给出的定位锚点（固定上下文用）。`sourceRange.source` 由上层按
  * `contentSource` 补上（编辑器不知道自己读的是草稿还是磁盘）。
  */
-export type EditorSelectionAnchor = Omit<PinnedSelectionAnchor, 'sourceRange'> & {
+export type EditorSelectionAnchor = Omit<PinnedSelectionAnchor, 'sourceRange' | 'code'> & {
   sourceRange?: Omit<SelectionRangeDto, 'source'>
+  /** 代码编辑器里的选区（CM 自己的坐标 + 面板序号）——由编辑器层给出，不映射成源码坐标 */
+  code?: { from: number; to: number; panelIndex?: number }
 }
 
 /** 编辑器层给出的选区（只描述"选了什么"，不含笔记身份与草稿状态） */
@@ -227,12 +229,15 @@ export function captureDtoFromPayload(
 /** 编辑器锚点 → 契约锚点（补上草稿/磁盘归属） */
 export function anchorWithSource(
   anchor: EditorSelectionAnchor,
-  contentSource: SelectionContentSource
+  contentSource: SelectionContentSource,
+  selectedText = ''
 ): PinnedSelectionAnchor {
-  const { sourceRange, ...rest } = anchor
+  const { sourceRange, code, ...rest } = anchor
   return {
     ...rest,
-    ...(sourceRange ? { sourceRange: { ...sourceRange, source: contentSource } } : {})
+    ...(sourceRange ? { sourceRange: { ...sourceRange, source: contentSource } } : {}),
+    // CM 的期望文字就是这次选中的文字（同视图内按 CM 坐标比对）
+    ...(code ? { code: { ...code, expected: selectedText } } : {})
   }
 }
 

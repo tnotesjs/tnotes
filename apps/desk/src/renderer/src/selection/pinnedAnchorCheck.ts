@@ -95,7 +95,7 @@ export function validateVisualAnchor(
     const doc = deps.codeText?.(first.pos, firstNode) ?? null
     if (doc == null) return null
     const current = doc.slice(anchor.code.from, anchor.code.to)
-    if (current !== anchor.code.expected) {
+    if (current !== (anchor.code.expected ?? expected)) {
       return {
         valid: false,
         reason: '代码块里固定时选中的内容已经不在原来的位置上了（内容或坐标变了）'

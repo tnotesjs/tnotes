@@ -13,10 +13,17 @@ import { serializeImageMarkdown } from '@tnotesjs/ui/image-markdown'
 import { createCanvasImageClipboardPlugin } from './canvasImageClipboardPlugin'
 import { DESK_CODE_CLIPBOARD_FORMAT } from './clipboardNewline'
 import { noteRelativeAssetPath } from './noteAssetPath'
-import { captureVisualSelection, type CodeMirrorCapture } from '../selection/visualSelection'
+import {
+  captureVisualSelection,
+  selectionCoversBlock,
+  type CodeMirrorCapture
+} from '../selection/visualSelection'
 import { validateVisualAnchor } from '../selection/pinnedAnchorCheck'
 import { showEditorContextMenu } from './editorContextMenu'
-import { onCodeEditorSelection } from '../selection/codeEditorSelectionBridge'
+import {
+  notifyCodeEditorSelection,
+  onCodeEditorSelection
+} from '../selection/codeEditorSelectionBridge'
 import type { EditorSelectionAnchor, EditorSelectionPayload } from '../selection/selectionReporter'
 import { invalidateCanvasSource, placeholderCanvasSvg } from '../editor/excalidraw/canvasImage'
 import { useEditorStore } from '../stores/editor'
@@ -814,15 +821,43 @@ function applyGeneratedTocDisplay(): void {
 /* ------------------------------------------------------------------ */
 
 /**
+ * 记住"最后一次有非空选区"的代码编辑器（空选区就清掉）。
+ *
+ * 没有它，⌘K P / 右键菜单这类会先抢焦点的入口只能看到 ProseMirror 的整块选中态，
+ * 把"代码块里选了一段"悄悄退化成"整块固定"（任何块内改动都会误判失效）。
+ */
+let lastCodeMirrorDom: HTMLElement | null = null
+
+function rememberCodeEditorSelection(view: CodeMirrorView): void {
+  if (!(host.value?.contains(view.dom) ?? false)) return
+  lastCodeMirrorDom = view.state.selection.main.empty ? null : view.dom
+}
+
+/**
  * 代码块 / 代码组面板里的 CodeMirror 选区。
  *
- * 只在**焦点确实在编辑器内的 CM 里**时才取：设置面板、图片描述框等输入框里的
- * 选区不会被误当成正文选区（它们不在 `.milkdown` 里）。
+ * 优先看**焦点确实在编辑器内的 CM 里**（设置面板、图片描述框等输入框里的选区
+ * 不会被误当成正文选区）；焦点被命令面板 / 右键菜单抢走时，退到"最后一次有非空
+ * 选区的那个 CM"，但**只在当前 ProseMirror 选区确实落在它那个块上**时才认它 ——
+ * 否则上一次的代码选区会把段落选区盖掉。
  */
 function codeMirrorCapture(): CodeMirrorCapture | null {
+  const editor = editorView()
   const active = document.activeElement
-  const cmDom = active instanceof Element ? active.closest('.cm-editor') : null
-  if (!cmDom || !(host.value?.contains(cmDom) ?? false)) return null
+  let cmDom: Element | null = active instanceof Element ? active.closest('.cm-editor') : null
+  if (!cmDom || !(host.value?.contains(cmDom) ?? false)) cmDom = null
+  if (!cmDom) {
+    const remembered = lastCodeMirrorDom
+    if (!remembered || !(host.value?.contains(remembered) ?? false)) return null
+    const position = blockPositionForDom(editor, remembered)
+    const node = position == null ? null : (editor?.state.doc.nodeAt(position) ?? null)
+    if (!node) return null
+    // 选区必须就在这个块里（整块选中或块内文本选区都认）
+    if (!selectionCoversBlock(editor?.state.selection, { position, size: node.nodeSize })) {
+      return null
+    }
+    cmDom = remembered
+  }
   const cm = CodeMirrorView.findFromDOM(cmDom as HTMLElement)
   if (!cm) return null
   // 编辑器正在销毁时 `state` 已经没了（类型上不可空）：这是旁路能力，不能因此抛异常
@@ -835,8 +870,22 @@ function codeMirrorCapture(): CodeMirrorCapture | null {
     ranges: ranges.length,
     blockPosition: blockPositionForDom(editorView(), cmDom),
     from: main.from,
-    to: main.to
+    to: main.to,
+    // 代码组面板的序号：按 DOM 结构数同一 raw block 里的 `.cm-editor`，
+    // 这样落回源码时能数到"第几个围栏"，不靠文字匹配
+    ...panelIndexOf(cmDom)
   }
+}
+
+/**
+ * 这个 CM 在所属 raw block 里是第几个面板（按 DOM 结构数；不在 raw block 里就没有）。
+ */
+function panelIndexOf(cmDom: Element): { panelIndex?: number } {
+  const block = cmDom.closest('.desk-raw-block')
+  if (!block) return {}
+  const editors = [...block.querySelectorAll('.cm-editor')]
+  const index = editors.indexOf(cmDom)
+  return index > 0 ? { panelIndex: index } : index === 0 ? { panelIndex: 0 } : {}
 }
 
 /** 从 CM 的 DOM 往上找最近的"节点视图 DOM"，拿到它在文档里的位置 */
@@ -967,6 +1016,7 @@ function subscribeCodeEditorSelection(): void {
   detachCodeSelection?.()
   detachCodeSelection = onCodeEditorSelection((view) => {
     if (destroyed || !(host.value?.contains(view.dom) ?? false)) return
+    rememberCodeEditorSelection(view)
     emitSelection()
   })
 }
@@ -1450,7 +1500,15 @@ onMounted(async () => {
     uploadImage: (file) => props.uploadImage(file),
     codeBlock: {
       languages: deskCodeMirrorLanguages,
-      extensions: codeBlockHighlights.extensions,
+      extensions: [
+        ...codeBlockHighlights.extensions,
+        // 代码块内部的选区变化**不会**产生 ProseMirror 事务：单独通知本机 MCP 的选区上报
+        // （与 containerSourceEditor 里的代码组面板一致，只当触发器；文本仍从 CM state 读）。
+        // 没有它，"在代码块里选了一段"在上报与固定时都会退化成"整个代码块选中"。
+        CodeMirrorView.updateListener.of((update) => {
+          if (update.selectionSet || update.docChanged) notifyCodeEditorSelection(update.view)
+        })
+      ],
       theme: document.documentElement.dataset.theme === 'light' ? githubLight : githubDark,
       copyText: '\u200b',
       copyIcon: COPY_ICON,

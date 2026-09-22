@@ -340,6 +340,10 @@ async function pinCurrentSelection(): Promise<void> {
     workspace.status = '当前没有可固定的正文选区。'
     return
   }
+  // 先把编辑器里未 emit 的修改冲给 store：位置锚落在"笔记源码文本"上，
+  // 而这份文本必须与编辑器当前文档一致，否则结构对不上（那会直接拒绝固定）
+  handle.flush?.()
+  await nextTick()
   const pinnable = handle.pinnableSelection()
   if (!pinnable) {
     workspace.status = '当前选区无法固定：多选区、空选区，或这种块拿不到可靠位置（首版不猜坐标）。'
@@ -363,7 +367,8 @@ async function pinCurrentSelection(): Promise<void> {
     capture: captureDtoFromPayload(identity, pinnable.capture),
     anchor: anchorWithSource(
       pinnable.anchor,
-      identity.editor.contentSource
+      identity.editor.contentSource,
+      pinnable.capture.selectedText
     ) as PinnedSelectionAnchor
   }
   const result = await window.desk.context.pinSelection(request)

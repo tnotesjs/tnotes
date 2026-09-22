@@ -249,7 +249,11 @@ export class PinnedContextService {
       ...(anchor.textRange ? [anchor.textRange] : [])
     ].filter((range) => range.endOffset > range.startOffset)
     if (positionRanges.length === 0) {
-      return '这个选区拿不到可校验的位置信息，无法固定为 Agent 上下文（首版不猜坐标、也不做全文搜索）'
+      // 有未保存的（写不回去的）改动时，可视化文档与源码文本的结构已经对不上：
+      // 这时候拒绝是**正确**的，但要把原因说清楚，别让用户以为是选区本身有问题。
+      return request.editor.hasUnsavedChanges
+        ? '当前文档有未保存的改动（还没能写回源码，排版结构与源码暂时对不上），位置锚不可信，无法固定为 Agent 上下文'
+        : '这个选区拿不到可校验的位置信息，无法固定为 Agent 上下文（首版不猜坐标、也不做全文搜索）'
     }
     if (anchor.kind === 'source-range') {
       const range = anchor.sourceRange

@@ -186,6 +186,31 @@ describe('固定选区上下文服务（主进程）', () => {
     expect(store.read().selection?.selectedText).toBe('固定的正文')
   })
 
+  it('文档有写不回去的未保存改动时，拒绝原因说明是"结构对不上"（不是选区本身有问题）', () => {
+    const store = service()
+    const drift = store.pin(
+      pinRequest({
+        editor: {
+          viewMode: 'visual',
+          contentSource: 'draft',
+          hasUnsavedChanges: true,
+          revision: 'rev-2'
+        },
+        anchor: {
+          view: 'visual',
+          kind: 'block',
+          blocks: [{ pos: 3, kind: 'code', markdown: 'const pinned = 1' }],
+          from: 4,
+          to: 23
+        }
+      })
+    )
+    expect(drift.accepted).toBe(false)
+    expect(drift.reason).toContain('未保存')
+    expect(drift.reason).toContain('结构')
+    expect(drift.reason).not.toContain('首版不猜坐标')
+  })
+
   it('校验失效：丢正文、给原因（不返回旧内容）', () => {
     const store = service()
     store.pin(pinRequest())

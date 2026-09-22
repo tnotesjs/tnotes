@@ -16,7 +16,7 @@ import {
   rawBlockProjectionPlugins
 } from '../editor/markdown/rawBlockProjection'
 import { createDeskEditor } from '../markdown/deskEditor'
-import { captureVisualSelection, rawBlockSubtype } from './visualSelection'
+import { captureVisualSelection, rawBlockSubtype, selectionCoversBlock } from './visualSelection'
 
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { CodeMirrorCapture, VisualSelectionDeps } from './visualSelection'
@@ -167,6 +167,21 @@ describe('可视化视图选区采集', () => {
     const payload = captureVisualSelection(view, deps)
     expect(payload.selectedText).toBe('')
     expect(payload.unsupportedReason).toContain('多个不连续选区')
+  })
+
+  it('焦点被抢走时的兜底：只有选区还在那个块里才认"最后一次的代码选区"', () => {
+    const block = { position: 10, size: 12 }
+    // 整块选中（点击代码块 → NodeSelection）：认
+    expect(selectionCoversBlock({ from: 10, to: 22 }, block)).toBe(true)
+    // 块内文本选区：认
+    expect(selectionCoversBlock({ from: 12, to: 18 }, block)).toBe(true)
+    // 段落选区（在块外）：不认 —— 否则上一次的代码选区会盖掉段落选区
+    expect(selectionCoversBlock({ from: 40, to: 44 }, block)).toBe(false)
+    // 跨出了块的边界：不认
+    expect(selectionCoversBlock({ from: 5, to: 12 }, block)).toBe(false)
+    // 拿不到位置 / 没有选区：不认
+    expect(selectionCoversBlock({ from: 10, to: 22 }, { position: null, size: 12 })).toBe(false)
+    expect(selectionCoversBlock(null, block)).toBe(false)
   })
 
   it('raw block 细分类型：容器名 / 围栏语言 / 都识别不出时的兜底', () => {

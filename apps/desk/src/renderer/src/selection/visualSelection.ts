@@ -13,6 +13,8 @@
  */
 import { NodeSelection } from '@milkdown/kit/prose/state'
 
+import { nthFenceBodyRange, scanSourceBlocks } from './sourceBlocks'
+
 import { serializeBlockForClipboard } from '../markdown/blockActionMenu'
 
 import type { Node as ProseMirrorNode } from '@milkdown/kit/prose/model'
@@ -30,6 +32,11 @@ export interface CodeMirrorCapture {
   /** CM 自己的选区坐标（校验时按它比对，不映射成源码坐标） */
   from: number
   to: number
+  /**
+   * 该 CM 在所属 raw block 里的**面板序号**（按 DOM 结构数，不用文字匹配）。
+   * 代码组面板的正文坐标要落回源码，就只能靠这个序号去数第几个围栏。
+   */
+  panelIndex?: number
 }
 
 export interface VisualSelectionDeps {
@@ -42,6 +49,18 @@ export interface VisualSelectionDeps {
   sourceText?: string
   /** 代码编辑器里的选区（没有焦点在 CM 里时返回 null） */
   codeMirror?: () => CodeMirrorCapture | null
+}
+
+/**
+ * 焦点被命令面板 / 右键菜单抢走时，还敢不敢用"最后一次有非空选区的 CM"：
+ * 只有当前选区**确实落在它那个块里**时才认 —— 否则上一次的代码选区会把段落选区盖掉。
+ */
+export function selectionCoversBlock(
+  selection: { from: number; to: number } | null | undefined,
+  block: { position: number | null; size: number }
+): boolean {
+  if (!selection || block.position == null) return false
+  return selection.from >= block.position && selection.to <= block.position + block.size
 }
 
 /**
@@ -137,62 +156,96 @@ function blocksIntersecting(
 }
 
 /**
- * 位置锚（可视化）：把**选区**投影成笔记源码文本里的若干范围。
+ * 位置锚（可视化）：把**选区**落回笔记源码文本里的若干范围。
  *
- * 为什么按块逐段：可视化视图的可靠信息是"块的位置 + 块文本 + 选区的纯文本偏移"，
- * 而源码文本里既有块间分隔符、也可能有行内标记，纯文本偏移不等于源码偏移。
- * 做法是从上到下**顺序**定位每个涉及的块（下一块只从上一块结束处往后找），
- * 再在每个块里定位选区那一段 —— 是"按结构顺序的位置推导"，不是全文搜索：
- * - 任何一块移动 / 内容变化 → 对应范围对不上 → 失效（跨段落时每一段都覆盖）；
- * - 同一块里**选区之外**的改动（例如只固定 AAA，后面 BBB 改成 CCC）→ 该范围不变 → 保留。
- *
- * 定位不出来（块文本在源码里对不上）就返回 null：调用方据此**拒绝固定**，
- * 而不是固定一份只能靠搜索猜位置的上下文。
+ * 关键：**块身份由结构决定，不由文字决定**。
+ * - 先用 `scanSourceBlocks` 把源码切成顶层块（带偏移），再把**可视化文档的顶层节点按序号**
+ *   一一对上；序号对不上（结构不一致）就返回 null —— 调用方据此**拒绝固定**；
+ * - 所以"两个一模一样的段落，选中第二个"不会指到第一段：它按序号取第 2 个源码块；
+ * - 块内再把选区那一段落回源码：
+ *   - 普通块：用 PM 的**块内纯文本偏移**作为搜索起点（行内标记只会让源码偏移更大），
+ *     在这个块自己的源码里找那一段；
+ *   - 普通代码块：源码里"第一个围栏的正文" + CodeMirror 自己的 `from`；
+ *   - 代码组面板：源码里"**第 panelIndex 个**围栏的正文" + CodeMirror 自己的 `from`
+ *     （按结构数围栏，所以不同面板里的同样代码也不会串）。
+ * - 任何一步对不上（结构不一致、文字对不上）都返回 null：宁可拒绝固定，
+ *   也不生成一个"看起来有效、其实指错位置"的范围。
  */
 function sourceRangesForSelection(
   view: EditorView,
   blocks: { pos: number; node: ProseMirrorNode }[],
   deps: VisualSelectionDeps,
   range: { from: number; to: number },
-  code?: { from: number; to: number; expected: string }
+  code?: CodeMirrorCapture
 ): PinnedTextAnchor[] | null {
   const text = deps.sourceText
   if (!text) return null
-  const located: { start: number; end: number; markdown: string }[] = []
-  let cursor = 0
-  for (const { pos, node } of blocks) {
-    const markdown = blockMarkdown(view, pos, node, deps).markdown
-    if (!markdown) return null
-    const at = text.indexOf(markdown, cursor)
-    if (at < 0) return null
-    located.push({ start: at, end: at + markdown.length, markdown })
-    cursor = at + markdown.length
-  }
+
+  // 1) 顶层结构：可视化文档节点 ↔ 源码块，按**序号**对应
+  const topLevel: { pos: number; node: ProseMirrorNode }[] = []
+  view.state.doc.forEach((node, pos) => {
+    // 空文本块在源码扫描里也会被跳过（空行），两边口径要一致
+    if (node.isTextblock && node.content.size === 0) return
+    topLevel.push({ pos, node })
+  })
+  const sourceBlocks = scanSourceBlocks(text)
+  if (topLevel.length !== sourceBlocks.length) return null
+  const sourceIndexOf = new Map<number, number>()
+  topLevel.forEach((item, index) => sourceIndexOf.set(item.pos, index))
 
   const ranges: PinnedTextAnchor[] = []
-  for (const [index] of located.entries()) {
-    const { pos, node } = blocks[index]!
-    const block = located[index]!
-    // 该块里被选中的那一段纯文本（首块可能只选中前半段，末块只选中后半段）
-    const innerStart = index === 0 ? Math.max(0, range.from - (pos + 1)) : 0
-    const innerEnd =
-      index === located.length - 1
-        ? Math.min(node.nodeSize - 1, Math.max(innerStart, range.to - (pos + 1)))
-        : node.nodeSize - 1
-    // 代码块 / 代码组面板内部：选区是 CodeMirror 自己的坐标，直接用它的选中文字
-    const plain =
-      code && blocks.length === 1
-        ? code.expected
-        : view.state.doc.textBetween(pos + 1 + innerStart, pos + 1 + innerEnd, '\n', '\n')
-    if (!plain) continue
-    // 在**这个块**的源码里定位这一段（从纯文本偏移附近起找，容忍行内标记带来的位移）
-    let inner = block.markdown.indexOf(plain, code ? 0 : Math.max(0, innerStart))
-    if (inner < 0) inner = block.markdown.indexOf(plain)
-    if (inner < 0) return null
-    const startOffset = block.start + inner
-    const expected = text.slice(startOffset, startOffset + plain.length)
+  for (const [blockIndex, block] of blocks.entries()) {
+    const sourceIndex = sourceIndexOf.get(block.pos)
+    if (sourceIndex == null) return null
+    const source = sourceBlocks[sourceIndex]
+    if (!source) return null
+    const markdown = blockMarkdown(view, block.pos, block.node, deps).markdown
+    // 块身份一致性：这一段源码必须就是这个块（对不上就拒绝，不靠搜索兜底）。
+    // 代码编辑器选区另有更强的身份证据：结构化围栏正文里的那一段必须逐字等于 CM 的选区，
+    // 所以只在没有 `code` 时才做这层整块比较（片段的序列化形态可能与源码不同）。
+    if (!code && markdown.trim() && source.markdown.trim() !== markdown.trim()) return null
+
+    const isFirst = blockIndex === 0
+    const isLast = blockIndex === blocks.length - 1
+    const innerStart = isFirst ? Math.max(0, range.from - (block.pos + 1)) : 0
+    const innerEnd = isLast
+      ? Math.min(block.node.nodeSize - 1, Math.max(innerStart, range.to - (block.pos + 1)))
+      : block.node.nodeSize - 1
+
+    let inner: { start: number; length: number } | null = null
+    if (code && blocks.length === 1) {
+      // 代码编辑器：用 CM 自己的坐标 + 结构化的围栏序号
+      const body =
+        code.panelIndex == null
+          ? (() => {
+              const newline = source.markdown.indexOf('\n')
+              return newline < 0
+                ? null
+                : { startOffset: newline + 1, endOffset: source.markdown.length }
+            })()
+          : nthFenceBodyRange(source.markdown, code.panelIndex)
+      if (!body) return null
+      const bodyText = source.markdown.slice(body.startOffset, body.endOffset)
+      if (bodyText.slice(code.from, code.to) !== code.text) return null
+      inner = { start: body.startOffset + code.from, length: code.text.length }
+    } else {
+      const plain = view.state.doc.textBetween(
+        block.pos + 1 + innerStart,
+        block.pos + 1 + innerEnd,
+        '\n',
+        '\n'
+      )
+      if (!plain) continue
+      // 块内定位：从"纯文本偏移"起找（行内标记只会让源码偏移更大，所以起点不会越过正确位置）
+      const at = source.markdown.indexOf(plain, innerStart)
+      if (at < 0) return null
+      inner = { start: at, length: plain.length }
+    }
+
+    const startOffset = source.startOffset + inner.start
+    const expected = text.slice(startOffset, startOffset + inner.length)
     if (!expected) return null
-    ranges.push({ startOffset, endOffset: startOffset + plain.length, expected })
+    ranges.push({ startOffset, endOffset: startOffset + inner.length, expected })
   }
   return ranges.length > 0 ? ranges : null
 }
@@ -203,7 +256,7 @@ function payloadFromBlocks(
   deps: VisualSelectionDeps,
   selectedText: string,
   range: { from: number; to: number; nodeSelection?: boolean },
-  code?: { from: number; to: number; expected: string }
+  code?: CodeMirrorCapture
 ): EditorSelectionPayload {
   const blockAnchors = blocks.map(({ pos, node }) => blockAnchorFor(view, pos, node, deps))
   const ranges = sourceRangesForSelection(view, blocks, deps, range, code)
@@ -260,8 +313,8 @@ export function captureVisualSelection(
       cm.text,
       // 代码编辑器里的选区坐标是 CM 自己的：恢复选区时用整块范围
       { from: cm.blockPosition, to: cm.blockPosition + node.nodeSize },
-      // 校验用 CM 自己的坐标（同视图内精确；跨视图走块位置锚）
-      { from: cm.from, to: cm.to, expected: cm.text }
+      // 校验用 CM 自己的坐标（同视图内精确；跨视图按结构化围栏序号落回源码）
+      cm
     )
   }
 

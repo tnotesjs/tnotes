@@ -163,6 +163,54 @@ export function scanSourceBlocks(text: string): SourceBlockScan[] {
   return blocks
 }
 
+/**
+ * 第 n 个围栏代码块的**正文范围**（相对传入 Markdown 的偏移）。
+ *
+ * 代码组面板里的 CodeMirror 坐标是"面板正文"的坐标，要落回源码就得知道
+ * 那是第几个围栏 —— 这里**按结构**数围栏，不按文字匹配，所以两个面板里
+ * 有同样的代码也不会指错。
+ */
+export function nthFenceBodyRange(
+  markdown: string,
+  index: number
+): { startOffset: number; endOffset: number } | null {
+  if (index < 0) return null
+  const lines = toLines(markdown)
+  let seen = 0
+  let cursor = 0
+  while (cursor < lines.length) {
+    const fence = FENCE_PATTERN.exec(lines[cursor].text)
+    if (!fence) {
+      cursor += 1
+      continue
+    }
+    const char = fence[1][0]
+    const length = fence[1].length
+    // `rawEnd` 指向行尾换行符本身，正文从它后面一个字符开始
+    const lineEnd = lines[cursor].rawEnd
+    const bodyStart = markdown[lineEnd] === '\n' ? lineEnd + 1 : lineEnd
+    let end = cursor
+    let closed = false
+    for (let next = cursor + 1; next < lines.length; next += 1) {
+      const candidate = FENCE_PATTERN.exec(lines[next].text)
+      if (candidate && candidate[1][0] === char && candidate[1].length >= length) {
+        end = next
+        closed = true
+        break
+      }
+      end = next
+    }
+    // 没闭合的围栏：正文一直到文档末尾（不把最后一行当成结束标记切掉）
+    const bodyEnd = closed ? lines[end].start : markdown.length
+    if (seen === index) {
+      return { startOffset: bodyStart, endOffset: Math.max(bodyStart, bodyEnd) }
+    }
+    seen += 1
+    cursor = end + 1
+  }
+  return null
+}
+
 /** 与 [startOffset, endOffset) 相交的块（端点接触也算相交） */
 export function sourceBlocksForOffsets(
   text: string,
