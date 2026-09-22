@@ -45,7 +45,15 @@ const fixture = createFixture('mcp-pinned', {
     { index: '0003', title: '巨块', body: `# 巨块\n\n${'长'.repeat(65_000)}\n` },
     { index: '0004', title: '丙笔记', body: '# 丙笔记\n\n丙段一。\n\n丙段二。\n' },
     // 磁盘复核用例要一篇"从来没被编辑过"的干净笔记（草稿固定不看磁盘）
-    { index: '0005', title: '丁笔记', body: '# 丁笔记\n\n丁段一。\n\n丁段二。\n' }
+    { index: '0005', title: '丁笔记', body: '# 丁笔记\n\n丁段一。\n\n丁段二。\n' },
+    // 代码块固定用例：同样需要一篇**没被编辑过**的干净笔记（见下方注释）
+    {
+      index: '0006',
+      title: '戊笔记',
+      body: '# 戊笔记\n\n戊段一。\n\n```js\nconst pinned = 1\n```\n'
+    },
+    // "原位置被删除、别处仍有相同文字"用例：也要一篇干净笔记（丙笔记那时已经写不回源码）
+    { index: '0007', title: '己笔记', body: '# 己笔记\n\n己段一。\n\n己段二。\n' }
   ]
 })
 fixture.writeProfileConfig({ mcp: { enabled: true, port: PORT } })
@@ -133,6 +141,14 @@ async function pinViaContextMenu(text) {
 }
 
 try {
+  // 同一分组里其它标签的编辑器也挂在 DOM 里：装一个"活动分组里可见的那个 ProseMirror"
+  // 的取用函数，避免键盘 / DOM 操作落到别的标签页的编辑器上。
+  await page.evaluate(() => {
+    window.visibleNotePane = () =>
+      [...document.querySelectorAll('.editor-group.active .ProseMirror')].find(
+        (item) => item.getClientRects().length > 0
+      ) ?? null
+  })
   await openNote(page, { kbName: fixture.kbName, title: '甲笔记' })
   await waitFor(async () => (await page.locator('.milkdown .ProseMirror').count()) > 0, 20000)
   // 预览标签会被下一篇笔记替换掉（那等于关闭来源标签）：先把甲笔记标签固定住
@@ -392,7 +408,17 @@ try {
   await page.getByTestId('pinned-context-clear').click()
   await page.waitForTimeout(300)
 
-  /* ── 代码块特殊块也能固定 ── */
+  /* ── 代码块特殊块也能固定（用一份没被编辑过的干净笔记） ── */
+  // 位置锚落在"笔记源码文本"坐标系里，而源码文本只有在编辑能安全写回时才跟着文档走。
+  // 上面甲笔记那条链最后停在"原文内容被并入其它块"的未保存草稿上（源码与排版结构不再一一对应），
+  // 那种状态下固定会被**正确地**拒绝（拒绝路径与拒绝原因由 `pinnedContextService.test.ts` 覆盖），
+  // 所以这里换一份干净笔记验代码块固定本身。
+  await page.locator('.toc-row', { hasText: '戊笔记' }).first().click()
+  await page.waitForTimeout(900)
+  if ((await page.locator('.markdown-source-editor').count()) > 0) {
+    await viewButton('可视化编辑').click()
+    await waitFor(async () => (await page.locator('.milkdown .ProseMirror').count()) > 0, 20000)
+  }
   const codeLine = page.locator('.editor-group.active .milkdown-code-block .cm-line').first()
   await codeLine.click()
   await page.keyboard.press('Home')
@@ -407,12 +433,39 @@ try {
     '代码块里的选区也能固定（块级上下文 + 不可变快照）',
     codePinned?.status === 'ok' &&
       codePinned?.selection?.mapping === 'block' &&
-      (codePinned?.selection?.blocks?.[0]?.kind ?? '').includes('code'),
-    `mapping=${codePinned?.selection?.mapping} kind=${codePinned?.selection?.blocks?.[0]?.kind}`
+      (codePinned?.selection?.blocks?.[0]?.kind ?? '').includes('code') &&
+      codePinned?.selection?.selectedText === 'const pinned = 1',
+    `mapping=${codePinned?.selection?.mapping} kind=${codePinned?.selection?.blocks?.[0]?.kind} text=${JSON.stringify(codePinned?.selection?.selectedText)}`
   )
 
-  // 代码块里"选区后方改动保留 / 内部改动失效"由 `pinnedAnchorCheck.test.ts` 的
-  // code 锚点用例覆盖（用真实 CM 在 E2E 里驱动光标/输入依赖焦点与内部坐标，脆弱且没有新增信息量）。
+  // 同一代码块里选区**后方**追加：固定保留（代码块也按位置锚校验，不按整块比较）
+  await codeLine.click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' // 后方追加')
+  await page.waitForTimeout(700)
+  const afterCodeTail = await read(client)
+  rec.record(
+    '同一代码块里选区**后方**的修改：固定保留',
+    afterCodeTail.source === 'pinned' &&
+      afterCodeTail.selection?.selectedText === 'const pinned = 1',
+    `source=${afterCodeTail.source} status=${afterCodeTail.status} message=${String(afterCodeTail?.message).slice(0, 60)}`
+  )
+
+  // 代码块里选区**内部**被改 → 失效
+  await codeLine.click()
+  await page.keyboard.press('Home')
+  await page.keyboard.press('Shift+End')
+  await settle()
+  await page.keyboard.type('const changed = 2')
+  const codeInvalid = await waitFor(async () => {
+    const value = await read(client)
+    return value.status === 'pinned_invalidated' ? value : null
+  }, 10000)
+  rec.record(
+    '代码块里选区内部被修改 → 固定失效',
+    codeInvalid?.status === 'pinned_invalidated',
+    `status=${codeInvalid?.status}`
+  )
   await page.getByTestId('pinned-context-clear').click()
   await page.waitForTimeout(300)
 
@@ -516,7 +569,10 @@ try {
      因此由 `pinnedAnchorCheck.test.ts` / `pinnedContextService.test.ts` 单测覆盖，
      E2E 不再重复（源码视图里做文本操作依赖 Monaco 焦点细节，脆弱且没有新增信息量）。 */
 
-  /* ── 原 A 被删除，别处仍有相同文字：仍然失效 ── */
+  /* ── 写不回源码的草稿：固定被明确拒绝（不猜坐标、不留半份固定） ── */
+  // 上面那条用例在源码视图最前面插了一段之后，丙笔记就停在"排版结构与源码对不上"的
+  // 未保存草稿上（Desk 的吞并保护拦住了保存）。这时位置锚不可信：固定必须被明确拒绝，
+  // 而且要把原因说清楚 —— 宁可拒绝，也不固定一份以后验不了的上下文。
   await page.locator('.toc-row', { hasText: '巨块' }).first().click()
   await page.waitForTimeout(700)
   await page.locator('.toc-row', { hasText: '丙笔记' }).first().click()
@@ -528,24 +584,65 @@ try {
   }
   await selectParagraph('丙段二。')
   await pinViaPalette()
-  await waitFor(async () => (await read(client)).source === 'pinned', 8000)
-  // 在文末复制一段一模一样的文字，再把原来的那段删掉
-  await page.evaluate(() => {
-    const editor = document.querySelector('.editor-group.active .ProseMirror')
-    const paragraph = [...(editor?.querySelectorAll('p') ?? [])].find((item) =>
-      item.textContent?.includes('丙段二。')
-    )
-    paragraph?.scrollIntoView({ block: 'start' })
-  })
-  await page.keyboard.press('ControlOrMeta+End')
+  const refusedOnDrift = await waitFor(
+    async () =>
+      (await page.evaluate(() => document.body.innerText)).includes(
+        '固定失败：当前文档有未保存的改动'
+      ),
+    8000
+  )
+  const afterDriftRefusal = await read(client)
+  rec.record(
+    '排版结构与源码对不上的未保存草稿：固定被明确拒绝并说明原因（不猜坐标）',
+    refusedOnDrift === true && afterDriftRefusal.source === 'live',
+    `hinted=${refusedOnDrift === true} source=${afterDriftRefusal.source}`
+  )
+  rec.record(
+    '被拒绝后不留半份固定（状态条不出现）',
+    (await page.getByTestId('pinned-context-bar').count()) === 0,
+    `bar=${await page.getByTestId('pinned-context-bar').count()}`
+  )
+
+  /* ── 原 A 被删除，别处仍有相同文字：仍然失效 ── */
+  // 这一条要用**干净笔记**（上面的丙笔记已经处于写不回源码的草稿状态，固定会被拒绝）。
+  await page.locator('.toc-row', { hasText: '己笔记' }).first().click()
+  await page.waitForTimeout(900)
+  await selectParagraph('己段二。')
+  await pinViaPalette()
+  const pinnedForDuplicate = await waitFor(async () => {
+    const value = await read(client)
+    return value.source === 'pinned' && value.selection?.selectedText === '己段二。' ? value : null
+  }, 8000)
+  rec.record(
+    '固定己段二。（为"原位置被删除"这条规则建立基线）',
+    pinnedForDuplicate?.source === 'pinned',
+    `source=${pinnedForDuplicate?.source} status=${pinnedForDuplicate?.status}`
+  )
+  // 在文末复制一段一模一样的文字，再把原来的那段删掉。
+  // 注意两点：(1) 同一分组里**其它标签的编辑器也挂在 DOM 里**，所以每一步都只碰
+  // 当前笔记那个可见面板；(2) 复制这一段只用「点一下段落 → End → Enter → 输入」，
+  // 不先用 DOM 选区选中整段 —— 那样 Enter 会把选中的原文替换掉，制造出别的文档状态。
+  await page
+    .locator('.editor-group.active .ProseMirror:visible p', { hasText: '己段二。' })
+    .first()
+    .click()
+  await page.keyboard.press('End')
   await page.keyboard.press('Enter')
-  await page.keyboard.type('丙段二。')
+  await page.keyboard.type('己段二。')
   await page.waitForTimeout(400)
-  // 删掉原来那段（选中它并按 Delete）
+  // 复制出来的那段不该动到固定（改的是选区后方）
+  const afterDuplicateAppend = await read(client)
+  rec.record(
+    '在文末复制一段一模一样的文字：固定保留（后方改动不误伤）',
+    afterDuplicateAppend.source === 'pinned' &&
+      afterDuplicateAppend.selection?.selectedText === '己段二。',
+    `source=${afterDuplicateAppend.source} status=${afterDuplicateAppend.status}`
+  )
+  // 删掉原来那段：只认可见面板里**内容完全等于**「己段二。」的第一个段落（DOM 顺序里的原文）
   await page.evaluate(() => {
-    const editor = document.querySelector('.editor-group.active .ProseMirror')
-    const paragraph = [...(editor?.querySelectorAll('p') ?? [])].find((item) =>
-      item.textContent?.includes('丙段二。')
+    const pane = window.visibleNotePane()
+    const paragraph = [...(pane?.querySelectorAll('p') ?? [])].find(
+      (item) => item.textContent?.trim() === '己段二。'
     )
     const node = paragraph?.firstChild
     if (node) window.getSelection()?.setBaseAndExtent(node, 0, node, node.textContent.length)
@@ -556,10 +653,18 @@ try {
     const value = await read(client)
     return value.status === 'pinned_invalidated' ? value : null
   }, 10000)
+  const duplicateStillThere = await page.evaluate(() => {
+    const pane = window.visibleNotePane()
+    return [...(pane?.querySelectorAll('p') ?? [])].some(
+      (item) => item.textContent?.trim() === '己段二。'
+    )
+  })
   rec.record(
     '原位置被删除、文档别处仍有相同文字 → 仍然失效（不是全文搜索）',
-    duplicateInvalid?.status === 'pinned_invalidated',
-    `status=${duplicateInvalid?.status}`
+    duplicateInvalid?.status === 'pinned_invalidated' &&
+      duplicateInvalid.selection === undefined &&
+      duplicateStillThere,
+    `status=${duplicateInvalid?.status} 别处仍有相同文字=${duplicateStillThere}`
   )
   await page.getByTestId('pinned-context-clear').click()
   await page.waitForTimeout(300)
