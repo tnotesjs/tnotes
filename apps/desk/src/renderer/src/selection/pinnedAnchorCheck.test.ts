@@ -149,6 +149,140 @@ describe('真实采集 → 跨视图 / 磁盘复核（位置范围来自编辑�
   })
 })
 
+/**
+ * 按**纯文本**第 `occurrence`（0 基）次出现选中：偏移口径与
+ * `textBetween(from, to, '\n', '\n')` 一致（原子节点算 1 个字符）。
+ * 直接按文字找第一处会漏掉"重复文字 / 行内格式前面还有一处"的场景。
+ */
+function selectPlainOccurrence(
+  view: EditorView,
+  needle: string,
+  occurrence: number
+): { from: number; to: number } {
+  let found: { from: number; to: number } | null = null
+  view.state.doc.descendants((node, pos) => {
+    if (found) return false
+    if (!node.isTextblock) return true
+    const plain = view.state.doc.textBetween(pos + 1, pos + node.nodeSize - 1, '\n', '\n')
+    let at = -1
+    let cursor = 0
+    for (let index = 0; index <= occurrence; index += 1) {
+      at = plain.indexOf(needle, cursor)
+      if (at < 0) break
+      cursor = at + needle.length
+    }
+    if (at < 0) return true
+    found = { from: pos + 1 + at, to: pos + 1 + at + needle.length }
+    return false
+  })
+  if (!found) throw new Error(`没找到第 ${occurrence + 1} 处文本：${needle}`)
+  view.dispatch(
+    view.state.tr.setSelection(TextSelection.create(view.state.doc, found.from, found.to))
+  )
+  return found
+}
+
+describe('块内位置映射：不能命中链接地址 / 属性里的同名文字（真实采集）', () => {
+  it('链接地址里的 AAA：选中正文那个 AAA 落在偏移 9（不是地址里的 4）', async () => {
+    const body = '[x](AAA) AAA\n'
+    const { view, deps } = await setup(body)
+    // 文档纯文本是 `x AAA`：这里的 AAA 是**链接后面**那段正文
+    selectPlainOccurrence(view, 'AAA', 0)
+    const payload = captureVisualSelection(view, deps)
+    const anchor = payload.anchor as PinnedSelectionAnchor
+    expect(anchor.ranges).toHaveLength(1)
+    const range = anchor.ranges![0]!
+    // 先断言偏移对应**实际选中的源码位置**
+    expect(range.startOffset).toBe(9)
+    expect(body.slice(range.startOffset, range.endOffset)).toBe('AAA')
+
+    // 原样有效
+    expect(validateTextAnchor(body, anchor)).toEqual({ valid: true })
+    // 真正选中的那段变成 CCC → 失效（修复前这里会误判 valid：锚点在地址里的 AAA 上）
+    expect(validateTextAnchor('[x](AAA) CCC\n', anchor)?.valid).toBe(false)
+    // 只改链接地址（选区内容与坐标都没变）→ 保留
+    expect(validateTextAnchor('[x](BBB) AAA\n', anchor)).toEqual({ valid: true })
+    // 选区内变化失效 / 未影响选区的后缀变化保留（跨视图 / 磁盘同一条判据）
+    expect(validateTextAnchor('[x](AAA) AAA BBB\n', anchor)).toEqual({ valid: true })
+  })
+
+  it('图片 alt 里的 AAA：选中正文那个 AAA 落在偏移 14', async () => {
+    const body = '![AAA](x.png) AAA\n'
+    const { view, deps } = await setup(body)
+    selectPlainOccurrence(view, 'AAA', 0)
+    const payload = captureVisualSelection(view, deps)
+    const range = (payload.anchor as PinnedSelectionAnchor).ranges![0]!
+    expect(range.startOffset).toBe(14)
+    expect(body.slice(range.startOffset, range.endOffset)).toBe('AAA')
+    expect(validateTextAnchor(body, payload.anchor as PinnedSelectionAnchor)).toEqual({
+      valid: true
+    })
+    expect(
+      validateTextAnchor('![AAA](x.png) CCC\n', payload.anchor as PinnedSelectionAnchor)?.valid
+    ).toBe(false)
+  })
+
+  it('带行内格式的重复文字：选中第二个 AAA 落在偏移 8（不是加粗里的第一个）', async () => {
+    const body = '**AAA** AAA\n'
+    const { view, deps } = await setup(body)
+    selectPlainOccurrence(view, 'AAA', 1)
+    const payload = captureVisualSelection(view, deps)
+    const range = (payload.anchor as PinnedSelectionAnchor).ranges![0]!
+    expect(range.startOffset).toBe(8)
+    expect(body.slice(range.startOffset, range.endOffset)).toBe('AAA')
+    // 改第二个 → 失效；只改加粗里的第一个 → 保留
+    expect(
+      validateTextAnchor('**AAA** CCC\n', payload.anchor as PinnedSelectionAnchor)?.valid
+    ).toBe(false)
+    expect(validateTextAnchor('**CCC** AAA\n', payload.anchor as PinnedSelectionAnchor)).toEqual({
+      valid: true
+    })
+  })
+
+  it('链接文字与地址同名：选中链接后面的 AAA 落在偏移 11', async () => {
+    const body = '[AAA](BBB) AAA\n'
+    const { view, deps } = await setup(body)
+    selectPlainOccurrence(view, 'AAA', 1)
+    const payload = captureVisualSelection(view, deps)
+    const range = (payload.anchor as PinnedSelectionAnchor).ranges![0]!
+    expect(range.startOffset).toBe(11)
+    expect(body.slice(range.startOffset, range.endOffset)).toBe('AAA')
+  })
+
+  it('转义文字：源码里的 `\\*` 对应正文的 `*`，映射仍然成立', async () => {
+    const body = 'a \\* b\n'
+    const { view, deps } = await setup(body)
+    selectPlainOccurrence(view, 'a * b', 0)
+    const payload = captureVisualSelection(view, deps)
+    const range = (payload.anchor as PinnedSelectionAnchor).ranges![0]!
+    expect(body.slice(range.startOffset, range.endOffset)).toBe('a \\* b')
+    expect(validateTextAnchor(body, payload.anchor as PinnedSelectionAnchor)).toEqual({
+      valid: true
+    })
+    selectPlainOccurrence(view, '*', 0)
+  })
+
+  it('映射不出来的结构（HTML 实体）→ 拒绝固定，而不是猜一个位置', async () => {
+    const body = 'a &amp; b\n'
+    const { view, deps } = await setup(body)
+    selectPlainOccurrence(view, 'a & b', 0)
+    const payload = captureVisualSelection(view, deps)
+    expect((payload.anchor as PinnedSelectionAnchor | undefined)?.ranges).toBeUndefined()
+  })
+
+  it('行内格式里的选区内部变化失效、格式之外的改动保留（跨视图 / 磁盘）', async () => {
+    const body = '前面 **AAA** 后面\n'
+    const { view, deps } = await setup(body)
+    selectPlainOccurrence(view, 'AAA', 0)
+    const anchor = (captureVisualSelection(view, deps).anchor as PinnedSelectionAnchor)!
+    expect(validateTextAnchor(body, anchor)).toEqual({ valid: true })
+    // 选区内部变 → 失效
+    expect(validateTextAnchor('前面 **XXX** 后面\n', anchor)?.valid).toBe(false)
+    // 选区之外（后面）变化 → 保留
+    expect(validateTextAnchor('前面 **AAA** 尾巴\n', anchor)).toEqual({ valid: true })
+  })
+})
+
 describe('块身份：重复内容不会指错位置（真实采集）', () => {
   it('两个一模一样的段落：选中第二个 → 锚点落在第二个的偏移上', async () => {
     const body = 'AAA\n\nAAA\n'

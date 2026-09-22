@@ -13,6 +13,7 @@
  */
 import { NodeSelection } from '@milkdown/kit/prose/state'
 
+import { mapPlainRangeInBlock } from './inlineSourceMap'
 import { nthFenceBodyRange, scanSourceBlocks } from './sourceBlocks'
 
 import { serializeBlockForClipboard } from '../markdown/blockActionMenu'
@@ -158,30 +159,33 @@ function blocksIntersecting(
 /**
  * 位置锚（可视化）：把**选区**落回笔记源码文本里的若干范围。
  *
- * 关键：**块身份由结构决定，不由文字决定**。
- * - 先用 `scanSourceBlocks` 把源码切成顶层块（带偏移），再把**可视化文档的顶层节点按序号**
- *   一一对上；序号对不上（结构不一致）就返回 null —— 调用方据此**拒绝固定**；
- * - 所以"两个一模一样的段落，选中第二个"不会指到第一段：它按序号取第 2 个源码块；
- * - 块内再把选区那一段落回源码：
- *   - 普通块：用 PM 的**块内纯文本偏移**作为搜索起点（行内标记只会让源码偏移更大），
- *     在这个块自己的源码里找那一段；
- *   - 普通代码块：源码里"第一个围栏的正文" + CodeMirror 自己的 `from`；
- *   - 代码组面板：源码里"**第 panelIndex 个**围栏的正文" + CodeMirror 自己的 `from`
- *     （按结构数围栏，所以不同面板里的同样代码也不会串）。
- * - 任何一步对不上（结构不一致、文字对不上）都返回 null：宁可拒绝固定，
- *   也不生成一个"看起来有效、其实指错位置"的范围。
+ * 块身份与块内位置都由**结构**决定，不由文字搜索决定：
+ * - 顶层：`scanSourceBlocks` 把源码切成顶层块（带偏移），可视化文档的顶层节点按序号
+ *   一一对上；序号对不上（结构不一致）就返回 null —— 调用方据此**拒绝固定**。
+ *   块的**类型**也必须对得上（段落 / 标题 / 列表 / 引用 / 代码…），避免"块挪了地方但
+ *   文字碰巧还在"；
+ * - 块内：`mapPlainRangeInBlock` 按内容节点逐个推进（文本逐字命中、原子按语法整体跳过、
+ *   跳过的只能是标记或链接地址这类**不参与正文**的区间）。所以
+ *   `[x](AAA) AAA` 里选中后面的 `AAA` 会落在偏移 9，而不是链接地址里的 4；
+ * - 代码块：结构化围栏正文 + CodeMirror 自己的 `from`；代码组面板按 **panelIndex**
+ *   数第几个围栏（按结构数，不按文字匹配）；
+ * - 整块选中（NodeSelection，特殊组件）：源码里就是这一整块，要求块 Markdown 与源码
+ *   逐字一致。
+ *
+ * 任何一步对不上（结构不一致、类型对不上、块内映射不出来）都返回 null：宁可拒绝固定，
+ * 也不生成一个"看起来有效、其实指错位置"的范围。
  */
 function sourceRangesForSelection(
   view: EditorView,
   blocks: { pos: number; node: ProseMirrorNode }[],
   deps: VisualSelectionDeps,
-  range: { from: number; to: number },
+  range: { from: number; to: number; nodeSelection?: boolean },
   code?: CodeMirrorCapture
 ): PinnedTextAnchor[] | null {
   const text = deps.sourceText
   if (!text) return null
 
-  // 1) 顶层结构：可视化文档节点 ↔ 源码块，按**序号**对应
+  // 1) 顶层结构：可视化文档节点 ↔ 源码块，按**序号**对应，类型也要对得上
   const topLevel: { pos: number; node: ProseMirrorNode }[] = []
   view.state.doc.forEach((node, pos) => {
     // 空文本块在源码扫描里也会被跳过（空行），两边口径要一致
@@ -199,11 +203,8 @@ function sourceRangesForSelection(
     if (sourceIndex == null) return null
     const source = sourceBlocks[sourceIndex]
     if (!source) return null
+    if (!sourceKindMatches(block.node, source.kind)) return null
     const markdown = blockMarkdown(view, block.pos, block.node, deps).markdown
-    // 块身份一致性：这一段源码必须就是这个块（对不上就拒绝，不靠搜索兜底）。
-    // 代码编辑器选区另有更强的身份证据：结构化围栏正文里的那一段必须逐字等于 CM 的选区，
-    // 所以只在没有 `code` 时才做这层整块比较（片段的序列化形态可能与源码不同）。
-    if (!code && markdown.trim() && source.markdown.trim() !== markdown.trim()) return null
 
     const isFirst = blockIndex === 0
     const isLast = blockIndex === blocks.length - 1
@@ -228,18 +229,22 @@ function sourceRangesForSelection(
       const bodyText = source.markdown.slice(body.startOffset, body.endOffset)
       if (bodyText.slice(code.from, code.to) !== code.text) return null
       inner = { start: body.startOffset + code.from, length: code.text.length }
+    } else if (range.nodeSelection) {
+      // 整块选中（特殊组件 / 代码块本体）：源码里就是这一整块 ——
+      // 要求块 Markdown 与源码逐字一致（raw 块本来就是逐字原文），不做文字搜索
+      if (markdown.trim() && source.markdown.trim() !== markdown.trim()) return null
+      inner = { start: 0, length: source.markdown.length }
     } else {
-      const plain = view.state.doc.textBetween(
-        block.pos + 1 + innerStart,
-        block.pos + 1 + innerEnd,
-        '\n',
-        '\n'
+      // 普通文本选区：块内**结构化**映射（不走文字搜索）
+      inner = mapPlainRangeInBlock(
+        view.state.doc,
+        block.pos,
+        block.node,
+        source.markdown,
+        innerStart,
+        innerEnd
       )
-      if (!plain) continue
-      // 块内定位：从"纯文本偏移"起找（行内标记只会让源码偏移更大，所以起点不会越过正确位置）
-      const at = source.markdown.indexOf(plain, innerStart)
-      if (at < 0) return null
-      inner = { start: at, length: plain.length }
+      if (!inner) return null
     }
 
     const startOffset = source.startOffset + inner.start
@@ -248,6 +253,34 @@ function sourceRangesForSelection(
     ranges.push({ startOffset, endOffset: startOffset + inner.length, expected })
   }
   return ranges.length > 0 ? ranges : null
+}
+
+/**
+ * 可视化块类型 ↔ 源码扫描块类型：对不上就拒绝（不靠文字猜块身份）。
+ *
+ * `scanSourceBlocks` 没有表格类型（`| a | b |` 会被当成段落块），所以表格对段落。
+ */
+function sourceKindMatches(node: ProseMirrorNode, kind: string): boolean {
+  switch (node.type.name) {
+    case 'paragraph':
+      return kind === 'paragraph'
+    case 'heading':
+      return kind === 'heading'
+    case 'code_block':
+      return kind === 'code'
+    case 'bullet_list':
+    case 'ordered_list':
+      return kind === 'list'
+    case 'blockquote':
+      return kind === 'blockquote'
+    case 'table':
+      return kind === 'paragraph'
+    case 'deskRawBlock':
+      // 原始块：容器（`::: …`）或围栏代码（` ``` `），具体身份另有逐字比较
+      return kind === 'container' || kind === 'code'
+    default:
+      return false
+  }
 }
 
 function payloadFromBlocks(
