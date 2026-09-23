@@ -58,6 +58,15 @@ importers:
       '@jsquash/oxipng':
         specifier: ^2.3.0
         version: 2.3.0
+      '@lezer/common':
+        specifier: 1.5.2
+        version: 1.5.2
+      '@lezer/highlight':
+        specifier: 1.2.3
+        version: 1.2.3
+      '@lezer/markdown':
+        specifier: 1.7.2
+        version: 1.7.2
       '@milkdown/kit':
         specifier: 7.22.1
         version: 7.22.1(@codemirror/language@6.12.4)(@codemirror/state@6.7.4)(@codemirror/view@6.43.11)(typescript@5.9.3)

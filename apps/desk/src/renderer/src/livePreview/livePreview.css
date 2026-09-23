@@ -1,0 +1,677 @@
+/* 笔记编辑器（CodeMirror 实时预览）。编辑器 DOM 由 CodeMirror 生成，所以这里是全局样式，
+   选择器一律挂在 .live-editor 下面。 */
+
+.live-editor .cm-editor {
+  background: var(--editor-bg);
+  color: var(--editor-text);
+  font-family: var(--tn-font-sans);
+  font-size: var(--tn-prose-size);
+  line-height: var(--tn-prose-line-height);
+}
+
+.live-editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+.live-editor .cm-scroller {
+  font-family: inherit;
+  line-height: inherit;
+  overflow: auto;
+}
+
+.live-editor .cm-content {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 28px 48px 45vh;
+  caret-color: var(--tn-c-brand);
+}
+
+.live-editor.is-wide .cm-content {
+  max-width: none;
+}
+
+.live-editor .cm-line {
+  padding: 0;
+}
+
+.live-editor .cm-cursor {
+  border-left-color: var(--tn-c-brand);
+  border-left-width: 2px;
+}
+
+.live-editor .cm-selectionBackground,
+.live-editor .cm-focused .cm-selectionBackground,
+.live-editor .cm-content ::selection {
+  background: var(--tn-c-highlight) !important;
+}
+
+.live-editor .cm-placeholder {
+  color: var(--tn-c-text-2);
+  opacity: 0.6;
+}
+
+.live-editor .cm-panels {
+  background: var(--tn-c-bg-soft);
+  color: var(--editor-text);
+  border-color: var(--tn-c-divider);
+}
+
+.live-editor .cm-panels-top {
+  border-bottom: 1px solid var(--tn-c-divider);
+}
+
+.live-editor .cm-foldPlaceholder {
+  margin: 0 4px;
+  padding: 0 6px;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 4px;
+  background: var(--tn-c-bg-soft);
+  color: var(--tn-c-text-2);
+}
+
+.live-editor .cm-searchMatch {
+  background: var(--tn-c-warning-soft);
+  outline: 1px solid var(--tn-c-warning);
+}
+
+.live-editor .cm-selectionMatch {
+  background: var(--tn-c-hover);
+}
+
+/* ---------- 源码模式 ---------- */
+
+.live-editor .cm-editor.cm-lp-source {
+  font-family: var(--tn-font-mono);
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.live-editor .cm-lp-source .tok-heading {
+  font-weight: 700;
+  color: var(--tn-c-text);
+}
+
+/* ---------- 语法高亮（两种模式共用） ---------- */
+
+.live-editor .tok-strong {
+  font-weight: 700;
+}
+
+.live-editor .tok-emphasis {
+  font-style: italic;
+}
+
+.live-editor .tok-strikethrough {
+  text-decoration: line-through;
+}
+
+.live-editor .tok-link,
+.live-editor .tok-url {
+  color: var(--tn-c-brand);
+}
+
+.live-editor .tok-processingInstruction,
+.live-editor .tok-meta,
+.live-editor .tok-labelName {
+  color: var(--tn-c-text-2);
+}
+
+.live-editor .tok-monospace {
+  font-family: var(--tn-font-mono);
+  font-size: 0.9em;
+}
+
+.live-editor .tok-keyword {
+  color: #cf222e;
+}
+.live-editor .tok-string,
+.live-editor .tok-string2 {
+  color: #0a3069;
+}
+.live-editor .tok-number,
+.live-editor .tok-bool,
+.live-editor .tok-atom {
+  color: #0550ae;
+}
+.live-editor .tok-comment {
+  color: #6e7781;
+  font-style: italic;
+}
+.live-editor .tok-variableName2,
+.live-editor .tok-typeName,
+.live-editor .tok-className {
+  color: #953800;
+}
+.live-editor .tok-propertyName {
+  color: #8250df;
+}
+.live-editor .tok-operator,
+.live-editor .tok-punctuation {
+  color: #57606a;
+}
+.live-editor .tok-definition {
+  color: #6639ba;
+}
+
+:root[data-theme='dark'] .live-editor .tok-keyword {
+  color: #ff7b72;
+}
+:root[data-theme='dark'] .live-editor .tok-string,
+:root[data-theme='dark'] .live-editor .tok-string2 {
+  color: #a5d6ff;
+}
+:root[data-theme='dark'] .live-editor .tok-number,
+:root[data-theme='dark'] .live-editor .tok-bool,
+:root[data-theme='dark'] .live-editor .tok-atom {
+  color: #79c0ff;
+}
+:root[data-theme='dark'] .live-editor .tok-comment {
+  color: #8b949e;
+}
+:root[data-theme='dark'] .live-editor .tok-variableName2,
+:root[data-theme='dark'] .live-editor .tok-typeName,
+:root[data-theme='dark'] .live-editor .tok-className {
+  color: #ffa657;
+}
+:root[data-theme='dark'] .live-editor .tok-propertyName {
+  color: #d2a8ff;
+}
+:root[data-theme='dark'] .live-editor .tok-operator,
+:root[data-theme='dark'] .live-editor .tok-punctuation {
+  color: #8b949e;
+}
+
+/* ---------- 可视化模式：标题 ---------- */
+
+.live-editor .cm-lp-visual .tok-heading {
+  font-weight: var(--tn-heading-weight);
+  color: var(--tn-c-text);
+}
+
+.live-editor .cm-lp-visual .cm-lp-heading {
+  font-weight: var(--tn-heading-weight);
+}
+
+.live-editor .cm-lp-visual .cm-lp-h1 {
+  font-size: var(--tn-heading-1-size);
+  line-height: var(--tn-heading-1-line);
+  padding-top: 20px;
+  padding-bottom: 6px;
+}
+.live-editor .cm-lp-visual .cm-lp-h2 {
+  font-size: var(--tn-heading-2-size);
+  line-height: var(--tn-heading-2-line);
+  padding-top: 18px;
+  padding-bottom: 4px;
+}
+.live-editor .cm-lp-visual .cm-lp-h3 {
+  font-size: var(--tn-heading-3-size);
+  line-height: var(--tn-heading-3-line);
+  padding-top: 14px;
+  padding-bottom: 2px;
+}
+.live-editor .cm-lp-visual .cm-lp-h4 {
+  font-size: var(--tn-heading-4-size);
+  line-height: var(--tn-heading-4-line);
+  padding-top: 12px;
+}
+.live-editor .cm-lp-visual .cm-lp-h5,
+.live-editor .cm-lp-visual .cm-lp-h6 {
+  font-size: var(--tn-heading-5-size);
+  line-height: var(--tn-heading-5-line);
+  padding-top: 10px;
+}
+
+.live-editor .cm-lp-visual .cm-lp-heading .tok-processingInstruction,
+.live-editor .cm-lp-visual .cm-lp-heading .tok-heading.tok-meta {
+  color: var(--tn-c-text-2);
+  font-weight: 400;
+}
+
+/* ---------- 引用、列表、任务 ---------- */
+
+.live-editor .cm-lp-visual .cm-lp-quote {
+  border-left: 3px solid var(--tn-c-divider-strong);
+  padding-left: 14px;
+  color: var(--tn-c-text-2);
+}
+
+.live-editor .cm-lp-bullet {
+  display: inline-block;
+  min-width: 1.1em;
+  color: var(--tn-c-text-2);
+  font-weight: 700;
+}
+
+.live-editor .cm-lp-ol-mark {
+  color: var(--tn-c-text-2);
+}
+
+.live-editor .cm-lp-task {
+  appearance: none;
+  position: relative;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  margin: 0 6px 0 0;
+  border: 1px solid var(--tn-c-task-check-border);
+  border-radius: 4px;
+  background: var(--tn-c-task-check-bg);
+  vertical-align: -2px;
+  cursor: pointer;
+}
+
+.live-editor .cm-lp-task:checked {
+  border-color: var(--tn-c-task-check);
+  background: var(--tn-c-task-check);
+}
+
+.live-editor .cm-lp-task:checked::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1px;
+  width: 4px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.live-editor .cm-lp-task-done {
+  color: var(--tn-c-text-2);
+  text-decoration: line-through;
+}
+
+/* ---------- 行内 ---------- */
+
+.live-editor .cm-lp-visual .cm-lp-inline-code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--tn-c-bg-soft);
+  font-family: var(--tn-font-mono);
+  font-size: 0.875em;
+}
+
+.live-editor .cm-lp-visual .cm-lp-link {
+  color: var(--tn-c-brand);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--tn-c-brand) 40%, transparent);
+  text-underline-offset: 3px;
+}
+
+.live-editor .cm-lp-visual .cm-lp-link:hover {
+  text-decoration-color: var(--tn-c-brand);
+}
+
+.live-editor .cm-lp-hr {
+  display: inline-block;
+  width: 100%;
+  height: 0;
+  border-top: 1px solid var(--tn-c-divider-strong);
+  vertical-align: middle;
+}
+
+.live-editor .cm-lp-math-block {
+  display: block;
+  padding: 8px 0;
+  text-align: center;
+  cursor: text;
+}
+
+.live-editor .cm-lp-math {
+  cursor: text;
+}
+
+/* ---------- 图片 ---------- */
+
+.live-editor .cm-lp-image {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 100%;
+  vertical-align: bottom;
+  cursor: default;
+}
+
+.live-editor .cm-lp-image.is-center {
+  display: flex;
+  align-items: center;
+}
+
+.live-editor .cm-lp-image.is-right {
+  display: flex;
+  align-items: flex-end;
+}
+
+.live-editor .cm-lp-image.is-revealed {
+  display: flex;
+  margin-top: 6px;
+  opacity: 0.85;
+}
+
+.live-editor .cm-lp-image-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+}
+
+.live-editor .cm-lp-image-frame img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+.live-editor .cm-lp-image-frame:not([style*='width']) img {
+  width: auto;
+}
+
+.live-editor .cm-lp-image-handle {
+  position: absolute;
+  top: 50%;
+  right: -5px;
+  width: 8px;
+  height: 36px;
+  margin-top: -18px;
+  border-radius: 4px;
+  background: var(--tn-c-brand);
+  opacity: 0;
+  cursor: ew-resize;
+  transition: opacity 0.12s;
+}
+
+.live-editor .cm-lp-image-toolbar {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tn-c-bg) 92%, transparent);
+  box-shadow: var(--tn-shadow-2);
+  opacity: 0;
+  line-height: 1;
+  transition: opacity 0.12s;
+}
+
+.live-editor .cm-lp-image-toolbar button {
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tn-c-text);
+  font: 12px/1.4 var(--tn-font-sans);
+  cursor: pointer;
+}
+
+.live-editor .cm-lp-image-toolbar button:hover,
+.live-editor .cm-lp-image-toolbar button.is-active {
+  background: var(--tn-c-hover);
+  color: var(--tn-c-brand);
+}
+
+.live-editor .cm-editor:not(.cm-lp-readonly) .cm-lp-image-frame:hover .cm-lp-image-handle,
+.live-editor .cm-lp-image-frame:hover .cm-lp-image-toolbar {
+  opacity: 1;
+}
+
+.live-editor .cm-lp-image-caption {
+  margin-top: 4px;
+  color: var(--tn-c-text-2);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* ---------- 代码块 ---------- */
+
+.live-editor .cm-lp-visual .cm-lp-codeblock {
+  padding-left: 16px;
+  padding-right: 16px;
+  background: var(--tn-c-bg-soft);
+  font-family: var(--tn-font-mono);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.live-editor .cm-lp-visual .cm-lp-codeblock-first {
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  padding-top: 4px;
+}
+
+.live-editor .cm-lp-visual .cm-lp-codeblock-last {
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  padding-bottom: 4px;
+}
+
+.live-editor .cm-lp-code-header {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--tn-c-text-2);
+  font: 12px/22px var(--tn-font-sans);
+  cursor: text;
+  user-select: none;
+}
+
+.live-editor .cm-lp-code-copy {
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tn-c-text-2);
+  font: inherit;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.live-editor .cm-lp-codeblock:hover .cm-lp-code-copy {
+  opacity: 1;
+}
+
+.live-editor .cm-lp-code-copy:hover {
+  background: var(--tn-c-hover);
+  color: var(--tn-c-text);
+}
+
+.live-editor .cm-lp-empty {
+  display: inline-block;
+  height: 0;
+}
+
+.live-editor .cm-lp-code-tabs {
+  display: inline-flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  font: 13px/22px var(--tn-font-sans);
+}
+
+.live-editor .cm-lp-code-tabs button {
+  padding: 2px 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--tn-c-text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.live-editor .cm-lp-code-tabs button.is-active {
+  border-bottom-color: var(--tn-c-brand);
+  color: var(--tn-c-text);
+  font-weight: 600;
+}
+
+/* ---------- 露出源码的复杂块 ---------- */
+
+.live-editor .cm-lp-visual .cm-lp-source-block,
+.live-editor .cm-lp-visual .cm-lp-comment-block {
+  font-family: var(--tn-font-mono);
+  font-size: 14px;
+  line-height: 22px;
+  background: var(--tn-c-bg-soft);
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.live-editor .cm-lp-visual .cm-lp-comment-block {
+  background: transparent;
+  color: var(--tn-c-text-2);
+}
+
+.live-editor .cm-lp-visual .cm-lp-container-mark {
+  color: var(--tn-c-text-2);
+  font-family: var(--tn-font-mono);
+  font-size: 13px;
+}
+
+.live-editor .cm-lp-visual .cm-lp-container-body,
+.live-editor .cm-lp-visual .cm-lp-container-open,
+.live-editor .cm-lp-visual .cm-lp-container-close {
+  border-left: 4px solid var(--tn-c-divider-strong);
+  padding-left: 14px;
+  background: var(--tn-c-bg-soft);
+}
+
+.live-editor .cm-lp-visual .cm-lp-callout-tip {
+  border-left-color: var(--tn-c-brand);
+  background: var(--tn-c-highlight);
+}
+.live-editor .cm-lp-visual .cm-lp-callout-warning {
+  border-left-color: var(--tn-c-warning);
+  background: var(--tn-c-warning-soft);
+}
+.live-editor .cm-lp-visual .cm-lp-callout-danger {
+  border-left-color: var(--tn-c-danger);
+  background: var(--tn-c-danger-soft);
+}
+.live-editor .cm-lp-visual .cm-lp-callout-info,
+.live-editor .cm-lp-visual .cm-lp-callout-note {
+  border-left-color: var(--tn-c-divider-strong);
+  background: var(--tn-c-default-soft);
+}
+
+/* ---------- 卡片 ---------- */
+
+.live-editor .cm-lp-card {
+  position: relative;
+  margin: 6px 0;
+  border-radius: 8px;
+  cursor: text;
+  font-family: var(--tn-font-sans);
+  line-height: var(--tn-prose-line-height);
+  white-space: normal;
+}
+
+.live-editor .cm-lp-card::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  pointer-events: none;
+  transition: border-color 0.12s;
+}
+
+.live-editor .cm-lp-card:hover::after {
+  border-color: var(--tn-c-divider-strong);
+}
+
+.live-editor .cm-lp-card .custom-block {
+  margin: 0;
+}
+
+.live-editor .cm-lp-table-card table {
+  margin: 0;
+}
+
+.live-editor .cm-lp-diagram {
+  min-height: 40px;
+}
+
+.live-editor .cm-lp-frontmatter {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 8px;
+  color: var(--tn-c-text-2);
+  font: 13px/20px var(--tn-font-sans);
+  cursor: text;
+}
+
+.live-editor .cm-lp-frontmatter-title {
+  color: var(--tn-c-text);
+  font-weight: 600;
+}
+
+.live-editor .cm-lp-frontmatter-row {
+  display: flex;
+  gap: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.live-editor .cm-lp-frontmatter-key {
+  min-width: 80px;
+  color: var(--tn-c-text-2);
+  font-family: var(--tn-font-mono);
+}
+
+/* ---------- Agent 改动审阅 ---------- */
+
+.live-editor .cm-agent-inserted {
+  background: var(--tn-c-success-soft);
+  border-bottom: 1px solid color-mix(in srgb, var(--tn-c-success) 50%, transparent);
+}
+
+.live-editor .cm-agent-removed {
+  background: var(--tn-c-danger-soft);
+  color: var(--tn-c-danger);
+  text-decoration: line-through;
+  white-space: pre-wrap;
+}
+
+.live-editor .cm-agent-review-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font: 13px/20px var(--tn-font-sans);
+}
+
+.live-editor .cm-agent-review-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--tn-c-text);
+}
+
+.live-editor .cm-agent-review-panel button {
+  padding: 3px 12px;
+  border: 1px solid var(--tn-c-divider-strong);
+  border-radius: 6px;
+  background: var(--tn-c-bg);
+  color: var(--tn-c-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.live-editor .cm-agent-review-panel button.is-primary {
+  border-color: var(--tn-c-brand);
+  background: var(--tn-c-brand);
+  color: #fff;
+}
