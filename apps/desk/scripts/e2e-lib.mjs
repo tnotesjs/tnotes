@@ -150,7 +150,7 @@ export async function openNote(page, { kbName, title }) {
   const row = page.locator('.toc-row', { hasText: title }).first()
   await waitFor(async () => (await row.count()) > 0, 20000)
   await row.click()
-  await waitFor(async () => (await page.locator('.ProseMirror').count()) > 0, 20000)
+  await waitFor(async () => (await page.locator('.live-editor .cm-content').count()) > 0, 20000)
 }
 
 /** 简单的结果记录器（与本仓既有 e2e 脚本风格一致） */

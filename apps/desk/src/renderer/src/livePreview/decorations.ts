@@ -1,6 +1,6 @@
 import { syntaxTree } from '@codemirror/language'
-import { Facet, StateField, type EditorState, type Range } from '@codemirror/state'
-import { Decoration, EditorView, WidgetType, type DecorationSet } from '@codemirror/view'
+import { Facet, StateEffect, StateField, type EditorState, type Extension, type Range } from '@codemirror/state'
+import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet } from '@codemirror/view'
 
 import { parseFenceTitleFromMeta } from '../editor/markdown/fenceInfo'
 import { CardWidget, isKnownComponent, setCodeGroupTab, type CardKind } from './cards'
@@ -32,6 +32,81 @@ interface LivePreviewState {
 }
 
 const hidden = Decoration.replace({})
+
+/** 编辑器是否有焦点：没有焦点时不露出任何源码（点到别处时文档是干净的渲染结果） */
+export const setFocused = StateEffect.define<boolean>()
+/** 鼠标拖选进行中：冻结露出范围，避免拖选经过的元素反复露出/隐藏导致排版跳动 */
+const setPointerSelecting = StateEffect.define<boolean>()
+
+interface InteractionState {
+  focused: boolean
+  pointerSelecting: boolean
+}
+
+const interactionField = StateField.define<InteractionState>({
+  create: () => ({ focused: false, pointerSelecting: false }),
+  update(value, tr) {
+    let next = value
+    for (const effect of tr.effects) {
+      if (effect.is(setFocused)) next = { ...next, focused: effect.value }
+      if (effect.is(setPointerSelecting)) next = { ...next, pointerSelecting: effect.value }
+    }
+    return next
+  }
+})
+
+const pointerTracker = ViewPlugin.fromClass(
+  class {
+    private readonly onUp: () => void
+    constructor(private readonly view: EditorView) {
+      this.onUp = () => {
+        window.removeEventListener('mouseup', this.onUp, true)
+        if (this.view.state.field(interactionField).pointerSelecting) {
+          this.view.dispatch({ effects: setPointerSelecting.of(false) })
+        }
+      }
+    }
+
+    start(): void {
+      window.addEventListener('mouseup', this.onUp, true)
+      this.view.dispatch({ effects: setPointerSelecting.of(true) })
+    }
+
+    destroy(): void {
+      window.removeEventListener('mouseup', this.onUp, true)
+    }
+  },
+  {
+    eventHandlers: {
+      mousedown(event) {
+        if (event.button !== 0 || event.detail > 1) return
+        // 按在正文文字上才冻结；点组件（图片、卡片）由组件自己处理
+        const target = event.target as HTMLElement | null
+        if (target?.closest('.cm-lp-card, .cm-lp-image, .cm-lp-math, .cm-lp-frontmatter, button, input')) return
+        this.start()
+      }
+    }
+  }
+)
+
+class BreakWidget extends WidgetType {
+  constructor(private readonly block: boolean) {
+    super()
+  }
+
+  eq(other: BreakWidget): boolean {
+    return other.block === this.block
+  }
+
+  toDOM(): HTMLElement {
+    if (!this.block) return document.createElement('br')
+    const spacer = document.createElement('div')
+    spacer.className = 'cm-lp-break'
+    return spacer
+  }
+}
+
+const BREAK_TAG = /^<br\s*\/?>$/i
 
 /** 卡片里的组件（如笔记表格）需要知道当前知识库。 */
 export const cardKnowledgeBase = Facet.define<string, string>({
@@ -149,7 +224,7 @@ function build(state: EditorState): LivePreviewState {
   const doc = state.doc
   const ranges: Range<Decoration>[] = []
   const blocks: HiddenBlock[] = []
-  const selection = state.selection.ranges
+  const selection = state.field(interactionField, false)?.focused === false ? [] : state.selection.ranges
   const touches = (from: number, to: number): boolean =>
     selection.some((range) => range.from <= to && range.to >= from)
   const lineTouched = (pos: number): boolean => {
@@ -466,12 +541,22 @@ function build(state: EditorState): LivePreviewState {
           replaceBlock(from, to, new FrontmatterWidget(body ? doc.sliceString(body.from, body.to) : ''))
           return false
         }
+        case 'HTMLTag': {
+          if (BREAK_TAG.test(doc.sliceString(from, to)) && !touches(from, to)) {
+            ranges.push(Decoration.replace({ widget: new BreakWidget(false) }).range(from, to))
+          }
+          return false
+        }
         case 'HTMLBlock': {
+          const source = doc.sliceString(from, to)
+          if (BREAK_TAG.test(source.trim())) {
+            if (!lineTouched(from)) ranges.push(Decoration.replace({ widget: new BreakWidget(true) }).range(from, to))
+            return false
+          }
           if (touches(from, to)) {
             linesClass(from, to, 'cm-lp-source-block')
             return false
           }
-          const source = doc.sliceString(from, to)
           card(node, isKnownComponent(source) ? 'component' : 'html', 0)
           return false
         }
@@ -495,14 +580,18 @@ function build(state: EditorState): LivePreviewState {
   return { decorations: Decoration.set(ranges, true), blocks }
 }
 
-export const livePreviewField = StateField.define<LivePreviewState>({
+const livePreviewStateField = StateField.define<LivePreviewState>({
   create: (state) => build(state),
   update(value, tr) {
     const modeChanged = tr.startState.facet(livePreviewEnabled) !== tr.state.facet(livePreviewEnabled)
+    const interactionChanged = tr.startState.field(interactionField) !== tr.state.field(interactionField)
+    const frozen = tr.state.field(interactionField).pointerSelecting && !tr.docChanged && !interactionChanged
+    if (frozen) return value
     if (
       tr.docChanged ||
       tr.selection ||
       modeChanged ||
+      interactionChanged ||
       syntaxTree(tr.state) !== syntaxTree(tr.startState) ||
       tr.effects.some((effect) => effect.is(setCodeGroupTab))
     ) {
@@ -513,7 +602,15 @@ export const livePreviewField = StateField.define<LivePreviewState>({
   provide: (field) => EditorView.decorations.from(field, (value) => value.decorations)
 })
 
+/** 实时预览显示层（含焦点与拖选状态跟踪） */
+export const livePreviewField: Extension = [
+  interactionField,
+  livePreviewStateField,
+  pointerTracker,
+  EditorView.focusChangeEffect.of((_state, focusing) => setFocused.of(focusing))
+]
+
 /** 当前被组件整块替换掉的源码范围 */
 export function hiddenBlocks(state: EditorState): HiddenBlock[] {
-  return state.field(livePreviewField, false)?.blocks ?? []
+  return state.field(livePreviewStateField, false)?.blocks ?? []
 }

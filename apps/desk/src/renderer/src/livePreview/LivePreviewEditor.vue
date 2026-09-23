@@ -60,9 +60,9 @@ import { registerLiveEditor, unregisterLiveEditor } from './editorRegistry'
 import type { EditorSelectionAnchor, EditorSelectionPayload } from '../selection/selectionReporter'
 import type { NotePageWidth, NoteViewMode } from '../../../shared/contracts'
 
-import './livePreview.css'
+import { DESK_SELECT_ALL_EVENT } from './events'
 
-export const DESK_SELECT_ALL_EVENT = 'desk:select-all'
+import './livePreview.css'
 
 const props = withDefaults(
   defineProps<{
@@ -212,9 +212,18 @@ function scrollToHeading(id: string): void {
   view.focus()
 }
 
+/** 打开笔记时光标放在 frontmatter 之后的第一行正文（而不是 frontmatter 里） */
+function initialCursor(doc: string): number {
+  const frontmatter = /^---\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(doc)
+  let pos = frontmatter ? frontmatter[0].length : 0
+  while (pos < doc.length && (doc[pos] === '\n' || doc[pos] === '\r')) pos += 1
+  return Math.min(pos, doc.length)
+}
+
 function createState(doc: string): EditorState {
   return EditorState.create({
     doc,
+    selection: EditorSelection.cursor(initialCursor(doc)),
     extensions: [
       tnotesMarkdown(),
       history(),
@@ -460,7 +469,6 @@ onMounted(() => {
   window.addEventListener(DESK_SELECT_ALL_EVENT, selectAll)
   refreshOutline()
   updateHeadingLevel(view.state)
-  if (props.active) void nextTick(() => view?.focus())
 })
 
 onBeforeUnmount(() => {

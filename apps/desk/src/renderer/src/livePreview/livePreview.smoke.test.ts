@@ -14,7 +14,7 @@ vi.mock('../editor/markdown/componentPreview', async (importOriginal) => {
   return { ...actual, mountMermaidPreview: stub, mountMindmapPreview: stub }
 })
 
-import { codeGroupTabs, livePreviewField } from './decorations'
+import { codeGroupTabs, livePreviewField, setFocused } from './decorations'
 import { tnotesMarkdown } from './language'
 
 const views: EditorView[] = []
@@ -33,6 +33,7 @@ function mount(doc: string): EditorView {
   })
   ensureSyntaxTree(state, doc.length, 5000)
   const view = new EditorView({ state, parent })
+  view.dispatch({ effects: setFocused.of(true) })
   views.push(view)
   return view
 }
@@ -120,6 +121,14 @@ describe('live preview decorations', () => {
     expect(text).not.toContain('**')
     view.dispatch({ selection: EditorSelection.cursor(2) })
     expect(view.contentDOM.textContent).toContain('# 标题')
+  })
+
+  it('shows the clean rendering when the editor loses focus', () => {
+    const view = mount('# 标题\n')
+    view.dispatch({ selection: EditorSelection.cursor(2) })
+    expect(view.contentDOM.textContent).toContain('# 标题')
+    view.dispatch({ effects: setFocused.of(false) })
+    expect(view.contentDOM.textContent).not.toContain('# ')
   })
 
   const docsKb = '/Users/huyouda/tnotesjs/kbs/TNotes.docs/notes'

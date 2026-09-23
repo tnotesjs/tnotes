@@ -306,6 +306,10 @@
   text-decoration-color: var(--tn-c-brand);
 }
 
+.live-editor .cm-lp-break {
+  height: var(--tn-prose-line-height);
+}
+
 .live-editor .cm-lp-hr {
   display: inline-block;
   width: 100%;
