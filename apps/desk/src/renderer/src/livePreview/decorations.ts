@@ -28,8 +28,7 @@ import {
   EmptyWidget,
   HorizontalRuleWidget,
   ImageWidget,
-  MathWidget,
-  revealAt
+  MathWidget
 } from './widgets'
 
 import type { Parser, SyntaxNode } from '@lezer/common'
@@ -294,8 +293,11 @@ function activatePanel(view: EditorView, openFrom: number, index: number): void 
   const panel = located?.panels[index]
   if (!located || !panel) return
   const openLine = view.state.doc.lineAt(panel.from)
-  const effects = [setCodeGroupTab.of({ pos: located.openFrom, index })]
-  if (codeChromeAt(view.state, openLine.from)?.collapsed) effects.push(toggleCodeCollapse.of(openLine.from))
+  const collapsed = codeChromeAt(view.state, openLine.from)?.collapsed === true
+  const effects = [
+    setCodeGroupTab.of({ pos: located.openFrom, index }),
+    ...(collapsed ? [toggleCodeCollapse.of(openLine.from)] : [])
+  ]
   const firstCodeLine = openLine.number + 1
   const target =
     firstCodeLine <= view.state.doc.lines ? view.state.doc.line(firstCodeLine).from : panel.from
