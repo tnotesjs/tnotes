@@ -64,3 +64,19 @@ export function applyFenceLevel(opening: string, level: number | null): string {
   const suffix = level === null ? '' : ` ${Math.max(1, Math.trunc(level))}`
   return `${fence}${whitespace}${language}${rest}${suffix}`
 }
+
+/** 改围栏语言标记。空字符串表示不写语言（源码里不填 text）。 */
+export function applyFenceLanguage(opening: string, language: string): string {
+  const match = opening.match(/^( {0,3}(?:`{3,}|~{3,}))[ \t]*([\s\S]*)$/)
+  if (!match) return opening
+  const [, fence, restRaw = ''] = match
+  let rest = restRaw
+  const token = /^(\S+)/.exec(rest)
+  if (token && !token[1].startsWith('[') && !token[1].startsWith('{')) {
+    rest = rest.slice(token[1].length)
+  }
+  rest = rest.replace(/^[ \t]+/, '')
+  const lang = language.trim()
+  if (!lang) return rest ? `${fence} ${rest}` : fence
+  return rest ? `${fence}${lang} ${rest}` : `${fence}${lang}`
+}

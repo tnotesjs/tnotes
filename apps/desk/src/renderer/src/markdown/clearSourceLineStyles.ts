@@ -107,7 +107,7 @@ export function sourceLineStyleChanges(state: EditorState): ChangeSpec[] {
   return sourceLineStyleChangesFor(state.doc.toString(), range.from, range.to)
 }
 
-// This command belongs only to MarkdownSourceEditor (the note README source view).
+// Clears line-level markdown markers in the source view.
 export function clearSourceLineStyles(view: EditorView): boolean {
   if (view.state.readOnly) return false
   const changes = sourceLineStyleChanges(view.state)

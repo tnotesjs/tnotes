@@ -39,6 +39,7 @@ import type {
   KbSettingsEditorTab,
   KbAssetsEditorTab,
   ExcalidrawEditorTab,
+  MindmapEditorTab,
   NoteHistoryEditorTab,
   TextFileEditorTab,
   NoteEditorTab,
@@ -86,12 +87,14 @@ function sanitizeLayout(
           tab.type === 'kb-settings' ||
           tab.type === 'kb-assets' ||
           tab.type === 'excalidraw' ||
+          tab.type === 'mindmap' ||
           tab.type === 'text-file' ||
           tab.type === 'note-history'
         ) {
           return (
             knowledgeBaseIds.has(tab.knowledgeBaseId) &&
-            (!scopedKnowledgeBaseId || tab.knowledgeBaseId === scopedKnowledgeBaseId)
+            (!scopedKnowledgeBaseId || tab.knowledgeBaseId === scopedKnowledgeBaseId) &&
+            (tab.type !== 'mindmap' || !validNoteUuids || validNoteUuids.has(tab.noteUuid))
           )
         }
         return (
@@ -121,6 +124,11 @@ function sanitizeLayout(
             ? { dirty: Boolean(tab.dirty) }
             : tab.type === 'excalidraw'
               ? { dirty: Boolean(tab.dirty), invalid: Boolean(tab.invalid) }
+              : tab.type === 'mindmap'
+                ? {
+                    invalid: Boolean(tab.invalid),
+                    fenceOrdinal: Number.isInteger(tab.fenceOrdinal) ? tab.fenceOrdinal : 0
+                  }
               : tab.type === 'note-history'
                 ? { commit: /^[0-9a-f]{40}$/.test(tab.commit) ? tab.commit : '' }
                 : {})
@@ -580,7 +588,13 @@ export const useEditorStore = defineStore('editor', () => {
     if (storedChanged) knowledgeBaseEditors.value = { ...knowledgeBaseEditors.value }
   }
 
-  function renameNote(knowledgeBaseId: string, noteUuid: string, title: string): void {
+  function renameNote(knowledgeBaseId: string, noteUuid: string, title: string, noteIndex?: string | null): void {
+    const retitle = (current: string): string => {
+      const mark = ' · '
+      const splitAt = current.lastIndexOf(mark)
+      const base = splitAt >= 0 ? current.slice(0, splitAt) : current
+      return `${base} · ${title}`
+    }
     const updateLayout = (editorLayout: EditorLayoutNode): boolean => {
       let changed = false
       for (const group of listGroups(editorLayout)) {
@@ -591,6 +605,21 @@ export const useEditorStore = defineStore('editor', () => {
             tab.noteUuid === noteUuid
           ) {
             tab.title = title
+            changed = true
+          } else if (
+            tab.type === 'mindmap' &&
+            tab.knowledgeBaseId === knowledgeBaseId &&
+            tab.noteUuid === noteUuid
+          ) {
+            tab.title = retitle(tab.title)
+            changed = true
+          } else if (
+            tab.type === 'excalidraw' &&
+            tab.knowledgeBaseId === knowledgeBaseId &&
+            noteIndex &&
+            tab.ownerNoteIndex === noteIndex
+          ) {
+            tab.title = retitle(tab.title)
             changed = true
           }
         }
@@ -915,6 +944,7 @@ export const useEditorStore = defineStore('editor', () => {
           tab.relPath === relPath
       )
       if (existing) {
+        if (meta.title) existing.title = meta.title
         activate(group.id, existing.id)
         return existing.id
       }
@@ -935,6 +965,63 @@ export const useEditorStore = defineStore('editor', () => {
     }
     layout.value = insertTab(layout.value, activeGroupId.value, tab)
     return tab.id
+  }
+
+  /**
+   * 打开思维导图编辑标签。同一笔记的同一段围栏（序号）只保留一个标签。
+   * 写回会改 fenceSource，不再用原文认标签。
+   */
+  function openMindmap(
+    knowledgeBase: KnowledgeBaseDescriptor,
+    noteUuid: string,
+    fenceSource: string,
+    meta: { title?: string; fenceOrdinal?: number } = {}
+  ): string {
+    if (activeKnowledgeBaseId.value !== knowledgeBase.id) switchKnowledgeBase(knowledgeBase.id)
+    const fenceOrdinal = meta.fenceOrdinal ?? 0
+    for (const group of groups.value) {
+      const existing = group.tabs.find(
+        (tab) =>
+          tab.type === 'mindmap' &&
+          tab.knowledgeBaseId === knowledgeBase.id &&
+          tab.noteUuid === noteUuid &&
+          tab.fenceOrdinal === fenceOrdinal
+      )
+      if (existing) {
+        if (meta.title) existing.title = meta.title
+        activate(group.id, existing.id)
+        return existing.id
+      }
+    }
+    ensureRoomForTab()
+    const tab: MindmapEditorTab = {
+      id: `mindmap:${knowledgeBase.id}:${noteUuid}:${fenceOrdinal}`,
+      type: 'mindmap',
+      knowledgeBaseId: knowledgeBase.id,
+      knowledgeBaseName: knowledgeBase.displayName,
+      noteUuid,
+      fenceOrdinal,
+      fenceSource,
+      title: meta.title ?? '思维导图',
+      icon: knowledgeBase.icon,
+      pinned: false,
+      openedAt: Date.now()
+    }
+    layout.value = insertTab(layout.value, activeGroupId.value, tab)
+    return tab.id
+  }
+
+  function updateMindmapTabMeta(
+    tabId: string,
+    meta: { fenceSource?: string; title?: string; invalid?: boolean }
+  ): void {
+    const located = findTab(layout.value, tabId)
+    if (located?.tab.type !== 'mindmap') return
+    const tab = located.tab
+    if (meta.fenceSource !== undefined) tab.fenceSource = meta.fenceSource
+    if (meta.title !== undefined) tab.title = meta.title
+    if (meta.invalid !== undefined) tab.invalid = meta.invalid
+    layout.value = { ...layout.value }
   }
 
   /**
@@ -1139,18 +1226,31 @@ export const useEditorStore = defineStore('editor', () => {
     for (const target of targets) close(target.groupId, target.tabId)
   }
 
-  function closeNote(knowledgeBaseId: string, noteUuid: string): void {
+  function closeNote(knowledgeBaseId: string, noteUuid: string, noteIndex?: string | null): void {
     removeNoteFromStoredEditors(knowledgeBaseId, noteUuid)
-    for (const group of [...groups.value]) {
-      for (const tab of [...group.tabs]) {
-        if (
+    const attached: Array<{ groupId: string; tabId: string }> = []
+    for (const group of groups.value) {
+      for (const tab of group.tabs) {
+        const mindmap =
+          tab.type === 'mindmap' &&
+          tab.knowledgeBaseId === knowledgeBaseId &&
+          tab.noteUuid === noteUuid
+        const canvas =
+          tab.type === 'excalidraw' &&
+          tab.knowledgeBaseId === knowledgeBaseId &&
+          Boolean(noteIndex) &&
+          tab.ownerNoteIndex === noteIndex
+        const note =
           tab.type === 'note' &&
           tab.knowledgeBaseId === knowledgeBaseId &&
           tab.noteUuid === noteUuid
-        ) {
-          close(group.id, tab.id)
-        }
+        if (mindmap || canvas || note) attached.push({ groupId: group.id, tabId: tab.id })
       }
+    }
+    for (const target of attached) {
+      const located = findTab(layout.value, target.tabId)
+      if (located?.tab.pinned) setPinned(target.tabId, false)
+      close(target.groupId, target.tabId)
     }
     if (knowledgeBaseId === activeKnowledgeBaseId.value) {
       lastNoteByGroup.value = Object.fromEntries(
@@ -1328,6 +1428,8 @@ export const useEditorStore = defineStore('editor', () => {
     openKbSettings,
     openKbAssets,
     openExcalidraw,
+    openMindmap,
+    updateMindmapTabMeta,
     openNoteHistory,
     selectHistoryCommit,
     excalidrawTabIdFor,

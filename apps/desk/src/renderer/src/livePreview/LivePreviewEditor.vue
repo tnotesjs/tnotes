@@ -34,6 +34,10 @@ import { classHighlighter } from '@lezer/highlight'
 import NoteOutline from '../markdown/NoteOutline.vue'
 import { resolveMarkdownImageUrl } from '../markdown/markdownAssetUrl'
 import { renumberHeadings, stripHeadingNumbers } from '../editor/markdown/headingNumbering'
+import { useEditorStore } from '../stores/editor'
+import { useWorkspaceStore } from '../stores/workspace'
+import { mindmapPreviewMarkdown } from '../editor/markdown/mindmapFence'
+import { mindmapFenceOrdinal } from '../editor/markdown/mindmapFenceLocate'
 import {
   arrowDownIntoBlock,
   arrowUpIntoBlock,
@@ -48,13 +52,15 @@ import {
   tabCommand,
   wrapSelection as wrapSelectionCommand
 } from './commands'
-import { cardKnowledgeBase, codeGroupTabs, livePreviewField } from './decorations'
-import { applyHeadingFoldCommand, headingFoldService, type HeadingFoldCommand } from './headingFold'
+import { cardKnowledgeBase, codeGroupTabs, keepCursorOutOfHiddenCodeGroup, livePreviewField } from './decorations'
+import { codeBlockFullscreenClass } from './codeBlockChrome'
+import { applyHeadingFoldCommand, headingFoldService, keepCursorOutOfFold, type HeadingFoldCommand } from './headingFold'
 import { livePreviewEnabled, livePreviewHost } from './host'
 import { tnotesMarkdown } from './language'
 import { collectHeadings, type OutlineHeading } from './outline'
 import { captureSelection } from './selectionCapture'
 import { agentReviewExtension } from './agentReview'
+import { frontmatterIdGuard } from './frontmatterIdGuard'
 import { registerLiveEditor, unregisterLiveEditor } from './editorRegistry'
 
 import type { EditorSelectionAnchor, EditorSelectionPayload } from '../selection/selectionReporter'
@@ -71,12 +77,17 @@ const props = withDefaults(
     readOnly: boolean
     knowledgeBaseId: string
     noteUuid: string
+    /** 笔记在知识库内的相对路径；画布探测需要 */
+    noteRelPath?: string
     active: boolean
     pageWidth?: NotePageWidth
     outlineVisible?: boolean
   }>(),
-  { pageWidth: 'standard', outlineVisible: true }
+  { pageWidth: 'standard', outlineVisible: true, noteRelPath: '' }
 )
+
+const editorStore = useEditorStore()
+const workspaceStore = useWorkspaceStore()
 
 const emit = defineEmits<{
   change: [content: string]
@@ -113,11 +124,53 @@ function readOnlyExtensions(readOnly: boolean) {
   return [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]
 }
 
+function noteTitle(): string {
+  return (
+    workspaceStore.getDocumentSession(props.knowledgeBaseId, props.noteUuid)?.document.title ?? ''
+  )
+}
+
+function openCanvas(sourceRelPath: string): void {
+  const knowledgeBase =
+    workspaceStore.overview.allKnowledgeBases.find((item) => item.id === props.knowledgeBaseId) ??
+    null
+  if (!knowledgeBase) {
+    workspaceStore.error = `无法打开画布：${sourceRelPath}`
+    return
+  }
+  const fileName = sourceRelPath.split('/').pop() ?? sourceRelPath
+  const title = noteTitle() ? `${fileName} · ${noteTitle()}` : fileName
+  editorStore.openExcalidraw(knowledgeBase, sourceRelPath, { title })
+}
+
+function openMindmap(fenceSource: string): void {
+  const knowledgeBase =
+    workspaceStore.overview.allKnowledgeBases.find((item) => item.id === props.knowledgeBaseId) ??
+    null
+  if (!knowledgeBase) {
+    workspaceStore.error = '无法打开思维导图编辑'
+    return
+  }
+  const preview = mindmapPreviewMarkdown(fenceSource)
+  const titleMatch = preview.markdown.match(/^\s{0,3}#(?!#)\s+(.+?)\s*$/m)
+  const topic = (titleMatch?.[1] ?? preview.parts.options.title ?? '思维导图').trim() || '思维导图'
+  const title = noteTitle() ? `${topic} · ${noteTitle()}` : topic
+  const doc = view?.state.doc.toString() ?? props.content
+  const fenceOrdinal = mindmapFenceOrdinal(doc, fenceSource) ?? undefined
+  editorStore.openMindmap(knowledgeBase, props.noteUuid, fenceSource, { title, fenceOrdinal })
+}
+
 function contextExtensions() {
   return [
     livePreviewHost.of({
       resolveImage: (src) => resolveMarkdownImageUrl(src, props.knowledgeBaseId, props.noteUuid),
-      openLink: (href) => openHref(href)
+      openLink: (href) => openHref(href),
+      knowledgeBaseId: props.knowledgeBaseId,
+      noteUuid: props.noteUuid,
+      noteRelPath: props.noteRelPath,
+      isReadOnly: () => props.readOnly,
+      openCanvas,
+      openMindmap
     }),
     cardKnowledgeBase.of(props.knowledgeBaseId)
   ]
@@ -235,13 +288,17 @@ function createState(doc: string): EditorState {
       EditorState.tabSize.of(4),
       syntaxHighlighting(classHighlighter),
       codeGroupTabs,
-      livePreviewField,
       headingFoldService,
+      codeBlockFullscreenClass,
+      keepCursorOutOfHiddenCodeGroup,
+      keepCursorOutOfFold,
       codeFolding({ placeholderText: '…' }),
+      livePreviewField,
       search({ top: true }),
       highlightSelectionMatches(),
       placeholder('开始写作…'),
       agentReviewExtension(),
+      frontmatterIdGuard(),
       modeCompartment.of(modeExtensions(props.mode)),
       readOnlyCompartment.of(readOnlyExtensions(props.readOnly)),
       contextCompartment.of(contextExtensions()),
@@ -498,7 +555,7 @@ watch(
 )
 
 watch(
-  () => [props.knowledgeBaseId, props.noteUuid],
+  () => [props.knowledgeBaseId, props.noteUuid, props.noteRelPath],
   () => view?.dispatch({ effects: contextCompartment.reconfigure(contextExtensions()) })
 )
 

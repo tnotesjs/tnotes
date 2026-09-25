@@ -57,9 +57,37 @@ export function readImage(state: EditorState, node: SyntaxNode): ImageSyntax | n
 
 /** 找到覆盖 `pos` 的图片语法（组件事件发生时按当前文档重新定位，不信任旧坐标）。 */
 export function imageAt(state: EditorState, pos: number): ImageSyntax | null {
-  let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1)
-  while (node && node.name !== 'Image') node = node.parent
-  return node ? readImage(state, node) : null
+  const doc = state.doc
+  const candidates = [pos, pos - 1, pos + 1, pos - 2].filter((candidate) => candidate >= 0 && candidate <= doc.length)
+  for (const candidate of candidates) {
+    let node: SyntaxNode | null = syntaxTree(state).resolveInner(candidate, -1)
+    while (node && node.name !== 'Image') node = node.parent
+    if (node) return readImage(state, node)
+  }
+  return null
+}
+
+/**
+ * 源码露出时，图片组件排在整段 `![…](…) {…}` 之后。
+ * `posAtDOM` 会落在属性块后面，近处几个字符找不到 Image 节点，要沿当前行往前找。
+ */
+export function imageBefore(state: EditorState, pos: number): ImageSyntax | null {
+  const direct = imageAt(state, pos)
+  if (direct) return direct
+  const doc = state.doc
+  const clamped = Math.max(0, Math.min(pos, doc.length))
+  const line = doc.lineAt(clamped)
+  const from = line.number > 1 ? doc.line(line.number - 1).from : line.from
+  let found: ImageSyntax | null = null
+  syntaxTree(state).iterate({
+    from,
+    to: line.to,
+    enter(node) {
+      if (node.name !== 'Image' || node.from > clamped) return
+      found = readImage(state, node.node)
+    }
+  })
+  return found
 }
 
 /** 改写图片属性块：返回要应用的单个修改（宽度或对齐为默认值时整块去掉）。 */

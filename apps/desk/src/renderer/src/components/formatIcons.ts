@@ -13,6 +13,7 @@ export type FormatIconName =
   | 'heading-number-remove'
   | 'link'
   | 'table'
+  | 'canvas'
 
 // Original filled SVG paths supplied for the Markdown toolbar.
 export const formatIcons: Record<FormatIconName, { size: number; paths: string[] }> = {
@@ -103,6 +104,14 @@ export const formatIcons: Record<FormatIconName, { size: number; paths: string[]
     size: 1024,
     paths: [
       'M928 160H96c-17.7 0-32 14.3-32 32v640c0 17.7 14.3 32 32 32h832c17.7 0 32-14.3 32-32V192c0-17.7-14.3-32-32-32m-40 208H676V232h212zm0 224H676V432h212zM412 432h200v160H412zm200-64H412V232h200zm-476 64h212v160H136zm0-200h212v136H136zm0 424h212v136H136zm276 0h200v136H412zm476 136H676V656h212z'
+    ]
+  },
+  canvas: {
+    size: 24,
+    paths: [
+      'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2m0 16H5V5h14z',
+      'M7.5 15.5l2.5-3.01L12.5 15l2.5-3.5L18 15.5z',
+      'M8 8.5a1.5 1.5 0 1 0 0-3a1.5 1.5 0 0 0 0 3'
     ]
   }
 }

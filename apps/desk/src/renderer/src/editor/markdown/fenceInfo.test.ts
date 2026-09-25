@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { applyFenceTitle, parseFenceTitleFromMeta } from './fenceInfo'
+import { applyFenceLanguage, applyFenceTitle, parseFenceTitleFromMeta } from './fenceInfo'
 import { reconcileMarkdownSource } from './sourcePreservation'
 
 describe('fenceInfo', () => {
@@ -14,6 +14,13 @@ describe('fenceInfo', () => {
     expect(applyFenceTitle('```ts {30-51} [TypeScript]', 'App')).toBe('```ts {30-51} [App]')
     expect(applyFenceTitle('```js', 'demo')).toBe('```js [demo]')
     expect(applyFenceTitle('```js [old]', '')).toBe('```js')
+  })
+
+  it('rewrites the language token and leaves the title', () => {
+    expect(applyFenceLanguage('```js [demo]', 'ts')).toBe('```ts [demo]')
+    expect(applyFenceLanguage('```js', '')).toBe('```')
+    expect(applyFenceLanguage('``` [demo]', 'js')).toBe('```js [demo]')
+    expect(applyFenceLanguage('```', 'py')).toBe('```py')
   })
 })
 

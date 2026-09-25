@@ -13,6 +13,7 @@ const BLOCK_KINDS: Record<string, string> = {
   Container: 'container',
   Table: 'table',
   HTMLBlock: 'html',
+  ComponentBlock: 'component',
   CommentBlock: 'html',
   BlockMath: 'math',
   Frontmatter: 'frontmatter',

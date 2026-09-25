@@ -1,4 +1,4 @@
-// E4 真实 Electron 端到端：资源面板 → 画布标签页 → 编辑 → 自动写盘 → 重开一致，
+// E4 真实 Electron 端到端：笔记里的画布图 → 画布标签页 → 编辑 → 自动写盘 → 重开一致，
 // 外部改名/删除只报失效，资源面板重命名后标签跟随，关闭/退出前 flush。
 // 需要先构建：pnpm --filter desk exec electron-vite build
 // Run: node apps/desk/scripts/e2e-excalidraw-tab.mjs
@@ -34,6 +34,18 @@ mkdirSync(workspace, { recursive: true })
 mkdirSync(profile, { recursive: true })
 mkdirSync(shots, { recursive: true })
 await writeAcceptanceKb(kb)
+const boundaryNote = join(kb, 'notes', '0004. 边界与断链.md')
+writeFileSync(
+  boundaryNote,
+  readFileSync(boundaryNote, 'utf8').replace(
+    '![画布](../assets/0004-drawing.excalidraw)',
+    '![画布](../assets/0004-drawing.svg)'
+  )
+)
+writeFileSync(
+  join(assets, '0004-drawing.svg'),
+  '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"></svg>\n'
+)
 copyFileSync(canvasPath, backupPath)
 writeFileSync(join(profile, 'workspace.v1.json'), JSON.stringify({ path: workspace }))
 writeFileSync(
@@ -120,10 +132,16 @@ try {
     await row.waitFor({ timeout: 30000 })
     await row.click()
   }
-  const openCanvasTab = async (name = '0004-drawing.excalidraw') => {
-    await openAssetsPane()
-    await selectCanvasRow(name)
-    await page.getByRole('button', { name: '打开画布', exact: true }).click()
+  const openCanvasTab = async () => {
+    await page.locator('.toc-row', { hasText: '边界与断链' }).first().click()
+    const editor = page.locator('.tab-content:visible .cm-content').first()
+    await editor.waitFor({ timeout: 30000 })
+    const image = page.locator('.tab-content:visible .cm-lp-image').first()
+    await image.waitFor({ timeout: 30000 })
+    await image.hover()
+    const edit = page.locator('.tab-content:visible').getByRole('button', { name: '编辑', exact: true }).first()
+    await edit.waitFor({ timeout: 30000 })
+    await edit.click()
     await canvasPane().waitFor({ timeout: 30000 })
     await interactiveCanvas().waitFor({ timeout: 60000 })
     await page.waitForTimeout(700)
@@ -160,13 +178,13 @@ try {
   await page.getByText('acceptance-kb', { exact: true }).first().click()
   await page.waitForTimeout(1200)
   await page.locator('.toc-row', { hasText: '重复与合并' }).first().click()
-  await page.locator('.milkdown:visible').first().waitFor({ timeout: 30000 })
+  await page.locator('.tab-content:visible .cm-content').first().waitFor({ timeout: 30000 })
 
-  // 1) 资源面板 →「打开画布」→ 独立标签页 + 编辑器真正渲染
+  // 1) 笔记里的画布图「编辑」→ 独立标签页 + 编辑器真正渲染
   const beforeOpen = readFileSync(canvasPath, 'utf8')
   await openCanvasTab()
   record(
-    '资源面板入口：.excalidraw 生成独立标签页并渲染编辑器',
+    '笔记入口：.excalidraw 生成独立标签页并渲染编辑器',
     (await canvasTabs().count()) === 1 &&
       (await canvasPane().locator('.excalidraw__canvas').count()) >= 1,
     `tabs=${await canvasTabs().count()}`
@@ -221,7 +239,7 @@ try {
   record('主题切换不写盘（主题不属于持久化内容）', readFileSync(canvasPath, 'utf8') === beforeOpen)
   await page.screenshot({ path: join(shots, 'opened.png') })
 
-  // 2) 同一文件再次「打开画布」→ 定位已有标签，不产生第二个会话
+  // 2) 同一文件再次从笔记「编辑」→ 定位已有标签，不产生第二个会话
   await openCanvasTab()
   record(
     '同一文件去重：再次打开仍是 1 个画布标签页',
@@ -368,7 +386,7 @@ try {
   // 8) 资源面板对画布源文件保持保护：重命名入口直接置灰（不再让人填完表单才被拒），
   //    回收仍走计划并在预览里明确拒绝，两条路都不会悄悄移动文件、让已打开的标签指向
   //    一个不存在的路径
-  await activateTab('资源')
+  await openAssetsPane()
   await selectCanvasRow()
   const renameState = await page.locator('[data-asset-rename-state]').innerText()
   const renameReason = (await page.locator('[data-asset-rename]').getAttribute('title')) ?? ''

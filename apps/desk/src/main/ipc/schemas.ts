@@ -99,6 +99,22 @@ const excalidrawTabSchema = z.object({
   invalid: z.boolean().optional()
 })
 
+const mindmapTabSchema = z.object({
+  id: z.string().min(1),
+  type: z.literal('mindmap'),
+  knowledgeBaseId: z.string().min(1),
+  knowledgeBaseName: z.string(),
+  noteUuid: z.string().min(1),
+  fenceOrdinal: z.number().int().min(0).default(0),
+  fenceSource: z.string().min(1).max(2_000_000),
+  title: z.string(),
+  icon: iconSchema,
+  pinned: z.boolean().optional(),
+  openedAt: z.number().finite().optional(),
+  dirty: z.boolean().optional(),
+  invalid: z.boolean().optional()
+})
+
 const noteHistoryTabSchema = z.object({
   id: z.string().min(1),
   type: z.literal('note-history'),
@@ -120,6 +136,7 @@ const editorTabSchema = z.discriminatedUnion('type', [
   kbSettingsTabSchema,
   kbAssetsTabSchema,
   excalidrawTabSchema,
+  mindmapTabSchema,
   textFileTabSchema,
   noteHistoryTabSchema
 ])

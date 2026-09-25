@@ -106,6 +106,12 @@ const settingsSchema = z.object({
       port: z.number().int().min(1024).max(65535).default(DEFAULT_MCP_PORT)
     })
     .default({ enabled: false, port: DEFAULT_MCP_PORT }),
+  agent: z
+    .object({
+      baseUrl: z.string().trim().min(1).default('https://api.openai.com/v1'),
+      model: z.string().trim().min(1).default('gpt-4o-mini')
+    })
+    .default({ baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }),
   imageUpload: z
     .object({
       defaultTarget: z.enum(['local', 'github']).default('local'),

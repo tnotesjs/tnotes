@@ -43,8 +43,6 @@ const SourceStub = defineComponent({
     })
   }
 })
-vi.mock('../markdown/MarkdownSourceEditor.vue', () => ({ default: { template: '<div />' } }))
-
 const tab: NoteEditorTab = {
   id: 'tab-a',
   type: 'note',
@@ -115,44 +113,43 @@ afterEach(() => document.body.replaceChildren())
 describe('note header', () => {
   it('puts formatting on the same row as the title and view modes', async () => {
     const { wrapper, editor } = setup()
-    // 顺序即验收要求：标题 / 【视图切换 | 格式工具栏】 / 布局开关
+    // 顺序：标题 | 【视图切换 + 格式工具栏】 | 右侧布局开关
     const toolbar = wrapper.get('.document-toolbar')
     expect(
       [...toolbar.element.children].map((node) => node.classList[0] ?? node.nodeName.toLowerCase())
-    ).toEqual([
-      'document-path',
-      'view-switcher',
-      'view-divider',
-      'format-overflow-bar-stub',
-      'layout-controls'
-    ])
+    ).toEqual(['document-path', 'format-cluster', 'layout-toggles'])
+    const toggle = wrapper.get('[data-testid="view-toggle"]')
+    const formatBar = wrapper.getComponent(FormatOverflowBar).element
+    expect(toggle.attributes('aria-label')).toBe('可视化编辑')
+    expect(toggle.element.compareDocumentPosition(formatBar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(
       wrapper
-        .get('.view-switcher')
+        .get('.layout-toggles')
         .findAll('button')
         .map((button) => button.attributes('aria-label'))
-    ).toEqual(['可视化编辑', '源码视图'])
-    expect(
-      wrapper
-        .get('.layout-controls')
-        .findAll('button')
-        .map((button) => button.attributes('aria-label'))
-    ).toEqual(['标准页宽', '隐藏目录', '显示本笔记资源'])
-    expect(wrapper.get('.view-divider').element.previousElementSibling).toBe(
-      wrapper.get('.view-switcher').element
-    )
-    expect(wrapper.get('.outline-toggle').classes()).toContain('active')
+    ).toEqual(['标准页宽', '隐藏目录', '文档属性'])
     expect(wrapper.find('.save-button').exists()).toBe(false)
     const width = vi.spyOn(editor, 'toggleNotePageWidth')
     const outline = vi.spyOn(editor, 'toggleNoteOutlineVisible')
     const view = vi.spyOn(editor, 'setNoteViewMode')
+    await wrapper.setProps({ tab: { ...tab, noteAssetsVisible: true } })
+    expect(wrapper.get('[data-testid="note-properties-panel"]').exists()).toBe(true)
+    expect(wrapper.get('.outline-toggle').classes()).toContain('active')
+    expect(
+      wrapper
+        .get('.properties-tabs')
+        .findAll('button')
+        .map((button) => button.text())
+    ).toEqual(['设置', '资源'])
+    expect(wrapper.get('.properties-tab.active').text()).toBe('设置')
+    expect(wrapper.get('#note-description-input').element.tagName).toBe('TEXTAREA')
     await wrapper.get('.page-width-toggle').trigger('click')
     await wrapper.get('.outline-toggle').trigger('click')
-    await wrapper.get('[aria-label="源码视图"]').trigger('click')
+    await wrapper.get('[data-testid="view-toggle"]').trigger('click')
     expect(width).toHaveBeenCalledWith('tab-a')
     expect(outline).toHaveBeenCalledWith('tab-a')
     expect(view).toHaveBeenCalledWith('tab-a', 'source')
-    await wrapper.setProps({ tab: { ...tab, outlineVisible: false } })
+    await wrapper.setProps({ tab: { ...tab, noteAssetsVisible: true, outlineVisible: false } })
     expect(wrapper.get('.outline-toggle').classes()).not.toContain('active')
     expect(wrapper.get('.outline-toggle').attributes('aria-label')).toBe('显示目录')
     for (const viewMode of ['source', 'visual'] as const) {
@@ -160,41 +157,26 @@ describe('note header', () => {
       const bar = wrapper.getComponent(FormatOverflowBar)
       expect(bar.exists()).toBe(true)
       expect(bar.props('disabled')).toBe(false)
-      expect(wrapper.find('.layout-controls').exists()).toBe(true)
+      expect(wrapper.find('.layout-toggles').exists()).toBe(true)
       expect(wrapper.find('.save-button').exists()).toBe(false)
     }
     wrapper.unmount()
   })
 
-  it('两个图标是一个整体开关：点任意一个都切到另一个视图，高亮跟随当前视图', async () => {
+  it('视图开关是一个图标：点击后切到另一个视图，图标跟着换', async () => {
     const { wrapper, editor } = setup()
     const view = vi.spyOn(editor, 'setNoteViewMode')
+    const toggle = () => wrapper.get('[data-testid="view-toggle"]')
 
-    // 当前可视化：点"可视化"图标也切到源码
-    await wrapper.get('[data-testid="view-visual"]').trigger('click')
+    expect(toggle().attributes('aria-label')).toBe('可视化编辑')
+    await toggle().trigger('click')
     expect(view).toHaveBeenLastCalledWith('tab-a', 'source')
-    // 当前可视化：点"源码"图标同样切到源码
-    await wrapper.get('[data-testid="view-source"]').trigger('click')
-    expect(view).toHaveBeenLastCalledWith('tab-a', 'source')
+
+    await wrapper.setProps({ tab: { ...tab, viewMode: 'source' } })
+    expect(toggle().attributes('aria-label')).toBe('源码视图')
+    await toggle().trigger('click')
+    expect(view).toHaveBeenLastCalledWith('tab-a', 'visual')
     expect(view).toHaveBeenCalledTimes(2)
-
-    // 当前源码：点任意一个都切回可视化
-    await wrapper.setProps({ tab: { ...tab, viewMode: 'source' } })
-    await wrapper.get('[data-testid="view-source"]').trigger('click')
-    expect(view).toHaveBeenLastCalledWith('tab-a', 'visual')
-    await wrapper.get('[data-testid="view-visual"]').trigger('click')
-    expect(view).toHaveBeenLastCalledWith('tab-a', 'visual')
-    expect(view).toHaveBeenCalledTimes(4)
-
-    // 高亮与滑块位置跟随当前视图
-    await wrapper.setProps({ tab: { ...tab, viewMode: 'visual' } })
-    expect(wrapper.get('[data-testid="view-visual"]').classes()).toContain('active')
-    expect(wrapper.get('[data-testid="view-source"]').classes()).not.toContain('active')
-    expect(wrapper.get('.view-switcher__thumb').classes()).not.toContain('is-source')
-    await wrapper.setProps({ tab: { ...tab, viewMode: 'source' } })
-    expect(wrapper.get('[data-testid="view-source"]').classes()).toContain('active')
-    expect(wrapper.get('[data-testid="view-visual"]').classes()).not.toContain('active')
-    expect(wrapper.get('.view-switcher__thumb').classes()).toContain('is-source')
     wrapper.unmount()
   })
 
@@ -336,7 +318,7 @@ describe('保存被拦下时的提示与切换（A+B）', () => {
 
   it('没有未保存修改时正常切换视图', async () => {
     const { wrapper, setNoteViewMode } = setup()
-    await wrapper.get('button[aria-label="源码视图"]').trigger('click')
+    await wrapper.get('[data-testid="view-toggle"]').trigger('click')
     expect(setNoteViewMode).toHaveBeenCalledWith('tab-a', 'source')
     expect(wrapper.find('.note-draft-banner').exists()).toBe(false)
   })
@@ -350,7 +332,7 @@ describe('保存被拦下时的提示与切换（A+B）', () => {
     editorStubState.draft = '::: tip T\n\n111\n222\n\n:::'
     await flushPromises()
 
-    await wrapper.get('button[aria-label="源码视图"]').trigger('click')
+    await wrapper.get('[data-testid="view-toggle"]').trigger('click')
 
     expect(setNoteViewMode).not.toHaveBeenCalled()
     expect(wrapper.find('.note-draft-banner').exists()).toBe(true)
@@ -365,7 +347,7 @@ describe('保存被拦下时的提示与切换（A+B）', () => {
     editorStubState.hasUnsavedDraft = true
     editorStubState.draft = '# 标题\n\n我刚写的一段\n'
 
-    await wrapper.get('button[aria-label="源码视图"]').trigger('click')
+    await wrapper.get('[data-testid="view-toggle"]').trigger('click')
     await flushPromises()
 
     expect(setNoteViewMode).not.toHaveBeenCalled()
@@ -389,7 +371,7 @@ describe('保存被拦下时的提示与切换（A+B）', () => {
     expect(writeText).toHaveBeenCalledTimes(1)
 
     // 复制之后依然不能切
-    await wrapper.get('button[aria-label="源码视图"]').trigger('click')
+    await wrapper.get('[data-testid="view-toggle"]').trigger('click')
     await flushPromises()
     expect(setNoteViewMode).not.toHaveBeenCalled()
     expect(workspace.documents['kb-a:note-a']!.unsavedDraft).toBe(true)

@@ -1,23 +1,18 @@
 <script setup lang="ts">
 /**
- * 知识库文本文件（只读）面板。
+ * 知识库文本文件（只读）。
  *
- * 本阶段只读：读失败（二进制 / 超限 / 拒绝名单）时把主进程给的原因原样显示，
- * 不用空编辑器假装成功。Monaco 懒加载，单独 chunk，不进首屏。
+ * 用 CodeMirror 查看，不走笔记的实时预览。读失败时显示主进程给出的原因。
  */
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-
-import {
-  loadMonaco,
-  monacoThemeName,
-  refreshMonacoTheme,
-  readOnlyEditorOptions
-} from '../monaco/monaco'
+import { defaultHighlightStyle, LanguageDescription, syntaxHighlighting } from '@codemirror/language'
+import { languages } from '@codemirror/language-data'
+import { Compartment, EditorState } from '@codemirror/state'
+import { EditorView, lineNumbers } from '@codemirror/view'
 
 import KbPathBreadcrumb from './KbPathBreadcrumb.vue'
 
 import type { KbTextFileDto, TextFileEditorTab as TextFileTab } from '../../../shared/contracts'
-import type * as MonacoApi from 'monaco-editor'
 
 const props = defineProps<{ tab: TextFileTab; active: boolean; groupId: string }>()
 
@@ -25,7 +20,8 @@ const hostRef = ref<HTMLDivElement | null>(null)
 const phase = ref<'loading' | 'ready' | 'error'>('loading')
 const message = ref('')
 const file = ref<KbTextFileDto | null>(null)
-const editor = shallowRef<MonacoApi.editor.IStandaloneCodeEditor | null>(null)
+const editor = shallowRef<EditorView | null>(null)
+const languageCompartment = new Compartment()
 
 const kindLabel = (relPath: string): string => {
   if (relPath.endsWith('.md') || relPath.endsWith('.markdown')) return 'Markdown'
@@ -34,17 +30,53 @@ const kindLabel = (relPath: string): string => {
   return ext ? ext.toUpperCase() : '文本'
 }
 
-async function mountEditor(content: string, language: string): Promise<void> {
-  const monaco = await loadMonaco()
+function destroyEditor(): void {
+  editor.value?.destroy()
+  editor.value = null
+}
+
+function mountEditor(content: string, language: string): void {
   const host = hostRef.value
-  // 面板已卸载（或已经有一个实例）时不再建：内容由 load() 的调用时序保证先有宿主
-  if (!host || editor.value) return
-  editor.value = monaco.editor.create(host, {
-    ...readOnlyEditorOptions(),
-    value: content,
-    language,
-    theme: monacoThemeName(),
-    wordWrap: language === 'markdown' ? 'on' : 'off'
+  if (!host) return
+  destroyEditor()
+  const view = new EditorView({
+    parent: host,
+    state: EditorState.create({
+      doc: content,
+      extensions: [
+        EditorState.readOnly.of(true),
+        EditorView.editable.of(false),
+        lineNumbers(),
+        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        languageCompartment.of([]),
+        EditorView.theme({
+          '&': {
+            height: '100%',
+            backgroundColor: 'var(--editor-bg)',
+            color: 'var(--text)'
+          },
+          '.cm-scroller': {
+            overflow: 'auto',
+            fontFamily: 'var(--tn-font-mono, ui-monospace, monospace)',
+            fontSize: '13px',
+            lineHeight: '1.55'
+          },
+          '.cm-gutters': {
+            backgroundColor: 'var(--editor-bg)',
+            color: 'var(--muted)',
+            borderRight: '1px solid var(--border)'
+          },
+          '.cm-content': { padding: '8px 0 24px' }
+        })
+      ]
+    })
+  })
+  editor.value = view
+  const match = LanguageDescription.matchLanguageName(languages, language, true)
+  if (!match) return
+  void match.load().then((support) => {
+    if (editor.value !== view) return
+    view.dispatch({ effects: languageCompartment.reconfigure(support) })
   })
 }
 
@@ -52,6 +84,7 @@ async function load(): Promise<void> {
   phase.value = 'loading'
   message.value = ''
   file.value = null
+  destroyEditor()
   const result = await window.desk.kbFiles.read({
     knowledgeBaseId: props.tab.knowledgeBaseId,
     relPath: props.tab.relPath
@@ -63,30 +96,11 @@ async function load(): Promise<void> {
   }
   file.value = result.value
   phase.value = 'ready'
-  try {
-    await mountEditor(result.value.content, result.value.language)
-  } catch (cause) {
-    // Monaco 懒加载失败（依赖预构建 hash 过期 / chunk 404 / 断网）：落成可见错误态
-    phase.value = 'error'
-    message.value = `编辑器加载失败：${cause instanceof Error ? cause.message : String(cause)}。若刚更新过依赖或代码，重新加载窗口即可恢复。`
-  }
+  mountEditor(result.value.content, result.value.language)
 }
-
-let themeObserver: MutationObserver | null = null
 
 onMounted(() => {
   void load()
-  // 明暗切换：重算主题并应用到已挂载的编辑器
-  if (typeof MutationObserver !== 'undefined') {
-    themeObserver = new MutationObserver(async () => {
-      const monaco = await loadMonaco()
-      refreshMonacoTheme(monaco)
-    })
-    themeObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-theme']
-    })
-  }
 })
 
 watch(
@@ -97,17 +111,13 @@ watch(
 )
 
 onBeforeUnmount(() => {
-  themeObserver?.disconnect()
-  themeObserver = null
-  editor.value?.dispose()
-  editor.value = null
+  destroyEditor()
 })
 </script>
 
 <template>
   <section class="text-file-pane">
     <header class="pane-header">
-      <!-- 同 NoteTabPane：面包屑是多根组件，class 要落在自己的容器上 -->
       <div class="path">
         <KbPathBreadcrumb
           :knowledge-base-id="tab.knowledgeBaseId"
@@ -187,5 +197,8 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   min-width: 0;
+}
+.pane-editor :deep(.cm-editor) {
+  height: 100%;
 }
 </style>

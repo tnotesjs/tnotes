@@ -168,7 +168,13 @@ export const IPC_CHANNELS = {
   mcpStatus: 'mcp:status',
   mcpSetEnabled: 'mcp:set-enabled',
   mcpRotateToken: 'mcp:rotate-token',
-  mcpChanged: 'mcp:changed'
+  mcpChanged: 'mcp:changed',
+  agentKeyStatus: 'agent:key-status',
+  agentKeyUpdate: 'agent:key-update',
+  agentTurn: 'agent:turn',
+  agentCancel: 'agent:cancel',
+  agentApplyEdit: 'agent:apply-edit',
+  agentApplyResult: 'agent:apply-result'
 } as const
 
 export interface DeskError {
@@ -502,7 +508,14 @@ export type ContextMenuRequest =
   | {
       kind: 'tab'
       tabType:
-        'note' | 'web' | 'kb-settings' | 'kb-assets' | 'excalidraw' | 'note-history' | 'text-file'
+        | 'note'
+        | 'web'
+        | 'kb-settings'
+        | 'kb-assets'
+        | 'excalidraw'
+        | 'mindmap'
+        | 'note-history'
+        | 'text-file'
       pinned: boolean
     }
   | { kind: 'code-group-tab' }
@@ -697,6 +710,14 @@ export interface AppSettings {
     enabled: boolean
     port: number
   }
+  /**
+   * 内置 Agent。密钥不在这里，单独进系统凭据存储。
+   * `baseUrl` 是 OpenAI 兼容接口的根（末尾不要再加 `/chat/completions`）。
+   */
+  agent: {
+    baseUrl: string
+    model: string
+  }
   imageUpload: ImageUploadSettings
   updates: {
     autoCheck: boolean
@@ -889,6 +910,30 @@ export interface ExcalidrawEditorTab {
 }
 
 /**
+ * 思维导图编辑标签：编辑的是笔记里某段 ```mindmap 围栏。
+ * 改动写回笔记正文；`fenceSource` 是打开时记下的整段围栏，写回后会更新成最新内容。
+ */
+export interface MindmapEditorTab {
+  id: string
+  type: 'mindmap'
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  noteUuid: string
+  /** 这篇笔记里第几段 mindmap 围栏（从 0 起）。写回不改它，用来复用同一个标签。 */
+  fenceOrdinal: number
+  /** 当前认定的整段围栏原文（写回成功后更新） */
+  fenceSource: string
+  title: string
+  icon: KnowledgeBaseIconDto | null
+  pinned?: boolean
+  openedAt?: number
+  /** 导图本身不单独标脏；脏状态落在归属笔记上。保留字段以免布局 union 访问 dirty 时报错。 */
+  dirty?: boolean
+  /** 围栏在笔记里找不到或出现多份时置 true，之后不再写入 */
+  invalid?: boolean
+}
+
+/**
  * 笔记历史标签页（计划 H3 会补齐列表/分页/恢复门禁）。
  * 同一 KB + 同一编号只保留一个历史标签页，切换 commit 只更新该页内的选中版本。
  */
@@ -991,6 +1036,7 @@ export type EditorTab =
   | KbSettingsEditorTab
   | KbAssetsEditorTab
   | ExcalidrawEditorTab
+  | MindmapEditorTab
   | TextFileEditorTab
   | NoteHistoryEditorTab
 
@@ -1360,6 +1406,45 @@ export interface ImageUploadResult {
 export interface ImageTokenStatus {
   configured: boolean
   encryptionAvailable: boolean
+}
+
+export interface AgentKeyStatus {
+  configured: boolean
+  encryptionAvailable: boolean
+}
+
+export interface AgentChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface AgentNoteContext {
+  title: string
+  path: string
+  content: string
+  selection: string
+}
+
+export interface AgentTurnRequest {
+  messages: AgentChatMessage[]
+  note: AgentNoteContext | null
+}
+
+export interface AgentTurnResult {
+  reply: string
+  edits: number
+}
+
+export interface AgentApplyEditRequest {
+  id: string
+  oldString: string
+  newString: string
+}
+
+export interface AgentApplyEditResult {
+  id: string
+  ok: boolean
+  message: string
 }
 
 export interface ImageTokenUpdateRequest {
@@ -2259,6 +2344,14 @@ export interface DeskApi {
     setEnabled(enabled: boolean): Promise<DeskResult<McpServerStatusDto>>
     rotateToken(): Promise<DeskResult<McpServerStatusDto>>
     onChanged(callback: (status: McpServerStatusDto) => void): () => void
+  }
+  agent: {
+    keyStatus(): Promise<DeskResult<AgentKeyStatus>>
+    updateKey(request: { apiKey?: string; clear: boolean }): Promise<DeskResult<AgentKeyStatus>>
+    turn(request: AgentTurnRequest): Promise<DeskResult<AgentTurnResult>>
+    cancel(): Promise<DeskResult<void>>
+    onApplyEdit(callback: (request: AgentApplyEditRequest) => void): () => void
+    applyResult(result: AgentApplyEditResult): Promise<DeskResult<void>>
   }
   clipboard: {
     /**

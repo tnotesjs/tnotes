@@ -171,7 +171,7 @@ export function isLikelyTextPath(relPath: string): boolean {
   return TEXT_EXTENSIONS.has(path.posix.extname(name).toLowerCase())
 }
 
-/** 给 Monaco 的初始语言 id（判不出来就是 plaintext，由用户/后续扩展决定高亮） */
+/** 文本文件的语言 id（判不出来就是 plaintext，用来选语法高亮） */
 export function languageForKbPath(relPath: string): string {
   const name = relPath.split('/').pop() ?? ''
   const lower = name.toLowerCase()

@@ -159,7 +159,7 @@ html[data-theme='dark'] .tn-code-highlight span:not(.line) {
 }
 .tn-code-group {
   position: relative;
-  margin: 1rem 0;
+  margin: 0;
 }
 .tn-code-group__tabs {
   position: absolute;

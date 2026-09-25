@@ -141,15 +141,14 @@ try {
   await pane.waitFor({ timeout: 30000 })
   await page.waitForTimeout(600)
 
-  // 1) 工具栏最右的开关 → 右侧面板出现
-  const toggle = page.locator('[data-testid="note-assets-toggle"]').first()
+  // 1) 工具栏最右的开关 → 右侧文档属性栏出现（内含本笔记资源）
+  const toggle = page.locator('[data-testid="note-properties-toggle"]').first()
   await toggle.waitFor({ timeout: 15000 })
   await toggle.click()
-  // class 合并到组件根元素上：DOM 是 <aside class="note-assets-panel note-assets-sidebar">
   const panel = page.locator('.note-assets-panel').first()
   await panel.waitFor({ timeout: 15000 })
-  const panelCount = await page.locator('.note-assets-sidebar').count()
-  record('点工具栏图标展开「本笔记资源」侧栏', panelCount === 1, `panels=${panelCount}`)
+  const panelCount = await page.locator('[data-testid="note-properties-panel"]').count()
+  record('点工具栏图标展开「文档属性」侧栏', panelCount === 1, `panels=${panelCount}`)
   await page.screenshot({ path: join(shots, 'panel.png') })
 
   const rowFor = (name) => panel.locator('li').filter({ hasText: name }).first()
@@ -288,9 +287,9 @@ try {
   )
 
   // 10) 关掉面板
-  await panel.getByRole('button', { name: '关闭资源面板' }).click()
+  await page.getByRole('button', { name: '关闭文档属性' }).click()
   const closed = await waitFor(
-    async () => (await page.locator('.note-assets-sidebar').count()) === 0,
+    async () => (await page.locator('[data-testid="note-properties-panel"]').count()) === 0,
     8000
   )
   record('点关闭按钮收起侧栏', Boolean(closed))

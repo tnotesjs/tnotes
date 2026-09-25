@@ -1,6 +1,8 @@
+import { indentUnit } from '@codemirror/language'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
-import { languages } from '@codemirror/language-data'
 import { tags } from '@lezer/highlight'
+
+import { deskCodeMirrorLanguages } from '../editor/markdown/codeMirrorLanguages'
 
 import type { Extension } from '@codemirror/state'
 import type { Input } from '@lezer/common'
@@ -128,6 +130,43 @@ const frontmatter: MarkdownConfig = {
   ]
 }
 
+const COMPONENT_OPEN = /^(<(?:NotesTable|BilibiliVideo|WordList)\b)/
+
+/**
+ * 独占一段的 Vue 组件（`<NotesTable />`、`<BilibiliVideo />`、`<WordList>`）。
+ * 标准 Markdown 会把它们当成段落里的 HTML，显示层就无法换成卡片。
+ */
+const componentBlock: MarkdownConfig = {
+  defineNodes: [{ name: 'ComponentBlock', block: true, style: tags.content }],
+  parseBlock: [
+    {
+      name: 'ComponentBlock',
+      before: 'HTMLBlock',
+      parse(cx: BlockContext, line: Line): boolean {
+        if (line.indent >= 4) return false
+        if (!COMPONENT_OPEN.test(lineContent(line))) return false
+        const start = cx.lineStart + line.pos
+        let end = cx.lineStart + line.text.length
+        if (!lineContent(line).includes('>')) {
+          while (cx.nextLine()) {
+            const current = lineContent(line)
+            if (current.trim() === '') break
+            end = cx.lineStart + line.text.length
+            if (current.includes('>')) {
+              cx.nextLine()
+              break
+            }
+          }
+        } else {
+          cx.nextLine()
+        }
+        cx.addElement(cx.elt('ComponentBlock', start, end))
+        return true
+      }
+    }
+  ]
+}
+
 const DOLLAR = 36
 
 /** `$$ … $$` 块级公式与 `$…$` 行内公式（规则与 remark-math 的常见用法一致）。 */
@@ -220,10 +259,13 @@ const math: MarkdownConfig = {
 
 /** TNotes 笔记用的 Markdown 语言：GFM + 容器 + frontmatter + 公式，代码块按语言嵌套高亮。 */
 export function tnotesMarkdown(): Extension {
-  return markdown({
-    base: markdownLanguage,
-    codeLanguages: languages,
-    extensions: [frontmatter, containers, math, { remove: ['Superscript', 'Subscript'] }],
-    addKeymap: false
-  })
+  return [
+    indentUnit.of('    '),
+    markdown({
+      base: markdownLanguage,
+      codeLanguages: deskCodeMirrorLanguages,
+      extensions: [frontmatter, containers, componentBlock, math, { remove: ['Superscript', 'Subscript'] }],
+      addKeymap: false
+    })
+  ]
 }

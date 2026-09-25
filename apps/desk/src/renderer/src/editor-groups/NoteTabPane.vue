@@ -2,16 +2,20 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import UiTooltip from '../components/UiTooltip.vue'
+import NoteDoneToggle from '../components/NoteDoneToggle.vue'
 import OutlineIcon from '../components/OutlineIcon.vue'
 import PageWidthIcon from '../components/PageWidthIcon.vue'
-import NoteDoneToggle from '../components/NoteDoneToggle.vue'
 import HeadingMenu from './HeadingMenu.vue'
 import FormatIcon from './FormatIcon.vue'
 import FormatOverflowBar from './FormatOverflowBar.vue'
+import BlockInsertMenu from './BlockInsertMenu.vue'
 import KbPathBreadcrumb from './KbPathBreadcrumb.vue'
-import NoteAssetsIcon from './NoteAssetsIcon.vue'
 import NoteAssetsPanel from './NoteAssetsPanel.vue'
 import LivePreviewEditor from '../livePreview/LivePreviewEditor.vue'
+import {
+  frontmatterDescriptionChange,
+  readFrontmatterFields
+} from '../livePreview/frontmatterFields'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
 
@@ -37,6 +41,8 @@ import { findTab } from './layoutModel'
 import { validateTextAnchor } from '../selection/pinnedAnchorCheck'
 import { insertableImageMarkdown } from './noteAssets'
 import { pastedImageMarkdown } from '../editor/markdown/pasteImageWidth'
+import { insertExcalidrawCanvas } from '../editor/excalidraw/insertCanvas'
+import { TN_NOTES_SLASH_ITEMS } from '../markdown/slashMenu'
 import { HEADING_NUMBER_DEFAULT_MAX_DEPTH } from '../../../shared/headingNumbering'
 
 import type {
@@ -71,6 +77,11 @@ interface MarkdownEditorHandle {
   /** 「查看」固定上下文：重新选出固定时的范围并滚到可见 */
   revealPinnedAnchor?(anchor: EditorSelectionAnchor): boolean
   flush(): void
+  /** 侧栏改 description 时走编辑器事务，保留撤销栈 */
+  getView?: () => {
+    state: { doc: { toString(): string; length: number } }
+    dispatch(tr: { changes: { from: number; to: number; insert: string } }): void
+  } | null
 }
 
 const props = defineProps<{ tab: NoteEditorTab; groupId: string; active: boolean }>()
@@ -108,7 +119,8 @@ const headingNumberMaxDepth = computed(
     workspace.settings?.headingNumberMaxDepth ??
     HEADING_NUMBER_DEFAULT_MAX_DEPTH
 )
-const noteAssetsVisible = computed(() => {
+/** 侧边属性栏开关：复用 tab.noteAssetsVisible（目录右键「本笔记资源」也会打开） */
+const propertiesOpen = computed(() => {
   const located = findTab(editor.layout, props.tab.id)
   const tab = located?.tab.type === 'note' ? located.tab : props.tab
   return tab.noteAssetsVisible === true
@@ -119,6 +131,27 @@ const outlineVisible = computed(() => {
   const tab = located?.tab.type === 'note' ? located.tab : props.tab
   return tab.outlineVisible !== false
 })
+
+const frontmatterFields = computed(() => readFrontmatterFields(session.value?.content ?? ''))
+const descriptionDraft = ref('')
+const descriptionFocused = ref(false)
+/** 侧栏页签：打开时默认「设置」 */
+const sideTab = ref<'settings' | 'assets'>('settings')
+
+watch(
+  () => frontmatterFields.value.description,
+  (value) => {
+    if (!descriptionFocused.value) descriptionDraft.value = value
+  },
+  { immediate: true }
+)
+
+watch(key, () => {
+  descriptionFocused.value = false
+  descriptionDraft.value = readFrontmatterFields(session.value?.content ?? '').description
+  sideTab.value = 'settings'
+})
+
 const titleInput = ref<HTMLInputElement | null>(null)
 const editingTitle = ref(false)
 const titleDraft = ref('')
@@ -131,6 +164,7 @@ const formatDisabled = computed(() => !session.value?.document || session.value.
  * 开始收进「…」的，放最前也保证窄面板下它们始终在。
  */
 const formatActions = [
+  'insert',
   'heading',
   'heading-number',
   'heading-number-remove',
@@ -143,9 +177,7 @@ const formatActions = [
   'ordered-list',
   'checkbox',
   'link',
-  'code-block',
-  'divider',
-  'table'
+  'divider'
 ] as const
 
 watch(key, () => {
@@ -477,8 +509,8 @@ onMounted(() => {
 })
 
 /**
- * 视图开关的提示：点**任意**一个图标都会切到"另一个视图"，
- * 所以两个图标的提示都按"接下来会发生什么"来写（而不是按"这个图标是什么"）。
+ * 视图开关的提示：只有一个图标，显示的是当前视图。
+ * 点一下切到另一个视图，图标跟着换成那一侧。
  */
 const viewToggleHint = computed(() =>
   props.tab.viewMode === 'source'
@@ -507,6 +539,65 @@ function activate(): void {
 
 function insertTemplate(text: string): void {
   markdownEditor.value?.insertTextAt(text)
+}
+
+function insertBlock(id: string): void {
+  if (id === 'canvas') {
+    void insertCanvas()
+    return
+  }
+  if (id === 'table') {
+    markdownEditor.value?.insertTable()
+    return
+  }
+  if (id === 'code') {
+    insertTemplate('\n```ts\n\n```\n')
+    return
+  }
+  const found = TN_NOTES_SLASH_ITEMS.find((item) => item.id === id)
+  if (!found) return
+  insertTemplate(found.insert.startsWith('\n') ? found.insert : `\n${found.insert}`)
+}
+
+async function insertCanvas(): Promise<void> {
+  if (formatDisabled.value) return
+  await insertExcalidrawCanvas({
+    knowledgeBaseId: props.tab.knowledgeBaseId,
+    noteUuid: props.tab.noteUuid,
+    insertTextAt: (text) => markdownEditor.value?.insertTextAt(text)
+  })
+}
+
+function toggleProperties(): void {
+  editor.toggleNoteAssetsVisible(props.tab.id)
+}
+
+function closeProperties(): void {
+  editor.setNoteAssetsVisible(props.tab.id, false)
+}
+
+function onDescriptionInput(): void {
+  const single = descriptionDraft.value.replace(/[\r\n]+/g, ' ')
+  if (single !== descriptionDraft.value) descriptionDraft.value = single
+  commitDescription()
+}
+
+/** 侧栏改摘要：只替换 frontmatter 里 description 那一行，经编辑器事务写入 */
+function commitDescription(): void {
+  if (session.value?.document.readOnly) return
+  const view = markdownEditor.value?.getView?.()
+  const current = view?.state.doc.toString() ?? session.value?.content ?? ''
+  const change = frontmatterDescriptionChange(current, descriptionDraft.value)
+  if (!change) return
+  if (view) {
+    view.dispatch({ changes: change })
+    return
+  }
+  workspace.updateDocumentContent(
+    key.value,
+    current.slice(0, change.from) + change.insert + current.slice(change.to),
+    true
+  )
 }
 
 /** 资源面板：把已有资源一键插入当前笔记（初版只图片，走与粘贴同一条插入路径） */
@@ -558,8 +649,6 @@ function openLink(url: string): void {
       <button type="button" @click="workspace.keepEditorAgainstDisk">保留编辑内容</button>
     </div>
 
-    <!-- 面包屑内部有 Teleport（下拉挂 body），是多根组件：class 无法自动落到 nav 上，
-         所以这里必须自己包一层容器，样式与 e2e 选择器都挂在这一层 -->
     <div class="note-path-bar">
       <KbPathBreadcrumb
         :knowledge-base-id="tab.knowledgeBaseId"
@@ -599,50 +688,34 @@ function openLink(url: string): void {
         </button>
         <span v-if="session.document.readOnly" class="read-only">只读</span>
       </div>
-      <!-- 视图切换与格式工具栏合成一组：切换在**左**，中间一条竖线隔开 -->
-      <div class="view-switcher" aria-label="笔记视图">
-        <!--
-          两个图标是**一个整体开关**：点哪一个都切到"另一个视图"。
-          滑块（thumb）滑到当前视图一侧，动画只做位移/淡入，不动编辑区布局。
-        -->
+
+      <div class="format-cluster">
         <UiTooltip :label="viewToggleHint">
           <button
             type="button"
-            aria-label="可视化编辑"
-            data-testid="view-visual"
-            :class="{ active: tab.viewMode === 'visual' }"
+            class="view-toggle"
+            data-testid="view-toggle"
+            :aria-label="tab.viewMode === 'source' ? '源码视图' : '可视化编辑'"
             @click="toggleMode()"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+            <svg v-if="tab.viewMode !== 'source'" viewBox="0 0 24 24" aria-hidden="true">
               <path d="m4 20 4.2-1 10.6-10.6a2.1 2.1 0 0 0-3-3L5.2 16 4 20Z" />
               <path d="m14.5 6.7 2.8 2.8" />
             </svg>
-          </button>
-        </UiTooltip>
-        <UiTooltip :label="viewToggleHint">
-          <button
-            type="button"
-            aria-label="源码视图"
-            data-testid="view-source"
-            :class="{ active: tab.viewMode === 'source' }"
-            @click="toggleMode()"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+            <svg v-else viewBox="0 0 24 24" aria-hidden="true">
               <path d="m8.5 7-5 5 5 5M15.5 7l5 5-5 5M13.5 4l-3 16" />
             </svg>
           </button>
         </UiTooltip>
-        <span
-          class="view-switcher__thumb"
-          :class="{ 'is-source': tab.viewMode === 'source' }"
-          aria-hidden="true"
-        />
-      </div>
-      <span class="view-divider" aria-hidden="true"></span>
-
-      <FormatOverflowBar :items="formatActions" :disabled="formatDisabled">
+        <FormatOverflowBar :items="formatActions" :disabled="formatDisabled">
         <template #item="{ item }">
-          <UiTooltip v-if="item === 'bold'" label="粗体" shortcut="⌘ B">
+          <BlockInsertMenu
+            v-if="item === 'insert'"
+            :disabled="formatDisabled"
+            :active="active"
+            @select="insertBlock"
+          />
+          <UiTooltip v-else-if="item === 'bold'" label="粗体" shortcut="⌘ B">
             <button
               type="button"
               aria-label="粗体"
@@ -762,16 +835,6 @@ function openLink(url: string): void {
               <FormatIcon name="link" />
             </button>
           </UiTooltip>
-          <UiTooltip v-else-if="item === 'code-block'" label="代码块">
-            <button
-              type="button"
-              aria-label="代码块"
-              :disabled="formatDisabled"
-              @click="insertTemplate('\n```ts\n\n```\n')"
-            >
-              <FormatIcon name="code-block" />
-            </button>
-          </UiTooltip>
           <UiTooltip v-else-if="item === 'divider'" label="分割线">
             <button
               type="button"
@@ -782,58 +845,53 @@ function openLink(url: string): void {
               <FormatIcon name="divider" />
             </button>
           </UiTooltip>
-          <UiTooltip v-else-if="item === 'table'" label="表格">
-            <button
-              type="button"
-              aria-label="表格"
-              :disabled="formatDisabled"
-              @click="markdownEditor?.insertTable()"
-            >
-              <FormatIcon name="table" />
-            </button>
-          </UiTooltip>
         </template>
-      </FormatOverflowBar>
-      <!-- 布局开关（页宽 / 目录 / 资源）：**始终展示** —— 原先窄面板会整块隐藏。
-           仍留在右端，并继续由它吸收右半边空白，格式工具栏才不会跟着跑到最右边。 -->
-      <div class="layout-controls">
-        <div class="layout-toggles">
-          <UiTooltip :label="pageWidthLabel">
-            <button
-              type="button"
-              class="page-width-toggle"
-              :aria-label="pageWidthLabel"
-              @click="editor.toggleNotePageWidth(tab.id)"
-            >
-              <PageWidthIcon :mode="tab.pageWidth" />
-            </button>
-          </UiTooltip>
-          <UiTooltip :label="outlineVisible ? '隐藏目录' : '显示目录'">
-            <button
-              type="button"
-              class="outline-toggle"
-              :class="{ active: outlineVisible }"
-              :aria-label="outlineVisible ? '隐藏目录' : '显示目录'"
-              :aria-pressed="outlineVisible"
-              @click="editor.toggleNoteOutlineVisible(tab.id)"
-            >
-              <OutlineIcon />
-            </button>
-          </UiTooltip>
-          <UiTooltip :label="noteAssetsVisible ? '隐藏本笔记资源' : '显示本笔记资源'">
-            <button
-              type="button"
-              class="note-assets-toggle"
-              data-testid="note-assets-toggle"
-              :class="{ active: noteAssetsVisible }"
-              :aria-label="noteAssetsVisible ? '隐藏本笔记资源' : '显示本笔记资源'"
-              :aria-pressed="noteAssetsVisible"
-              @click="editor.toggleNoteAssetsVisible(tab.id)"
-            >
-              <NoteAssetsIcon />
-            </button>
-          </UiTooltip>
-        </div>
+        </FormatOverflowBar>
+      </div>
+      <div class="layout-toggles">
+        <UiTooltip :label="pageWidthLabel">
+          <button
+            type="button"
+            class="page-width-toggle"
+            :aria-label="pageWidthLabel"
+            @click="editor.toggleNotePageWidth(tab.id)"
+          >
+            <PageWidthIcon :mode="tab.pageWidth" />
+          </button>
+        </UiTooltip>
+        <UiTooltip :label="outlineVisible ? '隐藏目录' : '显示目录'">
+          <button
+            type="button"
+            class="outline-toggle"
+            :class="{ active: outlineVisible }"
+            :aria-label="outlineVisible ? '隐藏目录' : '显示目录'"
+            :aria-pressed="outlineVisible"
+            @click="editor.toggleNoteOutlineVisible(tab.id)"
+          >
+            <OutlineIcon />
+          </button>
+        </UiTooltip>
+        <UiTooltip :label="propertiesOpen ? '关闭文档属性' : '文档属性'">
+          <button
+            type="button"
+            class="properties-toggle"
+            data-testid="note-properties-toggle"
+            :class="{ active: propertiesOpen }"
+            aria-label="文档属性"
+            :aria-pressed="propertiesOpen"
+            @click="toggleProperties"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <g fill="none" stroke="currentColor" stroke-width="1.5">
+                <path
+                  d="M2 12c0-3.69 0-5.534.814-6.841a4.8 4.8 0 0 1 1.105-1.243C5.08 3 6.72 3 10 3h4c3.28 0 4.919 0 6.081.916c.43.338.804.759 1.105 1.243C22 6.466 22 8.31 22 12s0 5.534-.814 6.841a4.8 4.8 0 0 1-1.105 1.243C18.92 21 17.28 21 14 21h-4c-3.28 0-4.919 0-6.081-.916a4.8 4.8 0 0 1-1.105-1.243C2 17.534 2 15.69 2 12Z"
+                />
+                <path stroke-linejoin="round" d="M14.5 3v18" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M18 7h1m-1 3h1" />
+              </g>
+            </svg>
+          </button>
+        </UiTooltip>
       </div>
     </div>
 
@@ -847,6 +905,7 @@ function openLink(url: string): void {
           :read-only="session.document.readOnly"
           :knowledge-base-id="tab.knowledgeBaseId"
           :note-uuid="tab.noteUuid"
+          :note-rel-path="session.document.relPath"
           :active="active"
           :page-width="tab.pageWidth"
           :outline-visible="outlineVisible"
@@ -859,19 +918,77 @@ function openLink(url: string): void {
           @pin-selection="pinCurrentSelection"
         />
       </div>
-      <NoteAssetsPanel
-        v-if="noteAssetsVisible"
-        class="note-assets-sidebar"
-        :knowledge-base-id="tab.knowledgeBaseId"
-        :note-uuid="tab.noteUuid"
-        :note-rel-path="session.document.relPath"
-        :note-index="session.document.index"
-        :source="session.content"
-        :read-only="session.document.readOnly"
-        @insert="insertAssetReference"
-        @locate="locateAssetReference"
-        @close="editor.toggleNoteAssetsVisible(tab.id)"
-      />
+      <aside
+        v-if="propertiesOpen"
+        class="note-properties-sidebar"
+        data-testid="note-properties-panel"
+        aria-label="文档属性"
+      >
+        <header class="properties-head">
+          <div class="properties-tabs" role="tablist" aria-label="侧栏">
+            <button
+              type="button"
+              role="tab"
+              class="properties-tab"
+              :class="{ active: sideTab === 'settings' }"
+              :aria-selected="sideTab === 'settings'"
+              @click="sideTab = 'settings'"
+            >
+              设置
+            </button>
+            <button
+              type="button"
+              role="tab"
+              class="properties-tab"
+              :class="{ active: sideTab === 'assets' }"
+              :aria-selected="sideTab === 'assets'"
+              @click="sideTab = 'assets'"
+            >
+              资源
+            </button>
+          </div>
+          <button type="button" class="properties-close" aria-label="关闭文档属性" @click="closeProperties">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </header>
+        <div v-if="sideTab === 'settings'" class="properties-scroll">
+          <section class="properties-section">
+            <label class="properties-label" for="note-description-input">描述</label>
+            <textarea
+              id="note-description-input"
+              v-model="descriptionDraft"
+              class="properties-description"
+              rows="1"
+              :disabled="session.document.readOnly"
+              placeholder="描述信息"
+              @focus="descriptionFocused = true"
+              @blur="descriptionFocused = false"
+              @keydown.enter.prevent
+              @input="onDescriptionInput"
+            />
+            <label class="properties-label">ID</label>
+            <div class="properties-id" :title="frontmatterFields.id || '无'">
+              {{ frontmatterFields.id || '—' }}
+            </div>
+          </section>
+        </div>
+        <NoteAssetsPanel
+          v-else
+          class="note-assets-embedded"
+          :knowledge-base-id="tab.knowledgeBaseId"
+          :note-uuid="tab.noteUuid"
+          :note-rel-path="session.document.relPath"
+          :note-index="session.document.index"
+          :source="session.content"
+          :read-only="session.document.readOnly"
+          :show-close="false"
+          @insert="insertAssetReference"
+          @locate="locateAssetReference"
+          @close="closeProperties"
+        />
+      </aside>
     </div>
   </div>
   <div v-else class="loading-note">正在读取笔记…</div>
@@ -892,7 +1009,8 @@ function openLink(url: string): void {
   position: relative;
   height: 40px;
   flex: none;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 12px;
   padding: 0 12px;
@@ -900,7 +1018,7 @@ function openLink(url: string): void {
   background: var(--editor-bg);
 }
 
-/* 路径面包屑：独立的 slim 行，压在标题工具条上方；不改动标题行的布局与选择器 */
+/* 路径面包屑：独立的 slim 行，压在标题工具条上方 */
 .note-path-bar {
   flex: none;
   height: 22px;
@@ -909,9 +1027,15 @@ function openLink(url: string): void {
   background: var(--editor-bg);
 }
 
+.layout-toggles {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
 .document-path {
-  flex: 1 1 0;
-  min-width: 72px;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -920,6 +1044,43 @@ function openLink(url: string): void {
   white-space: nowrap;
   color: var(--muted);
   font-size: 10px;
+}
+
+.format-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.view-toggle {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.view-toggle:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.view-toggle svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .note-index,
@@ -972,70 +1133,7 @@ function openLink(url: string): void {
   padding: 2px 5px;
 }
 
-.view-switcher {
-  position: relative;
-  flex: none;
-  display: flex;
-  align-items: center;
-  border-radius: 6px;
-  padding: 2px;
-  gap: 1px;
-  background: var(--hover);
-}
-
-/* 滑动高亮：只动它自己，编辑区不参与动画（避免切换时整屏跳动） */
-.view-switcher__thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 27px;
-  height: 25px;
-  border-radius: 5px;
-  background: var(--selected);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-strong) 24%, transparent);
-  transition:
-    transform 150ms ease,
-    opacity 150ms ease;
-  pointer-events: none;
-}
-
-.view-switcher__thumb.is-source {
-  transform: translateX(28px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .view-switcher__thumb {
-    transition: none;
-  }
-}
-
-/* 布局开关（页宽 / 目录 / 资源）的容器：**始终展示** —— 原先窄面板（<=1080px）会把
-   整组连同竖线一起隐藏。它继续吸收右半边空白，格式工具栏才不会跟着跑到最右边
-   （与左端标题区平分空白，是既有的观感）。 */
-.layout-controls {
-  flex: 1 1 0;
-  min-width: min-content;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.layout-toggles {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-}
-
-/* 视图切换与格式工具栏之间的竖线：两侧间距交给工具条的 gap，这里不再额外留白 */
-.view-divider {
-  width: 1px;
-  height: 16px;
-  margin: 0;
-  background: var(--border);
-}
-
-.layout-controls button,
-.view-switcher button,
+.layout-toggles button,
 .conflict-banner button,
 :deep(.format-overflow button) {
   border: 0;
@@ -1065,8 +1163,7 @@ function openLink(url: string): void {
   color: var(--text);
 }
 
-.layout-controls button,
-.view-switcher button {
+.layout-toggles button {
   width: 27px;
   height: 25px;
   display: grid;
@@ -1075,8 +1172,7 @@ function openLink(url: string): void {
   padding: 0;
 }
 
-.layout-controls svg,
-.view-switcher svg {
+.layout-toggles svg {
   width: 15px;
   height: 15px;
   fill: none;
@@ -1086,17 +1182,8 @@ function openLink(url: string): void {
   stroke-linejoin: round;
 }
 
-.view-switcher button.active,
 .outline-toggle.active {
   color: var(--accent-strong);
-}
-
-.view-switcher button {
-  position: relative;
-  z-index: 1;
-}
-
-.outline-toggle.active {
   background: var(--selected);
 }
 
@@ -1154,25 +1241,167 @@ function openLink(url: string): void {
   flex-direction: column;
 }
 
-.note-assets-sidebar {
+.note-properties-sidebar {
   flex: none;
-  width: 300px;
+  width: 320px;
   min-width: 0;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   border-left: 1px solid var(--border);
   background: var(--editor-bg);
 }
 
-/* 窄面板放不下 300px 侧栏：收窄一些，仍然可用 */
-@container desk-note-pane (max-width: 900px) {
-  .note-assets-sidebar {
-    width: 240px;
-  }
+.properties-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 8px 10px;
+  border-bottom: 1px solid var(--border);
 }
 
-.note-assets-toggle.active {
+.properties-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.properties-tab {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 10px;
+  border-radius: 5px;
+}
+
+.properties-tab:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.properties-tab.active {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.properties-close {
+  width: 27px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  border-radius: 5px;
+}
+
+.properties-close svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.properties-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.properties-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.properties-section {
+  flex: none;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.properties-label,
+.properties-subhead {
+  display: block;
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.properties-label + .properties-label,
+.properties-description + .properties-label {
+  margin-top: 12px;
+}
+
+.properties-description {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  /* 5 行字：行盒 1.5em，上下各留 6px，再加 1px 边框 */
+  height: calc(5 * 1.5em + 14px);
+  min-height: calc(5 * 1.5em + 14px);
+  max-height: calc(5 * 1.5em + 14px);
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-bg, var(--bg));
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.properties-description:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.properties-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.55;
+  word-break: break-all;
+  user-select: text;
+}
+
+.note-assets-embedded {
+  flex: 1;
+  min-height: 0;
+  border: 0;
+}
+
+.properties-toggle.active {
   color: var(--accent-strong);
   background: var(--hover);
+}
+
+.properties-toggle svg {
+  stroke-width: 1.5;
+}
+
+/* 窄面板放不下侧栏：收窄一些，仍然可用 */
+@container desk-note-pane (max-width: 900px) {
+  .note-properties-sidebar {
+    width: 260px;
+  }
 }
 
 .loading-note {

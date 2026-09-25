@@ -34,7 +34,6 @@ const emit = defineEmits<{
   (event: 'merge'): void
   (event: 'optimize'): void
   (event: 'recycle'): void
-  (event: 'open-excalidraw'): void
   (event: 'open-reference', reference: AssetReferenceDto): void
 }>()
 
@@ -240,16 +239,7 @@ async function copyPath(): Promise<void> {
           合并重复
         </button>
         <button
-          v-if="asset.kind === 'excalidraw'"
-          type="button"
-          class="ghost"
-          :disabled="writeBusy"
-          @click="emit('open-excalidraw')"
-        >
-          打开画布
-        </button>
-        <button
-          v-else
+          v-if="asset.kind !== 'excalidraw'"
           type="button"
           class="ghost"
           :disabled="writeBusy || asset.kind !== 'image'"

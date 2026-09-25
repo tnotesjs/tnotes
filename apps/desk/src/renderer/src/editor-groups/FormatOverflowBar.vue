@@ -37,7 +37,7 @@ function closeMenu(): void {
 function tryClose(): void {
   cancelClose()
   closeTimer = setTimeout(() => {
-    if (document.querySelector('.heading-menu')) {
+    if (document.querySelector('.heading-menu, .block-insert-menu')) {
       tryClose()
       return
     }

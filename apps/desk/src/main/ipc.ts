@@ -1,6 +1,7 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 
 import { IPC_CHANNELS } from '../shared/contracts'
+import { registerAgent } from './ipc/agent'
 import { registerGit } from './ipc/git'
 import { registerNotes } from './ipc/notes'
 import { registerAssets } from './ipc/assets'
@@ -35,6 +36,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): () => void {
   registerClipboard(getWindow)
   registerSelection(getWindow)
   registerContext(getWindow)
+  registerAgent(getWindow)
 
   return () => {
     offWorkspace()

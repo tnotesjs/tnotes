@@ -216,6 +216,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       editor,
       error,
       status,
+      noteIndex: (knowledgeBaseId, noteUuid) =>
+        documents.value[documentKey(knowledgeBaseId, noteUuid)]?.document.index ?? null,
       resourcesFor: (tab) => {
         if (tab.type === 'web') return []
         const resources: ClosingResource[] = []
@@ -553,7 +555,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     ) {
       return
     }
-    if (tab.type === 'note') await ensureDocument(tab.knowledgeBaseId, tab.noteUuid)
+    if (tab.type === 'note' || tab.type === 'mindmap') {
+      await ensureDocument(tab.knowledgeBaseId, tab.noteUuid)
+    }
     if (tab.type === 'text-file') return
     if (forceReveal || settings.value?.tabs.autoRevealInToc) {
       if (selectedKnowledgeBaseId.value !== tab.knowledgeBaseId) {

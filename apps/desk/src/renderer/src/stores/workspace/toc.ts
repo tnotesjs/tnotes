@@ -138,7 +138,7 @@ export function createToc(ctx: TocContext) {
         saving: false
       })
       ctx.applyDetail(mutation.knowledgeBase)
-      ctx.editor.renameNote(knowledgeBaseId, noteUuid, mutation.note.title)
+      ctx.editor.renameNote(knowledgeBaseId, noteUuid, mutation.note.title, mutation.note.index)
       ctx.editor.setNoteDirty(knowledgeBaseId, noteUuid, dirty)
       if (dirty) await ctx.persistRecovery(key)
       else ctx.deleteRecovery(knowledgeBaseId, noteUuid)
@@ -294,7 +294,7 @@ export function createToc(ctx: TocContext) {
     )
     ctx.applyDetail(detail)
     for (const note of preview.notes) {
-      ctx.editor.closeNote(preview.knowledgeBaseId, note.noteUuid)
+      ctx.editor.closeNote(preview.knowledgeBaseId, note.noteUuid, note.index)
       ctx.removeDocumentSession(documentKey(preview.knowledgeBaseId, note.noteUuid))
       ctx.deleteRecovery(preview.knowledgeBaseId, note.noteUuid)
     }

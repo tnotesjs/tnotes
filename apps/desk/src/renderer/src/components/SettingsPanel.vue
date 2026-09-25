@@ -8,6 +8,7 @@ import EditorSettings from './settings/EditorSettings.vue'
 import GeneralSettings from './settings/GeneralSettings.vue'
 import GitSettings from './settings/GitSettings.vue'
 import ImageSettings from './settings/ImageSettings.vue'
+import AgentSettings from './settings/AgentSettings.vue'
 import McpSettings from './settings/McpSettings.vue'
 import ShortcutsSettings from './settings/ShortcutsSettings.vue'
 import TabsSettings from './settings/TabsSettings.vue'
@@ -59,6 +60,11 @@ const groups = [
     id: 'image',
     label: '图片与图床',
     icon: 'M5 4h14v16H5zM8 9.5a2 2 0 1 0 3.9 0a2 2 0 1 0-3.9 0M7 17l4-4 3 3 3-3 2 2'
+  },
+  {
+    id: 'agent',
+    label: '内置 Agent',
+    icon: 'M12 3l1.6 4.2L18 9l-4.4 1.8L12 15l-1.6-4.2L6 9l4.4-1.8zM6 15l.8 2.1L9 18l-2.2.9L6 21l-.8-2.1L3 18l2.2-.9z'
   },
   {
     id: 'mcp',
@@ -133,6 +139,9 @@ const groupDefaults: Record<string, Partial<AppSettings>> = {
   },
   mcp: {
     mcp: { enabled: false, port: DEFAULT_MCP_PORT }
+  },
+  agent: {
+    agent: { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }
   }
 }
 
@@ -268,6 +277,11 @@ function onSettingsSynced(settings: AppSettings): void {
             v-else-if="activeGroup === 'image'"
             :draft="draft"
             @reset="resetGroup('image')"
+          />
+          <AgentSettings
+            v-else-if="activeGroup === 'agent'"
+            :draft="draft"
+            @reset="resetGroup('agent')"
           />
           <McpSettings
             v-else-if="activeGroup === 'mcp'"

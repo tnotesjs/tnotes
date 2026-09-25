@@ -126,6 +126,10 @@
 .live-editor .tok-keyword {
   color: #cf222e;
 }
+.live-editor .tok-variableName,
+.live-editor .tok-function {
+  color: #005cc5;
+}
 .live-editor .tok-string,
 .live-editor .tok-string2 {
   color: #0a3069;
@@ -157,6 +161,10 @@
 
 :root[data-theme='dark'] .live-editor .tok-keyword {
   color: #ff7b72;
+}
+:root[data-theme='dark'] .live-editor .tok-variableName,
+:root[data-theme='dark'] .live-editor .tok-function {
+  color: #79c0ff;
 }
 :root[data-theme='dark'] .live-editor .tok-string,
 :root[data-theme='dark'] .live-editor .tok-string2 {
@@ -191,7 +199,77 @@
 }
 
 .live-editor .cm-lp-visual .cm-lp-heading {
+  position: relative;
   font-weight: var(--tn-heading-weight);
+}
+
+.live-editor .cm-lp-heading-toggle {
+  position: absolute;
+  right: calc(100% + 4px);
+  top: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 20px;
+  height: 1lh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tn-c-text-2);
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.live-editor .cm-lp-h1 .cm-lp-heading-toggle {
+  top: 20px;
+}
+
+.live-editor .cm-lp-h2 .cm-lp-heading-toggle {
+  top: 18px;
+}
+
+.live-editor .cm-lp-h3 .cm-lp-heading-toggle {
+  top: 14px;
+}
+
+.live-editor .cm-lp-h4 .cm-lp-heading-toggle {
+  top: 12px;
+}
+
+.live-editor .cm-lp-h5 .cm-lp-heading-toggle,
+.live-editor .cm-lp-h6 .cm-lp-heading-toggle {
+  top: 10px;
+}
+
+.live-editor .cm-lp-heading-toggle:hover {
+  color: var(--tn-c-brand);
+  background: var(--tn-c-hover);
+}
+
+.live-editor .cm-lp-heading-toggle svg {
+  width: 12px;
+  height: 12px;
+  transform: rotate(90deg);
+}
+
+.live-editor .cm-line.cm-lp-heading-folded .cm-lp-heading-toggle svg {
+  transform: none;
+}
+
+.live-editor .cm-line.cm-lp-heading:hover .cm-lp-heading-toggle,
+.live-editor .cm-line.cm-lp-heading-folded .cm-lp-heading-toggle,
+.live-editor .cm-lp-heading-toggle:focus-visible {
+  opacity: 1;
+}
+
+.live-editor .cm-lp-heading-toggle:focus-visible {
+  outline: 2px solid var(--tn-c-brand);
+  outline-offset: 2px;
 }
 
 .live-editor .cm-lp-visual .cm-lp-h1 {
@@ -343,15 +421,24 @@
 .live-editor .cm-lp-image.is-center {
   display: flex;
   align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  margin-right: auto;
+  margin-left: auto;
 }
 
 .live-editor .cm-lp-image.is-right {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
+  width: fit-content;
+  max-width: 100%;
+  margin-left: auto;
 }
 
 .live-editor .cm-lp-image.is-revealed {
   display: flex;
+  width: fit-content;
+  max-width: 100%;
   margin-top: 6px;
   opacity: 0.85;
 }
@@ -426,10 +513,32 @@
 }
 
 .live-editor .cm-lp-image-caption {
+  align-self: stretch;
   margin-top: 4px;
   color: var(--tn-c-text-2);
   font-size: 13px;
   line-height: 20px;
+  text-align: center;
+}
+
+.live-editor .cm-lp-image.is-canvas-editing .cm-lp-image-editing {
+  display: inline-flex;
+}
+
+.live-editor .cm-lp-image-editing {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  display: none;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tn-c-brand) 88%, transparent);
+  color: #fff;
+  font: 11px/1.4 var(--tn-font-sans);
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 /* ---------- 代码块 ---------- */
@@ -449,6 +558,26 @@
   padding-top: 4px;
 }
 
+/* 开头围栏被标题栏替换后，行盒和 CodeMirror 的占位图会在标题栏上面再空出一行。 */
+.live-editor .cm-lp-visual .cm-line:has(.cm-lp-code-header),
+.live-editor .cm-lp-visual .cm-line.cm-lp-codeblock-first:has(.cm-lp-code-header) {
+  line-height: 0;
+}
+
+.live-editor .cm-lp-visual .cm-line:has(.cm-lp-code-header) .cm-widgetBuffer,
+.live-editor .cm-lp-visual .cm-line.cm-lp-codeblock-first:has(.cm-lp-code-header) .cm-widgetBuffer {
+  display: none;
+}
+
+.live-editor .cm-lp-visual .cm-line:has(.cm-lp-code-header):not(.cm-lp-codeblock) {
+  padding: 4px 16px 0;
+  background: var(--tn-c-bg-soft);
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  font-family: var(--tn-font-mono);
+  font-size: 14px;
+}
+
 .live-editor .cm-lp-visual .cm-lp-codeblock-last {
   border-bottom-left-radius: 8px;
   border-bottom-right-radius: 8px;
@@ -456,34 +585,114 @@
 }
 
 .live-editor .cm-lp-code-header {
-  display: inline-flex;
+  display: flex;
   width: 100%;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 2px 4px 2px 2px;
   color: var(--tn-c-text-2);
   font: 12px/22px var(--tn-font-sans);
-  cursor: text;
-  user-select: none;
+  line-height: 22px;
 }
 
-.live-editor .cm-lp-code-copy {
-  padding: 0 8px;
+.live-editor .cm-lp-code-header button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
   border: 0;
   border-radius: 4px;
   background: transparent;
   color: var(--tn-c-text-2);
-  font: inherit;
   cursor: pointer;
-  opacity: 0;
 }
 
-.live-editor .cm-lp-codeblock:hover .cm-lp-code-copy {
-  opacity: 1;
+.live-editor .cm-lp-code-header button svg {
+  width: 14px;
+  height: 14px;
 }
 
-.live-editor .cm-lp-code-copy:hover {
+.live-editor .cm-lp-code-header button:hover {
   background: var(--tn-c-hover);
   color: var(--tn-c-text);
+}
+
+.live-editor .cm-lp-code-fold.is-collapsed svg {
+  transform: rotate(-90deg);
+}
+
+.live-editor .cm-lp-code-title,
+.live-editor .cm-lp-code-lang-input {
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tn-c-text);
+  font: inherit;
+}
+
+.live-editor .cm-lp-code-title {
+  flex: 1;
+}
+
+.live-editor .cm-lp-code-title::placeholder {
+  color: transparent;
+}
+
+.live-editor .cm-lp-code-title:focus::placeholder {
+  color: var(--tn-c-text-2);
+}
+
+.live-editor .cm-lp-code-lang-input {
+  width: 4.5em;
+  color: var(--tn-c-text-2);
+  text-align: center;
+}
+
+.live-editor .cm-lp-code-title:focus,
+.live-editor .cm-lp-code-lang-input:focus {
+  outline: none;
+  background: var(--tn-c-bg);
+}
+
+.live-editor .cm-lp-code-copy,
+.live-editor .cm-lp-code-expand {
+  margin-left: 0;
+}
+
+.live-editor .cm-lp-code-header .cm-lp-code-copy {
+  margin-left: auto;
+}
+
+.live-editor .cm-editor.cm-lp-code-fs {
+  position: fixed !important;
+  z-index: 40;
+  inset: 16px;
+  width: auto !important;
+  height: auto !important;
+  border-radius: 12px;
+  background: var(--tn-c-bg);
+  box-shadow: var(--tn-shadow-3, 0 12px 40px rgb(0 0 0 / 28%));
+}
+
+.live-editor .cm-editor.cm-lp-code-fs .cm-scroller {
+  height: 100%;
+}
+
+.live-editor .cm-editor.cm-lp-code-fs .cm-content {
+  max-width: none;
+  margin: 0;
+  padding: 12px 16px 24px;
+}
+
+.live-editor .cm-editor.cm-lp-code-fs .cm-line:not(.cm-lp-codeblock-fs) {
+  display: none;
 }
 
 .live-editor .cm-lp-empty {
@@ -491,11 +700,64 @@
   height: 0;
 }
 
+.live-editor .cm-line:has(.cm-lp-empty) {
+  height: 0;
+  line-height: 0;
+  padding: 0;
+}
+
+.live-editor .cm-lp-visual .cm-line.cm-lp-code-group-open {
+  line-height: 0;
+}
+
+.live-editor .cm-lp-visual .cm-line.cm-lp-code-group-open .cm-widgetBuffer {
+  display: none;
+}
+
 .live-editor .cm-lp-code-tabs {
   display: inline-flex;
+  align-items: center;
   gap: 2px;
   flex-wrap: wrap;
+  width: 100%;
   font: 13px/22px var(--tn-font-sans);
+}
+
+.live-editor .cm-lp-code-tab-add {
+  min-width: 22px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tn-c-text-2);
+  cursor: pointer;
+}
+
+.cm-lp-code-tab-menu {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--tn-c-bg-elv, var(--tn-c-bg));
+  box-shadow: var(--tn-shadow-2);
+}
+
+.cm-lp-code-tab-menu button {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tn-c-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cm-lp-code-tab-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .live-editor .cm-lp-code-tabs button {
@@ -512,6 +774,56 @@
   border-bottom-color: var(--tn-c-brand);
   color: var(--tn-c-text);
   font-weight: 600;
+}
+
+.live-editor .cm-lp-code-tabs button.is-dragging {
+  opacity: 0.35;
+}
+
+.live-editor .cm-lp-code-tabs button.is-drop {
+  border-radius: 4px;
+  background: var(--tn-c-highlight);
+  box-shadow: inset 2px 0 0 var(--tn-c-brand);
+}
+
+.live-editor .cm-lp-code-tabs button.is-drop-after {
+  border-radius: 4px;
+  background: var(--tn-c-highlight);
+  box-shadow: inset -2px 0 0 var(--tn-c-brand);
+}
+
+.cm-lp-code-tab-ghost {
+  position: fixed;
+  z-index: 60;
+  margin: 0;
+  padding: 2px 10px;
+  border-radius: 6px;
+  background: var(--tn-c-bg);
+  color: var(--tn-c-text);
+  font: 13px/22px var(--tn-font-sans);
+  box-shadow: var(--tn-shadow-2, 0 8px 24px rgb(0 0 0 / 18%));
+  pointer-events: none;
+  opacity: 0.92;
+}
+
+/* 引用定义仍显示，但整行（含链接）明显淡于正文；光标在这一行时恢复 */
+.live-editor .cm-lp-visual .cm-lp-link-ref {
+  opacity: 0.38;
+  font-size: 0.92em;
+}
+
+.live-editor .cm-lp-visual .cm-lp-link-ref :is(a, .cm-lp-link, .tok-link, .tok-url) {
+  color: inherit;
+}
+
+.live-editor .cm-lp-visual .cm-lp-link-ref.is-active {
+  opacity: 1;
+  font-size: inherit;
+}
+
+.live-editor .cm-lp-frontmatter-row.is-locked,
+.live-editor .cm-lp-locked {
+  opacity: 0.38;
 }
 
 /* ---------- 露出源码的复杂块 ---------- */
@@ -567,7 +879,8 @@
 
 .live-editor .cm-lp-card {
   position: relative;
-  margin: 6px 0;
+  margin: 0;
+  padding: 0;
   border-radius: 8px;
   cursor: text;
   font-family: var(--tn-font-sans);
@@ -578,7 +891,10 @@
 .live-editor .cm-lp-card::after {
   content: '';
   position: absolute;
-  inset: -3px;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  left: -3px;
   border: 1px solid transparent;
   border-radius: 10px;
   pointer-events: none;
@@ -589,7 +905,17 @@
   border-color: var(--tn-c-divider-strong);
 }
 
-.live-editor .cm-lp-card .custom-block {
+/* 导图本身已有画布边框，「编辑」也单独露出，不再套一层悬停外框 */
+.live-editor .cm-lp-card-mindmap::after {
+  content: none;
+}
+
+/* 代码分组的代码块自己已有边框，悬停不再另描一圈 */
+.live-editor .cm-lp-card-container:has(.tn-code-group)::after {
+  content: none;
+}
+
+.live-editor .cm-lp-card .tn-custom-block {
   margin: 0;
 }
 
@@ -599,6 +925,39 @@
 
 .live-editor .cm-lp-diagram {
   min-height: 40px;
+}
+
+.live-editor .cm-lp-mindmap-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 编辑入口放在画布上方，避开 Mindmap 右上角悬停工具条（.mindmap-preview-actions） */
+.live-editor .cm-lp-mindmap-chrome {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.live-editor .cm-lp-mindmap-edit {
+  padding: 2px 8px;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tn-c-bg) 96%, transparent);
+  color: var(--tn-c-text);
+  font: 12px/1.3 var(--tn-font-sans);
+  cursor: pointer;
+}
+
+.live-editor .cm-lp-mindmap-edit:hover {
+  background: var(--tn-c-hover);
+  color: var(--tn-c-brand);
+}
+
+/* 卡片里不再要组件默认的上下外边距，否则外框和画布之间会空一大截 */
+.live-editor .cm-lp-mindmap-wrap .mindmap-preview {
+  margin: 0;
 }
 
 .live-editor .cm-lp-frontmatter {

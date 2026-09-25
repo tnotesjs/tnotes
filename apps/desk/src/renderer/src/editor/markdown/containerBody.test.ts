@@ -67,8 +67,8 @@ describe('renderContainerFromSource', () => {
 
   it('renders callouts with class and default title', () => {
     const warning = renderContainerFromSource('::: warning\ncareful\n:::')
-    expect(warning.className).toBe('custom-block custom-block-warning')
-    expect(warning.querySelector('.custom-block-title')?.textContent).toBe('WARNING')
+    expect(warning.className).toBe('tn-custom-block warning')
+    expect(warning.querySelector('.tn-custom-block-title')?.textContent).toBe('WARNING')
   })
 
   it('resolves relative images through the provided resolver', () => {

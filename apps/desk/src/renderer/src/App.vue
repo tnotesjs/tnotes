@@ -6,6 +6,7 @@ import EditorPane from './components/EditorPane.vue'
 import KnowledgeSidebar from './components/KnowledgeSidebar.vue'
 import NavigatorSidebar from './components/NavigatorSidebar.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
+import AgentPanel from './agent/AgentPanel.vue'
 import PinnedContextBar from './components/PinnedContextBar.vue'
 import ToastHost from './components/ToastHost.vue'
 import AppZoomFeedback from './components/AppZoomFeedback.vue'
@@ -71,6 +72,8 @@ watch(activeNoteSource, (source) => syncActiveNote(source), { immediate: true })
 const terminalStore = useTerminalStore()
 const commandTaskStore = useCommandTaskStore()
 const backgroundFailureStore = useBackgroundFailureStore()
+const agentOpen = ref(false)
+const agentPanel = ref<{ focusInput: () => void } | null>(null)
 const createDialogOpen = ref(false)
 const createKbDialogOpen = ref(false)
 const createKbFolderName = ref('')
@@ -204,6 +207,12 @@ function onKeydown(event: KeyboardEvent): void {
     event.preventDefault()
     terminalStore.toggle()
     if (terminalStore.open) void terminalPanel.value?.createOrFocus()
+    return
+  }
+  if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'l') {
+    event.preventDefault()
+    agentOpen.value = !agentOpen.value
+    if (agentOpen.value) void nextTick(() => agentPanel.value?.focusInput())
     return
   }
   if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'p') {
@@ -757,6 +766,21 @@ onUnmounted(() => {
         </button>
         <button
           type="button"
+          class="terminal-toggle"
+          :class="{ active: agentOpen }"
+          aria-label="打开内置 Agent"
+          data-tooltip="内置 Agent（⌘L）"
+          @click="agentOpen = !agentOpen"
+        >
+          <svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M8 1.2 9.3 4.7 12.8 6 9.3 7.3 8 10.8 6.7 7.3 3.2 6 6.7 4.7zM3.2 10.2l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"
+            />
+          </svg>
+        </button>
+        <button
+          type="button"
           aria-label="打开设置"
           data-tooltip="设置"
           @click="settingsOpen = true"
@@ -823,6 +847,7 @@ onUnmounted(() => {
     </main>
 
     <TerminalPanel v-if="store.hasWorkspace" ref="terminalPanel" />
+    <AgentPanel v-if="store.hasWorkspace" v-show="agentOpen" ref="agentPanel" />
 
     <main v-else class="welcome">
       <div class="welcome-card">

@@ -247,50 +247,52 @@ function buildSwiper(bodyMarkdown: string, resolveImage: ResolveImage): HTMLElem
 }
 
 function buildContainerDom(name: string, title: string, bodyHtml: string): HTMLElement {
-  const body = document.createElement('div')
-  body.className = 'custom-block-body'
-  body.innerHTML = bodyHtml
-
   if (COLLAPSIBLE_TYPES.has(name)) {
     const details = document.createElement('details')
-    details.className = `custom-block custom-block-${name}`
+    details.className = 'tn-custom-block details'
     const summary = document.createElement('summary')
-    summary.className = 'custom-block-title'
-    summary.textContent = title || 'Details'
+    summary.textContent = title || '详情'
     // Keep the toggle deterministic inside the non-editable atom rather than
     // relying on the browser default (which ProseMirror can swallow).
     summary.addEventListener('click', (event) => {
       event.preventDefault()
       details.open = !details.open
     })
-    details.append(summary, body)
+    details.append(summary)
+    appendHtml(details, bodyHtml)
     return details
   }
 
   if (CALLOUT_TYPES.has(name)) {
     const block = document.createElement('div')
-    block.className = `custom-block custom-block-${name}`
+    block.className = `tn-custom-block ${name}`
     const titleEl = document.createElement('p')
-    titleEl.className = 'custom-block-title'
+    titleEl.className = 'tn-custom-block-title'
     titleEl.textContent = title || name.toUpperCase()
-    block.append(titleEl, body)
+    block.append(titleEl)
+    appendHtml(block, bodyHtml)
     return block
   }
 
   const block = document.createElement('div')
-  block.className = `custom-block custom-block-${name}`
-  block.append(body)
+  block.className = `tn-custom-block ${name}`
+  appendHtml(block, bodyHtml)
   return block
+}
+
+function appendHtml(parent: HTMLElement, html: string): void {
+  if (!html) return
+  const holder = document.createElement('div')
+  holder.innerHTML = html
+  while (holder.firstChild) parent.append(holder.firstChild)
 }
 
 const defaultResolveImage: ResolveImage = (src) =>
   src.startsWith('https://') || src.startsWith('data:') || src.startsWith('#') ? src : ''
 
 /**
- * Renders a `:::` container source into a read-only, faithful DOM node that
- * mirrors `.custom-block` / `details` structure. The container
- * remains an atom (non-editable); only its source is stored on the node, so
- * the editor never rewrites it.
+ * Renders a `:::` container source into a read-only DOM node that mirrors the
+ * site's `.tn-custom-block` / `details` structure (same classes as SSG).
  */
 export function renderContainerFromSource(
   source: string,

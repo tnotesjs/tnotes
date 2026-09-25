@@ -71,6 +71,32 @@ describe('tnotesMarkdown', () => {
     expect(names(doc, 'InlineMath')).toEqual(['$x^2$'])
   })
 
+  it('parses a standalone Vue component as its own block', () => {
+    const doc = [
+      '介绍。',
+      '',
+      `<NotesTable :ids="['0028', '0014', '0002']" />`,
+      '',
+      '后文'
+    ].join('\n')
+    expect(topLevel(doc).map((node) => node.name)).toEqual(['Paragraph', 'ComponentBlock', 'Paragraph'])
+    expect(topLevel(doc)[1].text).toBe(`<NotesTable :ids="['0028', '0014', '0002']" />`)
+  })
+
+  it('parses a multiline WordList as one component block', () => {
+    const doc = ['<WordList :words="[', "'闭包',", ']" />', '', '后文'].join('\n')
+    expect(topLevel(doc).map((node) => node.name)).toEqual(['ComponentBlock', 'Paragraph'])
+  })
+
+  it('parses the WordList note sample without swallowing the following heading', () => {
+    const doc = ['最终效果如下：', '', '<WordList :words="[', "'cancel',", ']" />', '', '### 1.3. 词典数据源'].join('\n')
+    expect(topLevel(doc).map((node) => node.name)).toEqual([
+      'Paragraph',
+      'ComponentBlock',
+      'ATXHeading3'
+    ])
+  })
+
   it('keeps GFM tables, task lists and strikethrough', () => {
     const doc = '| a | b |\n| --- | --- |\n| 1 | 2 |\n\n- [ ] 待办\n\n~~删~~\n'
     expect(topLevel(doc).map((node) => node.name)).toEqual(['Table', 'BulletList', 'Paragraph'])

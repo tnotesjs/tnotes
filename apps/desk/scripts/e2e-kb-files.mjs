@@ -143,37 +143,36 @@ try {
     JSON.stringify(rootRows.slice(0, 12))
   )
 
-  // 3) 打开根目录 README.md → 只读 Monaco 文本标签页
+  // 3) 打开根目录 README.md → 只读 CodeMirror 文本标签页
   await menu().locator('.kb-path-filter').fill('README')
   await rows().first().click()
   const textPane = page.locator('.text-file-pane:visible').first()
   await textPane.waitFor({ timeout: 20000 })
-  const monacoReady = await waitFor(
-    async () => (await textPane.locator('.monaco-editor').count()) === 1,
+  const editorReady = await waitFor(
+    async () => (await textPane.locator('.cm-editor').count()) === 1,
     30000
   )
   const headerText = await textPane.locator('.pane-header').innerText()
-  const visibleText = await textOf(textPane.locator('.view-lines'))
+  const visibleText = await textOf(textPane.locator('.cm-content'))
   record(
-    'README.md 走只读 Monaco 标签页（有只读徽标与语言标签）',
-    Boolean(monacoReady) &&
+    'README.md 走只读 CodeMirror 标签页（有只读徽标与语言标签）',
+    Boolean(editorReady) &&
       headerText.includes('README.md') &&
       headerText.includes('只读') &&
       headerText.includes('Markdown') &&
       visibleText.includes('# 知识库说明'),
     `header=${JSON.stringify(headerText)}`
   )
-  record('文本文件标签页不再挂 CodeMirror', (await textPane.locator('.cm-editor').count()) === 0)
   await page.screenshot({ path: join(shots, 'text-file.png') })
 
   // 4) 只读：编辑器不接受输入
-  const editorBox = await textPane.locator('.view-lines').boundingBox()
+  const editorBox = await textPane.locator('.cm-content').boundingBox()
   await page.mouse.click(editorBox.x + 40, editorBox.y + 10)
   await page.keyboard.type('SHOULD-NOT-APPEAR')
   await page.waitForTimeout(300)
   record(
     '只读文本文件不接受键盘输入',
-    !(await textOf(textPane.locator('.view-lines'))).includes('SHOULD-NOT-APPEAR')
+    !(await textOf(textPane.locator('.cm-content'))).includes('SHOULD-NOT-APPEAR')
   )
 
   // 5) 文本标签页里也能用面包屑跳到 .gitignore
@@ -184,13 +183,13 @@ try {
   await rows().first().click()
   const gitignorePane = page.locator('.text-file-pane:visible').first()
   const gitignoreReady = await waitFor(
-    async () => (await gitignorePane.locator('.view-lines').innerText()).includes('node_modules/'),
+    async () => (await gitignorePane.locator('.cm-content').innerText()).includes('node_modules/'),
     30000
   )
   record(
     '从文本页面包屑打开 .gitignore（无扩展名也按文本判定）',
     Boolean(gitignoreReady),
-    `text=${JSON.stringify((await textOf(gitignorePane.locator('.view-lines'))).slice(0, 40))}`
+    `text=${JSON.stringify((await textOf(gitignorePane.locator('.cm-content'))).slice(0, 40))}`
   )
 
   // 6) 点目录逐层进入：.github → workflows → deploy.yml
@@ -206,7 +205,7 @@ try {
   await rows().first().click()
   const ymlReady = await waitFor(
     async () =>
-      (await textOf(page.locator('.text-file-pane:visible .view-lines').first())).includes(
+      (await textOf(page.locator('.text-file-pane:visible .cm-content').first())).includes(
         'name: deploy'
       ),
     30000
@@ -251,20 +250,20 @@ try {
     `tabs ${tabsBeforeNote} → ${await page.locator('.tab').count()}`
   )
 
-  // 9) 笔记源码视图仍是 Monaco，且不因文本文件功能回归
+  // 9) 笔记源码视图是同一个 CodeMirror，且不因文本文件功能回归
   await page.getByRole('button', { name: '源码视图', exact: true }).first().click()
-  const sourceEditor = page.locator('.markdown-source-editor:visible').first()
+  const sourceEditor = page.locator('.live-editor:visible').first()
   const sourceReady = await waitFor(
-    async () => (await sourceEditor.locator('.monaco-editor').count()) === 1,
+    async () => (await sourceEditor.locator('.cm-editor.cm-lp-source').count()) === 1,
     30000
   )
-  const sourceText = await textOf(sourceEditor.locator('.view-lines'))
+  const sourceText = await textOf(sourceEditor.locator('.cm-content'))
   record(
-    '笔记源码视图是 Monaco 且仍渲染正文',
+    '笔记源码视图是 CodeMirror 且仍渲染正文',
     Boolean(sourceReady) && sourceText.includes('正文段落。') && sourceText.includes('# 笔记'),
     `text=${JSON.stringify(sourceText.slice(0, 40))}`
   )
-  await page.screenshot({ path: join(shots, 'source-monaco.png') })
+  await page.screenshot({ path: join(shots, 'source-codemirror.png') })
 
   record('全流程无页面错误', pageErrors.length === 0, pageErrors.slice(0, 2).join(' | '))
   record(

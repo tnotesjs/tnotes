@@ -21,6 +21,8 @@ interface CloseTabsContext {
   resourcesFor(tab: EditorTab): ClosingResource[]
   error: Ref<string | null>
   status: Ref<string | null>
+  /** 笔记的四位编号，用来找属于它的画布标签。 */
+  noteIndex?(knowledgeBaseId: string, noteUuid: string): string | null
 }
 
 export function createTabClosing(ctx: CloseTabsContext) {
@@ -127,14 +129,49 @@ export function createTabClosing(ctx: CloseTabsContext) {
     }
   }
 
+  function attachedIds(tab: EditorTab): string[] {
+    if (tab.type !== 'note') return [tab.id]
+    const index = ctx.noteIndex?.(tab.knowledgeBaseId, tab.noteUuid) ?? null
+    const ids = [tab.id]
+    for (const group of ctx.editor.groups) {
+      for (const other of group.tabs) {
+        if (
+          other.type === 'mindmap' &&
+          other.knowledgeBaseId === tab.knowledgeBaseId &&
+          other.noteUuid === tab.noteUuid
+        ) {
+          ids.push(other.id)
+        } else if (
+          other.type === 'excalidraw' &&
+          other.knowledgeBaseId === tab.knowledgeBaseId &&
+          index &&
+          other.ownerNoteIndex === index
+        ) {
+          ids.push(other.id)
+        }
+      }
+    }
+    return ids
+  }
+
+  function unpinAttached(noteId: string, ids: string[]): void {
+    for (const id of ids) {
+      if (id === noteId) continue
+      const tab = ctx.editor.groups.flatMap((group) => group.tabs).find((item) => item.id === id)
+      if (tab?.pinned) ctx.editor.setPinned(id, false)
+    }
+  }
+
   function requestCloseTab(tabId: string, allowPinned = false): Promise<boolean> {
-    const tab = ctx.editor.groups.flatMap((group) => group.tabs).find((tab) => tab.id === tabId)
+    const tab = ctx.editor.groups.flatMap((group) => group.tabs).find((item) => item.id === tabId)
     if (!tab) return Promise.resolve(false)
     if (tab.pinned && !allowPinned) {
       ctx.status.value = '固定标签需要先解除固定才能关闭'
       return Promise.resolve(false)
     }
-    return closeTargets([tabId], allowPinned)
+    const ids = attachedIds(tab)
+    if (tab.type === 'note') unpinAttached(tab.id, ids)
+    return closeTargets(ids, allowPinned)
   }
 
   function requestCloseTabs(mode: 'all' | 'saved' | 'web'): Promise<boolean> {
@@ -146,7 +183,12 @@ export function createTabClosing(ctx: CloseTabsContext) {
           (mode === 'all' ||
             (mode === 'web' ? tab.type === 'web' : tab.type !== 'web' && !isTabDirty(tab)))
       )
-    return closeTargets(targets.map((tab) => tab.id))
+    const ids = new Set<string>()
+    for (const tab of targets) {
+      if (tab.type === 'note') unpinAttached(tab.id, attachedIds(tab))
+      for (const id of attachedIds(tab)) ids.add(id)
+    }
+    return closeTargets([...ids])
   }
 
   return { requestCloseTab, requestCloseTabs, isTabDirty, closingTabs, prepareToQuit }

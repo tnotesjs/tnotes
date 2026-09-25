@@ -32,6 +32,11 @@ import type {
   HistorySnapshotDto,
   ImageSettingsValidateResult,
   ImageOptimizePreviewResult,
+  AgentApplyEditRequest,
+  AgentApplyEditResult,
+  AgentKeyStatus,
+  AgentTurnRequest,
+  AgentTurnResult,
   ImageTokenStatus,
   ImageUploadResult,
   GitOperationResult,
@@ -425,6 +430,21 @@ const api: DeskApi = {
       ),
     clear: (request: SelectionClearRequest) =>
       invoke<{ cleared: boolean }>(IPC_CHANNELS.selectionClear, request)
+  },
+  agent: {
+    keyStatus: () => invoke<AgentKeyStatus>(IPC_CHANNELS.agentKeyStatus),
+    updateKey: (request: { apiKey?: string; clear: boolean }) =>
+      invoke<AgentKeyStatus>(IPC_CHANNELS.agentKeyUpdate, request),
+    turn: (request: AgentTurnRequest) => invoke<AgentTurnResult>(IPC_CHANNELS.agentTurn, request),
+    cancel: () => invoke<void>(IPC_CHANNELS.agentCancel),
+    onApplyEdit: (callback: (request: AgentApplyEditRequest) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, request: AgentApplyEditRequest): void =>
+        callback(request)
+      ipcRenderer.on(IPC_CHANNELS.agentApplyEdit, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.agentApplyEdit, listener)
+    },
+    applyResult: (result: AgentApplyEditResult) =>
+      invoke<void>(IPC_CHANNELS.agentApplyResult, result)
   },
   mcp: {
     status: () => invoke<McpServerStatusDto>(IPC_CHANNELS.mcpStatus),

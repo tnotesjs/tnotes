@@ -180,10 +180,6 @@ function recycleSelected(): void {
   if (selected.value) void openRecycle([selected.value.relPath])
 }
 
-function openSelectedExcalidraw(): void {
-  if (selected.value) openExcalidrawDocument(selected.value.relPath)
-}
-
 function openDetailReference(reference: AssetReferenceDto): void {
   openReference(reference.sourceRelPath, reference.noteUuid, reference.noteTitle)
 }
@@ -292,18 +288,6 @@ function openReference(sourceRelPath: string, noteUuid?: string, noteTitle?: str
   const kb = knowledgeBase.value
   if (!kb || !noteUuid) return
   editor.openNote(kb, noteUuid, noteTitle || sourceRelPath, 'source', undefined, 'permanent')
-}
-
-/** 画布源文件在独立标签页里编辑；同一文件定位已有标签，不新开会话。 */
-function openExcalidrawDocument(relPath: string): void {
-  const kb = knowledgeBase.value
-  if (!kb) return
-  const owner =
-    relPath
-      .split('/')
-      .pop()
-      ?.match(/^(\d{4})-/)?.[1] ?? null
-  editor.openExcalidraw(kb, relPath, { ownerNoteIndex: owner })
 }
 
 /**
@@ -852,7 +836,6 @@ onUnmounted(() => {
           @merge="openMerge"
           @optimize="openOptimize"
           @recycle="recycleSelected"
-          @open-excalidraw="openSelectedExcalidraw"
           @open-reference="openDetailReference"
         />
       </div>

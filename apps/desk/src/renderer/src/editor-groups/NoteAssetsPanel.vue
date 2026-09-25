@@ -38,6 +38,8 @@ const props = defineProps<{
   source: string
   /** 文档只读 → 禁用插入 / 修复 / 删除，只留查看与复制。 */
   readOnly: boolean
+  /** 嵌在文档属性侧栏时隐藏自身关闭按钮。 */
+  showClose?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -382,6 +384,7 @@ onUnmounted(() => {
           {{ loading ? '刷新中…' : '刷新' }}
         </button>
         <button
+          v-if="showClose !== false"
           type="button"
           class="head-button"
           data-note-assets-close

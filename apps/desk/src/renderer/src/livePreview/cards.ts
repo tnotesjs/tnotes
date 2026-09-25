@@ -17,6 +17,7 @@ import {
 } from '../editor/markdown/componentBody'
 import {
   mountBilibiliVideoPreview,
+  mountFootprintsPreview,
   mountMermaidPreview,
   mountMindmapPreview,
   mountNotesTablePreview,
@@ -24,6 +25,7 @@ import {
 } from '../editor/markdown/componentPreview'
 import { parseFencedCode } from '../editor/markdown/diagramRenderer'
 import { mindmapPreviewMarkdown } from '../editor/markdown/mindmapFence'
+import { parseFootprintsSource } from '@tnotesjs/ui'
 import { livePreviewHost } from './host'
 import { revealAt } from './widgets'
 
@@ -101,8 +103,9 @@ function mountComponent(host: HTMLElement, source: string, knowledgeBaseId: stri
       missingIds: [],
       error: ids.length ? null : '错误: ids 数组不能为空'
     })
-    if (ids.length && knowledgeBaseId) {
-      void window.desk.notes
+    const notesApi = window.desk?.notes
+    if (ids.length && knowledgeBaseId && notesApi) {
+      void notesApi
         .resolveTable({ knowledgeBaseId, ids })
         .then((result) => {
           if (!result.ok) {
@@ -161,7 +164,7 @@ export class CardWidget extends WidgetType {
     const host = view.state.facet(livePreviewHost)
     const card = document.createElement('div')
     card.className = `cm-lp-card cm-lp-card-${this.kind}`
-    const body = this.renderBody(card, host.resolveImage)
+    const body = this.renderBody(card, host)
     if (body) card.append(body)
     card.addEventListener('mousedown', (event) => {
       const target = event.target as HTMLElement | null
@@ -189,11 +192,33 @@ export class CardWidget extends WidgetType {
     return card
   }
 
-  private renderBody(card: HTMLElement, resolveImage: (src: string) => string): HTMLElement | null {
+  private renderBody(
+    card: HTMLElement,
+    host: {
+      resolveImage: (src: string) => string
+      isReadOnly: () => boolean
+      openMindmap: (fenceSource: string) => void
+    }
+  ): HTMLElement | null {
+    const resolveImage = host.resolveImage.bind(host)
     switch (this.kind) {
       case 'container': {
         const element = renderContainerFromSource(this.source, resolveImage)
-        mounted.set(card, { destroy: () => destroyContainerPreview(element) })
+        if (element.dataset.footprints === '1') {
+          const payload = parseFootprintsSource(this.source)
+          const handle = mountFootprintsPreview(element, {
+            ...payload,
+            images: payload.images.map((src) => resolveImage(src) || src)
+          })
+          mounted.set(card, {
+            destroy: () => {
+              handle.unmount()
+              destroyContainerPreview(element)
+            }
+          })
+        } else {
+          mounted.set(card, { destroy: () => destroyContainerPreview(element) })
+        }
         return element
       }
       case 'mermaid': {
@@ -205,6 +230,23 @@ export class CardWidget extends WidgetType {
         return hostEl
       }
       case 'mindmap': {
+        const wrap = document.createElement('div')
+        wrap.className = 'cm-lp-mindmap-wrap'
+        const chrome = document.createElement('div')
+        chrome.className = 'cm-lp-mindmap-chrome'
+        const edit = document.createElement('button')
+        edit.type = 'button'
+        edit.className = 'cm-lp-mindmap-edit'
+        edit.textContent = '编辑'
+        edit.title = '在标签页里编辑思维导图'
+        edit.hidden = host.isReadOnly()
+        edit.addEventListener('mousedown', (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          if (host.isReadOnly()) return
+          host.openMindmap(this.source)
+        })
+        chrome.append(edit)
         const hostEl = document.createElement('div')
         hostEl.className = 'cm-lp-diagram cm-lp-mindmap'
         const preview = mindmapPreviewMarkdown(this.source)
@@ -215,8 +257,9 @@ export class CardWidget extends WidgetType {
           expandLevelControl: false,
           resolveImageSrc: resolveImage
         })
+        wrap.append(chrome, hostEl)
         mounted.set(card, { destroy: () => handle.unmount() })
-        return hostEl
+        return wrap
       }
       case 'component': {
         const hostEl = document.createElement('div')

@@ -248,7 +248,7 @@ export function buildNoteIndex(toc: DeskTocNode[]): Map<string, KbNoteRef> {
  * 「点这一项该做什么」的唯一判据。纯函数，UI 只负责执行结果。
  *
  * - 目录 → 推进层级（不是打开文件）
- * - `.excalidraw` → 明确拒绝（渲染端画布入口在资源面板）
+ * - `.excalidraw` → 明确拒绝（从引用它的笔记打开画布）
  * - `notes/` 下带四位编号的 `.md` → 命中 TOC 就用笔记会话打开；没命中退回文本并说明
  * - 已知二进制扩展名 → 明确拒绝
  * - 其余 → 按文本文件打开
@@ -264,7 +264,7 @@ export function decideKbPathOpen(input: {
     return {
       action: 'blocked',
       relPath,
-      reason: '这是画布源文件，请从资源面板打开画布'
+      reason: '这是画布源文件，请从引用它的笔记中打开画布'
     }
   }
   const fileName = baseNameOf(relPath)
