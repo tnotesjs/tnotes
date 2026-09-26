@@ -88,6 +88,58 @@
   line-height: 24px;
 }
 
+.live-editor .cm-editor.cm-lp-source .cm-content {
+  max-width: none;
+  margin: 0;
+  padding: 16px 32px 45vh 8px;
+}
+
+.live-editor .cm-editor.cm-lp-source .cm-gutters {
+  background-color: var(--editor-bg);
+  color: var(--tn-c-text-2);
+  border-right: 1px solid var(--tn-c-divider);
+  font-family: var(--tn-font-mono);
+  font-size: 12px;
+  line-height: 24px;
+}
+
+.live-editor .cm-editor.cm-lp-source .cm-lineNumbers .cm-gutterElement {
+  padding: 0 10px 0 12px;
+  min-width: 2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.live-editor .cm-editor.cm-lp-source .cm-lp-source-folds .cm-gutterElement {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 0;
+}
+
+.live-editor .cm-editor.cm-lp-source .cm-lp-source-fold {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 24px;
+  color: var(--tn-c-text-2);
+  cursor: pointer;
+}
+
+.live-editor .cm-editor.cm-lp-source .cm-lp-source-fold svg {
+  width: 12px;
+  height: 12px;
+}
+
+.live-editor .cm-editor.cm-lp-source .cm-lp-source-fold.is-open svg {
+  transform: rotate(90deg);
+}
+
+.live-editor .cm-editor.cm-lp-source .cm-gutterElement:hover .cm-lp-source-fold {
+  color: var(--tn-c-brand);
+}
+
 .live-editor .cm-lp-source .tok-heading {
   font-weight: 700;
   color: var(--tn-c-text);
@@ -693,12 +745,66 @@
 }
 
 .live-editor .cm-lp-code-copy,
-.live-editor .cm-lp-code-expand {
+.live-editor .cm-lp-code-expand,
+.live-editor .cm-lp-code-wrap {
   margin-left: 0;
 }
 
-.live-editor .cm-lp-code-header .cm-lp-code-copy {
+.live-editor .cm-lp-code-header .cm-lp-code-wrap {
   margin-left: auto;
+}
+
+.live-editor .cm-lp-code-copy svg {
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.live-editor .cm-lp-code-copy.is-leaving svg {
+  opacity: 0;
+  transform: scale(0.72);
+}
+
+.live-editor .cm-lp-code-copy.is-copied:not(.is-leaving) svg {
+  animation: cm-lp-copy-check 0.16s ease;
+}
+
+@keyframes cm-lp-copy-check {
+  from {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.live-editor .cm-lineWrapping .cm-line.cm-lp-code-nowrap {
+  white-space: pre;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* 不换行时行号自己占左侧一列，避免被卷进正文；横向滚动时钉在这一列。 */
+.live-editor .cm-lp-visual .cm-lp-codeblock.cm-lp-code-line.cm-lp-code-nowrap[data-line] {
+  padding-left: 0;
+}
+
+.live-editor .cm-lp-visual .cm-lp-code-line.cm-lp-code-nowrap[data-line]::before {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  display: inline-block;
+  box-sizing: border-box;
+  width: 52px;
+  padding-right: 16px;
+  line-height: 22px;
+  vertical-align: top;
+  background: var(--tn-c-bg-soft);
+}
+
+.live-editor .cm-lp-visual .cm-lp-code-line.cm-lp-code-highlighted.cm-lp-code-nowrap[data-line]::before {
+  background-color: var(--tn-c-bg-soft);
+  background-image: linear-gradient(var(--tn-c-highlight), var(--tn-c-highlight));
 }
 
 .live-editor .cm-editor.cm-lp-code-fs {
@@ -767,6 +873,7 @@
 }
 
 .live-editor .cm-lp-code-tabs .cm-lp-code-fold,
+.live-editor .cm-lp-code-tabs .cm-lp-code-wrap,
 .live-editor .cm-lp-code-tabs .cm-lp-code-copy,
 .live-editor .cm-lp-code-tabs .cm-lp-code-expand {
   display: inline-flex;
@@ -783,6 +890,7 @@
 }
 
 .live-editor .cm-lp-code-tabs .cm-lp-code-fold svg,
+.live-editor .cm-lp-code-tabs .cm-lp-code-wrap svg,
 .live-editor .cm-lp-code-tabs .cm-lp-code-copy svg,
 .live-editor .cm-lp-code-tabs .cm-lp-code-expand svg {
   width: 14px;
@@ -790,6 +898,7 @@
 }
 
 .live-editor .cm-lp-code-tabs .cm-lp-code-fold:hover,
+.live-editor .cm-lp-code-tabs .cm-lp-code-wrap:hover,
 .live-editor .cm-lp-code-tabs .cm-lp-code-copy:hover,
 .live-editor .cm-lp-code-tabs .cm-lp-code-expand:hover {
   background: var(--tn-c-hover);

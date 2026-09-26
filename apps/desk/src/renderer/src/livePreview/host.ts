@@ -27,7 +27,7 @@ export const livePreviewHost = Facet.define<LivePreviewHost, LivePreviewHost>({
     }
 })
 
-/** 是否处于可视化（实时预览）模式；源码模式下显示层不产生任何装饰。 */
+/** 是否处于可视化（实时预览）模式。源码模式不画预览装饰；行号和标题折叠在源码槽里。 */
 export const livePreviewEnabled = Facet.define<boolean, boolean>({
   combine: (values) => (values.length === 0 ? true : values[values.length - 1])
 })

@@ -57,6 +57,7 @@ import { codeBlockFullscreenClass } from './codeBlockChrome'
 import { codeLineNumberClick } from './codeLines'
 import { applyHeadingFoldCommand, headingFoldService, keepCursorOutOfFold, type HeadingFoldCommand } from './headingFold'
 import { livePreviewEnabled, livePreviewHost } from './host'
+import { sourceChrome } from './sourceChrome'
 import { tnotesMarkdown } from './language'
 import { collectHeadings, type OutlineHeading } from './outline'
 import { captureSelection } from './selectionCapture'
@@ -115,7 +116,8 @@ function modeExtensions(mode: NoteViewMode) {
   const visual = mode !== 'source'
   return [
     livePreviewEnabled.of(visual),
-    EditorView.editorAttributes.of({ class: visual ? 'cm-lp-visual' : 'cm-lp-source' })
+    EditorView.editorAttributes.of({ class: visual ? 'cm-lp-visual' : 'cm-lp-source' }),
+    ...(visual ? [] : [sourceChrome()])
   ]
 }
 

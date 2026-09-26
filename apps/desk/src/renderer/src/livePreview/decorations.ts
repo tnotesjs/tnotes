@@ -23,7 +23,8 @@ import {
   codeChromeAt,
   clampRangeAroundCollapsed,
   toggleCodeCollapse,
-  toggleCodeFullscreen
+  toggleCodeFullscreen,
+  toggleCodeWrap
 } from './codeBlockChrome'
 import { codeLineDecorations } from './codeLines'
 import { CardWidget, isKnownComponent, setCodeGroupTab, type CardKind } from './cards'
@@ -36,6 +37,8 @@ import {
   CodeFenceHeaderWidget,
   EmptyWidget,
   HorizontalRuleWidget,
+  codeWrapButton,
+  flashCopied,
   iconButton,
   ImageWidget,
   MathWidget
@@ -511,7 +514,8 @@ class CodeGroupTabsWidget extends WidgetType {
     private readonly containerFrom: number,
     private readonly lang: string,
     private readonly collapsed: boolean,
-    private readonly fullscreen: boolean
+    private readonly fullscreen: boolean,
+    private readonly wrapped: boolean
   ) {
     super()
   }
@@ -522,7 +526,8 @@ class CodeGroupTabsWidget extends WidgetType {
       other.labels.join('\n') === this.labels.join('\n') &&
       other.lang === this.lang &&
       other.collapsed === this.collapsed &&
-      other.fullscreen === this.fullscreen
+      other.fullscreen === this.fullscreen &&
+      other.wrapped === this.wrapped
     )
   }
 
@@ -675,6 +680,9 @@ class CodeGroupTabsWidget extends WidgetType {
       view.dispatch({ changes: { from: fence.from, to: fence.to, insert: next } })
     })
 
+    const wrap = codeWrapButton(this.wrapped, () => {
+      view.dispatch({ effects: toggleCodeWrap.of(openFrom()) })
+    })
     const copy = iconButton('复制', COPY_ICON, 'cm-lp-code-copy')
     copy.addEventListener('mousedown', (event) => {
       event.preventDefault()
@@ -683,10 +691,7 @@ class CodeGroupTabsWidget extends WidgetType {
       if (!fence) return
       const body = view.state.doc.sliceString(Math.min(fence.to + 1, fence.panelTo), fence.panelTo)
       const code = body.replace(/\n?[ \t]*(?:`{3,}|~{3,})[ \t]*$/, '')
-      void writeClipboardText(code).then((ok) => {
-        copy.title = ok ? '已复制' : '复制失败'
-        window.setTimeout(() => (copy.title = '复制'), 1200)
-      })
+      void writeClipboardText(code).then((ok) => flashCopied(copy, ok))
     })
 
     const fullscreen = iconButton(
@@ -700,7 +705,7 @@ class CodeGroupTabsWidget extends WidgetType {
       view.dispatch({ effects: toggleCodeFullscreen.of(openFrom()) })
     })
 
-    bar.append(lang, copy, fullscreen)
+    bar.append(lang, wrap, copy, fullscreen)
     if (restoreGroupLang) {
       restoreGroupLang = false
       queueMicrotask(() => {
@@ -716,10 +721,11 @@ class CodeGroupTabsWidget extends WidgetType {
   }
 }
 
-/** 代码组里当前没显示的段。选区跨出整组时不挡，好让源码露出来。 */
+/** 代码组里当前没显示的段。选区跨出整组时不挡，好让源码露出来。源码模式没有藏起来的行。 */
 export function hiddenCodeGroupBodies(
   state: EditorState
 ): Array<{ from: number; to: number; containerFrom: number; containerTo: number }> {
+  if (!state.facet(livePreviewEnabled)) return []
   const bodies: Array<{ from: number; to: number; containerFrom: number; containerTo: number }> = []
   const selection = state.selection.main
   syntaxTree(state).iterate({
@@ -813,8 +819,31 @@ export const keepCursorOutOfHiddenCodeGroup = EditorStateValue.transactionFilter
   } satisfies TransactionSpec
 })
 
+/** 源码模式不画预览，但代码组正文不是语法节点，嵌套高亮进不去，这里按围栏语言补上。 */
+function sourceCodeHighlights(state: EditorState): DecorationSet {
+  const ranges: Range<Decoration>[] = []
+  const doc = state.doc
+  syntaxTree(state).iterate({
+    enter(node) {
+      if (node.name !== 'ContainerBody') return
+      for (const panel of codeGroupPanels(state, node.from, node.to)) {
+        const start = doc.lineAt(panel.from)
+        const end = doc.lineAt(Math.max(panel.from, panel.to))
+        if (end.number <= start.number) continue
+        const lang = fenceLang(start.text).replace(/[{:].*$/, '').toLowerCase()
+        const codeFrom = Math.min(doc.length, start.to + 1)
+        const codeTo = end.from > codeFrom ? end.from - 1 : start.to
+        const code = codeTo > codeFrom ? doc.sliceString(codeFrom, codeTo).replace(/\n$/, '') : ''
+        if (code) highlightCode(ranges, codeFrom, codeFrom + code.length, lang, code)
+      }
+      return false
+    }
+  })
+  return ranges.length > 0 ? Decoration.set(ranges, true) : Decoration.none
+}
+
 function build(state: EditorState): LivePreviewState {
-  if (!state.facet(livePreviewEnabled)) return { decorations: Decoration.none, blocks: [] }
+  if (!state.facet(livePreviewEnabled)) return { decorations: sourceCodeHighlights(state), blocks: [] }
   const doc = state.doc
   const ranges: Range<Decoration>[] = []
   const blocks: HiddenBlock[] = []
@@ -1066,17 +1095,19 @@ function build(state: EditorState): LivePreviewState {
             linesClass(from, to, 'cm-lp-codeblock')
             return false
           }
+          const closed = node.getChildren('CodeMark').length > 1 && closeLine.number > openLine.number
+          const chrome = codeChromeAt(state, openLine.from)
+          const nowrap = chrome?.wrapped ? '' : ' cm-lp-code-nowrap'
           for (let number = openLine.number; number <= closeLine.number; number += 1) {
             const className =
-              number === openLine.number
+              (number === openLine.number
                 ? 'cm-lp-codeblock cm-lp-codeblock-first'
                 : number === closeLine.number
                   ? 'cm-lp-codeblock cm-lp-codeblock-last'
-                  : 'cm-lp-codeblock'
+                  : 'cm-lp-codeblock') + (number === openLine.number ? '' : nowrap)
             ranges.push(Decoration.line({ class: className }).range(doc.line(number).from))
           }
-          const closed = node.getChildren('CodeMark').length > 1 && closeLine.number > openLine.number
-          if (!codeChromeAt(state, openLine.from)?.collapsed) {
+          if (!chrome?.collapsed) {
             ranges.push(
               ...codeLineDecorations(doc, openLine.number, closed ? closeLine.number - 1 : closeLine.number)
             )
@@ -1094,7 +1125,6 @@ function build(state: EditorState): LivePreviewState {
           const title = parseFenceTitleFromMeta(meta) || /\[([^\]]+)\]/.exec(meta)?.[1] || ''
           const codeText = node.getChild('CodeText')
           const code = codeText ? doc.sliceString(codeText.from, codeText.to) : ''
-          const chrome = codeChromeAt(state, openLine.from)
           const fullscreen = Boolean(chrome?.fullscreen)
           if (fullscreen) {
             for (let number = openLine.number; number <= closeLine.number; number += 1) {
@@ -1109,7 +1139,8 @@ function build(state: EditorState): LivePreviewState {
                 code,
                 openLine.from,
                 Boolean(chrome?.collapsed),
-                fullscreen
+                fullscreen,
+                Boolean(chrome?.wrapped)
               )
             }).range(Math.max(openLine.from, from), openLine.to)
           )
@@ -1154,6 +1185,7 @@ function build(state: EditorState): LivePreviewState {
             const groupChrome = codeChromeAt(state, openLine.from)
             const groupCollapsed = Boolean(groupChrome?.collapsed) && closeLine.number > openLine.number
             const groupFullscreen = Boolean(groupChrome?.fullscreen)
+            const groupWrapped = Boolean(groupChrome?.wrapped)
             const activeLang = panels[active] ? fenceLang(doc.lineAt(panels[active].from).text) : ''
             const openClasses = ['cm-lp-code-group-open']
             if (groupCollapsed) openClasses.push('cm-lp-code-group-collapsed')
@@ -1167,7 +1199,8 @@ function build(state: EditorState): LivePreviewState {
                   openLine.from,
                   activeLang,
                   groupCollapsed,
-                  groupFullscreen
+                  groupFullscreen,
+                  groupWrapped
                 )
               }).range(openLine.from, openLine.to)
             )
@@ -1195,7 +1228,11 @@ function build(state: EditorState): LivePreviewState {
               ranges.push(Decoration.replace({ block: true }).range(start.from, start.to))
               if (end.number > start.number + 1) {
                 for (let number = start.number + 1; number < end.number; number += 1) {
-                  ranges.push(Decoration.line({ class: 'cm-lp-codeblock' }).range(doc.line(number).from))
+                  ranges.push(
+                    Decoration.line({
+                      class: groupWrapped ? 'cm-lp-codeblock' : 'cm-lp-codeblock cm-lp-code-nowrap'
+                    }).range(doc.line(number).from)
+                  )
                 }
               }
               if (code.length > 0) highlightCode(ranges, codeFrom, codeFrom + code.length, lang, code)

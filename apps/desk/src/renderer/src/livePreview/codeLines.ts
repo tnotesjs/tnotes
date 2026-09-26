@@ -73,7 +73,8 @@ export const codeLineNumberClick: Extension = Prec.high(
       const line = target.closest<HTMLElement>('.cm-line[data-code-line]')
       if (!line || !view.contentDOM.contains(line)) return false
       const box = line.getBoundingClientRect()
-      const gutter = parseFloat(getComputedStyle(line).paddingLeft) || 0
+      const padding = parseFloat(getComputedStyle(line).paddingLeft) || 0
+      const gutter = line.classList.contains('cm-lp-code-nowrap') ? 52 : padding
       if (event.clientX - box.left > gutter) return false
       const index = Number(line.dataset.codeLine)
       if (!Number.isInteger(index) || index < 1) return false

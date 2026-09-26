@@ -4,22 +4,28 @@ import { EditorView } from '@codemirror/view'
 
 import type { Extension, TransactionSpec } from '@codemirror/state'
 
-/** 代码块折叠 / 全屏。只存在于这次查看，不写进 Markdown。键是围栏开头那一行的起点。 */
+/** 代码块折叠 / 全屏 / 换行。只存在于这次查看，不写进 Markdown。键是围栏开头那一行的起点。 */
 interface CodeChromeMark {
   openFrom: number
   collapsed: boolean
   fullscreen: boolean
+  /** 缺省不换行；只有用户打开换行时才记下 true */
+  wrapped: boolean
 }
 
 export const toggleCodeCollapse = StateEffect.define<number>()
 export const toggleCodeFullscreen = StateEffect.define<number>()
+export const toggleCodeWrap = StateEffect.define<number>()
 
 export const codeBlockChrome = StateField.define<CodeChromeMark[]>({
   create: () => [],
   update(marks, tr) {
     if (
       !tr.docChanged &&
-      !tr.effects.some((effect) => effect.is(toggleCodeCollapse) || effect.is(toggleCodeFullscreen))
+      !tr.effects.some(
+        (effect) =>
+          effect.is(toggleCodeCollapse) || effect.is(toggleCodeFullscreen) || effect.is(toggleCodeWrap)
+      )
     ) {
       return marks
     }
@@ -29,7 +35,7 @@ export const codeBlockChrome = StateField.define<CodeChromeMark[]>({
         const at = tr.changes.mapPos(effect.value, -1)
         const index = next.findIndex((mark) => mark.openFrom === at)
         if (index >= 0) next[index] = { ...next[index], collapsed: !next[index].collapsed }
-        else next.push({ openFrom: at, collapsed: true, fullscreen: false })
+        else next.push({ openFrom: at, collapsed: true, fullscreen: false, wrapped: false })
       } else if (effect.is(toggleCodeFullscreen)) {
         const at = tr.changes.mapPos(effect.value, -1)
         const current = next.find((mark) => mark.openFrom === at)
@@ -40,11 +46,17 @@ export const codeBlockChrome = StateField.define<CodeChromeMark[]>({
         next.push({
           openFrom: at,
           collapsed: current?.collapsed ?? false,
-          fullscreen: on
+          fullscreen: on,
+          wrapped: current?.wrapped ?? false
         })
+      } else if (effect.is(toggleCodeWrap)) {
+        const at = tr.changes.mapPos(effect.value, -1)
+        const index = next.findIndex((mark) => mark.openFrom === at)
+        if (index >= 0) next[index] = { ...next[index], wrapped: !next[index].wrapped }
+        else next.push({ openFrom: at, collapsed: false, fullscreen: false, wrapped: true })
       }
     }
-    return next.filter((mark) => mark.collapsed || mark.fullscreen)
+    return next.filter((mark) => mark.collapsed || mark.fullscreen || mark.wrapped)
   }
 })
 

@@ -4,8 +4,16 @@ import katex from 'katex'
 
 import { writeClipboardText } from '../clipboardText'
 import { applyFenceLanguage, applyFenceTitle } from '../editor/markdown/fenceInfo'
-import { CHEVRON_DOWN_ICON, COLLAPSE_ICON, COPY_ICON, EXPAND_ICON } from '../markdown/copyIcons'
-import { toggleCodeCollapse, toggleCodeFullscreen } from './codeBlockChrome'
+import {
+  CHEVRON_DOWN_ICON,
+  CODE_NOWRAP_ICON,
+  CODE_WRAP_ICON,
+  COLLAPSE_ICON,
+  COPY_ICON,
+  CHECK_ICON,
+  EXPAND_ICON
+} from '../markdown/copyIcons'
+import { toggleCodeCollapse, toggleCodeFullscreen, toggleCodeWrap } from './codeBlockChrome'
 import {
   cachedCanvasSource,
   canvasAssetRevision,
@@ -151,6 +159,7 @@ export class CodeFenceHeaderWidget extends WidgetType {
     private readonly openFrom: number,
     private readonly collapsed: boolean,
     private readonly fullscreen: boolean,
+    private readonly wrapped: boolean,
     private readonly showFold = true
   ) {
     super()
@@ -164,6 +173,7 @@ export class CodeFenceHeaderWidget extends WidgetType {
       other.openFrom === this.openFrom &&
       other.collapsed === this.collapsed &&
       other.fullscreen === this.fullscreen &&
+      other.wrapped === this.wrapped &&
       other.showFold === this.showFold
     )
   }
@@ -234,14 +244,15 @@ export class CodeFenceHeaderWidget extends WidgetType {
     }
     lang.addEventListener('input', commitLang)
 
+    const wrap = codeWrapButton(this.wrapped, () => {
+      const line = view.state.doc.lineAt(this.openFrom)
+      view.dispatch({ effects: toggleCodeWrap.of(line.from) })
+    })
     const copy = iconButton('复制', COPY_ICON, 'cm-lp-code-copy')
     copy.addEventListener('mousedown', (event) => {
       event.preventDefault()
       event.stopPropagation()
-      void writeClipboardText(this.code).then((ok) => {
-        copy.title = ok ? '已复制' : '复制失败'
-        window.setTimeout(() => (copy.title = '复制'), 1200)
-      })
+      void writeClipboardText(this.code).then((ok) => flashCopied(copy, ok))
     })
 
     const fullscreen = iconButton(this.fullscreen ? '退出全屏' : '全屏代码', this.fullscreen ? COLLAPSE_ICON : EXPAND_ICON, 'cm-lp-code-expand')
@@ -252,7 +263,7 @@ export class CodeFenceHeaderWidget extends WidgetType {
       view.dispatch({ effects: toggleCodeFullscreen.of(line.from) })
     })
 
-    header.append(title, lang, copy, fullscreen)
+    header.append(title, lang, wrap, copy, fullscreen)
     if (restoreCodeField) {
       const which = restoreCodeField
       restoreCodeField = null
@@ -279,6 +290,57 @@ export function iconButton(label: string, svg: string, className: string): HTMLB
   button.setAttribute('aria-label', label)
   button.innerHTML = svg
   return button
+}
+
+/** 不换行时显示 icon 1；点一次切到换行（icon 2）。 */
+export function codeWrapButton(wrapped: boolean, onToggle: () => void): HTMLButtonElement {
+  const button = iconButton(
+    wrapped ? '不换行' : '换行显示',
+    wrapped ? CODE_WRAP_ICON : CODE_NOWRAP_ICON,
+    'cm-lp-code-wrap'
+  )
+  button.addEventListener('mousedown', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    onToggle()
+  })
+  return button
+}
+
+/** 复制成功：先淡出复制图标，再换成打勾；约 1.2 秒后回到复制图标。失败不显示打勾。 */
+export function flashCopied(button: HTMLButtonElement, ok: boolean): void {
+  const generation = Number(button.dataset.copyGen ?? '0') + 1
+  button.dataset.copyGen = String(generation)
+  const current = (): boolean => button.dataset.copyGen === String(generation)
+  const restore = (): void => {
+    if (!current()) return
+    button.classList.remove('is-leaving', 'is-copied')
+    button.innerHTML = COPY_ICON
+    button.title = '复制'
+    button.setAttribute('aria-label', '复制')
+  }
+  if (!ok) {
+    button.classList.remove('is-leaving', 'is-copied')
+    button.innerHTML = COPY_ICON
+    button.title = '复制失败'
+    button.setAttribute('aria-label', '复制失败')
+    window.setTimeout(restore, 1200)
+    return
+  }
+  button.classList.add('is-leaving')
+  window.setTimeout(() => {
+    if (!current()) return
+    button.classList.remove('is-leaving')
+    button.classList.add('is-copied')
+    button.innerHTML = CHECK_ICON
+    button.title = '已复制'
+    button.setAttribute('aria-label', '已复制')
+    window.setTimeout(() => {
+      if (!current()) return
+      button.classList.add('is-leaving')
+      window.setTimeout(restore, 160)
+    }, 1200)
+  }, 160)
 }
 
 function renderMath(source: string, displayMode: boolean): string {
