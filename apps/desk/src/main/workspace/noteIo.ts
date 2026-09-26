@@ -16,9 +16,12 @@ import { loadSettings } from '../settings'
 import type {
   AttachmentWriteLocalRequest,
   AttachmentWriteLocalResult,
+  NoteCreateManyRequest,
+  NoteCreateManyResult,
   NoteCreateRequest,
   NoteDocumentDto,
   NoteMutationDto,
+  NoteReindexRequest,
   NoteRenameRequest,
   NoteSaveRequest,
   NoteUpdateConfigRequest
@@ -154,6 +157,29 @@ export async function createNote(
   return applyNoteMutation(handle, result, effects)
 }
 
+export async function createNotes(
+  handle: KnowledgeBaseHandle,
+  request: NoteCreateManyRequest,
+  effects: MutationSideEffects
+): Promise<NoteCreateManyResult> {
+  const result = await handle.workspace.notes.createMany({
+    title: request.title,
+    count: request.count,
+    placement: toKbPlacement(handle, request.placement)
+  })
+  effects.markInternalWrites(handle.rootPath, result.changedFiles)
+  handle.snapshot = await handle.workspace.scan()
+  effects.emitChanged()
+  const note = result.value[0]
+  if (!note) throw new Error('没有新建笔记')
+  return {
+    note: toNoteDocument(handle, note),
+    createdCount: result.value.length,
+    knowledgeBase: toDetail(handle),
+    changedFiles: result.changedFiles
+  }
+}
+
 export async function renameNote(
   handle: KnowledgeBaseHandle,
   request: NoteRenameRequest,
@@ -162,6 +188,18 @@ export async function renameNote(
   const result = await handle.workspace.notes.rename({
     index: resolveNoteIndex(handle, request.noteUuid),
     title: request.title
+  })
+  return applyNoteMutation(handle, result, effects)
+}
+
+export async function reindexNote(
+  handle: KnowledgeBaseHandle,
+  request: NoteReindexRequest,
+  effects: MutationSideEffects
+): Promise<NoteMutationDto> {
+  const result = await handle.workspace.notes.reindex({
+    index: resolveNoteIndex(handle, request.noteUuid),
+    nextIndex: request.index
   })
   return applyNoteMutation(handle, result, effects)
 }

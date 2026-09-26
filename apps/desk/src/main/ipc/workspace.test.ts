@@ -49,12 +49,14 @@ describe('工作区 IPC 合同', () => {
     const result = await invoke(IPC_CHANNELS.contextMenuShow, {
       kind: 'note',
       pinned: false,
+      tocPinned: false,
       completed: true
     })
     expect(result.ok).toBe(true)
     expect(mocks.showContextMenu).toHaveBeenCalledWith(window, {
       kind: 'note',
       pinned: false,
+      tocPinned: false,
       completed: true
     })
   })

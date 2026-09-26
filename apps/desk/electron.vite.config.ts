@@ -42,7 +42,8 @@ export default defineConfig({
           searchWorker: resolve('src/main/searchWorker.ts'),
           encodeWorker: resolve('src/main/encodeWorker.ts')
         },
-        external: ['sharp']
+        // @cursor/sdk 自带各平台的可执行文件（rg、沙盒助手），运行时从 node_modules 按需加载
+        external: ['sharp', '@cursor/sdk']
       }
     }
   },

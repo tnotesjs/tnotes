@@ -139,8 +139,8 @@ const props = withDefaults(
     active: boolean
     uploadImage: (file: File) => Promise<{ src: string; alt: string }>
     /**
-     * 选区浮动工具条开关（对应 AppSettings `editor.selectionToolbar`）。由上层从设置里
-     * 读出来传进来 —— 编辑器只做装配，不自己访问 store（访问会在没有 Pinia 的单测里炸）。
+     * 选区浮动工具条开关。实时预览编辑器不用它，设置里也不再提供；这里默认关闭。
+     * 编辑器只做装配，不自己访问 store（访问会在没有 Pinia 的单测里炸）。
      */
     selectionToolbar?: boolean
   }>(),
@@ -1521,7 +1521,7 @@ onMounted(async () => {
     latex: {},
     blockEdit: createDeskBlockEditConfig({ runSlashItem: runSlashItemInsert }),
     toolbar: {},
-    // 选区浮动工具条开关由上层传入（`editor.selectionToolbar`，默认关闭）。
+    // 选区浮动工具条默认关闭，设置里不再提供开关。
     // 这里用 getter 而不是快照值：设置面板一改，prop 更新就立即生效，不必重建编辑器。
     selectionToolbar: () => props.selectionToolbar
   })

@@ -63,9 +63,12 @@ import type {
   KnowledgeBaseCreateRequest,
   KnowledgeBaseCreateResult,
   KnowledgeBaseDetail,
+  NoteCreateManyRequest,
+  NoteCreateManyResult,
   NoteCreateRequest,
   NoteDocumentDto,
   NoteMutationDto,
+  NoteReindexRequest,
   NoteRenameRequest,
   NoteSaveRequest,
   NoteUpdateConfigRequest,
@@ -73,8 +76,8 @@ import type {
   KnowledgeBaseSettingsDto,
   KnowledgeBaseSettingsWriteRequest,
   TocCreateGroupRequest,
+  DeleteTargetDto,
   TocDeleteRequest,
-  TocEntryRefDto,
   TocMoveRequest,
   TocRenameGroupRequest,
   WorkspaceOverview
@@ -535,9 +538,27 @@ export class WorkspaceManager {
     )
   }
 
+  async createNotes(request: NoteCreateManyRequest): Promise<NoteCreateManyResult> {
+    this.assertWritable(request.knowledgeBaseId)
+    return noteIo.createNotes(
+      this.getHandle(request.knowledgeBaseId),
+      request,
+      this.mutationEffects()
+    )
+  }
+
   async renameNote(request: NoteRenameRequest): Promise<NoteMutationDto> {
     this.assertWritable(request.knowledgeBaseId)
     return noteIo.renameNote(
+      this.getHandle(request.knowledgeBaseId),
+      request,
+      this.mutationEffects()
+    )
+  }
+
+  async reindexNote(request: NoteReindexRequest): Promise<NoteMutationDto> {
+    this.assertWritable(request.knowledgeBaseId)
+    return noteIo.reindexNote(
       this.getHandle(request.knowledgeBaseId),
       request,
       this.mutationEffects()
@@ -603,7 +624,7 @@ export class WorkspaceManager {
     )
   }
 
-  async previewDelete(knowledgeBaseId: string, entry: TocEntryRefDto): Promise<DeletePreviewDto> {
+  async previewDelete(knowledgeBaseId: string, entry: DeleteTargetDto): Promise<DeletePreviewDto> {
     return toc.previewDelete(this.getHandle(knowledgeBaseId), knowledgeBaseId, entry)
   }
 

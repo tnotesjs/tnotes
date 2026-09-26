@@ -7,6 +7,7 @@ import KnowledgeSidebar from './components/KnowledgeSidebar.vue'
 import NavigatorSidebar from './components/NavigatorSidebar.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import AgentPanel from './agent/AgentPanel.vue'
+import { useAgentStore } from './agent/agentStore'
 import PinnedContextBar from './components/PinnedContextBar.vue'
 import ToastHost from './components/ToastHost.vue'
 import AppZoomFeedback from './components/AppZoomFeedback.vue'
@@ -46,6 +47,8 @@ import type {
   TabShortcutCommand
 } from '../../shared/contracts'
 import { deleteConsequenceLines, isEmptyDeletePreview } from './deletePreview'
+import { batchNoteCountError, maxBatchNoteCount } from '../../shared/noteBatch'
+import { canonicalNoteIndex, noteIndexChangeError } from '../../shared/noteIndex'
 import { runViewToggle } from './commands/viewToggleBridge'
 import { focusDialogInput } from './dialogInputFocus'
 
@@ -72,10 +75,11 @@ watch(activeNoteSource, (source) => syncActiveNote(source), { immediate: true })
 const terminalStore = useTerminalStore()
 const commandTaskStore = useCommandTaskStore()
 const backgroundFailureStore = useBackgroundFailureStore()
-const agentOpen = ref(false)
+const agentStore = useAgentStore()
 const agentPanel = ref<{ focusInput: () => void } | null>(null)
-const createDialogOpen = ref(false)
 const createKbDialogOpen = ref(false)
+const batchDialogOpen = ref(false)
+const batchCount = ref('1')
 const createKbFolderName = ref('')
 const createKbTitle = ref('')
 const createKbPackageJson = ref(false)
@@ -90,20 +94,22 @@ const commandPalette = ref<{
   openSearch: () => Promise<void>
   openCommands: () => Promise<void>
 } | null>(null)
+const navigatorSidebar = ref<{ exitBatchDelete: () => void } | null>(null)
 const terminalPanel = ref<{
   createOrFocus: () => Promise<void>
   openForKnowledgeBase: (knowledgeBaseId: string, cwd?: string) => Promise<void>
   focusActive: () => void
   showTask: (taskId: string) => void
+  closeFocusedTab: () => boolean
 } | null>(null)
-const createTitle = ref('')
-const createPlacement = ref<NoteCreateRequest['placement']>({ type: 'root', placement: 'end' })
-const createRootPosition = ref<'top' | 'end'>('top')
 const groupDialogOpen = ref(false)
 const groupTitle = ref('')
 const renameNode = ref<DeskTocNode | null>(null)
 const renameTitle = ref('')
 const renameInput = ref<HTMLInputElement | null>(null)
+const reindexNode = ref<Extract<DeskTocNode, { type: 'note' }> | null>(null)
+const reindexValue = ref('')
+const reindexInput = ref<HTMLInputElement | null>(null)
 const deletePreview = ref<DeletePreviewDto | null>(null)
 const recoveryCandidate = computed(() => store.pendingRecoveries[0] ?? null)
 const pendingPublishState = computed(() =>
@@ -137,24 +143,30 @@ const workspaceColumns = computed(() => {
   const knowledgeWidth = editor.knowledgeSidebarCollapsed ? 48 : editor.knowledgeSidebarWidth
   const navigatorWidth = editor.navigatorSidebarCollapsed ? 0 : editor.navigatorSidebarWidth
   const reversed = store.settings?.workspaceLayout === 'content-dir-kb'
-  return reversed
+  const base = reversed
     ? `minmax(0, 1fr) 6px ${navigatorWidth}px 6px ${knowledgeWidth}px`
     : `${knowledgeWidth}px 6px ${navigatorWidth}px 6px minmax(0, 1fr)`
+  return agentStore.open ? `${base} 6px ${agentStore.width}px` : base
 })
 
-const workspaceAreas = computed(() =>
-  store.settings?.workspaceLayout === 'content-dir-kb' ? '"i5 i4 i3 i2 i1"' : '"i1 i2 i3 i4 i5"'
-)
+const workspaceAreas = computed(() => {
+  const base = store.settings?.workspaceLayout === 'content-dir-kb' ? 'i5 i4 i3 i2 i1' : 'i1 i2 i3 i4 i5'
+  return agentStore.open ? `"${base} i6 i7"` : `"${base}"`
+})
 
-let resizeTarget: 'knowledge' | 'navigator' | null = null
+let resizeTarget: 'knowledge' | 'navigator' | 'agent' | null = null
 let resizeStartX = 0
 let resizeStartWidth = 0
 
-function startResize(target: 'knowledge' | 'navigator', event: MouseEvent): void {
+function startResize(target: 'knowledge' | 'navigator' | 'agent', event: MouseEvent): void {
   resizeTarget = target
   resizeStartX = event.clientX
   resizeStartWidth =
-    target === 'knowledge' ? editor.knowledgeSidebarWidth : editor.navigatorSidebarWidth
+    target === 'knowledge'
+      ? editor.knowledgeSidebarWidth
+      : target === 'navigator'
+        ? editor.navigatorSidebarWidth
+        : agentStore.width
   window.addEventListener('mousemove', onResizeMove)
   window.addEventListener('mouseup', onResizeEnd)
   document.body.classList.add('is-resizing')
@@ -162,6 +174,10 @@ function startResize(target: 'knowledge' | 'navigator', event: MouseEvent): void
 
 function onResizeMove(event: MouseEvent): void {
   if (!resizeTarget) return
+  if (resizeTarget === 'agent') {
+    agentStore.setWidth(resizeStartWidth + resizeStartX - event.clientX)
+    return
+  }
   const reversed = store.settings?.workspaceLayout === 'content-dir-kb'
   const delta = (event.clientX - resizeStartX) * (reversed ? -1 : 1)
   if (resizeTarget === 'knowledge') {
@@ -211,8 +227,7 @@ function onKeydown(event: KeyboardEvent): void {
   }
   if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'l') {
     event.preventDefault()
-    agentOpen.value = !agentOpen.value
-    if (agentOpen.value) void nextTick(() => agentPanel.value?.focusInput())
+    toggleAgent()
     return
   }
   if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'p') {
@@ -223,7 +238,32 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
-/** 面板开关：展开时确保有一个会话并聚焦，收起只隐藏（不结束进程）。 */
+function toggleAgent(): void {
+  const dock = document.querySelector('.agent-dock')
+  const focused = Boolean(dock?.contains(document.activeElement))
+  const attached = !focused && agentStore.addSelection()
+  if (attached) {
+    agentStore.open = true
+    void nextTick(() => agentPanel.value?.focusInput())
+    return
+  }
+  if (!agentStore.open) {
+    agentStore.open = true
+    void nextTick(() => agentPanel.value?.focusInput())
+    return
+  }
+  if (!focused) {
+    void nextTick(() => agentPanel.value?.focusInput())
+    return
+  }
+  agentStore.open = false
+}
+
+function toggleAgentPanel(): void {
+  agentStore.open = !agentStore.open
+  if (agentStore.open) void nextTick(() => agentPanel.value?.focusInput())
+}
+
 function toggleTerminalPanel(): void {
   terminalStore.toggle()
   if (terminalStore.open) void terminalPanel.value?.createOrFocus()
@@ -342,6 +382,8 @@ async function handleTabShortcut(command: TabShortcutCommand): Promise<void> {
     return
   }
 
+  if (terminalPanel.value?.closeFocusedTab()) return
+
   const group = editor.activeGroup
   const tab = editor.activeTab
   if (group && tab) {
@@ -360,39 +402,64 @@ function applyAppearance(): void {
   document.documentElement.dataset.density = store.settings?.density ?? 'comfortable'
 }
 
-function openCreateDialog(
+const DEFAULT_NOTE_TITLE = 'new'
+
+async function createNoteNow(
   node?: DeskTocNode,
   placement: 'before' | 'after' | 'inside' = 'after'
-): void {
-  createTitle.value = ''
-  if (!node) {
-    createRootPosition.value = store.settings?.createNotePosition ?? 'top'
-    createPlacement.value = {
-      type: 'root',
-      placement: createRootPosition.value === 'top' ? 'start' : 'end'
-    }
-  } else if (node.type === 'note') {
-    createPlacement.value = { type: 'note', targetNoteUuid: node.uuid, placement }
-  } else {
-    createPlacement.value = { type: 'folder', folderPath: [...node.folderPath], placement }
-  }
-  createDialogOpen.value = true
-}
-
-async function confirmCreate(): Promise<void> {
-  const title = createTitle.value.trim()
-  if (!title || dialogBusy.value) return
+): Promise<void> {
+  if (dialogBusy.value) return
+  const requestPlacement: NoteCreateRequest['placement'] = !node
+    ? {
+        type: 'root',
+        placement: (store.settings?.createNotePosition ?? 'top') === 'top' ? 'start' : 'end'
+      }
+    : node.type === 'note'
+      ? { type: 'note', targetNoteUuid: node.uuid, placement }
+      : { type: 'folder', folderPath: [...node.folderPath], placement }
   dialogBusy.value = true
   try {
-    const placement =
-      createPlacement.value?.type === 'root'
-        ? ({
-            type: 'root',
-            placement: createRootPosition.value === 'top' ? 'start' : 'end'
-          } as NoteCreateRequest['placement'])
-        : createPlacement.value
-    await store.createNote(title, placement)
-    createDialogOpen.value = false
+    await store.createNote(DEFAULT_NOTE_TITLE, requestPlacement)
+  } catch (cause) {
+    store.error = cause instanceof Error ? cause.message : String(cause)
+  } finally {
+    dialogBusy.value = false
+  }
+}
+
+const batchMax = computed(() => maxBatchNoteCount(store.knowledgeBase?.noteCount ?? 0))
+const batchCountError = computed(() =>
+  batchDialogOpen.value ? batchNoteCountError(batchCount.value, store.knowledgeBase?.noteCount ?? 0) : null
+)
+
+function selectBatchCount(event: FocusEvent): void {
+  const input = event.target
+  if (!(input instanceof HTMLInputElement)) return
+  try {
+    input.select()
+  } catch {
+    // Chromium 的 number 输入框不允许设置选区。
+  }
+}
+
+function openCreateNotesDialog(): void {
+  if (batchMax.value < 1) {
+    store.error = '笔记数量已达 9999，无法继续新建'
+    return
+  }
+  batchCount.value = '1'
+  batchDialogOpen.value = true
+}
+
+async function confirmCreateNotes(): Promise<void> {
+  if (batchCountError.value || dialogBusy.value) return
+  const count = Number(String(batchCount.value).trim())
+  dialogBusy.value = true
+  try {
+    await store.createNotes(count)
+    batchDialogOpen.value = false
+  } catch (cause) {
+    store.error = cause instanceof Error ? cause.message : String(cause)
   } finally {
     dialogBusy.value = false
   }
@@ -456,6 +523,49 @@ async function confirmCreateGroup(): Promise<void> {
   }
 }
 
+function collectNoteIndexes(nodes: DeskTocNode[], into = new Set<string>()): Set<string> {
+  for (const node of nodes) {
+    if (node.type === 'note') into.add(node.noteIndex)
+    collectNoteIndexes(node.children, into)
+  }
+  return into
+}
+
+const reindexTaken = computed(() => collectNoteIndexes(store.knowledgeBase?.toc ?? []))
+const reindexCanonical = computed(() => canonicalNoteIndex(reindexValue.value))
+const reindexError = computed(() => {
+  const node = reindexNode.value
+  if (!node) return null
+  return noteIndexChangeError(reindexValue.value, node.noteIndex, reindexTaken.value)
+})
+const reindexUnchanged = computed(
+  () => Boolean(reindexNode.value) && reindexCanonical.value === reindexNode.value?.noteIndex
+)
+
+function selectReindexInput(event: FocusEvent): void {
+  const input = event.target
+  if (input instanceof HTMLInputElement) input.select()
+}
+
+function openReindexDialog(node: Extract<DeskTocNode, { type: 'note' }>): void {
+  reindexNode.value = node
+  reindexValue.value = node.noteIndex
+  void focusDialogInput(() => reindexInput.value)
+}
+
+async function confirmReindex(): Promise<void> {
+  const node = reindexNode.value
+  const index = reindexCanonical.value
+  if (!node || !index || reindexError.value || reindexUnchanged.value || dialogBusy.value) return
+  dialogBusy.value = true
+  try {
+    await store.reindexNote(node.uuid, index)
+    reindexNode.value = null
+  } finally {
+    dialogBusy.value = false
+  }
+}
+
 function openRenameDialog(node: DeskTocNode): void {
   renameNode.value = node
   renameTitle.value = node.title
@@ -469,6 +579,20 @@ async function confirmRename(): Promise<void> {
   try {
     await store.renameTocNode(renameNode.value, title)
     renameNode.value = null
+  } finally {
+    dialogBusy.value = false
+  }
+}
+
+async function requestBatchDelete(noteUuids: string[]): Promise<void> {
+  if (noteUuids.length === 0 || dialogBusy.value) return
+  dialogBusy.value = true
+  try {
+    const preview = await store.previewDeleteNotes(noteUuids)
+    if (isEmptyDeletePreview(preview)) return
+    deletePreview.value = preview
+  } catch (cause) {
+    store.error = cause instanceof Error ? cause.message : String(cause)
   } finally {
     dialogBusy.value = false
   }
@@ -514,10 +638,16 @@ async function commitBeforeDelete(): Promise<void> {
 
 async function confirmDelete(): Promise<void> {
   if (!deletePreview.value || dialogBusy.value) return
+  const batch = deletePreview.value.entry.type === 'notes'
+  const count = deletePreview.value.notes.length
   dialogBusy.value = true
   try {
     await store.deleteNode(deletePreview.value)
     deletePreview.value = null
+    if (batch) {
+      navigatorSidebar.value?.exitBatchDelete()
+      store.status = `已删除 ${count} 篇笔记`
+    }
   } finally {
     dialogBusy.value = false
   }
@@ -526,6 +656,12 @@ async function confirmDelete(): Promise<void> {
 watch(
   () => editor.activeTab?.id,
   () => void store.syncToActiveTab()
+)
+
+watch(
+  () => store.selectedKnowledgeBaseId,
+  (knowledgeBaseId) => void window.desk.git.setFocus?.(knowledgeBaseId ?? null),
+  { immediate: true }
 )
 
 watch(
@@ -539,6 +675,8 @@ watch(
     () => editor.knowledgeSidebarCollapsed,
     () => editor.navigatorSidebarCollapsed,
     () => editor.expandedTocNodes,
+    () => editor.pinnedKnowledgeBasesCollapsed,
+    () => editor.pinnedNotesCollapsed,
     () => editor.lastNoteByGroup
   ],
   () => {
@@ -554,10 +692,11 @@ watch(
 
 watch(
   () =>
-    createDialogOpen.value ||
     createKbDialogOpen.value ||
+    batchDialogOpen.value ||
     groupDialogOpen.value ||
     Boolean(renameNode.value) ||
+    Boolean(reindexNode.value) ||
     settingsOpen.value ||
     paletteOpen.value ||
     Boolean(deletePreview.value) ||
@@ -767,10 +906,10 @@ onUnmounted(() => {
         <button
           type="button"
           class="terminal-toggle"
-          :class="{ active: agentOpen }"
+          :class="{ active: agentStore.open }"
           aria-label="打开内置 Agent"
           data-tooltip="内置 Agent（⌘L）"
-          @click="agentOpen = !agentOpen"
+          @click="toggleAgentPanel"
         >
           <svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true">
             <path
@@ -830,11 +969,15 @@ onUnmounted(() => {
         @mousedown="startResize('knowledge', $event)"
       />
       <NavigatorSidebar
+        ref="navigatorSidebar"
         style="grid-area: i3"
-        @create-note="openCreateDialog"
+        @create-note="createNoteNow"
+        @create-notes="openCreateNotesDialog"
         @create-group="openGroupDialog"
         @request-rename="openRenameDialog"
+        @request-reindex="openReindexDialog"
         @request-delete="requestDelete"
+        @request-batch-delete="requestBatchDelete"
       />
       <div
         class="resize-handle"
@@ -844,10 +987,18 @@ onUnmounted(() => {
         @mousedown="startResize('navigator', $event)"
       />
       <EditorPane style="grid-area: i5" />
+      <div
+        v-if="agentStore.open"
+        class="resize-handle"
+        role="separator"
+        aria-orientation="vertical"
+        style="grid-area: i6"
+        @mousedown="startResize('agent', $event)"
+      />
+      <AgentPanel v-if="agentStore.open" ref="agentPanel" style="grid-area: i7" />
     </main>
 
     <TerminalPanel v-if="store.hasWorkspace" ref="terminalPanel" />
-    <AgentPanel v-if="store.hasWorkspace" v-show="agentOpen" ref="agentPanel" />
 
     <main v-else class="welcome">
       <div class="welcome-card">
@@ -864,29 +1015,37 @@ onUnmounted(() => {
       </div>
     </main>
 
-    <div v-if="createDialogOpen" class="dialog-backdrop" @mousedown.self="createDialogOpen = false">
-      <form class="dialog" @submit.prevent="confirmCreate">
+    <div
+      v-if="batchDialogOpen"
+      class="dialog-backdrop"
+      @mousedown.self="batchDialogOpen = false"
+    >
+      <form class="dialog" @submit.prevent="confirmCreateNotes">
         <header>
-          <strong>新增笔记</strong>
-          <button type="button" @click="createDialogOpen = false">×</button>
+          <div>
+            <span>新建多篇笔记</span>
+            <strong>标题都是 new，位置跟「新增笔记位置」一致</strong>
+          </div>
+          <button type="button" @click="batchDialogOpen = false">×</button>
         </header>
         <label>
-          <input v-model="createTitle" autofocus placeholder="请输入笔记标题" />
+          <span>数量</span>
+          <input
+            v-model.number="batchCount"
+            type="number"
+            min="1"
+            :max="batchMax"
+            step="1"
+            autofocus
+            @focus="selectBatchCount"
+          />
         </label>
+        <p v-if="batchCountError" class="dialog-error">{{ batchCountError }}</p>
+        <p v-else class="dialog-hint">可新建 1–{{ batchMax }} 篇</p>
         <footer>
-          <label v-if="createPlacement?.type === 'root'" class="position-field">
-            <select v-model="createRootPosition">
-              <option value="top">顶部新增</option>
-              <option value="end">末尾追加</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            class="primary"
-            :disabled="!createTitle.trim() || dialogBusy"
-            @click="confirmCreate"
-          >
-            创建
+          <button type="button" class="secondary" @click="batchDialogOpen = false">取消</button>
+          <button type="button" class="primary" :disabled="Boolean(batchCountError) || dialogBusy" @click="confirmCreateNotes">
+            {{ dialogBusy ? '创建中…' : '创建' }}
           </button>
         </footer>
       </form>
@@ -981,6 +1140,43 @@ onUnmounted(() => {
             @click="confirmCreateGroup"
           >
             创建
+          </button>
+        </footer>
+      </form>
+    </div>
+
+    <div v-if="reindexNode" class="dialog-backdrop" @mousedown.self="reindexNode = null">
+      <form class="dialog" @submit.prevent="confirmReindex">
+        <header>
+          <div>
+            <span>修改索引</span>
+            <strong>{{ reindexNode.noteIndex }}. {{ reindexNode.title }}</strong>
+          </div>
+          <button type="button" @click="reindexNode = null">×</button>
+        </header>
+        <label>
+          <span>新索引</span>
+          <input
+            ref="reindexInput"
+            v-model="reindexValue"
+            inputmode="numeric"
+            autocomplete="off"
+            spellcheck="false"
+            @focus="selectReindexInput"
+          />
+        </label>
+        <p v-if="reindexError" class="dialog-error">{{ reindexError }}</p>
+        <p v-else-if="reindexUnchanged" class="dialog-hint">索引没有变化</p>
+        <p v-else class="dialog-hint">将改为 {{ reindexCanonical }}，不能与其他笔记重复</p>
+        <footer>
+          <button type="button" class="secondary" @click="reindexNode = null">取消</button>
+          <button
+            type="button"
+            class="primary"
+            :disabled="Boolean(reindexError) || reindexUnchanged || dialogBusy"
+            @click="confirmReindex"
+          >
+            {{ dialogBusy ? '保存中…' : '保存' }}
           </button>
         </footer>
       </form>
@@ -1577,6 +1773,12 @@ body.is-resizing-image {
   font-size: 11px;
 }
 
+.dialog-hint {
+  margin: -8px 15px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .dialog footer {
   display: flex;
   justify-content: flex-end;
@@ -1592,35 +1794,6 @@ body.is-resizing-image {
   padding: 0 12px;
   cursor: pointer;
   font-size: 11px;
-}
-
-.dialog footer .position-field {
-  display: flex;
-  align-items: center;
-  padding: 0;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.dialog select {
-  height: 30px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  outline: none;
-  appearance: none;
-  -webkit-appearance: none;
-  background: var(--input-bg)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='%2391a0b5' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-    no-repeat right 9px center / 12px 12px;
-  color: var(--text);
-  padding: 0 26px 0 10px;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.dialog select:focus {
-  border-color: var(--accent);
 }
 
 .dialog footer .secondary {

@@ -10,9 +10,10 @@ import {
   wrapSelection
 } from './commands'
 import { taskToggleChange } from './widgets'
-import { codeGroupTabs, livePreviewField, setFocused } from './decorations'
+import { codeGroupTabs, keepCursorOutOfHiddenCodeGroup, livePreviewField, setFocused } from './decorations'
 import { tnotesMarkdown } from './language'
 import { renumberOrderedLists } from './lists'
+import { codeBlockFullscreenClass } from './codeBlockChrome'
 
 const views: EditorView[] = []
 
@@ -138,10 +139,119 @@ describe('live preview editing', () => {
     expect(text).toContain('aaa')
     expect(text).not.toContain('bbb')
     expect(text).not.toContain(':::')
-    const headerLine = [...view.dom.querySelectorAll('.cm-line')].find((line) =>
-      line.querySelector('.cm-lp-code-header')
-    )
-    expect(headerLine?.className).toContain('cm-lp-codeblock-first')
-    expect((view.dom.querySelector('.cm-lp-code-title') as HTMLInputElement | null)?.value).toBe('a.js')
+    // 没有单独的标题栏：标题在标签上，语言、复制、全屏、折叠都在标签栏里
+    expect(view.dom.querySelector('.cm-lp-code-header')).toBeNull()
+    expect(view.dom.querySelector('.cm-lp-code-tab.is-active')?.textContent).toBe('a.js')
+    const tabs = view.dom.querySelector('.cm-lp-code-tabs')!
+    expect((tabs.querySelector('.cm-lp-code-lang-input') as HTMLInputElement).value).toBe('js')
+    expect(tabs.querySelector('.cm-lp-code-fold')).not.toBeNull()
+    expect(tabs.querySelector('.cm-lp-code-copy')).not.toBeNull()
+    expect(tabs.querySelector('.cm-lp-code-expand')).not.toBeNull()
+    expect(text).not.toContain('```')
+  })
+
+  it('folds the whole code group from the tab bar and unfolds when a tab is picked', () => {
+    const doc = ['::: code-group', '```js [a.js]', 'aaa', '```', '```ts [b.ts]', 'bbb', '```', ':::', '', '后文', ''].join('\n')
+    const parent = document.createElement('div')
+    document.body.append(parent)
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc,
+        selection: EditorSelection.cursor(doc.indexOf('后文')),
+        extensions: [tnotesMarkdown(), codeGroupTabs, codeBlockFullscreenClass, keepCursorOutOfHiddenCodeGroup, livePreviewField]
+      })
+    })
+    views.push(view)
+    const fold = () => view.dom.querySelector<HTMLButtonElement>('.cm-lp-code-tabs .cm-lp-code-fold')!
+    fold().dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(view.contentDOM.textContent).not.toContain('aaa')
+    expect(fold().classList.contains('is-collapsed')).toBe(true)
+    expect(view.dom.querySelector('.cm-lp-code-group-collapsed')).not.toBeNull()
+
+    view.dispatch({ selection: EditorSelection.cursor(doc.indexOf('aaa')) })
+    expect(view.state.selection.main.head).not.toBe(doc.indexOf('aaa'))
+
+    fold().dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(view.contentDOM.textContent).toContain('aaa')
+  })
+
+  it('renames a code-group tab in place and writes the title into the fence', () => {
+    const doc = ['::: code-group', '```js [a.js]', 'aaa', '```', '```ts [b.ts]', 'bbb', '```', ':::', ''].join('\n')
+    const view = mount(doc, doc.indexOf('aaa'))
+    const tab = view.dom.querySelector<HTMLElement>('.cm-lp-code-tab.is-active')!
+    tab.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 1, clientY: 1 }))
+    const rename = [...document.querySelectorAll<HTMLButtonElement>('.cm-lp-code-tab-menu button')].find(
+      (button) => button.textContent === '重命名'
+    )!
+    rename.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    return new Promise<void>((resolve) => {
+      setTimeout(() => {
+        const input = view.dom.querySelector<HTMLInputElement>('.cm-lp-code-tab-rename')!
+        expect(input.value).toBe('a.js')
+        input.value = 'main.js'
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+        expect(view.state.doc.line(2).text).toBe('```js [main.js]')
+        expect(view.dom.querySelector('.cm-lp-code-tab.is-active')?.textContent).toBe('main.js')
+        resolve()
+      }, 60)
+    })
+  })
+
+  it('keeps a code group as decorated source when the cursor is outside, so focusing does not jump', () => {
+    const doc = ['前文', '', '::: code-group', '```js {2} [a.js]', 'aaa', 'aaa2', '```', '```ts [b.ts]', 'bbb', '```', ':::', ''].join('\n')
+    const view = mount(doc, 0)
+    const shape = (): string[] =>
+      [...view.contentDOM.querySelectorAll('.cm-line')]
+        .map((line) => line.className.replace(/\bcm-activeLine\b/, '').trim())
+        .filter(Boolean)
+    expect(view.dom.querySelector('.cm-lp-card')).toBeNull()
+    expect(view.dom.querySelector('.cm-lp-code-tabs')).not.toBeNull()
+    expect(view.contentDOM.textContent).not.toContain('bbb')
+    const outside = shape()
+
+    view.dispatch({ selection: EditorSelection.cursor(doc.indexOf('aaa2')) })
+    expect(shape()).toEqual(outside)
+
+    view.dispatch({ effects: setFocused.of(false) })
+    expect(shape()).toEqual(outside)
+  })
+
+  it('hides blank lines between code-group panels without merging the tab bar into the header', () => {
+    const doc = ['::: code-group', '', '```js [a.js]', 'aaa', '```', '', '```ts [b.ts]', 'bbb', '```', '', ':::', ''].join('\n')
+    const view = mount(doc, doc.indexOf('aaa'))
+    const lines = [...view.contentDOM.querySelectorAll('.cm-line')]
+    const tabs = lines.find((line) => line.querySelector('.cm-lp-code-tabs'))
+    const code = lines.find((line) => line.textContent === 'aaa')
+    expect(tabs).toBeDefined()
+    expect(code).not.toBe(tabs)
+    expect(code?.className).toContain('cm-lp-codeblock')
+    expect(view.contentDOM.textContent).not.toContain('bbb')
+  })
+
+  it('keeps a cursor coming from outside the code group out of the hidden panel', () => {
+    const doc = ['前文', '', '::: code-group', '```js [a.js]', 'aaa', '```', '```ts [b.ts]', 'bbb', '```', ':::', ''].join('\n')
+    const parent = document.createElement('div')
+    document.body.append(parent)
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc,
+        selection: EditorSelection.cursor(0),
+        extensions: [tnotesMarkdown(), codeGroupTabs, keepCursorOutOfHiddenCodeGroup, livePreviewField]
+      })
+    })
+    views.push(view)
+    view.dispatch({ selection: EditorSelection.cursor(doc.indexOf('bbb')) })
+    const head = view.state.selection.main.head
+    expect(head < doc.indexOf('```ts') || head > doc.indexOf('bbb') + 3).toBe(true)
+  })
+
+  it('numbers code lines and marks the highlighted ones from the fence meta', () => {
+    const doc = ['```js {2}', 'a', 'b', 'c', '```', ''].join('\n')
+    const view = mount(doc, doc.length)
+    const lines = [...view.contentDOM.querySelectorAll<HTMLElement>('.cm-line[data-code-line]')]
+    expect(lines.map((line) => line.dataset.line)).toEqual(['1', '2', '3'])
+    expect(lines.map((line) => line.classList.contains('cm-lp-code-highlighted'))).toEqual([false, true, false])
   })
 })

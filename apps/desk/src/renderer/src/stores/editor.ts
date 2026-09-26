@@ -209,6 +209,8 @@ export const useEditorStore = defineStore('editor', () => {
   const knowledgeSidebarCollapsed = ref(false)
   const navigatorSidebarCollapsed = ref(false)
   const expandedTocNodes = ref<Record<string, string[]>>({})
+  const pinnedKnowledgeBasesCollapsed = ref(false)
+  const pinnedNotesCollapsed = ref<Record<string, boolean>>({})
   const maxOpenTabCount = ref(10)
   const wrapTabs = ref(true)
   const defaultNotePageWidth = ref<NotePageWidth>('standard')
@@ -223,6 +225,8 @@ export const useEditorStore = defineStore('editor', () => {
     groupId: string
     anchor: PinnedSelectionAnchor
   } | null>(null)
+  /** 刚新建的笔记：对应标签页挂上后进入标题编辑并聚焦。 */
+  const titleEditNote = ref<{ knowledgeBaseId: string; noteUuid: string } | null>(null)
   let revealSequence = 0
   const knowledgeBaseEditors = ref<Record<string, KnowledgeBaseEditorSession>>({})
   const lastNoteByGroup = ref<Record<string, { noteUuid: string; noteTitle: string }>>({})
@@ -416,6 +420,8 @@ export const useEditorStore = defineStore('editor', () => {
       activeGroupId.value = empty.activeGroupId
       activeKnowledgeBaseId.value = null
       knowledgeBaseEditors.value = {}
+      pinnedKnowledgeBasesCollapsed.value = false
+      pinnedNotesCollapsed.value = {}
       return
     }
     const restoredEditors: Record<string, KnowledgeBaseEditorSession> = {}
@@ -448,6 +454,8 @@ export const useEditorStore = defineStore('editor', () => {
     knowledgeSidebarCollapsed.value = session.knowledgeSidebarCollapsed
     navigatorSidebarCollapsed.value = session.navigatorSidebarCollapsed
     expandedTocNodes.value = session.expandedTocNodes
+    pinnedKnowledgeBasesCollapsed.value = session.pinnedKnowledgeBasesCollapsed ?? false
+    pinnedNotesCollapsed.value = session.pinnedNotesCollapsed ?? {}
     trimToLimit()
   }
 
@@ -471,6 +479,20 @@ export const useEditorStore = defineStore('editor', () => {
     knowledgeBaseEditors.value = {}
     lastNoteByGroup.value = {}
     webStates.value = {}
+    pinnedKnowledgeBasesCollapsed.value = false
+    pinnedNotesCollapsed.value = {}
+  }
+
+  function togglePinnedKnowledgeBasesCollapsed(): void {
+    pinnedKnowledgeBasesCollapsed.value = !pinnedKnowledgeBasesCollapsed.value
+  }
+
+  function togglePinnedNotesCollapsed(knowledgeBaseId: string): void {
+    const collapsed = pinnedNotesCollapsed.value[knowledgeBaseId] === true
+    pinnedNotesCollapsed.value = {
+      ...pinnedNotesCollapsed.value,
+      [knowledgeBaseId]: !collapsed
+    }
   }
 
   /** 请求某个标签页把固定上下文的位置重新选出来（配合状态条的「查看」） */
@@ -671,6 +693,19 @@ export const useEditorStore = defineStore('editor', () => {
     }
   }
 
+  function requestTitleEdit(knowledgeBaseId: string, noteUuid: string): void {
+    titleEditNote.value = { knowledgeBaseId, noteUuid }
+  }
+
+  function consumeTitleEdit(knowledgeBaseId: string, noteUuid: string): boolean {
+    const pending = titleEditNote.value
+    if (!pending || pending.knowledgeBaseId !== knowledgeBaseId || pending.noteUuid !== noteUuid) {
+      return false
+    }
+    titleEditNote.value = null
+    return true
+  }
+
   function openNote(
     knowledgeBase: KnowledgeBaseDescriptor,
     noteUuid: string,
@@ -732,7 +767,7 @@ export const useEditorStore = defineStore('editor', () => {
       )
       if (openBehavior === 'preview' && previewTab && activeGroup.value) {
         // Reuse the preview tab id so Vue keeps the pane mounted across note swaps
-        // (EditorGroup keys panes by tab.id). Milkdown still remounts via noteUuid/content.
+        // (EditorGroup keys panes by tab.id). The note editor inside is keyed by note and remounts.
         const reused: NoteEditorTab = { ...tab, id: previewTab.id }
         const groupId = activeGroup.value.id
         layout.value = updateGroup(layout.value, groupId, (group) => ({
@@ -1141,6 +1176,41 @@ export const useEditorStore = defineStore('editor', () => {
     if (storedChanged) knowledgeBaseEditors.value = { ...knowledgeBaseEditors.value }
   }
 
+  /** 笔记编号改了之后，历史标签和仍开着的画布要跟着新编号走。 */
+  function noteIndexChanged(
+    knowledgeBaseId: string,
+    fromIndex: string,
+    toIndex: string,
+    assetRenames: Array<{ from: string; to: string }>
+  ): void {
+    const updateLayout = (editorLayout: EditorLayoutNode): boolean => {
+      let changed = false
+      for (const group of listGroups(editorLayout)) {
+        for (const tab of group.tabs) {
+          if (
+            tab.type === 'note-history' &&
+            tab.knowledgeBaseId === knowledgeBaseId &&
+            tab.noteIndex === fromIndex
+          ) {
+            tab.noteIndex = toIndex
+            changed = true
+          }
+        }
+      }
+      return changed
+    }
+    if (updateLayout(layout.value)) layout.value = { ...layout.value }
+    let storedChanged = false
+    for (const [storedKnowledgeBaseId, session] of Object.entries(knowledgeBaseEditors.value)) {
+      if (storedKnowledgeBaseId === activeKnowledgeBaseId.value) continue
+      if (updateLayout(session.layout)) storedChanged = true
+    }
+    if (storedChanged) knowledgeBaseEditors.value = { ...knowledgeBaseEditors.value }
+    for (const asset of assetRenames) {
+      repathExcalidrawTab(knowledgeBaseId, asset.from, asset.to)
+    }
+  }
+
   function setKbSettingsDirty(tabId: string, dirty: boolean): void {
     const located = findTab(layout.value, tabId)
     if (located?.tab.type !== 'kb-settings') return
@@ -1387,7 +1457,9 @@ export const useEditorStore = defineStore('editor', () => {
       navigatorSidebarWidth: navigatorSidebarWidth.value,
       knowledgeSidebarCollapsed: knowledgeSidebarCollapsed.value,
       navigatorSidebarCollapsed: navigatorSidebarCollapsed.value,
-      expandedTocNodes: serializedExpandedNodes
+      expandedTocNodes: serializedExpandedNodes,
+      pinnedKnowledgeBasesCollapsed: pinnedKnowledgeBasesCollapsed.value,
+      pinnedNotesCollapsed: { ...pinnedNotesCollapsed.value }
     }
   }
 
@@ -1407,6 +1479,10 @@ export const useEditorStore = defineStore('editor', () => {
     knowledgeSidebarCollapsed,
     navigatorSidebarCollapsed,
     expandedTocNodes,
+    pinnedKnowledgeBasesCollapsed,
+    pinnedNotesCollapsed,
+    togglePinnedKnowledgeBasesCollapsed,
+    togglePinnedNotesCollapsed,
     maxOpenTabCount,
     wrapTabs,
     defaultNotePageWidth,
@@ -1423,6 +1499,9 @@ export const useEditorStore = defineStore('editor', () => {
     retainKnowledgeBases,
     activate,
     cycleActiveTab,
+    titleEditNote,
+    requestTitleEdit,
+    consumeTitleEdit,
     openNote,
     openWeb,
     openKbSettings,
@@ -1437,6 +1516,7 @@ export const useEditorStore = defineStore('editor', () => {
     textFileTabIdFor,
     updateExcalidrawTabMeta,
     repathExcalidrawTab,
+    noteIndexChanged,
     setKbSettingsDirty,
     updateKbSettingsTabMeta,
     startPreview,

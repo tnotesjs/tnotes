@@ -18,6 +18,7 @@ import {
 } from '../livePreview/frontmatterFields'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
+import { useAgentStore } from '../agent/agentStore'
 
 import { registerHeadingFoldRunner } from '../commands/headingFoldBridge'
 import { registerViewToggleRunner } from '../commands/viewToggleBridge'
@@ -184,6 +185,21 @@ watch(key, () => {
   editingTitle.value = false
 })
 
+watch(
+  () =>
+    props.active &&
+    editor.titleEditNote?.knowledgeBaseId === props.tab.knowledgeBaseId &&
+    editor.titleEditNote?.noteUuid === props.tab.noteUuid &&
+    Boolean(session.value?.document) &&
+    !session.value?.document.readOnly,
+  async (shouldEdit) => {
+    if (!shouldEdit || renaming.value) return
+    if (!editor.consumeTitleEdit(props.tab.knowledgeBaseId, props.tab.noteUuid)) return
+    await editTitle()
+  },
+  { flush: 'post', immediate: true }
+)
+
 /* ------------------------------------------------------------------ */
 /* 本机 MCP：选区快照上报（渲染端是快照的唯一来源）                     */
 /* ------------------------------------------------------------------ */
@@ -224,6 +240,16 @@ const selectionIdentity = computed<SelectionReportIdentity | null>(() => {
 function handleEditorSelection(payload: EditorSelectionPayload): void {
   const identity = selectionIdentity.value
   if (!identity || !isActiveEditor.value) return
+  useAgentStore().setSelection(
+    payload.empty
+      ? null
+      : {
+          knowledgeBaseId: identity.knowledgeBase.id,
+          noteUuid: identity.note.id,
+          text: payload.selectedText,
+          range: payload.range
+        }
+  )
   if (payload.empty) {
     clearSelection(selectionOwner.value, identity.note.id)
     return
@@ -898,6 +924,7 @@ function openLink(url: string): void {
     <div class="note-body">
       <div class="note-editor-area">
         <LivePreviewEditor
+          :key="key"
           ref="markdownEditor"
           class="editor-surface"
           :content="session.content"

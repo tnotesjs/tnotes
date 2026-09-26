@@ -178,7 +178,9 @@ export const workspaceSessionSchema = z.object({
   navigatorSidebarWidth: z.number().min(160).max(700),
   knowledgeSidebarCollapsed: z.boolean(),
   navigatorSidebarCollapsed: z.boolean(),
-  expandedTocNodes: z.record(z.string(), z.array(z.string()))
+  expandedTocNodes: z.record(z.string(), z.array(z.string())),
+  pinnedKnowledgeBasesCollapsed: z.boolean().default(false),
+  pinnedNotesCollapsed: z.record(z.string(), z.boolean()).default({})
 })
 
 export const webBoundsSchema = z.object({
@@ -232,10 +234,21 @@ export const noteCreateSchema = z.object({
   expectedSnapshotRevision: z.string().min(1).optional()
 })
 
+export const noteCreateManySchema = noteCreateSchema.extend({
+  count: z.number().int().min(1).max(999)
+})
+
 export const noteRenameSchema = z.object({
   knowledgeBaseId: z.string().min(1),
   noteUuid: z.string().min(1),
   title: z.string().min(1),
+  expectedRevision: z.string().min(1)
+})
+
+export const noteReindexSchema = z.object({
+  knowledgeBaseId: z.string().min(1),
+  noteUuid: z.string().min(1),
+  index: z.string().regex(/^\d{1,4}$/),
   expectedRevision: z.string().min(1)
 })
 
@@ -370,9 +383,17 @@ export const tocRenameGroupSchema = z.object({
   expectedSnapshotRevision: z.string().min(1)
 })
 
+export const deleteTargetSchema = z.union([
+  entryRefSchema,
+  z.object({
+    type: z.literal('notes'),
+    noteUuids: z.array(z.string().min(1)).min(1).max(9999)
+  })
+])
+
 export const tocDeleteSchema = z.object({
   knowledgeBaseId: z.string().min(1),
-  entry: entryRefSchema,
+  entry: deleteTargetSchema,
   expectedSnapshotRevision: z.string().min(1)
 })
 

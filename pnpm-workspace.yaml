@@ -34,6 +34,9 @@ overrides:
   # 行内公式（$...$）会抛 "state.compilePattern is not a function" 并中断编辑器创建。
   # 统一到 2.1.0（仍在 ^2.0.0 范围内，兼容）。
   'mdast-util-to-markdown@^2.0.0': 2.1.0
+  # @cursor/sdk 声明 zod ^3.25.0，pnpm 全新解析会选出 3.25.0：这个版本装下来只有
+  # src、没有 dist，SDK 在主进程里 import 时报 Cannot find module .../zod/dist/esm/index.js。
+  'zod@^3.25.0': 3.25.76
 
 patchedDependencies:
   '@milkdown/ctx@7.22.1': patches/@milkdown__ctx@7.22.1.patch

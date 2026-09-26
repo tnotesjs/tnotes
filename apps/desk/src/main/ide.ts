@@ -130,9 +130,20 @@ export function showIdeContextMenu(
     onOpenSettings?: () => void
     onOpenAssets?: () => void
     onOpenTerminal?: () => void
+    onTogglePin?: () => void
+    pinned?: boolean
   }
 ): void {
   const template: MenuItemConstructorOptions[] = []
+  if (options?.onTogglePin) {
+    template.push(
+      {
+        label: options.pinned ? '取消置顶' : '置顶',
+        click: () => options.onTogglePin?.()
+      },
+      { type: 'separator' }
+    )
+  }
   if (options?.onOpenSettings || options?.onOpenAssets) {
     if (options.onOpenAssets) {
       template.push({

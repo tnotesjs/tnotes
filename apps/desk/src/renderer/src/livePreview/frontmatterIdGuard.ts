@@ -1,5 +1,11 @@
-import { EditorState, type ChangeSpec, type Extension } from '@codemirror/state'
+import { Annotation, EditorState, type ChangeSpec, type Extension } from '@codemirror/state'
 import { Decoration, EditorView, type DecorationSet } from '@codemirror/view'
+
+/**
+ * 把会话里的内容同步进编辑器（磁盘重载等）。会话才是真相源：
+ * 这类修改原样放行，编辑器也不再回抛 change。
+ */
+export const externalSync = Annotation.define<boolean>()
 
 /**
  * 保护 frontmatter 里的 `id` 行，以及包住它的 `---`。
@@ -75,7 +81,7 @@ function pointInside(pos: number, ranges: number[]): boolean {
 export function frontmatterIdGuard(): Extension {
   return [
     EditorState.transactionFilter.of((tr) => {
-      if (!tr.docChanged) return tr
+      if (!tr.docChanged || tr.annotation(externalSync)) return tr
       const ranges = frontmatterGuardRanges(tr.startState.doc)
       if (!ranges) return tr
       const changes: ChangeSpec[] = []

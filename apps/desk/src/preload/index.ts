@@ -32,9 +32,15 @@ import type {
   HistorySnapshotDto,
   ImageSettingsValidateResult,
   ImageOptimizePreviewResult,
-  AgentApplyEditRequest,
-  AgentApplyEditResult,
+  AgentEvent,
+  AgentAttachmentSaveRequest,
+  AgentImageRef,
+  AgentListedModel,
+  AgentProviderKind,
   AgentKeyStatus,
+  AgentStoredChat,
+  AgentToolCallRequest,
+  AgentToolResult,
   AgentTurnRequest,
   AgentTurnResult,
   ImageTokenStatus,
@@ -44,6 +50,7 @@ import type {
   BootstrapPayload,
   DeleteCommitResultDto,
   DeletePreviewDto,
+  DeleteTargetDto,
   DeskApi,
   DeskResult,
   ExternalNoteChangeEvent,
@@ -63,11 +70,14 @@ import type {
   AssetPrepareApplyEvent,
   AssetAppliedEvent,
   AssetApplySettledEvent,
+  NoteCreateManyRequest,
+  NoteCreateManyResult,
   NoteCreateRequest,
   NoteDocumentDto,
   NotesTableResolveRequest,
   NotesTableResolveResult,
   NoteMutationDto,
+  NoteReindexRequest,
   NoteRenameRequest,
   NoteSaveRequest,
   NoteUpdateConfigRequest,
@@ -94,7 +104,6 @@ import type {
   NavigatorSidebarMenuRequest,
   TocCreateGroupRequest,
   TocDeleteRequest,
-  TocEntryRefDto,
   TocMoveRequest,
   TocRenameGroupRequest,
   UpdateStatusDto,
@@ -193,6 +202,12 @@ const api: DeskApi = {
         callback(knowledgeBaseId)
       ipcRenderer.on(IPC_CHANNELS.kbOpenAssetsRequested, listener)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.kbOpenAssetsRequested, listener)
+    },
+    onPinToggleRequested: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, knowledgeBaseId: string): void =>
+        callback(knowledgeBaseId)
+      ipcRenderer.on(IPC_CHANNELS.kbPinToggleRequested, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.kbPinToggleRequested, listener)
     }
   },
   kbFiles: {
@@ -308,8 +323,12 @@ const api: DeskApi = {
     save: (request: NoteSaveRequest) => invoke<NoteMutationDto>(IPC_CHANNELS.noteSave, request),
     create: (request: NoteCreateRequest) =>
       invoke<NoteMutationDto>(IPC_CHANNELS.noteCreate, request),
+    createMany: (request: NoteCreateManyRequest) =>
+      invoke<NoteCreateManyResult>(IPC_CHANNELS.noteCreateMany, request),
     rename: (request: NoteRenameRequest) =>
       invoke<NoteMutationDto>(IPC_CHANNELS.noteRename, request),
+    reindex: (request: NoteReindexRequest) =>
+      invoke<NoteMutationDto>(IPC_CHANNELS.noteReindex, request),
     updateConfig: (request: NoteUpdateConfigRequest) =>
       invoke<NoteMutationDto>(IPC_CHANNELS.noteUpdateConfig, request),
     copyPath: (knowledgeBaseId, noteUuid) =>
@@ -336,6 +355,7 @@ const api: DeskApi = {
     list: () => invoke<GitRepositoryStateDto[]>(IPC_CHANNELS.gitList),
     refresh: (knowledgeBaseId) =>
       invoke<GitRepositoryStateDto[]>(IPC_CHANNELS.gitRefresh, knowledgeBaseId),
+    setFocus: (knowledgeBaseId) => invoke<null>(IPC_CHANNELS.gitFocus, knowledgeBaseId),
     fetch: (knowledgeBaseId, taskId, run) =>
       invoke<GitOperationResult>(IPC_CHANNELS.gitFetch, { knowledgeBaseId, taskId, run }),
     pull: (knowledgeBaseId, taskId, run) =>
@@ -367,7 +387,7 @@ const api: DeskApi = {
       invoke<KnowledgeBaseDetail>(IPC_CHANNELS.tocCreateGroup, request),
     renameGroup: (request: TocRenameGroupRequest) =>
       invoke<KnowledgeBaseDetail>(IPC_CHANNELS.tocRenameGroup, request),
-    previewDelete: (knowledgeBaseId, entry: TocEntryRefDto) =>
+    previewDelete: (knowledgeBaseId, entry: DeleteTargetDto) =>
       invoke<DeletePreviewDto>(IPC_CHANNELS.tocPreviewDelete, {
         knowledgeBaseId,
         entry
@@ -433,18 +453,35 @@ const api: DeskApi = {
   },
   agent: {
     keyStatus: () => invoke<AgentKeyStatus>(IPC_CHANNELS.agentKeyStatus),
-    updateKey: (request: { apiKey?: string; clear: boolean }) =>
+    updateKey: (request: { providerId: string; apiKey?: string; clear: boolean }) =>
       invoke<AgentKeyStatus>(IPC_CHANNELS.agentKeyUpdate, request),
+    cursorLogin: (request: { providerId: string }) =>
+      invoke<{ status: AgentKeyStatus; email: string }>(IPC_CHANNELS.agentCursorLogin, request),
+    listModels: (request: { providerId: string; kind?: AgentProviderKind; baseUrl?: string }) =>
+      invoke<AgentListedModel[]>(IPC_CHANNELS.agentListModels, request),
+    saveAttachment: (request: AgentAttachmentSaveRequest) =>
+      invoke<AgentImageRef>(IPC_CHANNELS.agentAttachmentSave, request),
+    readAttachment: (request: { id: string }) => invoke<string>(IPC_CHANNELS.agentAttachmentRead, request),
     turn: (request: AgentTurnRequest) => invoke<AgentTurnResult>(IPC_CHANNELS.agentTurn, request),
     cancel: () => invoke<void>(IPC_CHANNELS.agentCancel),
-    onApplyEdit: (callback: (request: AgentApplyEditRequest) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, request: AgentApplyEditRequest): void =>
-        callback(request)
-      ipcRenderer.on(IPC_CHANNELS.agentApplyEdit, listener)
-      return () => ipcRenderer.removeListener(IPC_CHANNELS.agentApplyEdit, listener)
+    onEvent: (callback: (event: AgentEvent) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, event: AgentEvent): void => callback(event)
+      ipcRenderer.on(IPC_CHANNELS.agentEvent, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.agentEvent, listener)
     },
-    applyResult: (result: AgentApplyEditResult) =>
-      invoke<void>(IPC_CHANNELS.agentApplyResult, result)
+    onToolCall: (callback: (request: AgentToolCallRequest) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, request: AgentToolCallRequest): void =>
+        callback(request)
+      ipcRenderer.on(IPC_CHANNELS.agentToolCall, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.agentToolCall, listener)
+    },
+    toolResult: (result: AgentToolResult) => invoke<void>(IPC_CHANNELS.agentToolResult, result),
+    listChats: (workspacePath: string) =>
+      invoke<AgentStoredChat[]>(IPC_CHANNELS.agentChatsList, { workspacePath }),
+    saveChat: (request: { workspacePath: string; chat: AgentStoredChat }) =>
+      invoke<void>(IPC_CHANNELS.agentChatsSave, request),
+    deleteChat: (request: { workspacePath: string; chatId: string }) =>
+      invoke<void>(IPC_CHANNELS.agentChatsDelete, request)
   },
   mcp: {
     status: () => invoke<McpServerStatusDto>(IPC_CHANNELS.mcpStatus),

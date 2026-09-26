@@ -33,7 +33,6 @@ const settings: AppSettings = {
     showNoteStatus: true,
     changesCollapsedByDefault: true
   },
-  editor: { selectionToolbar: false },
   imageUpload: {
     defaultTarget: 'local',
     github: {
@@ -51,6 +50,8 @@ const settings: AppSettings = {
     }
   },
   updates: { autoCheck: true },
+  pinnedKnowledgeBaseIds: [],
+  pinnedNoteUuids: {},
   hiddenKnowledgeBases: [],
   knowledgeBases: {}
 }
@@ -161,6 +162,17 @@ describe('SettingsPanel live app zoom', () => {
     expect(store.settings?.appZoomPercent).toBe(100)
     expect(input.element.value).toBe('100')
     wrapper.unmount()
+  })
+})
+
+describe('SettingsPanel 编辑器', () => {
+  it('不再提供已失效的选区浮动工具条', () => {
+    const wrapper = mount(SettingsPanel)
+    const editorNav = wrapper
+      .findAll('button.nav-item')
+      .some((item) => item.text().includes('编辑器'))
+    expect(editorNav).toBe(false)
+    expect(wrapper.text()).not.toContain('选区浮动工具条')
   })
 })
 

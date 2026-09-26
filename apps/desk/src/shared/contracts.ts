@@ -58,7 +58,9 @@ export const IPC_CHANNELS = {
   noteResolveTable: 'note:resolve-table',
   noteSave: 'note:save',
   noteCreate: 'note:create',
+  noteCreateMany: 'note:create-many',
   noteRename: 'note:rename',
+  noteReindex: 'note:reindex',
   noteUpdateConfig: 'note:update-config',
   noteCopyPath: 'note:copy-path',
   noteRevealInFileManager: 'note:reveal-in-file-manager',
@@ -74,11 +76,13 @@ export const IPC_CHANNELS = {
   kbFilesRead: 'kb-files:read',
   gitList: 'git:list',
   gitRefresh: 'git:refresh',
+  gitFocus: 'git:focus',
   gitFetch: 'git:fetch',
   gitPull: 'git:pull',
   gitPublish: 'git:publish',
   ideShowKnowledgeBaseMenu: 'ide:show-knowledge-base-menu',
   kbOpenSettingsRequested: 'kb:open-settings-requested',
+  kbPinToggleRequested: 'kb:pin-toggle-requested',
   ideShowNoteMenu: 'ide:show-note-menu',
   ideShowFileMenu: 'ide:show-file-menu',
   ideOpenKnowledgeBase: 'ide:open-knowledge-base',
@@ -171,10 +175,18 @@ export const IPC_CHANNELS = {
   mcpChanged: 'mcp:changed',
   agentKeyStatus: 'agent:key-status',
   agentKeyUpdate: 'agent:key-update',
+  agentCursorLogin: 'agent:cursor-login',
+  agentListModels: 'agent:list-models',
   agentTurn: 'agent:turn',
   agentCancel: 'agent:cancel',
-  agentApplyEdit: 'agent:apply-edit',
-  agentApplyResult: 'agent:apply-result'
+  agentEvent: 'agent:event',
+  agentToolCall: 'agent:tool-call',
+  agentToolResult: 'agent:tool-result',
+  agentChatsList: 'agent:chats-list',
+  agentChatsSave: 'agent:chats-save',
+  agentChatsDelete: 'agent:chats-delete',
+  agentAttachmentSave: 'agent:attachment-save',
+  agentAttachmentRead: 'agent:attachment-read'
 } as const
 
 export interface DeskError {
@@ -486,6 +498,7 @@ export type NoteTocDisplay = 'hidden' | 'collapsed' | 'expanded'
 export type TabCloseChoice = 'save' | 'discard' | 'cancel'
 export type ContextMenuAction =
   | 'close'
+  | 'close-others'
   | 'close-saved'
   | 'close-all'
   | 'close-web'
@@ -493,17 +506,20 @@ export type ContextMenuAction =
   | 'reveal-file'
   | 'reveal-toc'
   | 'toggle-pin'
+  | 'toggle-toc-pin'
   | 'open-ide'
   | 'open-split'
   | 'show-history'
   | 'show-note-assets'
   | 'rename'
+  | 'reindex'
   | 'toggle-done'
   | 'add-before'
   | 'add-after'
   | 'request-delete'
+  | 'add-to-agent'
 export type ContextMenuRequest =
-  | { kind: 'note'; pinned: boolean; completed: boolean }
+  | { kind: 'note'; pinned: boolean; tocPinned: boolean; completed: boolean }
   | { kind: 'group' }
   | {
       kind: 'tab'
@@ -517,6 +533,8 @@ export type ContextMenuRequest =
         | 'note-history'
         | 'text-file'
       pinned: boolean
+      /** 同一组里是否还有可关闭的其它标签。缺省视为可以。 */
+      othersClosable?: boolean
     }
   | { kind: 'code-group-tab' }
 
@@ -532,10 +550,20 @@ export interface NavigatorSidebarMenuRequest {
   ready: boolean
   previewLabel: string
   buildBusy: boolean
+  noteCount: number
 }
 
 export type NavigatorSidebarMenuAction =
-  'create-note' | 'create-group' | 'preview' | 'build' | 'assets' | 'settings' | 'ide' | 'reveal'
+  | 'create-note'
+  | 'create-notes'
+  | 'create-group'
+  | 'batch-delete'
+  | 'preview'
+  | 'build'
+  | 'assets'
+  | 'settings'
+  | 'ide'
+  | 'reveal'
 
 export type TabShortcutCommand =
   | { type: 'activate-tab-by-number'; number: number; sourceTabId?: string }
@@ -696,10 +724,6 @@ export interface AppSettings {
     showNoteStatus: boolean
     changesCollapsedByDefault: boolean
   }
-  /** 编辑器行为。`selectionToolbar` 默认关闭（选中文字不弹浮动格式条）。 */
-  editor: {
-    selectionToolbar: boolean
-  }
   /**
    * 本机 MCP 选区上下文服务。
    *
@@ -711,17 +735,18 @@ export interface AppSettings {
     port: number
   }
   /**
-   * 内置 Agent。密钥不在这里，单独进系统凭据存储。
+   * 内置 Agent。密钥不在这里，按服务商单独进系统凭据存储。
    * `baseUrl` 是 OpenAI 兼容接口的根（末尾不要再加 `/chat/completions`）。
    */
-  agent: {
-    baseUrl: string
-    model: string
-  }
+  agent: AgentSettings
   imageUpload: ImageUploadSettings
   updates: {
     autoCheck: boolean
   }
+  /** 置顶知识库，新置顶的在前。只影响侧栏分组，不写进笔记文件。 */
+  pinnedKnowledgeBaseIds: string[]
+  /** 每个知识库里置顶的笔记 uuid，新置顶的在前。 */
+  pinnedNoteUuids: Record<string, string[]>
   hiddenKnowledgeBases: string[]
   knowledgeBases: Record<string, KnowledgeBaseSettings>
 }
@@ -1075,6 +1100,10 @@ export interface WorkspaceSession {
   knowledgeSidebarCollapsed: boolean
   navigatorSidebarCollapsed: boolean
   expandedTocNodes: Record<string, string[]>
+  /** 知识库列表的置顶分组是否收起。缺省展开。 */
+  pinnedKnowledgeBasesCollapsed: boolean
+  /** 每个知识库的笔记置顶分组是否收起。缺省展开。 */
+  pinnedNotesCollapsed: Record<string, boolean>
 }
 
 export interface WebBounds {
@@ -1361,10 +1390,34 @@ export interface NoteCreateRequest {
   expectedSnapshotRevision?: string
 }
 
+export interface NoteCreateManyRequest {
+  knowledgeBaseId: string
+  title: string
+  count: number
+  placement?: NoteCreateRequest['placement']
+  expectedSnapshotRevision?: string
+}
+
+export interface NoteCreateManyResult {
+  /** 这一批里排在最前面的那一篇，打开并进入标题编辑。 */
+  note: NoteDocumentDto
+  createdCount: number
+  knowledgeBase: KnowledgeBaseDetail
+  changedFiles: NoteMutationDto['changedFiles']
+}
+
 export interface NoteRenameRequest {
   knowledgeBaseId: string
   noteUuid: string
   title: string
+  expectedRevision: string
+}
+
+export interface NoteReindexRequest {
+  knowledgeBaseId: string
+  noteUuid: string
+  /** 0001–9999，允许不补零。 */
+  index: string
   expectedRevision: string
 }
 
@@ -1408,43 +1461,209 @@ export interface ImageTokenStatus {
   encryptionAvailable: boolean
 }
 
+export interface AgentModelConfig {
+  /** 请求里的 model 字段 */
+  id: string
+  /** 能看图：可以在消息里带图片 */
+  vision: boolean
+  /** 支持思考强度：请求里带 reasoning_effort */
+  reasoning: boolean
+}
+
+/** `openai`：OpenAI 兼容接口；`cursor`：用 Cursor SDK 跑 Cursor Agent，用量算在 Cursor 账户上。 */
+export type AgentProviderKind = 'openai' | 'cursor'
+
+export interface AgentProviderConfig {
+  id: string
+  name: string
+  /** 缺省为 `openai` */
+  kind?: AgentProviderKind
+  /** Cursor 服务商不用 */
+  baseUrl: string
+  models: AgentModelConfig[]
+}
+
+/** 服务商模型列表里的一项（只有 ID 和显示名，能力勾选仍由用户决定）。 */
+export interface AgentListedModel {
+  id: string
+  displayName: string
+}
+
+export interface AgentSettings {
+  providers: AgentProviderConfig[]
+  /** `providerId/modelId` */
+  defaultModel: string
+}
+
+export type AgentReasoningEffort = 'low' | 'medium' | 'high'
+
 export interface AgentKeyStatus {
-  configured: boolean
   encryptionAvailable: boolean
+  /** 服务商 id → 是否已保存密钥 */
+  providers: Record<string, boolean>
 }
 
 export interface AgentChatMessage {
   role: 'user' | 'assistant'
   content: string
+  /** 附件 id（userData/agent-attachments 下），只有用户消息有 */
+  images?: string[]
 }
 
+export type AgentMode = 'agent' | 'ask'
+
+/** 用户点名的笔记。content 为空表示太长没有附上，由模型自己分段读。 */
 export interface AgentNoteContext {
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  noteUuid: string
+  noteIndex: string
   title: string
   path: string
+  lines: number
   content: string
-  selection: string
+}
+
+export interface AgentSelectionContext {
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  noteUuid: string
+  noteIndex: string
+  title: string
+  startLine: number
+  endLine: number
+  text: string
+}
+
+export interface AgentOpenNote {
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  noteUuid: string
+  noteIndex: string
+  title: string
 }
 
 export interface AgentTurnRequest {
+  turnId: string
   messages: AgentChatMessage[]
-  note: AgentNoteContext | null
+  mode: AgentMode
+  /** 本轮的默认知识库：工具省略 kb 时用它，中途切换知识库也不变 */
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  /** 用户当前正在看的笔记，只作提示，不附全文 */
+  current: AgentOpenNote | null
+  notes: AgentNoteContext[]
+  selections: AgentSelectionContext[]
+  /** edit_note 省略 note 时改这一篇（只点名一篇或只附一篇的选区时才有） */
+  defaultNote: { knowledgeBaseId: string; noteUuid: string } | null
+  /** `providerId/modelId` */
+  modelRef: string
+  reasoningEffort: AgentReasoningEffort | ''
 }
 
 export interface AgentTurnResult {
   reply: string
   edits: number
+  truncated: boolean
 }
 
-export interface AgentApplyEditRequest {
+export type AgentEvent =
+  | { type: 'text'; turnId: string; delta: string }
+  | { type: 'reasoning'; turnId: string; delta: string }
+  | { type: 'tool-start'; turnId: string; id: string; name: string; args: Record<string, unknown> }
+  | { type: 'tool-end'; turnId: string; id: string; ok: boolean; summary: string }
+  | { type: 'done'; turnId: string; reply: string; edits: number; truncated: boolean }
+  | { type: 'error'; turnId: string; message: string }
+
+export interface AgentToolCallRequest {
+  turnId: string
   id: string
-  oldString: string
-  newString: string
+  name: string
+  args: Record<string, unknown>
 }
 
-export interface AgentApplyEditResult {
+export interface AgentToolResult {
   id: string
   ok: boolean
-  message: string
+  summary: string
+  detail: string
+}
+
+export interface AgentToolRow {
+  id: string
+  name: string
+  args: Record<string, unknown>
+  ok: boolean
+  summary: string
+  detail: string
+  noteUuid?: string
+  knowledgeBaseId?: string
+  /** 修改类工具的增删行数 */
+  added?: number
+  removed?: number
+  running?: boolean
+}
+
+/** 用户消息上带的上下文胶囊（点击能跳回去） */
+export interface AgentContextRef {
+  type: 'note' | 'selection'
+  knowledgeBaseId: string
+  knowledgeBaseName: string
+  noteUuid: string
+  title: string
+  label: string
+  startLine?: number
+  endLine?: number
+  from?: number
+  to?: number
+  /** 选区原文（最多 2000 字），内容挪了位置时用来重新定位 */
+  head?: string
+}
+
+export interface AgentImageRef {
+  id: string
+  width: number
+  height: number
+}
+
+export interface AgentMessagePart {
+  type: 'text' | 'reasoning' | 'tool'
+  text?: string
+  tool?: AgentToolRow
+}
+
+export interface AgentStoredMessage {
+  role: 'user' | 'assistant'
+  content: string
+  reasoning?: string
+  tools?: AgentToolRow[]
+  parts?: AgentMessagePart[]
+  /** 本轮带上的上下文，显示在用户消息上（旧对话只有文字标签） */
+  context?: string[]
+  refs?: AgentContextRef[]
+  images?: AgentImageRef[]
+  /** 思考用时（毫秒） */
+  thoughtMs?: number
+  status?: 'stopped' | 'truncated' | 'error'
+}
+
+export interface AgentStoredChat {
+  id: string
+  title: string
+  updatedAt: string
+  mode: AgentMode
+  modelRef?: string
+  reasoningEffort?: AgentReasoningEffort | ''
+  /** 最近一次发送时所在的知识库（对话按工作区存，只用来在历史里标注） */
+  knowledgeBaseId?: string
+  knowledgeBaseName?: string
+  messages: AgentStoredMessage[]
+}
+
+export interface AgentAttachmentSaveRequest {
+  data: Uint8Array
+  width: number
+  height: number
 }
 
 export interface ImageTokenUpdateRequest {
@@ -1553,6 +1772,11 @@ export type TocEntryRefDto =
   | { type: 'folder'; folderPath: string[] }
   | { type: 'line'; tocLineIndex: number }
 
+/** 单条目录项，或批量删除时勾中的笔记。 */
+export type DeleteTargetDto =
+  | TocEntryRefDto
+  | { type: 'notes'; noteUuids: string[] }
+
 export interface TocMoveRequest {
   knowledgeBaseId: string
   source: TocEntryRefDto
@@ -1577,7 +1801,7 @@ export interface TocRenameGroupRequest {
 
 export interface TocDeleteRequest {
   knowledgeBaseId: string
-  entry: TocEntryRefDto
+  entry: DeleteTargetDto
   expectedSnapshotRevision: string
 }
 
@@ -1696,7 +1920,7 @@ export interface KbTextFileDto {
 
 export interface DeletePreviewDto {
   knowledgeBaseId: string
-  entry: TocEntryRefDto
+  entry: DeleteTargetDto
   notes: Array<{
     noteUuid: string
     index: string
@@ -2146,6 +2370,8 @@ export interface DeskApi {
     onOpenSettingsRequested(callback: (knowledgeBaseId: string) => void): () => void
     /** main → renderer：右键菜单点了「资源」。 */
     onOpenAssetsRequested(callback: (knowledgeBaseId: string) => void): () => void
+    /** main → renderer：右键菜单点了「置顶 / 取消置顶」。 */
+    onPinToggleRequested(callback: (knowledgeBaseId: string) => void): () => void
   }
   kbFiles: {
     list(request: KbFilesListRequest): Promise<DeskResult<KbFilesListResultDto>>
@@ -2222,7 +2448,9 @@ export interface DeskApi {
     resolveTable(request: NotesTableResolveRequest): Promise<DeskResult<NotesTableResolveResult>>
     save(request: NoteSaveRequest): Promise<DeskResult<NoteMutationDto>>
     create(request: NoteCreateRequest): Promise<DeskResult<NoteMutationDto>>
+    createMany(request: NoteCreateManyRequest): Promise<DeskResult<NoteCreateManyResult>>
     rename(request: NoteRenameRequest): Promise<DeskResult<NoteMutationDto>>
+    reindex(request: NoteReindexRequest): Promise<DeskResult<NoteMutationDto>>
     updateConfig(request: NoteUpdateConfigRequest): Promise<DeskResult<NoteMutationDto>>
     copyPath(knowledgeBaseId: string, noteUuid: string): Promise<DeskResult<string>>
     revealInFileManager(knowledgeBaseId: string, noteUuid: string): Promise<DeskResult<void>>
@@ -2239,6 +2467,8 @@ export interface DeskApi {
   git: {
     list(): Promise<DeskResult<GitRepositoryStateDto[]>>
     refresh(knowledgeBaseId?: string): Promise<DeskResult<GitRepositoryStateDto[]>>
+    /** 告诉主进程当前在看哪个知识库：后台自动检查远端只针对它。 */
+    setFocus(knowledgeBaseId: string | null): Promise<DeskResult<null>>
     /**
      * 带 taskId 时由命令任务处理器执行：面板能拿到实时输出与取消能力。
      * 再带 `run` 时只认**那一轮**（推送带保存）：被取消或已被取代就收手，
@@ -2274,13 +2504,13 @@ export interface DeskApi {
     renameGroup(request: TocRenameGroupRequest): Promise<DeskResult<KnowledgeBaseDetail>>
     previewDelete(
       knowledgeBaseId: string,
-      entry: TocEntryRefDto
+      entry: DeleteTargetDto
     ): Promise<DeskResult<DeletePreviewDto>>
     delete(request: TocDeleteRequest): Promise<DeskResult<KnowledgeBaseDetail>>
     /** 删除前把该范围的当前版本提交一次（用户显式点按钮时才会发生） */
     commitBeforeDelete(request: {
       knowledgeBaseId: string
-      entry: TocEntryRefDto
+      entry: DeleteTargetDto
     }): Promise<DeskResult<DeleteCommitResultDto>>
   }
   session: {
@@ -2347,11 +2577,29 @@ export interface DeskApi {
   }
   agent: {
     keyStatus(): Promise<DeskResult<AgentKeyStatus>>
-    updateKey(request: { apiKey?: string; clear: boolean }): Promise<DeskResult<AgentKeyStatus>>
+    updateKey(request: { providerId: string; apiKey?: string; clear: boolean }): Promise<DeskResult<AgentKeyStatus>>
+    /** 浏览器登录 Cursor 账号，生成的 Key 存成这个服务商的密钥。 */
+    cursorLogin(request: { providerId: string }): Promise<DeskResult<{ status: AgentKeyStatus; email: string }>>
+    /**
+     * 用这个服务商已保存的密钥读取可用模型：Cursor 走 SDK，其他走 `{baseUrl}/models`。
+     * 传入设置草稿里的 kind / baseUrl，还没保存的改动也能用。
+     */
+    listModels(request: {
+      providerId: string
+      kind?: AgentProviderKind
+      baseUrl?: string
+    }): Promise<DeskResult<AgentListedModel[]>>
+    saveAttachment(request: AgentAttachmentSaveRequest): Promise<DeskResult<AgentImageRef>>
+    readAttachment(request: { id: string }): Promise<DeskResult<string>>
     turn(request: AgentTurnRequest): Promise<DeskResult<AgentTurnResult>>
     cancel(): Promise<DeskResult<void>>
-    onApplyEdit(callback: (request: AgentApplyEditRequest) => void): () => void
-    applyResult(result: AgentApplyEditResult): Promise<DeskResult<void>>
+    onEvent(callback: (event: AgentEvent) => void): () => void
+    onToolCall(callback: (request: AgentToolCallRequest) => void): () => void
+    toolResult(result: AgentToolResult): Promise<DeskResult<void>>
+    /** 对话按工作区存：切换知识库时对话还在 */
+    listChats(workspacePath: string): Promise<DeskResult<AgentStoredChat[]>>
+    saveChat(request: { workspacePath: string; chat: AgentStoredChat }): Promise<DeskResult<void>>
+    deleteChat(request: { workspacePath: string; chatId: string }): Promise<DeskResult<void>>
   }
   clipboard: {
     /**

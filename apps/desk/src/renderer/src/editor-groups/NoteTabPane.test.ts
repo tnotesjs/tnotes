@@ -214,6 +214,19 @@ describe('note header', () => {
     readOnly.wrapper.unmount()
   })
 
+  it('focuses and selects the title after the note is created', async () => {
+    const editor = useEditorStore()
+    editor.requestTitleEdit('kb-a', 'note-a')
+    const { wrapper } = setup()
+    await flushPromises()
+    const input = wrapper.get<HTMLInputElement>('input.note-title-input')
+    expect(input.element.value).toBe('概述')
+    expect(document.activeElement).toBe(input.element)
+    expect(input.element.selectionStart).toBe(0)
+    expect(input.element.selectionEnd).toBe(input.element.value.length)
+    wrapper.unmount()
+  })
+
   it('edits only the title and submits a trimmed name on blur', async () => {
     const { wrapper, rename } = setup()
     await wrapper.get('.note-title-button').trigger('click')
@@ -284,6 +297,32 @@ describe('note header', () => {
   it('keeps formatting visible but disabled for a read-only document', () => {
     const { wrapper } = setup(true)
     expect(wrapper.getComponent(FormatOverflowBar).props('disabled')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('预览标签换成另一篇笔记时重新挂载编辑器，不把旧笔记的文档改成新笔记', async () => {
+    const { wrapper, workspace } = setup()
+    const first = wrapper.findComponent({ name: 'LivePreviewEditor' })
+    expect(first.props('noteUuid')).toBe('note-a')
+    const firstElement = first.element
+
+    workspace.documents['kb-a:note-b'] = {
+      ...workspace.documents['kb-a:note-a']!,
+      document: {
+        ...workspace.documents['kb-a:note-a']!.document,
+        uuid: 'note-b',
+        index: '0002',
+        title: '另一篇',
+        content: '---\nid: note-b\n---\n'
+      },
+      content: '---\nid: note-b\n---\n'
+    }
+    await wrapper.setProps({ tab: { ...tab, noteUuid: 'note-b', title: '另一篇' } })
+
+    const second = wrapper.findComponent({ name: 'LivePreviewEditor' })
+    expect(second.props('noteUuid')).toBe('note-b')
+    expect(second.props('content')).toBe('---\nid: note-b\n---\n')
+    expect(second.element).not.toBe(firstElement)
     wrapper.unmount()
   })
 })

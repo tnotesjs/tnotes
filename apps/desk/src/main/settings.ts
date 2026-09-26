@@ -22,6 +22,7 @@ import {
 } from '../shared/headingNumbering'
 import { DEFAULT_MCP_PORT, type AppSettings, type KnowledgeBaseSettings } from '../shared/contracts'
 import { strengthFromLegacyOxipngLevel, strengthFromLegacyQuality } from './optimizeStrength'
+import { normalizeAgentSettings } from '../shared/agentModels'
 
 const knowledgeBaseSettingsSchema = z.object({
   hidden: z.boolean().optional()
@@ -92,13 +93,6 @@ const settingsSchema = z.object({
       showNoteStatus: true,
       changesCollapsedByDefault: true
     }),
-  // 选区浮动工具条（选中文字后弹出的格式条）。默认关闭：不打扰写作；老配置文件
-  // 没有这个分组，靠这里的分组级 `.default({...})` 补 false（见 loadSettings）。
-  editor: z
-    .object({
-      selectionToolbar: z.boolean().default(false)
-    })
-    .default({ selectionToolbar: false }),
   // 本机 MCP 服务：默认关闭；端口固定（占用即报错，不自动改端口）
   mcp: z
     .object({
@@ -106,12 +100,7 @@ const settingsSchema = z.object({
       port: z.number().int().min(1024).max(65535).default(DEFAULT_MCP_PORT)
     })
     .default({ enabled: false, port: DEFAULT_MCP_PORT }),
-  agent: z
-    .object({
-      baseUrl: z.string().trim().min(1).default('https://api.openai.com/v1'),
-      model: z.string().trim().min(1).default('gpt-4o-mini')
-    })
-    .default({ baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }),
+  agent: z.unknown().optional().transform(normalizeAgentSettings),
   imageUpload: z
     .object({
       defaultTarget: z.enum(['local', 'github']).default('local'),
@@ -192,6 +181,8 @@ const settingsSchema = z.object({
         outputFormat: 'keep'
       }
     }),
+  pinnedKnowledgeBaseIds: z.array(z.string()).default([]),
+  pinnedNoteUuids: z.record(z.string(), z.array(z.string())).default({}),
   hiddenKnowledgeBases: z.array(z.string().min(1)).default([]),
   updates: z
     .object({
@@ -215,6 +206,31 @@ function uniqueSorted(values: string[]): string[] {
   )
 }
 
+/** 置顶列表要保留用户排好的顺序，不能按字母重排。 */
+function uniqueInOrder(values: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const next: string[] = []
+  for (const value of values) {
+    const trimmed = value.trim()
+    if (!trimmed || seen.has(trimmed)) continue
+    seen.add(trimmed)
+    next.push(trimmed)
+  }
+  return next
+}
+
+function normalizePinnedNotes(input: Record<string, string[]>): Record<string, string[]> {
+  const next: Record<string, string[]> = {}
+  for (const [knowledgeBaseId, ids] of Object.entries(input)) {
+    const key = knowledgeBaseId.trim()
+    if (!key) continue
+    const pinned = uniqueInOrder(ids)
+    if (pinned.length === 0) continue
+    next[key] = pinned
+  }
+  return next
+}
+
 function normalizeKnowledgeBaseSettings(
   input: Record<string, KnowledgeBaseSettings>
 ): Record<string, KnowledgeBaseSettings> {
@@ -228,6 +244,8 @@ function normalizeKnowledgeBaseSettings(
 function finalize(parsed: AppSettings): AppSettings {
   return {
     ...parsed,
+    pinnedKnowledgeBaseIds: uniqueInOrder(parsed.pinnedKnowledgeBaseIds),
+    pinnedNoteUuids: normalizePinnedNotes(parsed.pinnedNoteUuids),
     hiddenKnowledgeBases: uniqueSorted(parsed.hiddenKnowledgeBases),
     knowledgeBases: normalizeKnowledgeBaseSettings(parsed.knowledgeBases)
   }
@@ -358,7 +376,6 @@ export function saveSettings(next: Partial<AppSettings>): AppSettings {
     git: { ...current.git, ...next.git },
     tabs: { ...current.tabs, ...next.tabs },
     bottomPanel: { ...current.bottomPanel, ...next.bottomPanel },
-    editor: { ...current.editor, ...next.editor },
     imageUpload: {
       ...current.imageUpload,
       ...next.imageUpload,

@@ -178,6 +178,8 @@ function createWindow(): BrowserWindow {
   window.on('close', (event) => {
     closeGuard.intercept(event)
   })
+  window.on('focus', () => gitManager.setWindowActive(true))
+  window.on('blur', () => gitManager.setWindowActive(false))
   window.on('closed', () => {
     unregisterWindowGuard(window)
     if (mainWindow === window) mainWindow = null

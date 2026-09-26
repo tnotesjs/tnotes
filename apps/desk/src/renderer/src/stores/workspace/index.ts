@@ -75,6 +75,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   let unsubscribeGit: (() => void) | null = null
   let unsubscribeKbSettings: (() => void) | null = null
   let unsubscribeKbAssets: (() => void) | null = null
+  let unsubscribeKbPin: (() => void) | null = null
   let unsubscribeAssetGate: (() => void) | null = null
   let unsubscribeAssetPrepare: (() => void) | null = null
   let unsubscribeAssetApplied: (() => void) | null = null
@@ -211,7 +212,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     await saveCurrentNoteDocument()
   }
 
-  const { requestCloseTab, requestCloseTabs, isTabDirty, closingTabs, prepareToQuit } =
+  const { requestCloseTab, requestCloseTabs, requestCloseOtherTabs, isTabDirty, closingTabs, prepareToQuit } =
     createTabClosing({
       editor,
       error,
@@ -287,11 +288,19 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (session) await reloadDocument(key)
   }
 
-  const { updateSettings, applySettings, setAppZoom, adjustAppZoom, zoomFeedbackSequence } =
-    createSettings({
-      editor,
-      settings
-    })
+  const {
+    updateSettings,
+    applySettings,
+    setAppZoom,
+    adjustAppZoom,
+    zoomFeedbackSequence,
+    togglePinnedKnowledgeBase,
+    togglePinnedNote,
+    pinNote
+  } = createSettings({
+    editor,
+    settings
+  })
 
   const { searchNotes } = createSearch({
     searchResults,
@@ -323,12 +332,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   const {
     createNote,
+    createNotes,
     createTocGroup,
     renameNote,
+    reindexNote,
     renameTocNode,
     moveTocNode,
     toggleDone,
     previewDeleteNode,
+    previewDeleteNotes,
     commitDeleteScope,
     deleteNode
   } = createToc({
@@ -379,6 +391,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
           (item) => item.id === knowledgeBaseId
         )
         if (descriptor) editor.openKbAssets(descriptor)
+      })
+      unsubscribeKbPin = window.desk.knowledgeBases.onPinToggleRequested((knowledgeBaseId) => {
+        togglePinnedKnowledgeBase(knowledgeBaseId)
       })
       editor.restore(
         payload.session,
@@ -476,6 +491,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     unsubscribeKbSettings = null
     unsubscribeKbAssets?.()
     unsubscribeKbAssets = null
+    unsubscribeKbPin?.()
+    unsubscribeKbPin = null
     unsubscribeAssetGate?.()
     unsubscribeAssetGate = null
     unsubscribeAssetPrepare?.()
@@ -704,6 +721,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     saveCurrentDocument,
     requestCloseTab,
     requestCloseTabs,
+    requestCloseOtherTabs,
     prepareToQuit,
     isTabDirty,
     closingTabs,
@@ -714,6 +732,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     writeLocalAttachment,
     uploadImage,
     updateSettings,
+    togglePinnedKnowledgeBase,
+    togglePinnedNote,
+    pinNote,
     setAppZoom,
     adjustAppZoom,
     zoomFeedbackSequence,
@@ -725,12 +746,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     acceptRecovery: acceptAnyRecovery,
     discardRecovery: discardAnyRecovery,
     createNote,
+    createNotes,
     createTocGroup,
     renameNote,
+    reindexNote,
     renameTocNode,
     moveTocNode,
     toggleDone,
     previewDeleteNode,
+    previewDeleteNotes,
     commitDeleteScope,
     deleteNode,
     ensureDocument,

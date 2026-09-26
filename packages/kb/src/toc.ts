@@ -266,6 +266,41 @@ export function removeSubtree(
   return { removed, lines: result }
 }
 
+function liftIndent(line: string, levels: number): string {
+  if (levels <= 0) return line
+  const width = line.length - line.trimStart().length
+  return line.slice(Math.min(levels * TOC_INDENT_SPACES, width))
+}
+
+/**
+ * Drop the selected note lines. Notes and groups that were nested under a
+ * removed note move up one level per removed ancestor. Group lines themselves
+ * are never removed. Blank lines do not end a subtree.
+ */
+export function removeSelectedNoteLines(lines: string[], indexes: ReadonlySet<string>): string[] {
+  const removedIndents: number[] = []
+  const result: string[] = []
+  for (const line of lines) {
+    const parsed = parseTocLine(line)
+    if (parsed.kind === 'unknown') {
+      result.push(line.trim() === '' ? line : liftIndent(line, removedIndents.length))
+      continue
+    }
+    while (
+      removedIndents.length > 0 &&
+      parsed.indentLevel <= removedIndents[removedIndents.length - 1]!
+    ) {
+      removedIndents.pop()
+    }
+    if (parsed.kind === 'note' && parsed.noteIndex && indexes.has(parsed.noteIndex)) {
+      removedIndents.push(parsed.indentLevel)
+      continue
+    }
+    result.push(liftIndent(line, removedIndents.length))
+  }
+  return result
+}
+
 /** Move a subtree before/after/inside another entry. */
 export function moveSubtree(
   lines: string[],
@@ -315,6 +350,15 @@ export function setNoteTitleLine(lines: string[], noteIndex: string, title: stri
   const parsed = parseTocLine(lines[lineIndex])
   const result = [...lines]
   result[lineIndex] = buildNoteLine(parsed.noteIndex!, title, parsed.done, parsed.indentLevel)
+  return result
+}
+
+/** Rewrite a note line's index, keeping its title, checkbox and indent. */
+export function setNoteIndexLine(lines: string[], noteIndex: string, nextIndex: string): string[] {
+  const lineIndex = findNoteLineIndex(lines, noteIndex)
+  const parsed = parseTocLine(lines[lineIndex])
+  const result = [...lines]
+  result[lineIndex] = buildNoteLine(nextIndex, parsed.title ?? '', parsed.done, parsed.indentLevel)
   return result
 }
 

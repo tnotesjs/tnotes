@@ -584,6 +584,37 @@
   padding-bottom: 4px;
 }
 
+/* 行号画在左内边距里；点这块区域切换行高亮（见 codeLines.ts，按 padding-left 判定）。 */
+.live-editor .cm-lp-visual .cm-lp-codeblock.cm-lp-code-line[data-line] {
+  position: relative;
+  padding-left: 52px;
+}
+
+.live-editor .cm-lp-visual .cm-lp-code-line[data-line]::before {
+  content: attr(data-line);
+  position: absolute;
+  left: 0;
+  width: 36px;
+  color: var(--tn-c-text-3, var(--tn-c-text-2));
+  opacity: 0.7;
+  text-align: right;
+  cursor: pointer;
+  user-select: none;
+}
+
+.live-editor .cm-lp-visual .cm-lp-code-line[data-line]:hover::before {
+  opacity: 1;
+}
+
+.live-editor .cm-lp-visual .cm-lp-codeblock.cm-lp-code-highlighted {
+  background-image: linear-gradient(var(--tn-c-highlight), var(--tn-c-highlight));
+}
+
+.live-editor .cm-lp-visual .cm-lp-code-line.cm-lp-code-highlighted[data-line]::before {
+  color: var(--tn-c-brand);
+  opacity: 1;
+}
+
 .live-editor .cm-lp-code-header {
   display: flex;
   width: 100%;
@@ -706,8 +737,19 @@
   padding: 0;
 }
 
+/* 代码组的标签栏就是这张卡片的标题栏：折叠、标签、语言、复制、全屏都在这一行 */
 .live-editor .cm-lp-visual .cm-line.cm-lp-code-group-open {
+  padding: 4px 16px 0 12px;
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+  background: var(--tn-c-bg-soft);
   line-height: 0;
+}
+
+.live-editor .cm-lp-visual .cm-line.cm-lp-code-group-open.cm-lp-code-group-collapsed {
+  padding-bottom: 4px;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
 }
 
 .live-editor .cm-lp-visual .cm-line.cm-lp-code-group-open .cm-widgetBuffer {
@@ -720,6 +762,53 @@
   gap: 2px;
   flex-wrap: wrap;
   width: 100%;
+  min-height: 28px;
+  font: 13px/22px var(--tn-font-sans);
+}
+
+.live-editor .cm-lp-code-tabs .cm-lp-code-fold,
+.live-editor .cm-lp-code-tabs .cm-lp-code-copy,
+.live-editor .cm-lp-code-tabs .cm-lp-code-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tn-c-text-2);
+  cursor: pointer;
+}
+
+.live-editor .cm-lp-code-tabs .cm-lp-code-fold svg,
+.live-editor .cm-lp-code-tabs .cm-lp-code-copy svg,
+.live-editor .cm-lp-code-tabs .cm-lp-code-expand svg {
+  width: 14px;
+  height: 14px;
+}
+
+.live-editor .cm-lp-code-tabs .cm-lp-code-fold:hover,
+.live-editor .cm-lp-code-tabs .cm-lp-code-copy:hover,
+.live-editor .cm-lp-code-tabs .cm-lp-code-expand:hover {
+  background: var(--tn-c-hover);
+  color: var(--tn-c-text);
+}
+
+.live-editor .cm-lp-code-tabs .cm-lp-code-lang-input {
+  margin-left: auto;
+  font: 12px/22px var(--tn-font-sans);
+}
+
+.live-editor .cm-lp-code-tab-rename {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--tn-c-brand);
+  border-radius: 4px;
+  outline: none;
+  background: var(--tn-c-bg);
+  color: var(--tn-c-text);
   font: 13px/22px var(--tn-font-sans);
 }
 
@@ -760,7 +849,7 @@
   cursor: default;
 }
 
-.live-editor .cm-lp-code-tabs button {
+.live-editor .cm-lp-code-tabs button.cm-lp-code-tab {
   padding: 2px 10px;
   border: 0;
   border-bottom: 2px solid transparent;
@@ -770,7 +859,7 @@
   cursor: pointer;
 }
 
-.live-editor .cm-lp-code-tabs button.is-active {
+.live-editor .cm-lp-code-tabs button.cm-lp-code-tab.is-active {
   border-bottom-color: var(--tn-c-brand);
   color: var(--tn-c-text);
   font-weight: 600;
@@ -1024,6 +1113,7 @@
 }
 
 .live-editor .cm-agent-review-panel button {
+  flex: none;
   padding: 3px 12px;
   border: 1px solid var(--tn-c-divider-strong);
   border-radius: 6px;

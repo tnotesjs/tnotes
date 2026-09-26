@@ -1,7 +1,7 @@
 import { EditorState } from '@codemirror/state'
 import { describe, expect, it } from 'vitest'
 
-import { frontmatterIdGuard } from './frontmatterIdGuard'
+import { externalSync, frontmatterIdGuard } from './frontmatterIdGuard'
 
 const doc = ['---', 'id: abc-123', 'description: 简介', '---', '', '正文'].join('\n')
 
@@ -34,5 +34,16 @@ describe('frontmatterIdGuard', () => {
 
   it('select-all delete keeps the id line and the frontmatter fences', () => {
     expect(edit(0, doc.length, '')).toBe('---\nid: abc-123\n---\n')
+  })
+
+  it('lets content synced from the session replace the frontmatter as is', () => {
+    const next = ['---', 'id: other-456', '---', '', '别的笔记'].join('\n')
+    const state = EditorState.create({ doc, extensions: [frontmatterIdGuard()] })
+    const tr = state.update({
+      changes: { from: 0, to: doc.length, insert: next },
+      annotations: externalSync.of(true)
+    })
+    expect(tr.state.doc.toString()).toBe(next)
+    expect(tr.annotation(externalSync)).toBe(true)
   })
 })

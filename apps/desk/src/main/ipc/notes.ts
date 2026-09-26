@@ -9,8 +9,10 @@ import { workspaceManager } from '../workspaceManager'
 import { IPC_CHANNELS } from '../../shared/contracts'
 import {
   attachmentWriteLocalSchema,
-  entryRefSchema,
+  deleteTargetSchema,
+  noteCreateManySchema,
   noteCreateSchema,
+  noteReindexSchema,
   noteRenameSchema,
   noteSaveSchema,
   noteUpdateConfigSchema,
@@ -38,14 +40,16 @@ function withDeleteGitInfo(knowledgeBaseId: string, preview: DeletePreviewDto): 
 import type {
   AttachmentWriteLocalRequest,
   DeletePreviewDto,
+  DeleteTargetDto,
   ImageUploadRequest,
+  NoteCreateManyRequest,
   NoteCreateRequest,
+  NoteReindexRequest,
   NoteRenameRequest,
   NoteSaveRequest,
   NoteUpdateConfigRequest,
   TocCreateGroupRequest,
   TocDeleteRequest,
-  TocEntryRefDto,
   TocMoveRequest,
   TocRenameGroupRequest
 } from '../../shared/contracts'
@@ -75,8 +79,14 @@ export function registerNotes(getWindow: GetWindow): void {
   handle(IPC_CHANNELS.noteCreate, getWindow, noteCreateSchema, (input) =>
     workspaceManager.createNote(input as NoteCreateRequest)
   )
+  handle(IPC_CHANNELS.noteCreateMany, getWindow, noteCreateManySchema, (input) =>
+    workspaceManager.createNotes(input as NoteCreateManyRequest)
+  )
   handle(IPC_CHANNELS.noteRename, getWindow, noteRenameSchema, (input) =>
     workspaceManager.renameNote(input as NoteRenameRequest)
+  )
+  handle(IPC_CHANNELS.noteReindex, getWindow, noteReindexSchema, (input) =>
+    workspaceManager.reindexNote(input as NoteReindexRequest)
   )
   handle(IPC_CHANNELS.noteUpdateConfig, getWindow, noteUpdateConfigSchema, (input) =>
     workspaceManager.updateNoteConfig(input as NoteUpdateConfigRequest)
@@ -125,12 +135,12 @@ export function registerNotes(getWindow: GetWindow): void {
     getWindow,
     z.object({
       knowledgeBaseId: z.string().min(1),
-      entry: entryRefSchema
+      entry: deleteTargetSchema
     }),
     async ({ knowledgeBaseId, entry }) =>
       await withDeleteGitInfo(
         knowledgeBaseId,
-        await workspaceManager.previewDelete(knowledgeBaseId, entry as TocEntryRefDto)
+        await workspaceManager.previewDelete(knowledgeBaseId, entry as DeleteTargetDto)
       )
   )
   handle(
@@ -138,12 +148,12 @@ export function registerNotes(getWindow: GetWindow): void {
     getWindow,
     z.object({
       knowledgeBaseId: z.string().min(1),
-      entry: entryRefSchema
+      entry: deleteTargetSchema
     }),
     async ({ knowledgeBaseId, entry }) => {
       const preview = await withDeleteGitInfo(
         knowledgeBaseId,
-        await workspaceManager.previewDelete(knowledgeBaseId, entry as TocEntryRefDto)
+        await workspaceManager.previewDelete(knowledgeBaseId, entry as DeleteTargetDto)
       )
       return await commitDeleteScope({
         knowledgeBaseId,

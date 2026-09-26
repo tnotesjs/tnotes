@@ -40,6 +40,10 @@ describe('工作区会话 schema', () => {
       ])
     )
     expect(result.success, JSON.stringify(result.error?.issues)).toBe(true)
+    if (result.success) {
+      expect(result.data.pinnedKnowledgeBasesCollapsed).toBe(false)
+      expect(result.data.pinnedNotesCollapsed).toEqual({})
+    }
   })
 
   it('接受历史标签，并拒绝非法 commit 与非法编号', () => {

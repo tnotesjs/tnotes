@@ -234,6 +234,27 @@ describe('unsaved tab closing', () => {
     }
   })
 
+  it('closes other tabs in the same group and keeps the chosen tab plus pinned tabs', async () => {
+    const state = setup()
+    const a = state.open('A', [resource('A', false).resource])
+    const b = state.open('B', [resource('B', false).resource])
+    const c = state.open('C', [resource('C', false).resource])
+    state.editor.setPinned(c, true)
+    expect(await state.requestCloseOtherTabs(b)).toBe(true)
+    expect(state.ids()).toEqual([b, c])
+    expect(state.confirm).not.toHaveBeenCalled()
+    expect(a).not.toBe(b)
+  })
+
+  it('keeps every tab when closing others is cancelled', async () => {
+    const state = setup()
+    const a = state.open('A', [resource('A').resource])
+    const b = state.open('B', [resource('B', false).resource])
+    expect(await state.requestCloseOtherTabs(b)).toBe(false)
+    expect(state.ids()).toEqual([a, b])
+    expect(state.confirm).toHaveBeenCalledWith(['A'])
+  })
+
   it('excludes pinned and dirty tabs from close-saved, including dirty includes', async () => {
     const state = setup()
     const a = state.open('A', [resource('include.js').resource])

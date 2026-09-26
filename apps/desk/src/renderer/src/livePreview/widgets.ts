@@ -271,7 +271,7 @@ export class CodeFenceHeaderWidget extends WidgetType {
   }
 }
 
-function iconButton(label: string, svg: string, className: string): HTMLButtonElement {
+export function iconButton(label: string, svg: string, className: string): HTMLButtonElement {
   const button = document.createElement('button')
   button.type = 'button'
   button.className = className

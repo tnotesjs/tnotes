@@ -55,7 +55,8 @@ describe('native tab context menu', () => {
     expect(showContextMenu).toHaveBeenCalledExactlyOnceWith({
       kind: 'tab',
       tabType: 'note',
-      pinned: false
+      pinned: false,
+      othersClosable: true
     })
     expect(close).toHaveBeenCalledExactlyOnceWith(a)
     expect(editor.activeTab?.id).toBe(b)
@@ -77,10 +78,25 @@ describe('native tab context menu', () => {
     expect(showContextMenu).toHaveBeenCalledExactlyOnceWith({
       kind: 'tab',
       tabType: 'web',
-      pinned: true
+      pinned: true,
+      othersClosable: false
     })
     expect(close).not.toHaveBeenCalled()
     expect(editor.activeTab).toMatchObject({ id, pinned: true })
+    wrapper.unmount()
+  })
+
+  it('closes every other tab except the one that was right-clicked', async () => {
+    const editor = useEditorStore()
+    const workspace = useWorkspaceStore()
+    const a = editor.openNote(knowledgeBase, 'a', 'A', 'visual', undefined, 'permanent')
+    editor.openNote(knowledgeBase, 'b', 'B', 'visual', undefined, 'permanent')
+    const close = vi.spyOn(workspace, 'requestCloseOtherTabs').mockResolvedValue(true)
+    const wrapper = shallowMount(EditorGroup, { props: { group: editor.activeGroup! } })
+    showContextMenu.mockResolvedValue({ ok: true, value: 'close-others' })
+    await wrapper.findAll('.tab')[0].trigger('contextmenu')
+    await flushPromises()
+    expect(close).toHaveBeenCalledExactlyOnceWith(a)
     wrapper.unmount()
   })
 

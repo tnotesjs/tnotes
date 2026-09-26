@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { commandTaskManager } from '../commandTaskManager'
 import { gitManager } from '../gitManager'
 import { launchIde, showIdeContextMenu } from '../ide'
+import { loadSettings } from '../settings'
 
 import type { IdeLaunchResult } from '../ide'
 import { workspaceManager } from '../workspaceManager'
@@ -16,6 +17,10 @@ export function registerGit(getWindow: GetWindow): () => void {
   handle(IPC_CHANNELS.gitRefresh, getWindow, z.string().min(1).optional(), (knowledgeBaseId) =>
     gitManager.refresh(knowledgeBaseId)
   )
+  handle(IPC_CHANNELS.gitFocus, getWindow, z.string().min(1).nullable(), (knowledgeBaseId) => {
+    gitManager.setFocusedKnowledgeBase(knowledgeBaseId)
+    return null
+  })
   // 带 taskId 时（手动操作）由命令任务处理器执行：它把实时输出与取消信号接进
   // 既有 Git 流程；不带 taskId 时（后台定时 fetch 等）行为与以前完全一致。
   handle(
@@ -61,6 +66,10 @@ export function registerGit(getWindow: GetWindow): () => void {
         pageUrl: detail.pageUrl
       },
       {
+        pinned: loadSettings().pinnedKnowledgeBaseIds.includes(knowledgeBaseId),
+        onTogglePin: () => {
+          window.webContents.send(IPC_CHANNELS.kbPinToggleRequested, knowledgeBaseId)
+        },
         onOpenSettings: () => {
           window.webContents.send(IPC_CHANNELS.kbOpenSettingsRequested, knowledgeBaseId)
         },

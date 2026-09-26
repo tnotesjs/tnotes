@@ -1,168 +1,325 @@
-import type { AgentChatMessage, AgentNoteContext } from '../../shared/contracts'
+import type {
+  AgentMode,
+  AgentNoteContext,
+  AgentOpenNote,
+  AgentReasoningEffort,
+  AgentSelectionContext
+} from '../../shared/contracts'
+import { applyChoiceDelta, consumeSse, emptyMessage, type MessageAcc, type ToolCallAcc } from './stream'
 
-const MAX_ROUNDS = 6
-const MAX_NOTE_CHARS = 120_000
+const MAX_ROUNDS = 10
+const MAX_TOKENS = 8192
 
-interface ToolCall {
-  id: string
-  function: { name: string; arguments: string | Record<string, unknown> }
+export interface AgentToolResult {
+  ok: boolean
+  summary: string
+  detail: string
 }
 
-interface ApiMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool'
-  content: string | null
-  tool_calls?: ToolCall[]
-  tool_call_id?: string
+/** 发给模型的一条历史消息。imageUrls 只在本轮的用户消息上有（data URL）。 */
+export interface AgentInputMessage {
+  role: 'user' | 'assistant'
+  content: string
+  imageUrls?: string[]
 }
 
 export interface AgentChatInput {
   baseUrl: string
   apiKey: string
   model: string
-  messages: AgentChatMessage[]
-  note: AgentNoteContext | null
+  reasoningEffort?: AgentReasoningEffort | ''
+  mode: AgentMode
+  messages: AgentInputMessage[]
+  knowledgeBaseName?: string
+  current?: AgentOpenNote | null
+  notes?: AgentNoteContext[]
+  selections?: AgentSelectionContext[]
+  defaultNote?: { knowledgeBaseId: string; noteUuid: string } | null
   signal: AbortSignal
-  applyEdit: (edit: { oldString: string; newString: string }) => Promise<{ ok: boolean; message: string }>
-  /** 每次真正发出请求时回调。只给地址和模型，不给密钥。 */
-  onRequest?: (info: { url: string; model: string }) => void
+  fetchImpl?: typeof fetch
+  executeTool: (call: { id: string; name: string; args: Record<string, unknown> }) => Promise<AgentToolResult>
+  onText?: (delta: string) => void
+  onReasoning?: (delta: string) => void
+  onRequest?: (info: { url: string; model: string; reasoningEffort: string }) => void
 }
 
-function noteBlock(note: AgentNoteContext | null): string {
-  if (!note) return '当前没有打开笔记。不要调用替换工具。'
-  const body =
-    note.content.length > MAX_NOTE_CHARS
-      ? `${note.content.slice(0, MAX_NOTE_CHARS)}\n\n…（笔记过长，只给了开头）`
-      : note.content
-  const selection = note.selection ? note.selection : '（没有选区）'
-  return [
-    `标题：${note.title}`,
-    `路径：${note.path}`,
-    `选区：\n${selection}`,
-    `全文：\n${body}`
-  ].join('\n')
+type ApiContent = string | null | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
+
+interface ApiMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: ApiContent
+  tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>
+  tool_call_id?: string
 }
 
-function systemPrompt(input: { model: string; baseUrl: string }, note: AgentNoteContext | null): string {
-  return [
-    '你是 TNotes Desk 里的写作助手，帮用户改当前打开的这篇 Markdown 笔记。',
-    `这次调用的模型名是「${input.model}」，接口是 ${endpoint(input.baseUrl)}。`,
-    '用户问你是什么模型时，只按上面的模型名回答，不要自称 Claude、GPT 或其他名字。',
-    '笔记的磁盘内容就是 Markdown 本身。改内容时调用 replace_in_note，不要把整篇笔记贴回对话里。',
-    'old_string 必须和笔记里的字符完全一致，并且在全文里只出现一次；改完用一两句话说明你改了什么。',
-    '用户没让你改笔记时，只回答，不要调用工具。',
-    '',
-    noteBlock(note)
-  ].join('\n')
-}
+const KB_PARAM = { type: 'string', description: '知识库 id 或名称。省略表示本轮的默认知识库' }
 
-const tools = [
+export const READ_TOOLS = [
   {
     type: 'function',
     function: {
-      name: 'replace_in_note',
-      description: '把当前笔记里唯一的一段原文替换成新文本。',
+      name: 'list_notes',
+      description: '列出一个知识库的笔记（编号、标题、uuid）。offset 从 0 起，limit 默认 200。query 按编号或标题过滤。',
       parameters: {
         type: 'object',
         properties: {
-          old_string: { type: 'string', description: '笔记里原样存在、且只出现一次的文本' },
-          new_string: { type: 'string', description: '替换后的文本，可以是空字符串（表示删除）' }
+          kb: KB_PARAM,
+          offset: { type: 'number' },
+          limit: { type: 'number' },
+          query: { type: 'string' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'search_notes',
+      description: '在一个知识库里搜索笔记，最多 10 条。',
+      parameters: {
+        type: 'object',
+        properties: {
+          kb: KB_PARAM,
+          query: { type: 'string' },
+          limit: { type: 'number' }
         },
-        required: ['old_string', 'new_string']
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_note',
+      description: '按行读取一篇笔记。note 可以是 uuid、编号、相对路径或标题。offset 是起始行（从 1 开始），limit 是行数，默认 400，最多 800。',
+      parameters: {
+        type: 'object',
+        properties: {
+          kb: KB_PARAM,
+          note: { type: 'string' },
+          offset: { type: 'number' },
+          limit: { type: 'number' }
+        },
+        required: ['note']
       }
     }
   }
 ]
 
-function readReplaceArgs(raw: string | Record<string, unknown> | undefined): {
-  old_string: string
-  new_string: string
-} {
-  let value: Record<string, unknown> = {}
-  if (typeof raw === 'string') {
-    try {
-      value = JSON.parse(raw) as Record<string, unknown>
-    } catch {
-      value = {}
+export const WRITE_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'edit_note',
+      description:
+        '修改一篇笔记。默认用 old_string 替换唯一的一段原文。要追加到正文末尾时传 position:"end" 和 new_string，不要传 old_string。改动会直接保存到磁盘（笔记里用户没保存的编辑也会一起保存），并标出来等用户保留或撤销。',
+      parameters: {
+        type: 'object',
+        properties: {
+          kb: KB_PARAM,
+          note: { type: 'string', description: 'uuid、编号、路径或标题' },
+          old_string: { type: 'string' },
+          new_string: { type: 'string' },
+          position: { type: 'string', enum: ['end'], description: 'end 表示追加到正文末尾' }
+        },
+        required: ['new_string']
+      }
     }
-  } else if (raw && typeof raw === 'object') {
-    value = raw
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_note',
+      description: '在一个知识库里新建一篇笔记并保存。正文会标出来等用户保留或撤销。',
+      parameters: {
+        type: 'object',
+        properties: {
+          kb: KB_PARAM,
+          title: { type: 'string' },
+          content: { type: 'string' }
+        },
+        required: ['title', 'content']
+      }
+    }
   }
-  return {
-    old_string: typeof value.old_string === 'string' ? value.old_string : '',
-    new_string: typeof value.new_string === 'string' ? value.new_string : ''
-  }
-}
+]
 
 function endpoint(baseUrl: string): string {
-  const trimmed = baseUrl.trim().replace(/\/+$/, '')
-  return `${trimmed}/chat/completions`
+  return `${baseUrl.trim().replace(/\/+$/, '')}/chat/completions`
 }
 
-async function complete(input: AgentChatInput, messages: ApiMessage[]): Promise<ApiMessage> {
-  const url = endpoint(input.baseUrl)
-  input.onRequest?.({ url, model: input.model })
-  const response = await fetch(url, {
-    method: 'POST',
-    signal: input.signal,
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${input.apiKey}`
-    },
-    body: JSON.stringify({
-      model: input.model,
-      messages,
-      tools,
-      temperature: 0.2
-    })
-  })
-  const text = await response.text()
-  if (!response.ok) {
-    throw new Error(`模型接口返回 ${response.status}：${text.slice(0, 400)}`)
+function noteName(note: { knowledgeBaseName: string; noteIndex: string; title: string }): string {
+  return `${note.knowledgeBaseName} · ${note.noteIndex ? `${note.noteIndex} ` : ''}${note.title}`
+}
+
+function contextBlock(input: Pick<AgentChatInput, 'current' | 'notes' | 'selections'>): string {
+  const lines: string[] = []
+  const current = input.current
+  lines.push(
+    current
+      ? `用户当前打开：${noteName(current)}（知识库 id ${current.knowledgeBaseId}，uuid ${current.noteUuid}）。用户说「这篇」通常指它，需要时用 read_note 读。`
+      : '用户当前没有打开笔记。'
+  )
+  for (const note of input.notes ?? []) {
+    lines.push(
+      '',
+      `点名的笔记：${noteName(note)}`,
+      `知识库 id：${note.knowledgeBaseId}，uuid：${note.noteUuid}，路径：${note.path}，共 ${note.lines} 行`,
+      note.content ? `全文：\n${note.content}` : '这篇较长，没有附上全文。需要时用 read_note 按行分段读取。'
+    )
   }
-  let parsed: { choices?: Array<{ message?: ApiMessage }> }
+  for (const selection of input.selections ?? []) {
+    lines.push(
+      '',
+      `选区（${noteName(selection)}，第 ${selection.startLine}–${selection.endLine} 行；知识库 id ${selection.knowledgeBaseId}，uuid ${selection.noteUuid}）。用户说「选中的内容」就是这一段；改写时 old_string 用这段原文，不要再读全文：`,
+      selection.text
+    )
+  }
+  return lines.join('\n')
+}
+
+export function systemPrompt(
+  input: Pick<AgentChatInput, 'model' | 'mode' | 'knowledgeBaseName' | 'current' | 'notes' | 'selections' | 'defaultNote'>
+): string {
+  const kbName = input.knowledgeBaseName || '当前知识库'
+  const defaultNote = input.defaultNote
+    ? `edit_note 省略 note 时改 uuid 为 ${input.defaultNote.noteUuid} 的那篇（知识库 id ${input.defaultNote.knowledgeBaseId}）。`
+    : 'edit_note 必须写明 note。'
+  return [
+    '你是 TNotes Desk 里的写作助手。笔记是 Markdown，磁盘文件就是真相。',
+    `模型名是「${input.model}」。用户问你是什么模型时，只按这个名字回答。`,
+    `工作区里有多个知识库。工具都有可选参数 kb（知识库 id 或名称），省略时是「${kbName}」。读写其他知识库的笔记时必须写 kb。`,
+    input.mode === 'ask'
+      ? '现在是只读模式：只能列目录、搜索和阅读，不要调用 edit_note 或 create_note。'
+      : `需要改笔记时调用工具。old_string 必须和原文完全一致且只出现一次。追加到末尾用 position:"end"，只传 new_string。${defaultNote}没让你改时只回答。`,
+    '不要把整篇笔记贴回对话。改完用一两句话说明改了什么。',
+    '',
+    contextBlock(input)
+  ].join('\n')
+}
+
+function toApiMessage(message: AgentInputMessage): ApiMessage {
+  if (message.role !== 'user' || !message.imageUrls?.length) return { role: message.role, content: message.content }
+  return {
+    role: 'user',
+    content: [
+      { type: 'text', text: message.content },
+      ...message.imageUrls.map((url) => ({ type: 'image_url' as const, image_url: { url } }))
+    ]
+  }
+}
+
+function parseArgs(raw: string): Record<string, unknown> {
   try {
-    parsed = JSON.parse(text) as { choices?: Array<{ message?: ApiMessage }> }
+    const value = JSON.parse(raw) as unknown
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
   } catch {
-    throw new Error('模型接口没有返回 JSON')
+    return {}
   }
-  const message = parsed.choices?.[0]?.message
-  if (!message) throw new Error('模型接口没有返回内容')
-  return message
 }
 
-export async function runAgentChat(input: AgentChatInput): Promise<{ reply: string; edits: number }> {
-  const messages: ApiMessage[] = [
-    { role: 'system', content: systemPrompt(input, input.note) },
-    ...input.messages.map((message) => ({ role: message.role, content: message.content }))
-  ]
-  let edits = 0
-  for (let round = 0; round < MAX_ROUNDS; round += 1) {
-    const message = await complete(input, messages)
-    const calls = message.tool_calls ?? []
-    if (calls.length === 0) {
-      return { reply: message.content?.trim() || '（模型没有返回文字）', edits }
-    }
-    messages.push(message)
-    for (const call of calls) {
-      let result: { ok: boolean; message: string }
-      if (call.function?.name !== 'replace_in_note') {
-        result = { ok: false, message: `不认识的工具：${call.function?.name ?? '未命名'}` }
-      } else if (!input.note) {
-        result = { ok: false, message: '没有打开笔记，不能修改' }
-      } else {
-        const args = readReplaceArgs(call.function.arguments)
-        result = await input.applyEdit({
-          oldString: args.old_string,
-          newString: args.new_string
-        })
-        if (result.ok) edits += 1
+async function readStream(
+  response: Response,
+  signal: AbortSignal,
+  onText?: (delta: string) => void,
+  onReasoning?: (delta: string) => void
+): Promise<MessageAcc> {
+  const acc = emptyMessage()
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error('模型接口没有返回流')
+  const decoder = new TextDecoder()
+  let rest = ''
+  while (!signal.aborted) {
+    const chunk = await reader.read()
+    if (chunk.done) break
+    rest += decoder.decode(chunk.value, { stream: true })
+    const consumed = consumeSse(rest)
+    rest = consumed.rest
+    for (const data of consumed.data) {
+      if (data.trim() === '[DONE]') return acc
+      const parsed = JSON.parse(data) as {
+        choices?: Array<{ finish_reason?: string | null; delta?: Parameters<typeof applyChoiceDelta>[1] }>
       }
+      const choice = parsed.choices?.[0]
+      if (choice?.finish_reason) acc.finishReason = choice.finish_reason
+      const before = acc.content.length
+      const reasonBefore = acc.reasoning.length
+      applyChoiceDelta(acc, choice?.delta)
+      if (acc.content.length > before) onText?.(acc.content.slice(before))
+      if (acc.reasoning.length > reasonBefore) onReasoning?.(acc.reasoning.slice(reasonBefore))
+    }
+  }
+  return acc
+}
+
+export async function runAgentChat(input: AgentChatInput): Promise<{ reply: string; edits: number; truncated: boolean }> {
+  const url = endpoint(input.baseUrl)
+  const tools = input.mode === 'ask' ? READ_TOOLS : [...READ_TOOLS, ...WRITE_TOOLS]
+  const messages: ApiMessage[] = [{ role: 'system', content: systemPrompt(input) }, ...input.messages.map(toApiMessage)]
+  let edits = 0
+  const fetchImpl = input.fetchImpl ?? fetch
+  const effort = input.reasoningEffort || ''
+  for (let round = 0; round < MAX_ROUNDS; round += 1) {
+    input.onRequest?.({ url, model: input.model, reasoningEffort: effort })
+    const response = await fetchImpl(url, {
+      method: 'POST',
+      signal: input.signal,
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${input.apiKey}`
+      },
+      body: JSON.stringify({
+        model: input.model,
+        messages,
+        tools,
+        temperature: 0.2,
+        max_tokens: MAX_TOKENS,
+        stream: true,
+        ...(effort ? { reasoning_effort: effort } : {})
+      })
+    })
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`模型接口返回 ${response.status}：${text.slice(0, 400)}`)
+    }
+    const message = await readStream(response, input.signal, input.onText, input.onReasoning)
+    const calls = message.toolCalls.filter((call) => call.name)
+    if (calls.length === 0) {
+      const truncated = message.finishReason === 'length'
+      const reply = message.content.trim()
+      if (truncated) {
+        return {
+          reply: reply ? `${reply}\n\n回复被截断，可以说「继续」。` : '回复被截断，可以说「继续」。',
+          edits,
+          truncated: true
+        }
+      }
+      return { reply: reply || '（模型没有返回文字）', edits, truncated: false }
+    }
+    messages.push({
+      role: 'assistant',
+      content: message.content || null,
+      tool_calls: calls.map((call) => ({
+        id: call.id || call.name,
+        type: 'function',
+        function: { name: call.name, arguments: call.arguments || '{}' }
+      }))
+    })
+    for (const call of calls) {
+      const result = await input.executeTool({
+        id: call.id || call.name,
+        name: call.name,
+        args: parseArgs(call.arguments)
+      })
+      if (result.ok && (call.name === 'edit_note' || call.name === 'create_note')) edits += 1
       messages.push({
         role: 'tool',
-        tool_call_id: call.id,
-        content: result.ok ? `已写入编辑器，等用户接受或撤销。${result.message}` : result.message
+        tool_call_id: call.id || call.name,
+        content: (result.ok ? result.detail : result.summary).slice(0, 16_000)
       })
     }
   }
-  return { reply: '这轮修改步骤太多，先停在这里。请看编辑器里已经标出的改动。', edits }
+  return { reply: '这轮步骤太多，先停在这里。请看已经标出的改动。', edits, truncated: false }
 }
+
+export type { ToolCallAcc }

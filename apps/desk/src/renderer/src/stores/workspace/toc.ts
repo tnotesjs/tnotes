@@ -3,6 +3,8 @@ import type { Ref } from 'vue'
 import type { useEditorStore } from '../editor'
 import { flushPendingEdits, hasPendingEdits } from '../../editor/markdown/pendingEdits'
 
+import { rewriteNoteIndexContent } from '../../../../shared/noteIndex'
+
 import type {
   AppSettings,
   DeleteCommitResultDto,
@@ -75,6 +77,47 @@ export function createToc(ctx: TocContext) {
       undefined,
       'permanent'
     )
+    ctx.editor.requestTitleEdit(mutation.note.knowledgeBaseId, mutation.note.uuid)
+  }
+
+  async function createNotes(count: number): Promise<void> {
+    if (!ctx.knowledgeBase.value || ctx.knowledgeBase.value.health !== 'ready') return
+    const placement: NoteCreateRequest['placement'] = {
+      type: 'root',
+      placement: (ctx.settings.value?.createNotePosition ?? 'top') === 'top' ? 'start' : 'end'
+    }
+    const mutation = resultValue(
+      await window.desk.notes.createMany(
+        ipcPlain({
+          knowledgeBaseId: ctx.knowledgeBase.value.id,
+          title: 'new',
+          count,
+          placement: notePlacement(placement),
+          expectedSnapshotRevision: ctx.knowledgeBase.value.snapshotRevision
+        })
+      )
+    )
+    ctx.applyDetail(mutation.knowledgeBase)
+    const key = documentKey(mutation.note.knowledgeBaseId, mutation.note.uuid)
+    ctx.setDocumentSession(key, {
+      document: mutation.note,
+      content: mutation.note.content,
+      dirty: false,
+      unsavedDraft: false,
+      preserveSourceOnSave: false,
+      externalConflict: false,
+      saving: false
+    })
+    ctx.editor.openNote(
+      mutation.knowledgeBase,
+      mutation.note.uuid,
+      mutation.note.title,
+      ctx.settings.value?.defaultNoteView ?? 'visual',
+      undefined,
+      'permanent'
+    )
+    ctx.editor.requestTitleEdit(mutation.note.knowledgeBaseId, mutation.note.uuid)
+    ctx.status.value = `已新建 ${mutation.createdCount} 篇笔记`
   }
 
   async function createTocGroup(title: string): Promise<void> {
@@ -143,6 +186,63 @@ export function createToc(ctx: TocContext) {
       if (dirty) await ctx.persistRecovery(key)
       else ctx.deleteRecovery(knowledgeBaseId, noteUuid)
       ctx.status.value = '名称已更新'
+    } catch (cause) {
+      ctx.error.value = cause instanceof Error ? cause.message : String(cause)
+      throw cause
+    } finally {
+      resumeAutosave()
+    }
+  }
+
+  async function reindexNote(noteUuid: string, index: string): Promise<void> {
+    if (!ctx.knowledgeBase.value || ctx.knowledgeBase.value.health !== 'ready') return
+    const knowledgeBaseId = ctx.knowledgeBase.value.id
+    const key = documentKey(knowledgeBaseId, noteUuid)
+    const resumeAutosave = ctx.pauseDocumentAutosave(key)
+    try {
+      const loaded =
+        ctx.documents.value[key] ?? (await ctx.ensureDocument(knowledgeBaseId, noteUuid))
+      if (loaded.document.readOnly) throw new Error('这篇文章是只读的，不能修改索引')
+      const from = loaded.document.index
+      if (index === from) return
+      ctx.error.value = null
+      flushPendingEdits(knowledgeBaseId, noteUuid)
+      await ctx.waitForDocumentSave(key)
+      if (ctx.documents.value[key]?.dirty) await ctx.saveDocument(key)
+      const before = ctx.documents.value[key] ?? loaded
+      const mutation = resultValue(
+        await window.desk.notes.reindex({
+          knowledgeBaseId,
+          noteUuid,
+          index,
+          expectedRevision: before.document.revision
+        })
+      )
+      const current = ctx.documents.value[key] ?? before
+      const content = current.dirty
+        ? rewriteNoteIndexContent(current.content, from, mutation.note.index)
+        : mutation.note.content
+      const dirty = documentDirty(content, mutation.note.content, current.unsavedDraft)
+      ctx.setDocumentSession(key, {
+        document: mutation.note,
+        content,
+        dirty,
+        unsavedDraft: current.unsavedDraft,
+        preserveSourceOnSave: dirty && current.preserveSourceOnSave,
+        externalConflict: false,
+        saving: false
+      })
+      ctx.applyDetail(mutation.knowledgeBase)
+      const assetRenames = mutation.changedFiles.flatMap((file) =>
+        file.kind === 'renamed' && file.previousPath?.startsWith('assets/')
+          ? [{ from: file.previousPath, to: file.path }]
+          : []
+      )
+      ctx.editor.noteIndexChanged(knowledgeBaseId, from, mutation.note.index, assetRenames)
+      ctx.editor.setNoteDirty(knowledgeBaseId, noteUuid, dirty)
+      if (dirty) await ctx.persistRecovery(key)
+      else ctx.deleteRecovery(knowledgeBaseId, noteUuid)
+      ctx.status.value = `索引已改为 ${mutation.note.index}`
     } catch (cause) {
       ctx.error.value = cause instanceof Error ? cause.message : String(cause)
       throw cause
@@ -251,6 +351,16 @@ export function createToc(ctx: TocContext) {
     )
   }
 
+  async function previewDeleteNotes(noteUuids: string[]): Promise<DeletePreviewDto> {
+    if (!ctx.knowledgeBase.value) throw new Error('未选择知识库')
+    return resultValue(
+      await window.desk.toc.previewDelete(ctx.knowledgeBase.value.id, {
+        type: 'notes',
+        noteUuids: [...noteUuids]
+      })
+    )
+  }
+
   /** 删除前把该范围的当前版本提交一次（用户显式点按钮才发生）。 */
   async function commitDeleteScope(preview: DeletePreviewDto): Promise<DeleteCommitResultDto> {
     // preview 来自 ref，直接传会把 Vue 响应式代理丢给 IPC（structured clone 会失败）
@@ -302,12 +412,15 @@ export function createToc(ctx: TocContext) {
 
   return {
     createNote,
+    createNotes,
     createTocGroup,
     renameNote,
+    reindexNote,
     renameTocNode,
     moveTocNode,
     toggleDone,
     previewDeleteNode,
+    previewDeleteNotes,
     commitDeleteScope,
     deleteNode
   }

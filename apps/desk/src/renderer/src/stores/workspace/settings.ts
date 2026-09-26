@@ -4,6 +4,7 @@ import type { useEditorStore } from '../editor'
 
 import type { AppSettings } from '../../../../shared/contracts'
 import { clampAppZoom, APP_ZOOM_DEFAULT, APP_ZOOM_STEP } from '../../../../shared/appZoom'
+import { listsEqual, pinToFront, unpinId } from '../../../../shared/pinList'
 
 import { resultValue } from './helpers'
 
@@ -64,7 +65,45 @@ export function createSettings(ctx: SettingsContext) {
     return setAppZoom(current + direction * APP_ZOOM_STEP)
   }
 
-  return { updateSettings, applySettings, setAppZoom, adjustAppZoom, zoomFeedbackSequence }
+  function togglePinnedKnowledgeBase(id: string): void {
+    if (!ctx.settings.value) return
+    const current = ctx.settings.value.pinnedKnowledgeBaseIds ?? []
+    const next = current.includes(id) ? unpinId(current, id) : pinToFront(current, id)
+    void updateSettings({ pinnedKnowledgeBaseIds: next })
+  }
+
+  function togglePinnedNote(knowledgeBaseId: string, noteUuid: string): void {
+    if (!ctx.settings.value) return
+    const map = { ...(ctx.settings.value.pinnedNoteUuids ?? {}) }
+    const current = map[knowledgeBaseId] ?? []
+    const next = current.includes(noteUuid) ? unpinId(current, noteUuid) : pinToFront(current, noteUuid)
+    if (next.length === 0) delete map[knowledgeBaseId]
+    else map[knowledgeBaseId] = next
+    void updateSettings({ pinnedNoteUuids: map })
+  }
+
+  /** 拖进置顶组：已经置顶的挪到最前，不会取消置顶。 */
+  function pinNote(knowledgeBaseId: string, noteUuid: string): void {
+    if (!ctx.settings.value) return
+    const map = { ...(ctx.settings.value.pinnedNoteUuids ?? {}) }
+    const current = map[knowledgeBaseId] ?? []
+    const next = pinToFront(current, noteUuid)
+    if (listsEqual(current, next)) return
+    map[knowledgeBaseId] = next
+    ctx.settings.value = { ...ctx.settings.value, pinnedNoteUuids: map }
+    void updateSettings({ pinnedNoteUuids: map })
+  }
+
+  return {
+    updateSettings,
+    applySettings,
+    setAppZoom,
+    adjustAppZoom,
+    zoomFeedbackSequence,
+    togglePinnedKnowledgeBase,
+    togglePinnedNote,
+    pinNote
+  }
 }
 
 export type SettingsApi = ReturnType<typeof createSettings>

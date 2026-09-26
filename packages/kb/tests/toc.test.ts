@@ -10,6 +10,7 @@ import {
   moveSubtree,
   normalizeTocBlankLines,
   parseTocLine,
+  removeSelectedNoteLines,
   parseTocToTree,
   serializeTocTree,
   setNoteDoneLine,
@@ -158,6 +159,34 @@ describe('line ops', () => {
     // A blank directly between two content lines is dropped; a run of blanks
     // collapses to one.
     expect(normalizeTocBlankLines(lines)).toEqual(['- a', '', '  - [ ] 0001. t', '- b'])
+  })
+
+  it('removes selected notes and promotes the children that stay', () => {
+    const lines = [
+      '- 分组 A',
+      '  - [ ] 0001. 父',
+      '    - [ ] 0002. 子',
+      '    - 内组',
+      '      - [x] 0003. 孙',
+      '  - [ ] 0004. 邻',
+      '- [ ] 0005. 外'
+    ]
+    expect(removeSelectedNoteLines(lines, new Set(['0001', '0004']))).toEqual([
+      '- 分组 A',
+      '  - [ ] 0002. 子',
+      '  - 内组',
+      '    - [x] 0003. 孙',
+      '- [ ] 0005. 外'
+    ])
+  })
+
+  it('promotes a child out from under a removed parent and child', () => {
+    const lines = [
+      '- [ ] 0001. 父',
+      '  - [ ] 0002. 子',
+      '    - [ ] 0003. 孙'
+    ]
+    expect(removeSelectedNoteLines(lines, new Set(['0001', '0002']))).toEqual(['- [ ] 0003. 孙'])
   })
 
   it('buildNoteLine omits the dot when title is empty', () => {

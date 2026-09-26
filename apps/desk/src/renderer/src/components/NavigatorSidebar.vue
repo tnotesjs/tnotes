@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import TocNodeList from './TocNodeList.vue'
 import UiTooltip from './UiTooltip.vue'
+import { batchTargetIds, collectNoteIds, toggleBatchIds } from './batchDeleteSelection'
 import { classifyChangePath } from './changeCategory'
 import { mergeRenameChanges } from './mergeRenameChanges'
 import { noteFileName } from '../commands/noteFileName'
+import { flatPinnedNotes, listsEqual, prunePinIds } from '../../../shared/pinList'
+import { isTocDrag, noteFromTocDrag } from '../../../shared/tocDrag'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
 
@@ -13,9 +16,12 @@ import type { DeskTocNode, NavigatorSidebarMenuAction } from '../../../shared/co
 
 const emit = defineEmits<{
   createNote: [node?: DeskTocNode, placement?: 'before' | 'after' | 'inside']
+  createNotes: []
   createGroup: []
   requestRename: [node: DeskTocNode]
+  requestReindex: [node: Extract<DeskTocNode, { type: 'note' }>]
   requestDelete: [node: DeskTocNode]
+  requestBatchDelete: [noteUuids: string[]]
 }>()
 
 const store = useWorkspaceStore()
@@ -27,6 +33,8 @@ const noteFileExpanded = ref(true)
 const configFileExpanded = ref(true)
 const otherFileExpanded = ref(true)
 const tocListRef = ref<InstanceType<typeof TocNodeList> | null>(null)
+const batchDeleting = ref(false)
+const batchSelected = ref(new Set<string>())
 const previewBusy = ref(false)
 const menuBusy = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
@@ -46,6 +54,102 @@ const visibleToc = computed(() =>
   filterNodes(store.knowledgeBase?.toc ?? [], query.value.trim().toLocaleLowerCase())
 )
 
+const batchSelectedCount = computed(() => batchSelected.value.size)
+
+function exitBatchDelete(): void {
+  batchDeleting.value = false
+  batchSelected.value = new Set()
+}
+
+function toggleBatchDelete(): void {
+  if (batchDeleting.value) {
+    exitBatchDelete()
+    return
+  }
+  const kb = store.knowledgeBase
+  if (!kb || kb.health !== 'ready' || kb.noteCount === 0) return
+  batchDeleting.value = true
+  tocExpanded.value = true
+}
+
+function findTocNode(nodes: readonly DeskTocNode[], noteUuid: string): DeskTocNode | null {
+  for (const node of nodes) {
+    if (node.type === 'note' && node.uuid === noteUuid) return node
+    const found = findTocNode(node.children, noteUuid)
+    if (found) return found
+  }
+  return null
+}
+
+function toggleBatchNote(noteUuid: string): void {
+  const node = findTocNode(store.knowledgeBase?.toc ?? [], noteUuid)
+  batchSelected.value = toggleBatchIds(batchSelected.value, node ? batchTargetIds(node) : [noteUuid])
+}
+
+function toggleBatchGroup(node: DeskTocNode): void {
+  batchSelected.value = toggleBatchIds(batchSelected.value, batchTargetIds(node))
+}
+
+function selectedNoteUuids(): string[] {
+  const selected = batchSelected.value
+  return collectNoteIds(store.knowledgeBase?.toc ?? []).filter((id) => selected.has(id))
+}
+
+function confirmBatchDelete(): void {
+  const noteUuids = selectedNoteUuids()
+  if (noteUuids.length === 0) return
+  emit('requestBatchDelete', noteUuids)
+}
+
+function onBatchEscape(event: KeyboardEvent): void {
+  if (!batchDeleting.value || event.key !== 'Escape') return
+  if (document.querySelector('.dialog-backdrop')) return
+  const target = event.target
+  if (
+    target instanceof HTMLElement &&
+    target.closest('input, textarea, [contenteditable="true"], .cm-editor')
+  ) {
+    return
+  }
+  event.preventDefault()
+  exitBatchDelete()
+}
+
+watch(
+  () => store.selectedKnowledgeBaseId,
+  () => exitBatchDelete()
+)
+
+watch(
+  () => query.value.trim(),
+  (value) => {
+    if (value) exitBatchDelete()
+  }
+)
+
+watch(
+  () => store.knowledgeBase?.toc,
+  (toc) => {
+    if (!batchDeleting.value || !toc) return
+    const live = new Set(collectNoteIds(toc))
+    const next = new Set([...batchSelected.value].filter((id) => live.has(id)))
+    if (next.size !== batchSelected.value.size) batchSelected.value = next
+  }
+)
+
+function onNoteDragPointerUp(): void {
+  if (!draggingNote.value) return
+  setTimeout(() => {
+    if (draggingNote.value) endNoteDrag()
+  }, 0)
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onBatchEscape)
+  window.addEventListener('dragend', endNoteDrag, true)
+  window.addEventListener('pointerup', onNoteDragPointerUp, true)
+})
+
 watch([() => query.value, () => store.selectedKnowledgeBaseId], () => {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
@@ -56,7 +160,12 @@ watch([() => query.value, () => store.selectedKnowledgeBaseId], () => {
 
 onUnmounted(() => {
   if (searchTimer) clearTimeout(searchTimer)
+  window.removeEventListener('keydown', onBatchEscape)
+  window.removeEventListener('dragend', endNoteDrag, true)
+  window.removeEventListener('pointerup', onNoteDragPointerUp, true)
 })
+
+defineExpose({ exitBatchDelete })
 
 const previewState = computed(() =>
   store.selectedKnowledgeBaseId
@@ -68,6 +177,98 @@ const gitState = computed(() =>
   store.selectedKnowledgeBaseId ? (store.gitStates[store.selectedKnowledgeBaseId] ?? null) : null
 )
 const tocShowIndex = computed(() => store.settings?.toc?.showNoteIndex !== false)
+
+const pinnedNotes = computed(() => {
+  const knowledgeBase = store.knowledgeBase
+  if (!knowledgeBase) return []
+  const ids = store.settings?.pinnedNoteUuids?.[knowledgeBase.id] ?? []
+  return flatPinnedNotes(knowledgeBase.toc, ids)
+})
+
+const pinnedNotesCollapsed = computed(() => {
+  const knowledgeBaseId = store.knowledgeBase?.id
+  if (!knowledgeBaseId) return false
+  return editor.pinnedNotesCollapsed[knowledgeBaseId] === true
+})
+
+const draggingNote = ref(false)
+const pinDropHover = ref(false)
+// 拖动开始时如果用 v-if 插入置顶区，目录行会被重新挂载，macOS 上这次拖放就无法结束。
+let noteDragEpoch = 0
+
+function endNoteDrag(): void {
+  noteDragEpoch += 1
+  draggingNote.value = false
+  pinDropHover.value = false
+}
+
+function onTocDrag(node: DeskTocNode | null): void {
+  const epoch = ++noteDragEpoch
+  if (node?.type !== 'note') {
+    draggingNote.value = false
+    pinDropHover.value = false
+    return
+  }
+  requestAnimationFrame(() => {
+    if (noteDragEpoch !== epoch) return
+    draggingNote.value = true
+  })
+}
+
+function overPinGroup(event: DragEvent): boolean {
+  const target = event.target
+  return target instanceof Element && Boolean(target.closest('[data-pin-group="notes"]'))
+}
+
+function onNavigatorDragOver(event: DragEvent): void {
+  if (!draggingNote.value || query.value.trim()) {
+    pinDropHover.value = false
+    return
+  }
+  const overPin = overPinGroup(event)
+  if (pinDropHover.value !== overPin) pinDropHover.value = overPin
+  if (!overPin || !isTocDrag(event.dataTransfer)) return
+  event.preventDefault()
+  event.stopPropagation()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+}
+
+function onNavigatorDrop(event: DragEvent): void {
+  if (!draggingNote.value || !overPinGroup(event)) return
+  event.preventDefault()
+  event.stopPropagation()
+  pinDropHover.value = false
+  const note = noteFromTocDrag(event.dataTransfer)
+  const knowledgeBaseId = store.knowledgeBase?.id
+  if (!note || !knowledgeBaseId || batchDeleting.value) return
+  store.pinNote(knowledgeBaseId, note.uuid)
+  if (editor.pinnedNotesCollapsed[knowledgeBaseId]) {
+    editor.togglePinnedNotesCollapsed(knowledgeBaseId)
+  }
+}
+
+watch(
+  () => {
+    const knowledgeBase = store.knowledgeBase
+    const settings = store.settings
+    if (!knowledgeBase || knowledgeBase.health !== 'ready' || !settings) return ''
+    const current = settings.pinnedNoteUuids?.[knowledgeBase.id] ?? []
+    const next = prunePinIds(current, new Set(collectNoteIds(knowledgeBase.toc)))
+    if (listsEqual(current, next)) return ''
+    return `prune:${knowledgeBase.id}\n${next.join('\n')}`
+  },
+  (encoded) => {
+    if (!encoded.startsWith('prune:') || !store.settings) return
+    const newline = encoded.indexOf('\n')
+    const knowledgeBaseId = encoded.slice('prune:'.length, newline)
+    const body = encoded.slice(newline + 1)
+    const next = body ? body.split('\n') : []
+    const map = { ...(store.settings.pinnedNoteUuids ?? {}) }
+    if (next.length === 0) delete map[knowledgeBaseId]
+    else map[knowledgeBaseId] = next
+    void store.updateSettings({ pinnedNoteUuids: map })
+  }
+)
 
 const noteFileChanges = computed(() =>
   (gitState.value?.changes ?? []).filter((change) => classifyChangePath(change.path) === 'noteFile')
@@ -193,7 +394,9 @@ const kbReady = computed(
 
 function applyMenuAction(action: NavigatorSidebarMenuAction): void {
   if (action === 'create-note') emit('createNote')
+  else if (action === 'create-notes') emit('createNotes')
   else if (action === 'create-group') emit('createGroup')
+  else if (action === 'batch-delete') toggleBatchDelete()
   else if (action === 'preview') void togglePreview()
   else if (action === 'build') void buildSite()
   else if (action === 'reveal') void revealKnowledgeBase()
@@ -211,7 +414,8 @@ async function openHeaderMenu(): Promise<void> {
     const result = await window.desk.app.showNavigatorSidebarMenu({
       ready: kbReady.value,
       previewLabel: previewLabel.value,
-      buildBusy: buildBusy.value
+      buildBusy: buildBusy.value,
+      noteCount: store.knowledgeBase?.noteCount ?? 0
     })
     if (!result.ok) {
       store.error = result.error.message
@@ -262,10 +466,15 @@ async function openHeaderMenu(): Promise<void> {
       </template>
     </div>
 
+    <template v-if="store.knowledgeBase">
     <div
-      v-if="store.knowledgeBase"
       class="navigator-body"
-      :class="{ 'is-searching': Boolean(query.trim()) }"
+      :class="{
+        'is-searching': Boolean(query.trim()),
+        'has-pins': (pinnedNotes.length > 0 || draggingNote) && !query.trim()
+      }"
+      @dragover.capture="onNavigatorDragOver"
+      @drop.capture="onNavigatorDrop"
     >
       <section class="changes-section">
         <div class="section-heading git-heading">
@@ -528,7 +737,60 @@ async function openHeaderMenu(): Promise<void> {
         </div>
       </section>
 
-      <section v-else class="toc-section">
+      <template v-else>
+      <section
+        v-show="pinnedNotes.length > 0 || draggingNote"
+        class="pin-section"
+        data-pin-group="notes"
+      >
+        <div class="section-heading pin-heading" :class="{ 'is-drop': pinDropHover }">
+          <button
+            type="button"
+            class="section-toggle"
+            :aria-expanded="!pinnedNotesCollapsed"
+            :aria-label="pinnedNotesCollapsed ? '展开置顶' : '折叠置顶'"
+            @click="editor.togglePinnedNotesCollapsed(store.knowledgeBase!.id)"
+          >
+            <svg
+              class="chevron"
+              :class="{ collapsed: pinnedNotesCollapsed }"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+            >
+              <path
+                d="M4 6l4 4 4-4"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <strong>置顶</strong>
+          </button>
+          <em v-if="pinnedNotes.length">{{ pinnedNotes.length }}</em>
+        </div>
+        <TocNodeList
+          v-show="pinnedNotes.length > 0 && !pinnedNotesCollapsed"
+          :nodes="pinnedNotes"
+          :selected-note-uuid="selectedTocNoteUuid"
+          :allow-reorder="false"
+          :pin-drop-active="pinDropHover"
+          :batch-deleting="batchDeleting"
+          :batch-selected="batchSelected"
+          @select="store.selectNote"
+          @select-permanent="store.selectNote($event, undefined, true)"
+          @select-split="store.selectNote($event, 'right')"
+          @toggle-done="store.toggleDone"
+          @request-create="(node, placement) => emit('createNote', node, placement)"
+          @request-rename="emit('requestRename', $event)"
+          @request-reindex="emit('requestReindex', $event)"
+          @request-delete="emit('requestDelete', $event)"
+          @toggle-batch-note="toggleBatchNote"
+          @toggle-batch-group="toggleBatchGroup"
+        />
+      </section>
+      <section class="toc-section">
         <div class="section-heading toc-heading">
           <button
             type="button"
@@ -592,19 +854,40 @@ async function openHeaderMenu(): Promise<void> {
             :nodes="visibleToc"
             :selected-note-uuid="selectedTocNoteUuid"
             :focus-request-id="tocFocusRequestId"
+            :batch-deleting="batchDeleting"
+            :batch-selected="batchSelected"
             @select="store.selectNote"
             @select-permanent="store.selectNote($event, undefined, true)"
             @select-split="store.selectNote($event, 'right')"
             @toggle-done="store.toggleDone"
             @request-create="(node, placement) => emit('createNote', node, placement)"
             @request-rename="emit('requestRename', $event)"
+            @request-reindex="emit('requestReindex', $event)"
             @request-delete="emit('requestDelete', $event)"
+            @toggle-batch-note="toggleBatchNote"
+            @toggle-batch-group="toggleBatchGroup"
             @move="store.moveTocNode"
+            @drag-note="onTocDrag"
           />
           <div v-else class="toc-empty">{{ query ? '没有匹配项' : 'TOC.md 中没有条目' }}</div>
         </div>
       </section>
+      </template>
     </div>
+    <div v-if="batchDeleting" class="batch-delete-bar" data-batch-delete-bar>
+      <span>已选 {{ batchSelectedCount }} 篇</span>
+      <button type="button" @click="exitBatchDelete">取消</button>
+      <button
+        type="button"
+        class="danger"
+        data-batch-delete-confirm
+        :disabled="batchSelectedCount === 0"
+        @click="confirmBatchDelete"
+      >
+        删除
+      </button>
+    </div>
+    </template>
 
     <div v-else class="column-empty">从左侧选择一个知识库</div>
   </aside>
@@ -771,6 +1054,7 @@ async function openHeaderMenu(): Promise<void> {
  * 父容器一起滚走。让 section 不生成盒子，标题就按滚动容器的直接子级参与布局。
  */
 .changes-section,
+.pin-section,
 .toc-section {
   display: contents;
 }
@@ -782,6 +1066,7 @@ async function openHeaderMenu(): Promise<void> {
    多一层限定把优先级提上去，而不是去删基类的 transparent —— 那是给
    非吸顶标题（如详情栏那种静态标题）用的。 */
 .navigator-body .git-heading,
+.navigator-body .pin-heading,
 .navigator-body .toc-heading {
   position: sticky;
   top: 0;
@@ -791,9 +1076,22 @@ async function openHeaderMenu(): Promise<void> {
   box-shadow: 0 1px 0 var(--border);
 }
 
-/* 目录栏吸在变更栏下方（正常态两栏同时吸顶） */
+/* 置顶栏吸在变更栏下方；有置顶时目录再往下让一行 */
+.navigator-body .pin-heading {
+  top: 27px;
+}
+
+.navigator-body .pin-heading.is-drop {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
+}
+
 .navigator-body .toc-heading {
   top: 27px;
+}
+
+.navigator-body.has-pins .toc-heading {
+  top: 54px;
 }
 
 /* 搜索态没有「变更」栏，目录栏回到顶部 */
@@ -908,6 +1206,46 @@ async function openHeaderMenu(): Promise<void> {
 .toc-batch-icon {
   width: 14px;
   height: 14px;
+}
+
+.batch-delete-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.batch-delete-bar span {
+  flex: 1;
+  min-width: 0;
+}
+
+.batch-delete-bar button {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 3px 8px;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.batch-delete-bar button.danger {
+  border-color: transparent;
+  background: var(--danger);
+  color: white;
+}
+
+.batch-delete-bar button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 button.section-heading {

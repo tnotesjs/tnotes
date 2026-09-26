@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { DeskTocNode, KnowledgeBaseDescriptor } from '../../../shared/contracts'
+import type { AppSettings, DeskTocNode, KnowledgeBaseDescriptor } from '../../../shared/contracts'
 import TocNodeList from './TocNodeList.vue'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
@@ -119,6 +119,16 @@ describe('TocNodeList', () => {
     expect(wrapper.emitted('move')).toEqual([[sourceNote, targetNote, 'inside']])
   })
 
+  it('拖动笔记时告诉外层，松开后清空', async () => {
+    const wrapper = mountList()
+    const transfer = dataTransferStub()
+    await wrapper.findAll('.toc-row')[0].trigger('dragstart', { dataTransfer: transfer })
+    expect(wrapper.emitted('dragNote')?.[0]?.[0]).toMatchObject({ type: 'note', uuid: sourceNote.uuid })
+    await wrapper.findAll('.toc-row')[0].trigger('dragend')
+    expect(wrapper.emitted('dragNote')?.at(-1)).toEqual([null])
+    wrapper.unmount()
+  })
+
   it('does not move a group into one of its descendants', async () => {
     const group: Extract<DeskTocNode, { type: 'group' }> = {
       type: 'group',
@@ -164,11 +174,35 @@ describe('TocNodeList', () => {
     expect(showContextMenu).toHaveBeenCalledExactlyOnceWith({
       kind: 'note',
       pinned: false,
+      tocPinned: false,
       completed: false
     })
     expect(document.body.querySelector('.note-context-menu')).toBeNull()
     expect(copy).not.toHaveBeenCalled()
     expect(wrapper.emitted('openIde')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('置顶菜单带上当前状态，并切换这篇笔记的置顶', async () => {
+    const wrapper = mountList()
+    const workspace = useWorkspaceStore()
+    workspace.selectedKnowledgeBaseId = 'kb-a'
+    workspace.settings = {
+      pinnedNoteUuids: { 'kb-a': [sourceNote.uuid] }
+    } as AppSettings
+    const toggle = vi.spyOn(workspace, 'togglePinnedNote').mockImplementation(() => undefined)
+    showContextMenu.mockResolvedValue({ ok: true, value: 'toggle-toc-pin' })
+
+    await wrapper.find('.toc-row').trigger('contextmenu')
+    await flushPromises()
+
+    expect(showContextMenu).toHaveBeenCalledWith({
+      kind: 'note',
+      pinned: false,
+      tocPinned: true,
+      completed: false
+    })
+    expect(toggle).toHaveBeenCalledWith('kb-a', sourceNote.uuid)
     wrapper.unmount()
   })
 
@@ -279,16 +313,19 @@ describe('TocNodeList', () => {
         'add-before',
         'add-after',
         'request-delete',
-        ...(kind === 'note' ? ['open-split', 'toggle-done'] : [])
+        ...(kind === 'note' ? ['open-split', 'toggle-done', 'reindex'] : [])
       ]) {
         showContextMenu.mockResolvedValue({ ok: true, value: action })
         await wrapper.find('.toc-row').trigger('contextmenu')
         await flushPromises()
       }
       expect(showContextMenu).toHaveBeenCalledWith(
-        kind === 'note' ? { kind: 'note', pinned: false, completed: true } : { kind: 'group' }
+        kind === 'note'
+          ? { kind: 'note', pinned: false, tocPinned: false, completed: true }
+          : { kind: 'group' }
       )
       expect(wrapper.emitted('requestRename')).toEqual([[node]])
+      expect(wrapper.emitted('requestReindex')).toEqual(kind === 'note' ? [[node]] : undefined)
       expect(wrapper.emitted('requestCreate')).toEqual([
         [node, 'before'],
         [node, 'after']
@@ -381,6 +418,61 @@ describe('TocNodeList', () => {
     await wrapper.setProps({ selectedNoteUuid: targetNote.uuid, focusRequestId: 1 })
     await vi.waitFor(() => expect(scrollIntoView).toHaveBeenCalled())
 
+    expect(wrapper.find('[data-note-uuid="note-b"]').exists()).toBe(true)
+  })
+
+  it('父笔记在只勾中自己时显示为部分选中', () => {
+    const parent: Extract<DeskTocNode, { type: 'note' }> = {
+      ...sourceNote,
+      children: [targetNote]
+    }
+    const wrapper = mount(TocNodeList, {
+      props: {
+        nodes: [parent],
+        selectedNoteUuid: null,
+        batchDeleting: true,
+        batchSelected: new Set([sourceNote.uuid])
+      }
+    })
+    const boxes = wrapper.findAll('.batch-check')
+    expect(boxes[0]?.attributes('data-state')).toBe('some')
+    expect(boxes[1]?.attributes('data-state')).toBe('none')
+  })
+
+  it('批量删除时点笔记只勾选，不打开', async () => {
+    const wrapper = mount(TocNodeList, {
+      props: {
+        nodes: [sourceNote, targetNote],
+        selectedNoteUuid: sourceNote.uuid,
+        batchDeleting: true,
+        batchSelected: new Set<string>()
+      }
+    })
+    await wrapper.find('[data-note-uuid="note-b"] .node-label').trigger('click')
+    expect(wrapper.emitted('toggleBatchNote')).toEqual([[targetNote.uuid]])
+    expect(wrapper.emitted('select')).toBeUndefined()
+    expect(wrapper.find('.add-note-action').exists()).toBe(false)
+  })
+
+  it('批量删除时点分组勾选里面的笔记', async () => {
+    const group: Extract<DeskTocNode, { type: 'group' }> = {
+      type: 'group',
+      title: '分组',
+      tocLineIndex: 0,
+      nodeId: 'group-a',
+      folderPath: ['分组'],
+      children: [targetNote]
+    }
+    const wrapper = mount(TocNodeList, {
+      props: {
+        nodes: [group],
+        selectedNoteUuid: null,
+        batchDeleting: true,
+        batchSelected: new Set<string>()
+      }
+    })
+    await wrapper.find('.node-label.group').trigger('click')
+    expect(wrapper.emitted('toggleBatchGroup')).toEqual([[group]])
     expect(wrapper.find('[data-note-uuid="note-b"]').exists()).toBe(true)
   })
 })

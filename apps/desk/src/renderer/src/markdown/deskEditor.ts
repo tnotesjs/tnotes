@@ -67,9 +67,8 @@ export interface DeskEditorOptions extends DeskEditorConfigOptions {
   /** 工具条里按 feature 显隐的项（默认 latex 开、ai 关 —— Desk 没有 AI）。 */
   toolbarFeatures?: DeskToolbarFeatures
   /**
-   * 选区浮动工具条开关（选中文字后弹出的格式条）。调用方从 AppSettings
-   * `editor.selectionToolbar` 取值传进来 —— 这里保持纯装配，不读 store。
-   * 做成 getter：设置面板改开关后立即生效，不必重建编辑器。**默认关闭**。
+   * 选区浮动工具条开关。实时预览编辑器不用它，设置里也不再提供。
+   * 做成 getter：调用方改值后立即生效，不必重建编辑器。默认关闭。
    */
   selectionToolbar?: () => boolean
 }

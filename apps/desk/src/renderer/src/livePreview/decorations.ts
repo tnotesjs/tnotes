@@ -14,9 +14,18 @@ import {
 } from '@codemirror/state'
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet } from '@codemirror/view'
 
-import { parseFenceTitleFromMeta } from '../editor/markdown/fenceInfo'
+import { writeClipboardText } from '../clipboardText'
+import { applyFenceLanguage, applyFenceTitle, parseFenceTitleFromMeta } from '../editor/markdown/fenceInfo'
 import { matchDeskLanguage } from '../editor/markdown/codeMirrorLanguages'
-import { codeBlockChrome, codeChromeAt, clampRangeAroundCollapsed, toggleCodeCollapse } from './codeBlockChrome'
+import { CHEVRON_DOWN_ICON, COLLAPSE_ICON, COPY_ICON, EXPAND_ICON } from '../markdown/copyIcons'
+import {
+  codeBlockChrome,
+  codeChromeAt,
+  clampRangeAroundCollapsed,
+  toggleCodeCollapse,
+  toggleCodeFullscreen
+} from './codeBlockChrome'
+import { codeLineDecorations } from './codeLines'
 import { CardWidget, isKnownComponent, setCodeGroupTab, type CardKind } from './cards'
 import { headingFoldKey, headingSections, HeadingFoldToggle, isHeadingFolded } from './headingFold'
 import { livePreviewEnabled } from './host'
@@ -27,6 +36,7 @@ import {
   CodeFenceHeaderWidget,
   EmptyWidget,
   HorizontalRuleWidget,
+  iconButton,
   ImageWidget,
   MathWidget
 } from './widgets'
@@ -253,14 +263,28 @@ function codeGroupPanels(state: EditorState, bodyFrom: number, bodyTo: number): 
   return panels
 }
 
+/** 围栏开头那一行的语言记号，原样返回（可能带 `:line-numbers`）。 */
+function fenceLang(opening: string): string {
+  const info = opening.replace(/^[ \t]*(?:`{3,}|~{3,})/, '').trim()
+  const token = info.split(/\s+/)[0] ?? ''
+  return token.startsWith('[') || token.startsWith('{') ? '' : token
+}
+
+function fenceTitle(opening: string): string {
+  const info = opening.replace(/^[ \t]*(?:`{3,}|~{3,})/, '').trim()
+  const lang = fenceLang(opening)
+  return parseFenceTitleFromMeta(info.slice(lang.length).trim()) || /\[([^\]]+)\]/.exec(info)?.[1] || ''
+}
+
 function codeGroupGaps(
   openLineTo: number,
   closeLineFrom: number,
   panels: FencePanel[]
 ): Array<{ from: number; to: number }> {
   const gaps: Array<{ from: number; to: number }> = []
+  // 只藏中间的空行，两端的换行留着：块替换吞掉换行会把标签栏和下一行并成一行，行装饰随之丢失。
   const push = (from: number, to: number): void => {
-    if (to > from) gaps.push({ from, to })
+    if (to - from > 1) gaps.push({ from: from + 1, to: to - 1 })
   }
   if (panels[0]) push(openLineTo, panels[0].from)
   for (let index = 0; index < panels.length - 1; index += 1) push(panels[index].to, panels[index + 1].from)
@@ -293,10 +317,12 @@ function activatePanel(view: EditorView, openFrom: number, index: number): void 
   const panel = located?.panels[index]
   if (!located || !panel) return
   const openLine = view.state.doc.lineAt(panel.from)
-  const collapsed = codeChromeAt(view.state, openLine.from)?.collapsed === true
+  const panelCollapsed = codeChromeAt(view.state, openLine.from)?.collapsed === true
+  const groupCollapsed = codeChromeAt(view.state, located.openFrom)?.collapsed === true
   const effects = [
     setCodeGroupTab.of({ pos: located.openFrom, index }),
-    ...(collapsed ? [toggleCodeCollapse.of(openLine.from)] : [])
+    ...(panelCollapsed ? [toggleCodeCollapse.of(openLine.from)] : []),
+    ...(groupCollapsed ? [toggleCodeCollapse.of(located.openFrom)] : [])
   ]
   const firstCodeLine = openLine.number + 1
   const target =
@@ -403,40 +429,145 @@ function showCodeGroupMenu(
   document.addEventListener('mousedown', close, true)
 }
 
+/** 连按两下同一个标签就改名。第一下会切标签、重画标签栏，所以按下记录不能挂在元素上。 */
+let lastTabPress: { openFrom: number; index: number; time: number } | null = null
+/** 语言输入写回围栏后标签栏会重画，新画出来的输入框把焦点接回去。 */
+let restoreGroupLang = false
+
+/** 标签栏在文档里的**当前**位置（组件不因上方编辑重画，构造时记下的坐标会过期）。 */
+function tabsOpenFrom(view: EditorView, dom: HTMLElement, fallback: number): number {
+  try {
+    return view.state.doc.lineAt(view.posAtDOM(dom)).from
+  } catch {
+    return fallback
+  }
+}
+
+function tabButtons(bar: HTMLElement): HTMLButtonElement[] {
+  return [...bar.querySelectorAll<HTMLButtonElement>('button.cm-lp-code-tab')]
+}
+
+function beginTabRename(view: EditorView, tab: HTMLElement, openFrom: number, index: number): void {
+  const located = panelsNow(view.state, openFrom)
+  const panel = located?.panels[index]
+  if (!panel || view.state.readOnly) return
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.className = 'cm-lp-code-tab-rename'
+  input.spellcheck = false
+  input.value = fenceTitle(view.state.doc.lineAt(panel.from).text)
+  input.placeholder = tab.textContent ?? ''
+  input.size = Math.max(4, input.value.length + 1, input.placeholder.length)
+  let done = false
+  const finish = (commit: boolean): void => {
+    if (done) return
+    done = true
+    const current = panelsNow(view.state, openFrom)?.panels[index]
+    const line = current ? view.state.doc.lineAt(current.from) : null
+    const next = line ? applyFenceTitle(line.text, input.value.trim()) : null
+    if (input.isConnected) input.replaceWith(tab)
+    if (commit && line && next !== null && next !== line.text) {
+      view.dispatch({ changes: { from: line.from, to: line.to, insert: next }, userEvent: 'input.code-tab-rename' })
+    }
+    view.focus()
+  }
+  input.addEventListener('pointerdown', (event) => event.stopPropagation())
+  input.addEventListener('input', () => {
+    input.size = Math.max(4, input.value.length + 1, input.placeholder.length)
+  })
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      finish(true)
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      finish(false)
+    }
+  })
+  input.addEventListener('blur', () => finish(true))
+  tab.replaceWith(input)
+  input.focus()
+  input.select()
+}
+
+/** 菜单里的「重命名」：先切到这个标签，等标签栏重画后再把新标签换成输入框。 */
+function renameTabLater(view: EditorView, openFrom: number, index: number): void {
+  activatePanel(view, openFrom, index)
+  setTimeout(() => {
+    for (const bar of view.contentDOM.querySelectorAll<HTMLElement>('.cm-lp-code-tabs')) {
+      if (tabsOpenFrom(view, bar, -1) !== openFrom) continue
+      const tab = tabButtons(bar)[index]
+      if (tab) beginTabRename(view, tab, openFrom, index)
+      return
+    }
+  }, 30)
+}
+
 class CodeGroupTabsWidget extends WidgetType {
   constructor(
     private readonly labels: string[],
     private readonly active: number,
-    private readonly containerFrom: number
+    private readonly containerFrom: number,
+    private readonly lang: string,
+    private readonly collapsed: boolean,
+    private readonly fullscreen: boolean
   ) {
     super()
   }
 
   eq(other: CodeGroupTabsWidget): boolean {
-    return other.active === this.active && other.labels.join('\n') === this.labels.join('\n')
+    return (
+      other.active === this.active &&
+      other.labels.join('\n') === this.labels.join('\n') &&
+      other.lang === this.lang &&
+      other.collapsed === this.collapsed &&
+      other.fullscreen === this.fullscreen
+    )
   }
 
   toDOM(view: EditorView): HTMLElement {
     const bar = document.createElement('span')
     bar.className = 'cm-lp-code-tabs'
+    const openFrom = (): number => tabsOpenFrom(view, bar, this.containerFrom)
+
+    const fold = iconButton(this.collapsed ? '展开代码组' : '折叠代码组', CHEVRON_DOWN_ICON, 'cm-lp-code-fold')
+    if (this.collapsed) fold.classList.add('is-collapsed')
+    fold.addEventListener('mousedown', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const from = openFrom()
+      const line = view.state.doc.lineAt(from)
+      view.dispatch({
+        effects: toggleCodeCollapse.of(from),
+        selection: { anchor: line.to },
+        userEvent: 'select.code-clamp'
+      })
+    })
+    bar.append(fold)
+
     this.labels.forEach((label, index) => {
       const tab = document.createElement('button')
       tab.type = 'button'
-      tab.className = index === this.active ? 'is-active' : ''
+      tab.className = index === this.active ? 'cm-lp-code-tab is-active' : 'cm-lp-code-tab'
       tab.textContent = label
+      tab.title = '双击改名'
       tab.addEventListener('pointerdown', (event) => {
         if (event.button !== 0) return
         event.preventDefault()
+        const from = openFrom()
+        const now = Date.now()
+        if (lastTabPress && lastTabPress.openFrom === from && lastTabPress.index === index && now - lastTabPress.time < 450) {
+          lastTabPress = null
+          beginTabRename(view, tab, from, index)
+          return
+        }
         const startX = event.clientX
         const startY = event.clientY
         let dragging = false
         let ghost: HTMLElement | null = null
-        const tabButtons = (): HTMLButtonElement[] =>
-          [...bar.querySelectorAll<HTMLButtonElement>('button')].filter(
-            (button) => !button.classList.contains('cm-lp-code-tab-add')
-          )
         const landingIndex = (x: number): number => {
-          const buttons = tabButtons()
+          const buttons = tabButtons(bar)
           for (let tabIndex = 0; tabIndex < buttons.length; tabIndex += 1) {
             const box = buttons[tabIndex].getBoundingClientRect()
             if (x < box.left + box.width / 2) return tabIndex
@@ -444,7 +575,7 @@ class CodeGroupTabsWidget extends WidgetType {
           return buttons.length
         }
         const paintDrop = (x: number): number => {
-          const buttons = tabButtons()
+          const buttons = tabButtons(bar)
           const target = landingIndex(x)
           buttons.forEach((button, tabIndex) => {
             const before = dragging && tabIndex === target && tabIndex !== index
@@ -473,43 +604,36 @@ class CodeGroupTabsWidget extends WidgetType {
           const target = dragging ? paintDrop(up.clientX) : index
           ghost?.remove()
           tab.classList.remove('is-dragging')
-          tabButtons().forEach((button) => {
+          tabButtons(bar).forEach((button) => {
             button.classList.remove('is-drop')
             button.classList.remove('is-drop-after')
           })
           if (!dragging) {
-            activatePanel(view, this.containerFrom, index)
+            lastTabPress = { openFrom: from, index, time: now }
+            activatePanel(view, from, index)
             return
           }
+          lastTabPress = null
           let insertAt = target
           if (index < insertAt) insertAt -= 1
-          if (insertAt !== index) reorderCodeGroupPanel(view, this.containerFrom, index, insertAt)
+          if (insertAt !== index) reorderCodeGroupPanel(view, from, index, insertAt)
         }
         window.addEventListener('pointermove', onMove)
         window.addEventListener('pointerup', onUp)
       })
       tab.addEventListener('contextmenu', (event) => {
         event.preventDefault()
-        const located = panelsNow(view.state, this.containerFrom)
+        const from = openFrom()
+        const located = panelsNow(view.state, from)
         showCodeGroupMenu(event.clientX, event.clientY, [
           {
             label: '重命名',
-            run: () => {
-              activatePanel(view, this.containerFrom, index)
-              setTimeout(() => {
-                const tabs = view.dom.querySelector('.cm-lp-code-tabs')
-                let line = tabs?.closest('.cm-line')?.nextElementSibling
-                while (line && !line.querySelector('.cm-lp-code-title')) line = line.nextElementSibling
-                const input = line?.querySelector<HTMLInputElement>('.cm-lp-code-title')
-                input?.focus()
-                input?.select()
-              }, 30)
-            }
+            run: () => renameTabLater(view, from, index)
           },
           {
             label: '删除',
             disabled: (located?.panels.length ?? 0) <= 1,
-            run: () => removeCodeGroupPanel(view, this.containerFrom, index)
+            run: () => removeCodeGroupPanel(view, from, index)
           }
         ])
       })
@@ -523,9 +647,67 @@ class CodeGroupTabsWidget extends WidgetType {
     add.setAttribute('aria-label', '添加代码块')
     add.addEventListener('mousedown', (event) => {
       event.preventDefault()
-      insertCodeGroupPanel(view, this.containerFrom)
+      insertCodeGroupPanel(view, openFrom())
     })
     bar.append(add)
+
+    const activeFence = (): { from: number; to: number; text: string; panelTo: number } | null => {
+      const located = panelsNow(view.state, openFrom())
+      const panel = located?.panels[this.active]
+      if (!panel) return null
+      const line = view.state.doc.lineAt(panel.from)
+      return { from: line.from, to: line.to, text: line.text, panelTo: panel.to }
+    }
+
+    const lang = document.createElement('input')
+    lang.type = 'text'
+    lang.className = 'cm-lp-code-lang-input'
+    lang.placeholder = 'text'
+    lang.spellcheck = false
+    lang.value = this.lang
+    lang.addEventListener('pointerdown', (event) => event.stopPropagation())
+    lang.addEventListener('input', () => {
+      const fence = activeFence()
+      if (!fence) return
+      const next = applyFenceLanguage(fence.text, lang.value)
+      if (next === fence.text) return
+      restoreGroupLang = true
+      view.dispatch({ changes: { from: fence.from, to: fence.to, insert: next } })
+    })
+
+    const copy = iconButton('复制', COPY_ICON, 'cm-lp-code-copy')
+    copy.addEventListener('mousedown', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const fence = activeFence()
+      if (!fence) return
+      const body = view.state.doc.sliceString(Math.min(fence.to + 1, fence.panelTo), fence.panelTo)
+      const code = body.replace(/\n?[ \t]*(?:`{3,}|~{3,})[ \t]*$/, '')
+      void writeClipboardText(code).then((ok) => {
+        copy.title = ok ? '已复制' : '复制失败'
+        window.setTimeout(() => (copy.title = '复制'), 1200)
+      })
+    })
+
+    const fullscreen = iconButton(
+      this.fullscreen ? '退出全屏' : '全屏代码',
+      this.fullscreen ? COLLAPSE_ICON : EXPAND_ICON,
+      'cm-lp-code-expand'
+    )
+    fullscreen.addEventListener('mousedown', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      view.dispatch({ effects: toggleCodeFullscreen.of(openFrom()) })
+    })
+
+    bar.append(lang, copy, fullscreen)
+    if (restoreGroupLang) {
+      restoreGroupLang = false
+      queueMicrotask(() => {
+        lang.focus()
+        lang.setSelectionRange(lang.value.length, lang.value.length)
+      })
+    }
     return bar
   }
 
@@ -546,26 +728,33 @@ export function hiddenCodeGroupBodies(
       const info = node.node.getChild('ContainerInfo')
       const name = info ? state.doc.sliceString(info.from, info.to).trim().split(/\s+/)[0]?.toLowerCase() : ''
       if (name !== 'code-group') return false
-      if (selection.from < node.from || selection.to > node.to) return false
       const body = node.node.getChild('ContainerBody')
       if (!body) return false
-      const openFrom = state.doc.lineAt(node.from).from
+      const openLine = state.doc.lineAt(node.from)
+      const openFrom = openLine.from
+      const closeLine = state.doc.lineAt(node.to)
+      if (codeChromeAt(state, openFrom)?.collapsed) {
+        if (closeLine.number > openLine.number) {
+          bodies.push({
+            from: state.doc.line(openLine.number + 1).from,
+            to: closeLine.to,
+            containerFrom: node.from,
+            containerTo: node.to
+          })
+        }
+        return false
+      }
       const panels = codeGroupPanels(state, body.from, body.to)
       const head = selection.head
       let active = panels.findIndex((panel) => head >= panel.from && head <= panel.to)
       if (active < 0) active = state.field(codeGroupTabs, false)?.get(openFrom) ?? 0
       panels.forEach((panel, index) => {
-        if (index !== active) {
-          bodies.push({
-            from: panel.from,
-            to: panel.to,
-            containerFrom: node.from,
-            containerTo: node.to
-          })
-        }
+        // 当前标签的开头围栏也藏起来了（标题和语言在标签栏上改）
+        const to = index === active ? state.doc.lineAt(panel.from).to : panel.to
+        bodies.push({ from: panel.from, to, containerFrom: node.from, containerTo: node.to })
       })
-      const openLineTo = state.doc.lineAt(node.from).to
-      const closeFrom = state.doc.lineAt(node.to).from
+      const openLineTo = openLine.to
+      const closeFrom = closeLine.from
       for (const gap of codeGroupGaps(openLineTo, closeFrom, panels)) {
         bodies.push({ ...gap, containerFrom: node.from, containerTo: node.to })
       }
@@ -573,6 +762,26 @@ export function hiddenCodeGroupBodies(
     }
   })
   return bodies
+}
+
+/** 光标落进藏起来的行时，按移动方向跳过去：往下走就落到后面，往上走就落到前面。 */
+function clampCursorAcrossHidden(
+  head: number,
+  previous: number,
+  bodies: Array<{ from: number; to: number }>,
+  length: number
+): { from: number; to: number } | null {
+  let pos = head
+  let moved = false
+  for (let guard = 0; guard <= bodies.length; guard += 1) {
+    const body = bodies.find((item) => pos >= item.from && pos <= item.to)
+    if (!body) break
+    moved = true
+    pos = previous < body.from ? body.to + 1 : body.from - 1
+  }
+  if (!moved) return null
+  const at = Math.max(0, Math.min(pos, length))
+  return { from: at, to: at }
 }
 
 export const keepCursorOutOfHiddenCodeGroup = EditorStateValue.transactionFilter.of((tr) => {
@@ -585,7 +794,10 @@ export const keepCursorOutOfHiddenCodeGroup = EditorStateValue.transactionFilter
     if (main.from < containerFrom || main.to > containerTo) return []
     return [{ from: tr.changes.mapPos(body.from, 1), to: tr.changes.mapPos(body.to, -1) }]
   })
-  const clamped = clampRangeAroundCollapsed(main.from, main.to, mapped)
+  const clamped =
+    main.empty
+      ? clampCursorAcrossHidden(main.head, tr.changes.mapPos(tr.startState.selection.main.head), mapped, tr.newDoc.length)
+      : clampRangeAroundCollapsed(main.from, main.to, mapped)
   if (!clamped) return tr
   const selection =
     clamped.from === clamped.to
@@ -863,6 +1075,12 @@ function build(state: EditorState): LivePreviewState {
                   : 'cm-lp-codeblock'
             ranges.push(Decoration.line({ class: className }).range(doc.line(number).from))
           }
+          const closed = node.getChildren('CodeMark').length > 1 && closeLine.number > openLine.number
+          if (!codeChromeAt(state, openLine.from)?.collapsed) {
+            ranges.push(
+              ...codeLineDecorations(doc, openLine.number, closed ? closeLine.number - 1 : closeLine.number)
+            )
+          }
           // 选区跨出围栏时露出源码，藏住的 ``` 才不会被悄悄选中。选区只在代码正文里时仍用标题栏。
           const spansOutside = selection.some(
             (range) =>
@@ -912,11 +1130,12 @@ function build(state: EditorState): LivePreviewState {
           const containerName = info.split(/\s+/)[0]?.toLowerCase() ?? ''
           const openLine = doc.lineAt(from)
           const closeLine = doc.lineAt(to)
-          if (!touches(from, to)) {
+          const body = node.getChild('ContainerBody')
+          // 代码组和普通代码块一样始终是装饰后的源码：换成卡片再换回来，聚焦时高度会跳。
+          if (!touches(from, to) && !(containerName === 'code-group' && body)) {
             card(node, 'container', openLine.to - openLine.from + 1)
             return false
           }
-          const body = node.getChild('ContainerBody')
           if (containerName === 'code-group' && body) {
             const spansOutside = selection.some(
               (range) =>
@@ -931,16 +1150,33 @@ function build(state: EditorState): LivePreviewState {
             let active = panels.findIndex((panel) => head >= panel.from && head <= panel.to)
             if (active < 0) active = state.field(codeGroupTabs).get(openLine.from) ?? 0
             active = Math.min(Math.max(0, active), Math.max(0, panels.length - 1))
-            ranges.push(Decoration.line({ class: 'cm-lp-code-group-open' }).range(openLine.from))
+            // 折叠和全屏按整组记，键是 `::: code-group` 那一行
+            const groupChrome = codeChromeAt(state, openLine.from)
+            const groupCollapsed = Boolean(groupChrome?.collapsed) && closeLine.number > openLine.number
+            const groupFullscreen = Boolean(groupChrome?.fullscreen)
+            const activeLang = panels[active] ? fenceLang(doc.lineAt(panels[active].from).text) : ''
+            const openClasses = ['cm-lp-code-group-open']
+            if (groupCollapsed) openClasses.push('cm-lp-code-group-collapsed')
+            if (groupFullscreen) openClasses.push('cm-lp-codeblock-fs')
+            ranges.push(Decoration.line({ class: openClasses.join(' ') }).range(openLine.from))
             ranges.push(
               Decoration.replace({
                 widget: new CodeGroupTabsWidget(
                   panels.map((panel) => panel.label),
                   active,
-                  openLine.from
+                  openLine.from,
+                  activeLang,
+                  groupCollapsed,
+                  groupFullscreen
                 )
               }).range(openLine.from, openLine.to)
             )
+            if (groupCollapsed) {
+              ranges.push(
+                Decoration.replace({ block: true }).range(doc.line(openLine.number + 1).from, closeLine.to)
+              )
+              return false
+            }
             for (const gap of codeGroupGaps(openLine.to, closeLine.from, panels)) {
               ranges.push(Decoration.replace({ block: true }).range(gap.from, gap.to))
             }
@@ -951,39 +1187,20 @@ function build(state: EditorState): LivePreviewState {
                 ranges.push(Decoration.replace({ block: true }).range(start.from, end.to))
                 return
               }
-              const info = start.text.replace(/^[ \t]*(?:`{3,}|~{3,})/, '').trim()
-              const langToken = info.split(/\s+/)[0] ?? ''
-              const lang = langToken.startsWith('[') || langToken.startsWith('{') ? '' : langToken.toLowerCase()
-              const title =
-                parseFenceTitleFromMeta(info.slice(lang.length).trim()) ||
-                /\[([^\]]+)\]/.exec(info)?.[1] ||
-                ''
+              const lang = fenceLang(start.text).replace(/[{:].*$/, '').toLowerCase()
               const codeFrom = Math.min(doc.length, start.to + 1)
               const codeTo = end.from > codeFrom ? end.from - 1 : start.to
               const code = codeTo > codeFrom ? doc.sliceString(codeFrom, codeTo).replace(/\n$/, '') : ''
-              const chrome = codeChromeAt(state, start.from)
-              ranges.push(
-                Decoration.line({ class: 'cm-lp-codeblock cm-lp-codeblock-first' }).range(start.from)
-              )
-              ranges.push(
-                Decoration.replace({
-                  widget: new CodeFenceHeaderWidget(
-                    lang,
-                    title,
-                    code,
-                    start.from,
-                    false,
-                    Boolean(chrome?.fullscreen),
-                    false
-                  )
-                }).range(start.from, start.to)
-              )
+              // 标签栏已经承担标题、语言、复制和全屏，开头围栏整行藏起来
+              ranges.push(Decoration.replace({ block: true }).range(start.from, start.to))
               if (end.number > start.number + 1) {
                 for (let number = start.number + 1; number < end.number; number += 1) {
                   ranges.push(Decoration.line({ class: 'cm-lp-codeblock' }).range(doc.line(number).from))
                 }
               }
               if (code.length > 0) highlightCode(ranges, codeFrom, codeFrom + code.length, lang, code)
+              const endIsFence = end.number > start.number && /^[ \t]*(?:`{3,}|~{3,})[ \t]*$/.test(end.text)
+              ranges.push(...codeLineDecorations(doc, start.number, endIsFence ? end.number - 1 : end.number))
               if (end.number > start.number) {
                 const marks = /^[ \t]*`{3,}|^[ \t]*~{3,}/.exec(end.text)
                 if (marks) {
@@ -992,8 +1209,8 @@ function build(state: EditorState): LivePreviewState {
                   )
                 }
               }
-              if (chrome?.fullscreen) {
-                for (let number = start.number; number <= end.number; number += 1) {
+              if (groupFullscreen) {
+                for (let number = start.number + 1; number <= end.number; number += 1) {
                   ranges.push(Decoration.line({ class: 'cm-lp-codeblock-fs' }).range(doc.line(number).from))
                 }
               }

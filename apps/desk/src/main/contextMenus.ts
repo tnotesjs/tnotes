@@ -43,14 +43,18 @@ export function contextMenuTemplate(
   const pinLabel = request.pinned ? '解除固定' : '固定'
   if (request.kind === 'note') {
     return [
+      item('add-to-agent', '添加到对话'),
+      { type: 'separator' },
       item('copy-path', '复制路径'),
       item('reveal-file', revealLabel),
       item('toggle-pin', pinLabel),
+      item('toggle-toc-pin', request.tocPinned ? '取消置顶' : '置顶'),
       { type: 'separator' },
       item('open-split', '在右侧打开'),
       item('show-note-assets', '显示本笔记资源'),
       item('show-history', '历史版本'),
       item('rename', '重命名'),
+      item('reindex', '修改索引'),
       item('toggle-done', request.completed ? '标记为未完成' : '标记为完成'),
       item('open-ide', `在 ${loadSettings().ide === 'cursor' ? 'Cursor' : 'VSCode'} 中打开`),
       ...creationAndDeletion
@@ -60,6 +64,7 @@ export function contextMenuTemplate(
   // the label while using the native accelerator column for single-step shortcuts.
   const template: MenuItemConstructorOptions[] = [
     { ...item('close', '关闭', 'CommandOrControl+W'), enabled: !request.pinned },
+    { ...item('close-others', '关闭其它 tab'), enabled: request.othersClosable !== false },
     item('close-saved', `关闭已保存笔记    ${primary} K U`),
     item('close-all', `全部关闭    ${primary} K W`),
     item('close-web', '关闭所有网页 tab')
@@ -67,6 +72,7 @@ export function contextMenuTemplate(
   if (request.tabType === 'note') {
     template.push(
       { type: 'separator' },
+      item('add-to-agent', '添加到对话'),
       item('copy-path', '复制路径', 'Alt+CommandOrControl+C'),
       item('reveal-file', revealLabel, 'Alt+CommandOrControl+R'),
       item('reveal-toc', '在目录列表中显示'),

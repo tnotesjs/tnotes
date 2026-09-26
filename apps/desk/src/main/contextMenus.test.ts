@@ -22,19 +22,23 @@ describe('native context menus', () => {
     ['linux', '打开所在文件夹']
   ] as const)('builds the note menu for %s', (platform, reveal) => {
     const template = contextMenuTemplate(
-      { kind: 'note', pinned: false, completed: false },
+      { kind: 'note', pinned: false, tocPinned: false, completed: false },
       vi.fn(),
       platform
     )
     expect(template.map((item) => item.label ?? item.type)).toEqual([
+      '添加到对话',
+      'separator',
       '复制路径',
       reveal,
       '固定',
+      '置顶',
       'separator',
       '在右侧打开',
       '显示本笔记资源',
       '历史版本',
       '重命名',
+      '修改索引',
       '标记为完成',
       '在 VSCode 中打开',
       'separator',
@@ -46,14 +50,26 @@ describe('native context menus', () => {
   })
 
   it('笔记菜单提供历史版本入口', () => {
-    const template = contextMenuTemplate({ kind: 'note', pinned: false, completed: false }, vi.fn())
+    const template = contextMenuTemplate(
+      { kind: 'note', pinned: false, tocPinned: false, completed: false },
+      vi.fn()
+    )
     expect(template.find((item) => item.id === 'show-history')?.label).toBe('历史版本')
   })
 
   it('uses the configured IDE and current pin state', () => {
     mocks.settings.mockReturnValueOnce({ ide: 'cursor' })
-    const template = contextMenuTemplate({ kind: 'note', pinned: true, completed: true }, vi.fn())
+    const template = contextMenuTemplate(
+      { kind: 'note', pinned: true, tocPinned: false, completed: true },
+      vi.fn()
+    )
     expect(template.find((item) => item.id === 'toggle-pin')?.label).toBe('解除固定')
+    expect(template.find((item) => item.id === 'toggle-toc-pin')?.label).toBe('置顶')
+    const pinnedInToc = contextMenuTemplate(
+      { kind: 'note', pinned: true, tocPinned: true, completed: true },
+      vi.fn()
+    )
+    expect(pinnedInToc.find((item) => item.id === 'toggle-toc-pin')?.label).toBe('取消置顶')
     expect(template.find((item) => item.id === 'open-ide')?.label).toBe('在 Cursor 中打开')
     expect(template.find((item) => item.id === 'toggle-done')?.label).toBe('标记为未完成')
     expect(template.filter((item) => item.id === 'open-ide')).toHaveLength(1)
@@ -92,11 +108,12 @@ describe('native context menus', () => {
       const ids = template.map((item) => item.id).filter(Boolean)
       expect(ids).toEqual([
         'close',
+        'close-others',
         'close-saved',
         'close-all',
         'close-web',
         ...(tabType === 'note'
-          ? ['copy-path', 'reveal-file', 'reveal-toc', 'show-note-assets']
+          ? ['add-to-agent', 'copy-path', 'reveal-file', 'reveal-toc', 'show-note-assets']
           : []),
         'toggle-pin'
       ])
@@ -120,6 +137,17 @@ describe('native context menus', () => {
     expect(template.at(-1)?.label).toContain('解除固定')
   })
 
+  it('disables close-others when this is the only closable tab', () => {
+    const template = contextMenuTemplate(
+      { kind: 'tab', tabType: 'note', pinned: false, othersClosable: false },
+      vi.fn()
+    )
+    expect(template.find((item) => item.id === 'close-others')).toMatchObject({
+      label: '关闭其它 tab',
+      enabled: false
+    })
+  })
+
   it('returns only the chosen action after popping up a real native menu', async () => {
     mocks.build.mockImplementation((template: MenuItemConstructorOptions[]) => {
       mocks.popup.mockImplementation((options: PopupOptions) => {
@@ -135,7 +163,14 @@ describe('native context menus', () => {
       return { popup: mocks.popup }
     })
     const window = {} as Electron.BrowserWindow
-    expect(await showContextMenu(window, { kind: 'note', pinned: false, completed: false })).toBe(
+    expect(
+      await showContextMenu(window, {
+        kind: 'note',
+        pinned: false,
+        tocPinned: false,
+        completed: false
+      })
+    ).toBe(
       'toggle-pin'
     )
     expect(mocks.popup).toHaveBeenCalledWith(expect.objectContaining({ window }))
@@ -147,6 +182,7 @@ describe('native context menus', () => {
       await showContextMenu({} as Electron.BrowserWindow, {
         kind: 'note',
         pinned: false,
+        tocPinned: false,
         completed: false
       })
     ).toBeNull()

@@ -174,6 +174,22 @@ export function createTabClosing(ctx: CloseTabsContext) {
     return closeTargets(ids, allowPinned)
   }
 
+  function requestCloseOtherTabs(keepTabId: string): Promise<boolean> {
+    const group = ctx.editor.groups.find((item) => item.tabs.some((tab) => tab.id === keepTabId))
+    if (!group) return Promise.resolve(false)
+    const keep = new Set(
+      group.tabs.filter((tab) => tab.id === keepTabId || tab.pinned).map((tab) => tab.id)
+    )
+    const targets = group.tabs.filter((tab) => !keep.has(tab.id))
+    const ids = new Set<string>()
+    for (const tab of targets) {
+      const attached = attachedIds(tab).filter((id) => !keep.has(id))
+      if (tab.type === 'note') unpinAttached(tab.id, attached)
+      for (const id of attached) ids.add(id)
+    }
+    return closeTargets([...ids])
+  }
+
   function requestCloseTabs(mode: 'all' | 'saved' | 'web'): Promise<boolean> {
     const targets = ctx.editor.groups
       .flatMap((group) => group.tabs)
@@ -191,5 +207,12 @@ export function createTabClosing(ctx: CloseTabsContext) {
     return closeTargets([...ids])
   }
 
-  return { requestCloseTab, requestCloseTabs, isTabDirty, closingTabs, prepareToQuit }
+  return {
+    requestCloseTab,
+    requestCloseTabs,
+    requestCloseOtherTabs,
+    isTabDirty,
+    closingTabs,
+    prepareToQuit
+  }
 }

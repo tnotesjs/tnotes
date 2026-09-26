@@ -102,4 +102,35 @@ describe('deleteToc 快照版本守卫', () => {
       fs.readFile(path.join(handle.rootPath, 'notes', '0001. 第一篇.md'), 'utf8')
     ).rejects.toThrow()
   })
+
+  it('批量删除只去掉勾中的笔记，子笔记留在目录里', async () => {
+    const handle = await makeHandle()
+    await fs.writeFile(
+      path.join(handle.rootPath, 'TOC.md'),
+      '- [ ] 0001. 第一篇\n  - [ ] 0002. 第二篇\n'
+    )
+    handle.snapshot = await handle.workspace.scan()
+    const preview = await previewDelete(handle, 'kb-test', {
+      type: 'notes',
+      noteUuids: ['note-uuid-1']
+    })
+    expect(preview.notes.map((note) => note.index)).toEqual(['0001'])
+    await deleteToc(
+      handle,
+      {
+        knowledgeBaseId: 'kb-test',
+        entry: preview.entry,
+        expectedSnapshotRevision: preview.snapshotRevision
+      },
+      noopEffects
+    )
+    const toc = await fs.readFile(path.join(handle.rootPath, 'TOC.md'), 'utf8')
+    expect(toc).toBe('- [ ] 0002. 第二篇\n')
+    await expect(
+      fs.readFile(path.join(handle.rootPath, 'notes', '0001. 第一篇.md'), 'utf8')
+    ).rejects.toThrow()
+    expect(await fs.readFile(path.join(handle.rootPath, 'notes', '0002. 第二篇.md'), 'utf8')).toMatch(
+      /第二篇/
+    )
+  })
 })

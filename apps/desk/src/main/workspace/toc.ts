@@ -8,6 +8,7 @@ import {
 } from '@tnotesjs/kb'
 import type {
   DeletePreviewDto,
+  DeleteTargetDto,
   KnowledgeBaseDetail,
   TocCreateGroupRequest,
   TocDeleteRequest,
@@ -77,19 +78,12 @@ export async function renameTocGroup(
   return applySnapshotMutation(handle, result, effects)
 }
 
-export async function previewDelete(
+function previewFromIndexes(
   handle: KnowledgeBaseHandle,
   knowledgeBaseId: string,
-  entry: TocEntryRefDto
-): Promise<DeletePreviewDto> {
-  // 子树内的笔记 = 将随删除移除的笔记（kb 的 removeEntry 会一并删除笔记文件）。
-  const ref = kbEntryRef(handle, entry)
-  const lines = await readTocLines(handle.rootPath)
-  const lineIndex =
-    ref.type === 'note'
-      ? findNoteLineIndex(lines, ref.index)
-      : findGroupLineIndex(lines, ref.groupPath)
-  const indexes = new Set(collectSubtreeNoteIndexes(lines, lineIndex))
+  entry: DeleteTargetDto,
+  indexes: Set<string>
+): DeletePreviewDto {
   const notes: DeletePreviewDto['notes'] = handle.snapshot.notes
     .filter((meta) => indexes.has(meta.index))
     .map((meta) => ({
@@ -111,6 +105,32 @@ export async function previewDelete(
   }
 }
 
+export async function previewDelete(
+  handle: KnowledgeBaseHandle,
+  knowledgeBaseId: string,
+  entry: DeleteTargetDto
+): Promise<DeletePreviewDto> {
+  if (entry.type === 'notes') {
+    const noteUuids = [...new Set(entry.noteUuids)]
+    if (noteUuids.length === 0) throw new KbError('INVALID_OPERATION', '没有要删除的笔记')
+    const indexes = new Set(noteUuids.map((noteUuid) => resolveNoteIndex(handle, noteUuid)))
+    return previewFromIndexes(handle, knowledgeBaseId, { type: 'notes', noteUuids }, indexes)
+  }
+  // 子树内的笔记 = 将随删除移除的笔记（kb 的 removeEntry 会一并删除笔记文件）。
+  const ref = kbEntryRef(handle, entry)
+  const lines = await readTocLines(handle.rootPath)
+  const lineIndex =
+    ref.type === 'note'
+      ? findNoteLineIndex(lines, ref.index)
+      : findGroupLineIndex(lines, ref.groupPath)
+  return previewFromIndexes(
+    handle,
+    knowledgeBaseId,
+    entry,
+    new Set(collectSubtreeNoteIndexes(lines, lineIndex))
+  )
+}
+
 /**
  * 渲染端在预览里带下快照版本，主进程此前直接忽略：预览与确认之间知识库若被外部
  * 改动（git pull / 另一个窗口），按当前索引解析会删掉另一个子树，且底层是
@@ -130,6 +150,13 @@ export async function deleteToc(
   effects: MutationSideEffects
 ): Promise<KnowledgeBaseDetail> {
   assertFreshSnapshot(handle, request.expectedSnapshotRevision)
-  const result = await handle.workspace.toc.removeEntry(kbEntryRef(handle, request.entry))
+  const result =
+    request.entry.type === 'notes'
+      ? await handle.workspace.toc.removeNotes(
+          [...new Set(request.entry.noteUuids)].map((noteUuid) =>
+            resolveNoteIndex(handle, noteUuid)
+          )
+        )
+      : await handle.workspace.toc.removeEntry(kbEntryRef(handle, request.entry))
   return applySnapshotMutation(handle, result, effects)
 }

@@ -5,7 +5,7 @@
  * 是否开启」从 Crepe 的 feature 登记表改成显式参数（见 `./features`，Desk 默认 ai:false
  * —— 「Ask AI」按钮连同它依赖的 palette/tooltip 一并移除）；额外导出 `toolbarTooltip`
  * 以便验收断言「工具条视图已注册」，并加一个 `ToolbarRuntimeOptions.isEnabled` 开关
- * （Desk 设置项「选区浮动工具条」，默认关闭）。其余（`.milkdown-toolbar` 容器、TooltipProvider 的
+ * （默认关闭，设置里不再提供开关）。其余（`.milkdown-toolbar` 容器、TooltipProvider 的
  * `shouldShow` 判定、图标/文案/快捷键解析）原样保留。
  */
 import type { Ctx } from '@milkdown/kit/ctx'

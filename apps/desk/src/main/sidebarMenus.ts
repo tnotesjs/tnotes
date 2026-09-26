@@ -4,6 +4,7 @@
 
 import { Menu, type BrowserWindow, type MenuItemConstructorOptions } from 'electron'
 
+import { maxBatchNoteCount } from '../shared/noteBatch'
 import type {
   KnowledgeSidebarMenuAction,
   KnowledgeSidebarMenuRequest,
@@ -58,7 +59,9 @@ export function navigatorSidebarMenuTemplate(
   const ready = request.ready
   return [
     item('create-note', '新建笔记', ready),
+    item('create-notes', '新建多篇笔记', ready && maxBatchNoteCount(request.noteCount) >= 1),
     item('create-group', '新建分组', ready),
+    item('batch-delete', '批量删除', ready && request.noteCount > 0),
     item('preview', request.previewLabel, ready),
     item('build', request.buildBusy ? '正在构建站点' : '构建站点', ready && !request.buildBusy),
     { type: 'separator' },

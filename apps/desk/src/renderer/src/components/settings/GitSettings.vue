@@ -55,16 +55,17 @@ const lastCheck = computed(() => rows.value.find((row) => row.at)?.at ?? null)
   <section class="settings-section git-settings">
     <header class="section-heading">
       <strong>Git 与远端</strong>
-      <span>后台自动抓取开关与上次远端检查时间</span>
+      <span>自动检查远端更新与上次远端检查时间</span>
     </header>
     <button type="button" class="reset-group" @click="emit('reset')">重置</button>
     <div class="field-grid">
       <label class="card-toggle">
         <input v-model="draft.git.autoFetch" data-testid="git-auto-fetch" type="checkbox" />
         <span>
-          <strong>后台自动抓取远端更新</strong>
+          <strong>自动检查当前知识库的远端更新</strong>
           <small>
-            默认关闭。打开后会打开知识库时抓取一次，之后每 5 分钟检查一次远端；失败会退避重试。
+            默认关闭。打开后只检查左侧当前选中的知识库：切换过去时立刻检查一次，之后每 5 分钟再查；
+            窗口在后台时暂停，回到 Desk 时若已超过 5 分钟就补查。其它知识库不会在后台联网。失败会退避重试。
             手动「获取远端更新」与「拉取更新」始终可用，不受此开关影响。
           </small>
         </span>

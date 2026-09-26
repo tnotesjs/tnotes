@@ -28,6 +28,7 @@ import { applyAtomicWrites, writeFileAtomic } from './atomic'
 import { ASSETS_DIR, CONFIG_FILE, NOTES_DIR, TOC_FILE } from './constants'
 import { KbError } from './errors'
 import { parseNoteContent, serializeNoteContent, updateNoteFrontmatter } from './frontmatter'
+import { normalizeNoteIndex, rewriteNoteIndexContent } from './noteIndex'
 import { isValidKbName } from './name'
 import {
   contentRevision,
@@ -49,8 +50,10 @@ import {
   moveSubtree,
   normalizeTocBlankLines,
   parseTocLine,
+  removeSelectedNoteLines,
   removeSubtree,
   setNoteDoneLine,
+  setNoteIndexLine,
   setNoteTitleLine
 } from './toc'
 
@@ -101,9 +104,42 @@ export interface CreateNoteInput {
   body?: string
 }
 
+/** 一次新建的篇数上限。笔记总数上限仍是 9999。 */
+export const NOTE_BATCH_LIMIT = 999
+export const NOTE_COUNT_LIMIT = 9999
+
+export interface CreateNotesInput {
+  title: string
+  count: number
+  placement?: Placement
+}
+
+export function assertNoteBatchCapacity(fileCount: number, maxIndex: number, count: number): void {
+  if (!Number.isInteger(count) || count < 1 || count > NOTE_BATCH_LIMIT) {
+    throw new KbError('INVALID_OPERATION', `一次最多新建 ${NOTE_BATCH_LIMIT} 篇笔记`, { count })
+  }
+  if (fileCount + count > NOTE_COUNT_LIMIT) {
+    throw new KbError('INVALID_OPERATION', `笔记数量已达上限（${NOTE_COUNT_LIMIT}）`, {
+      fileCount,
+      count
+    })
+  }
+  if (maxIndex + count > NOTE_COUNT_LIMIT) {
+    throw new KbError('INVALID_OPERATION', `笔记编号已用尽（> ${NOTE_COUNT_LIMIT}）`, {
+      maxIndex,
+      count
+    })
+  }
+}
+
 export interface RenameNoteInput {
   index: string
   title: string
+}
+
+export interface ReindexNoteInput {
+  index: string
+  nextIndex: string
 }
 
 export interface SetFrontmatterInput {
@@ -191,7 +227,9 @@ export interface TNotesKbWorkspace {
     read(index: string): Promise<NoteDoc>
     save(input: SaveNoteInput): Promise<MutationResult<NoteDoc>>
     create(input: CreateNoteInput): Promise<MutationResult<NoteDoc>>
+    createMany(input: CreateNotesInput): Promise<MutationResult<NoteDoc[]>>
     rename(input: RenameNoteInput): Promise<MutationResult<NoteDoc>>
+    reindex(input: ReindexNoteInput): Promise<MutationResult<NoteDoc>>
     /** Delete a single note (file + its TOC line). Fails while it has children. */
     remove(index: string): Promise<MutationResult<{ index: string }>>
     setFrontmatter(input: SetFrontmatterInput): Promise<MutationResult<NoteDoc>>
@@ -206,6 +244,11 @@ export interface TNotesKbWorkspace {
     renameGroup(input: { groupPath: string[]; title: string }): Promise<MutationResult<KbSnapshot>>
     /** Remove a TOC subtree; note files inside it are deleted as well. */
     removeEntry(ref: TocEntryRef): Promise<MutationResult<KbSnapshot>>
+    /**
+     * Delete these notes in one write. Unselected children move up under the
+     * nearest remaining parent. Group headings stay, even when they become empty.
+     */
+    removeNotes(indexes: string[]): Promise<MutationResult<KbSnapshot>>
     setDone(input: { index: string; done: boolean }): Promise<MutationResult<KbSnapshot>>
   }
 
@@ -319,8 +362,8 @@ export function createWorkspace(options: CreateWorkspaceOptions): TNotesKbWorksp
     let max = 0
     for (const file of files) max = Math.max(max, Number.parseInt(file.index, 10))
     const next = max + 1
-    if (next > 9999) {
-      throw new KbError('INVALID_OPERATION', '笔记编号已用尽（> 9999）')
+    if (next > NOTE_COUNT_LIMIT) {
+      throw new KbError('INVALID_OPERATION', `笔记编号已用尽（> ${NOTE_COUNT_LIMIT}）`)
     }
     return String(next).padStart(4, '0')
   }
@@ -401,6 +444,59 @@ export function createWorkspace(options: CreateWorkspaceOptions): TNotesKbWorksp
         }
       },
 
+      async createMany(input) {
+        const title = validateTitle(input.title)
+        const files = await scanNoteFiles(rootPath)
+        let max = 0
+        for (const file of files) max = Math.max(max, Number.parseInt(file.index, 10) || 0)
+        assertNoteBatchCapacity(files.length, max, input.count)
+
+        const lines = await readTocLines(rootPath)
+        const { lineIndex, indentLevel, where } = placementLineIndex(lines, input.placement)
+        const docs: NoteDoc[] = []
+        const noteLines: string[] = []
+        const writes: Array<{ path: string; data: string }> = []
+        const changedFiles: Array<{ path: string; kind: 'created' | 'updated' }> = []
+
+        for (let offset = 0; offset < input.count; offset += 1) {
+          const index = String(max + 1 + offset).padStart(4, '0')
+          const fileName = noteFileName(index, title)
+          const relPath = `${NOTES_DIR}/${fileName}`
+          const frontmatter: NoteFrontmatter = { id: randomUUID() }
+          const body = `# ${noteHeading(index, title)}\n`
+          const content = serializeNoteContent(frontmatter, body)
+          writes.push({ path: path.join(rootPath, relPath), data: content })
+          noteLines.push(buildNoteLine(index, title, false, indentLevel))
+          changedFiles.push({ path: relPath, kind: 'created' })
+          docs.push(
+            toDoc(
+              rootPath,
+              {
+                index,
+                title,
+                fileName,
+                relPath,
+                frontmatter,
+                done: false,
+                inToc: true,
+                groupPath: []
+              },
+              content
+            )
+          )
+        }
+
+        const nextLines =
+          lines.length === 0 ? noteLines : insertLinesRelative(lines, lineIndex, noteLines, where)
+        writes.push({
+          path: tocPath,
+          data: normalizeTocBlankLines(nextLines).join('\n').replace(/\n*$/, '\n')
+        })
+        changedFiles.push({ path: TOC_FILE, kind: 'updated' })
+        await applyAtomicWrites(writes)
+        return { value: docs, changedFiles }
+      },
+
       async rename(input) {
         const title = validateTitle(input.title)
         const { meta, content } = await readNoteFile(input.index)
@@ -427,6 +523,89 @@ export function createWorkspace(options: CreateWorkspaceOptions): TNotesKbWorksp
             { path: TOC_FILE, kind: 'updated' }
           ]
         }
+      },
+
+      async reindex(input) {
+        const from = input.index
+        const to = normalizeNoteIndex(input.nextIndex)
+        const { meta, content } = await readNoteFile(from)
+        if (from === to) {
+          return { value: toDoc(rootPath, meta, content), changedFiles: [] }
+        }
+        const files = await scanNoteFiles(rootPath)
+        if (files.some((file) => file.index === to)) {
+          throw new KbError('NOTE_EXISTS', `索引 ${to} 已被占用`, { index: to })
+        }
+
+        const assets = await listAssets(rootPath)
+        const takenAssets = new Set(assets.map((asset) => asset.relPath))
+        const assetMoves: Array<{ from: string; to: string }> = []
+        for (const asset of assets) {
+          if (!asset.name.startsWith(`${from}-`)) continue
+          const nextName = `${to}-${asset.name.slice(from.length + 1)}`
+          const nextRel = `${asset.relPath.slice(0, -asset.name.length)}${nextName}`
+          if (takenAssets.has(nextRel)) {
+            throw new KbError('NOTE_EXISTS', `索引 ${to} 的资源 ${nextName} 已存在`, {
+              index: to,
+              path: nextRel
+            })
+          }
+          assetMoves.push({ from: asset.relPath, to: nextRel })
+          takenAssets.add(nextRel)
+        }
+
+        const nextContent = rewriteNoteIndexContent(content, from, to)
+        const nextFileName = noteFileName(to, meta.title)
+        const nextRelPath = `${NOTES_DIR}/${nextFileName}`
+        const writes: Array<{ path: string; data: string }> = [
+          { path: path.join(rootPath, nextRelPath), data: nextContent }
+        ]
+        const changedFiles: ChangedFile[] = [
+          { path: nextRelPath, kind: 'renamed', previousPath: meta.relPath }
+        ]
+
+        if (assetMoves.length > 0) {
+          for (const file of files) {
+            if (file.index === from) continue
+            const text = await fs.readFile(path.join(rootPath, file.relPath), 'utf8')
+            const next = text.replaceAll(`assets/${from}-`, `assets/${to}-`)
+            if (next === text) continue
+            writes.push({ path: path.join(rootPath, file.relPath), data: next })
+            changedFiles.push({ path: file.relPath, kind: 'updated' })
+          }
+        }
+
+        const lines = await readTocLines(rootPath)
+        try {
+          writes.push({ path: tocPath, data: setNoteIndexLine(lines, from, to).join('\n') })
+          changedFiles.push({ path: TOC_FILE, kind: 'updated' })
+        } catch (error) {
+          if (!(error instanceof KbError) || error.code !== 'NOTE_NOT_FOUND') throw error
+        }
+
+        const renamedAssets: Array<{ from: string; to: string }> = []
+        try {
+          for (const move of assetMoves) {
+            await fs.rename(path.join(rootPath, move.from), path.join(rootPath, move.to))
+            renamedAssets.push(move)
+            changedFiles.push({ path: move.to, kind: 'renamed', previousPath: move.from })
+          }
+          await applyAtomicWrites(writes)
+          await fs.rm(path.join(rootPath, meta.relPath), { force: true })
+        } catch (error) {
+          for (const move of renamedAssets.reverse()) {
+            await fs.rename(path.join(rootPath, move.to), path.join(rootPath, move.from)).catch(() => {})
+          }
+          throw error
+        }
+
+        const nextMeta: NoteMeta = {
+          ...meta,
+          index: to,
+          fileName: nextFileName,
+          relPath: nextRelPath
+        }
+        return { value: toDoc(rootPath, nextMeta, nextContent), changedFiles }
       },
 
       async remove(index) {
@@ -546,6 +725,34 @@ export function createWorkspace(options: CreateWorkspaceOptions): TNotesKbWorksp
           value: await scanKnowledgeBase(rootPath),
           changedFiles: [
             ...toDelete.map((f): ChangedFile => ({ path: f.relPath, kind: 'deleted' })),
+            { path: TOC_FILE, kind: 'updated' }
+          ]
+        }
+      },
+
+      async removeNotes(indexes) {
+        const unique = [...new Set(indexes)]
+        if (unique.length === 0) {
+          throw new KbError('INVALID_OPERATION', '没有要删除的笔记')
+        }
+        const files = await scanNoteFiles(rootPath)
+        const byIndex = new Map(files.map((file) => [file.index, file]))
+        const missing = unique.filter((index) => !byIndex.has(index))
+        if (missing.length > 0) {
+          throw new KbError('NOTE_NOT_FOUND', `未找到笔记: ${missing.join('、')}`, {
+            indexes: missing
+          })
+        }
+        const lines = await readTocLines(rootPath)
+        await writeTocLines(removeSelectedNoteLines(lines, new Set(unique)))
+        const toDelete = unique.map((index) => byIndex.get(index)!)
+        for (const file of toDelete) {
+          await fs.rm(path.join(rootPath, file.relPath), { force: true })
+        }
+        return {
+          value: await scanKnowledgeBase(rootPath),
+          changedFiles: [
+            ...toDelete.map((file): ChangedFile => ({ path: file.relPath, kind: 'deleted' })),
             { path: TOC_FILE, kind: 'updated' }
           ]
         }

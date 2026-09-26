@@ -11,6 +11,7 @@ import HistoryTabPane from './HistoryTabPane.vue'
 import KbAssetsPane from './KbAssetsPane.vue'
 import NoteTabPane from './NoteTabPane.vue'
 import WebTabPane from './WebTabPane.vue'
+import { useAgentStore } from '../agent/agentStore'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
 import { resultValue } from '../stores/workspace/helpers'
@@ -169,7 +170,12 @@ async function showTabMenu(event: MouseEvent, tab: EditorTab): Promise<void> {
       await window.desk.app.showContextMenu({
         kind: 'tab',
         tabType: tab.type,
-        pinned: Boolean(tab.pinned)
+        pinned: Boolean(tab.pinned),
+        othersClosable: Boolean(
+          editor.groups
+            .find((item) => item.tabs.some((candidate) => candidate.id === tab.id))
+            ?.tabs.some((candidate) => candidate.id !== tab.id && !candidate.pinned)
+        )
       })
     )
     const currentTab = editor.groups
@@ -185,10 +191,12 @@ async function showTabMenu(event: MouseEvent, tab: EditorTab): Promise<void> {
 
 async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<void> {
   if (action === 'close') await workspace.requestCloseTab(tab.id)
+  else if (action === 'close-others') await workspace.requestCloseOtherTabs(tab.id)
   else if (action === 'close-saved') await workspace.requestCloseTabs('saved')
   else if (action === 'close-all') await workspace.requestCloseTabs('all')
   else if (action === 'close-web') await workspace.requestCloseTabs('web')
   else if (action === 'toggle-pin') editor.togglePinned(tab.id)
+  else if (tab.type === 'note' && action === 'add-to-agent') await useAgentStore().addNoteToChat(tab.knowledgeBaseId, tab.noteUuid)
   else if (tab.type === 'note' && action === 'copy-path') await workspace.copyNoteDirectoryPath(tab)
   else if (tab.type === 'note' && action === 'reveal-file')
     await workspace.revealNoteInFileManager(tab)

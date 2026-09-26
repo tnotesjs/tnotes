@@ -49,12 +49,14 @@ describe('sidebar native menus', () => {
 
   it('builds the navigator sidebar menu with preview/build state', () => {
     const template = navigatorSidebarMenuTemplate(
-      { ready: true, previewLabel: '停止站点预览', buildBusy: true },
+      { ready: true, previewLabel: '停止站点预览', buildBusy: true, noteCount: 12 },
       vi.fn()
     )
     expect(template.map((item) => item.label ?? item.type)).toEqual([
       '新建笔记',
+      '新建多篇笔记',
       '新建分组',
+      '批量删除',
       '停止站点预览',
       '正在构建站点',
       'separator',
@@ -66,14 +68,34 @@ describe('sidebar native menus', () => {
     expect(template.find((item) => item.id === 'build')?.enabled).toBe(false)
   })
 
+  it('disables batch create when the knowledge base already has 9999 notes', () => {
+    const template = navigatorSidebarMenuTemplate(
+      { ready: true, previewLabel: '启动站点预览', buildBusy: false, noteCount: 9999 },
+      vi.fn()
+    )
+    expect(template.find((item) => item.id === 'create-notes')?.enabled).toBe(false)
+    expect(template.find((item) => item.id === 'create-note')?.enabled).toBe(true)
+    expect(template.find((item) => item.id === 'batch-delete')?.enabled).toBe(true)
+  })
+
+  it('disables batch delete when the knowledge base has no notes', () => {
+    const template = navigatorSidebarMenuTemplate(
+      { ready: true, previewLabel: '启动站点预览', buildBusy: false, noteCount: 0 },
+      vi.fn()
+    )
+    expect(template.find((item) => item.id === 'batch-delete')?.enabled).toBe(false)
+  })
+
   it('disables navigator actions when knowledge base is not ready', () => {
     const template = navigatorSidebarMenuTemplate(
-      { ready: false, previewLabel: '启动站点预览', buildBusy: false },
+      { ready: false, previewLabel: '启动站点预览', buildBusy: false, noteCount: 12 },
       vi.fn()
     )
     for (const id of [
       'create-note',
+      'create-notes',
       'create-group',
+      'batch-delete',
       'preview',
       'build',
       'settings',
@@ -130,7 +152,8 @@ describe('sidebar native menus', () => {
       showNavigatorSidebarMenu({} as never, {
         ready: true,
         previewLabel: '启动站点预览',
-        buildBusy: false
+        buildBusy: false,
+        noteCount: 12
       })
     ).resolves.toBe('create-note')
   })

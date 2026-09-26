@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  *
  * 这里用**假的 git 可执行文件**（可挂起、可指定退出码）验证：
  *  - 开关默认关闭时完全不抓取，但手动 fetch 仍可用；
- *  - 打开后按全局并发上限抓取、同一目标不重复入队；
+ *  - 打开后只检查当前知识库，切库时立刻检查、窗口在后台时暂停，同一目标不重复入队；
  *  - 后台失败/超时按真实分类落到命令任务，失败后进入退避。
  */
 
@@ -200,6 +200,7 @@ describe('后台自动抓取开关（默认关闭）', () => {
     const fake = sharedFake!
     const { manager } = createManager(fake)
     active = manager
+    manager.setFocusedKnowledgeBase('kb1')
     manager.configure([descriptor('kb1'), descriptor('kb2')])
 
     // 初始化刷新（rev-parse/status/...）会跑，但一个 fetch 都不许有
@@ -225,28 +226,47 @@ describe('后台自动抓取开关（默认关闭）', () => {
     expect(manager.backgroundFetchStatus().enabled).toBe(false)
   })
 
-  it('打开开关后立刻安排一轮，并更新上次检查时间', async () => {
+  it('打开开关后只立刻检查当前知识库，并更新它的上次检查时间', async () => {
     const fake = sharedFake!
     const { manager, tasks } = createManager(fake)
     active = manager
     manager.configure([descriptor('kb1'), descriptor('kb2')])
+    manager.setFocusedKnowledgeBase('kb1')
     await vi.waitFor(() => expect(manager.list().every((state) => state.initialized)).toBe(true))
 
     settingsState.autoFetch = true
     manager.applyBackgroundFetchPreference()
     await waitIdle(manager)
 
-    expect(fake.fetchCalls()).toHaveLength(2)
-    expect(manager.list().every((state) => state.lastFetchedAt !== null)).toBe(true)
-    expect(tasks).toHaveLength(2)
-    expect(tasks.every((task) => task.status === 'done' && task.finishedAt !== null)).toBe(true)
-    expect(tasks.every((task) => task.finishedAt! - task.startedAt >= 0)).toBe(true)
+    expect(fake.fetchCalls('/tmp/kb1')).toHaveLength(1)
+    expect(fake.fetchCalls('/tmp/kb2')).toHaveLength(0)
+    const byId = new Map(manager.list().map((state) => [state.knowledgeBaseId, state]))
+    expect(byId.get('kb1')?.lastFetchedAt).not.toBeNull()
+    expect(byId.get('kb2')?.lastFetchedAt).toBeNull()
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0]).toMatchObject({ knowledgeBaseId: 'kb1', status: 'done' })
+    expect(tasks[0].finishedAt! - tasks[0].startedAt >= 0).toBe(true)
+  })
+
+  it('没有选中知识库时，打开开关也不联网', async () => {
+    const fake = sharedFake!
+    const { manager } = createManager(fake)
+    active = manager
+    manager.configure([descriptor('kb1'), descriptor('kb2')])
+    await vi.waitFor(() => expect(manager.list().every((state) => state.initialized)).toBe(true))
+
+    settingsState.autoFetch = true
+    manager.applyBackgroundFetchPreference()
+    manager.scheduleBackgroundFetches()
+    await sleep(30)
+    expect(fake.fetchCalls()).toHaveLength(0)
   })
 
   it('关掉开关会停止后续调度；手动 fetch 不受影响', async () => {
     const fake = sharedFake!
     const { manager } = createManager(fake)
     active = manager
+    manager.setFocusedKnowledgeBase('kb1')
     manager.configure([descriptor('kb1')])
     await vi.waitFor(() => expect(manager.list()[0]?.initialized).toBe(true))
 
@@ -269,35 +289,75 @@ describe('后台自动抓取开关（默认关闭）', () => {
   })
 })
 
-describe('全局并发上限与去重', () => {
-  it('同时最多 3 个后台 fetch，其余排队', async () => {
+describe('只检查当前知识库', () => {
+  it('切到另一个知识库时立刻检查它；1 分钟内切回不重复检查', async () => {
     const fake = sharedFake!
     const { manager } = createManager(fake)
     active = manager
-    const ids = ['kb1', 'kb2', 'kb3', 'kb4', 'kb5']
-    manager.configure(ids.map(descriptor))
+    manager.configure([descriptor('kb1'), descriptor('kb2')])
+    manager.setFocusedKnowledgeBase('kb1')
     await vi.waitFor(() => expect(manager.list().every((state) => state.initialized)).toBe(true))
-
     settingsState.autoFetch = true
-    fake.hangFetchesFromNow()
     manager.applyBackgroundFetchPreference()
-    await vi.waitFor(() => expect(fake.hungFetches()).toHaveLength(3), { timeout: 5000 })
-    expect(manager.backgroundFetchStatus()).toMatchObject({ running: 3, queued: 2 })
-
-    // 释放第一波 → 立刻补位，5 个目标全部启动过
-    fake.releaseHung()
-    await vi.waitFor(() => expect(fake.fetchCalls()).toHaveLength(5), { timeout: 5000 })
-    expect(manager.backgroundFetchStatus()).toMatchObject({ running: 2, queued: 0 })
-
-    fake.releaseHung()
     await waitIdle(manager)
-    expect(fake.fetchCalls()).toHaveLength(5)
+    expect(fake.fetchCalls('/tmp/kb1')).toHaveLength(1)
+
+    manager.setFocusedKnowledgeBase('kb2')
+    await waitIdle(manager)
+    expect(fake.fetchCalls('/tmp/kb2')).toHaveLength(1)
+
+    manager.setFocusedKnowledgeBase('kb1')
+    await waitIdle(manager)
+    expect(fake.fetchCalls('/tmp/kb1')).toHaveLength(1)
   })
 
+  it('窗口在后台时定时检查跳过；回到前台时刚查过的不补查', async () => {
+    const fake = sharedFake!
+    const { manager } = createManager(fake)
+    active = manager
+    manager.configure([descriptor('kb1')])
+    manager.setFocusedKnowledgeBase('kb1')
+    await vi.waitFor(() => expect(manager.list()[0]?.initialized).toBe(true))
+    settingsState.autoFetch = true
+    manager.applyBackgroundFetchPreference()
+    await waitIdle(manager)
+    expect(fake.fetchCalls()).toHaveLength(1)
+
+    manager.setWindowActive(false)
+    manager.scheduleBackgroundFetches()
+    await sleep(30)
+    expect(fake.fetchCalls()).toHaveLength(1)
+
+    manager.setWindowActive(true)
+    await sleep(30)
+    expect(fake.fetchCalls()).toHaveLength(1)
+  })
+
+  it('窗口在后台时切库仍立刻检查（切库本身就是用户操作），回到前台不重复', async () => {
+    const fake = sharedFake!
+    const { manager } = createManager(fake)
+    active = manager
+    manager.configure([descriptor('kb1')])
+    await vi.waitFor(() => expect(manager.list()[0]?.initialized).toBe(true))
+    settingsState.autoFetch = true
+    manager.applyBackgroundFetchPreference()
+    manager.setWindowActive(false)
+    manager.setFocusedKnowledgeBase('kb1')
+    await waitIdle(manager)
+    const afterFocus = fake.fetchCalls().length
+    expect(afterFocus).toBe(1)
+    manager.setWindowActive(true)
+    await sleep(30)
+    expect(fake.fetchCalls()).toHaveLength(afterFocus)
+  })
+})
+
+describe('去重', () => {
   it('同一目标不会重复入队', async () => {
     const fake = sharedFake!
     const { manager } = createManager(fake)
     active = manager
+    manager.setFocusedKnowledgeBase('kb1')
     manager.configure([descriptor('kb1')])
     await vi.waitFor(() => expect(manager.list()[0]?.initialized).toBe(true))
 
@@ -320,6 +380,7 @@ describe('后台失败分类与退避', () => {
     const fake = sharedFake!
     const { manager, tasks } = createManager(fake)
     active = manager
+    manager.setFocusedKnowledgeBase('kb1')
     manager.configure([descriptor('kb1')])
     await vi.waitFor(() => expect(manager.list()[0]?.initialized).toBe(true))
 
@@ -337,6 +398,7 @@ describe('后台失败分类与退避', () => {
     const fake = sharedFake!
     const { manager, tasks } = createManager(fake)
     active = manager
+    manager.setFocusedKnowledgeBase('kb1')
     manager.configure([descriptor('kb1')])
     await vi.waitFor(() => expect(manager.list()[0]?.initialized).toBe(true))
 
@@ -567,6 +629,7 @@ describe('满额兜底记录真实 Git 结果（P1）', () => {
 
     const { manager } = createManager(fake, { realBackgroundTasks: true })
     active = manager
+    manager.setFocusedKnowledgeBase('kb1')
     manager.configure([descriptor('kb1')])
     await vi.waitFor(() => expect(manager.list()[0]?.initialized).toBe(true))
     settingsState.autoFetch = true

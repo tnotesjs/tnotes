@@ -7,6 +7,8 @@ import { useCommandTaskStore } from '../stores/commandTask'
 import { useTerminalStore } from '../stores/terminal'
 import { useWorkspaceStore } from '../stores/workspace'
 
+import { terminalShortcutCloseTarget } from './terminalTabClose'
+
 import type { TerminalSessionDto } from '../../../shared/contracts'
 
 interface TerminalPaneHandle {
@@ -71,6 +73,47 @@ async function closeSession(session: TerminalSessionDto): Promise<void> {
   await store.closeSession(session.id)
   if (store.sessions.length === 0) store.toggle(false)
   else focusActive()
+}
+
+/** 同一次 ⌘W 可能投递两次，第二次不要再关下一个标签，也不要落到笔记标签上。 */
+let shortcutClosePending = false
+
+/**
+ * 焦点在终端面板里时关掉当前标签。
+ * 命令输出只收起标签；交互式会话关掉进程。没有可关的标签时返回 false，
+ * 让 ⌘W 继续去关笔记标签或窗口。
+ */
+function closeFocusedTab(): boolean {
+  if (shortcutClosePending) return true
+  const active = document.activeElement
+  const target = terminalShortcutCloseTarget({
+    panelOpen: store.open,
+    focusInsidePanel: Boolean(active && root.value?.contains(active)),
+    activeTaskId: commandTasks.activeTaskId,
+    activeSessionId: store.activeSessionId
+  })
+  if (!target) return false
+  const session =
+    target.kind === 'session' ? store.sessions.find((item) => item.id === target.id) : null
+  if (target.kind === 'session' && !session) return false
+  shortcutClosePending = true
+  window.setTimeout(() => {
+    shortcutClosePending = false
+  }, 150)
+  if (target.kind === 'task') void commandTasks.closeTask(target.id)
+  else if (session) void closeSession(session)
+  return true
+}
+
+function preventMiddleClickAutoscroll(event: MouseEvent): void {
+  if (event.button === 1) event.preventDefault()
+}
+
+function closeWithMiddleButton(event: MouseEvent, close: () => void): void {
+  if (event.button !== 1) return
+  event.preventDefault()
+  event.stopPropagation()
+  close()
 }
 
 async function restartSession(sessionId: string): Promise<void> {
@@ -204,21 +247,10 @@ function onKeydownCapture(event: KeyboardEvent): void {
     store.resetFontSize()
     return
   }
-  if (key === 'w' && commandTasks.activeTaskId) {
-    // 关闭输出标签 ≠ 停止任务：只收起视图，任务继续跑
+  if (key === 'w' && closeFocusedTab()) {
+    // 窗口级 ⌘W 通常已在主进程被拦住；事件真的进到面板时同样关掉当前终端标签。
     event.preventDefault()
     event.stopPropagation()
-    void commandTasks.closeTask(commandTasks.activeTaskId)
-    return
-  }
-  if (key === 'w' && store.sessions.length > 1 && store.activeSessionId) {
-    // Cmd/Ctrl+W 在终端聚焦时关掉当前会话；只有一个会话时交回默认行为
-    const target = store.sessions.find((session) => session.id === store.activeSessionId)
-    if (target) {
-      event.preventDefault()
-      event.stopPropagation()
-      void closeSession(target)
-    }
   }
 }
 
@@ -250,7 +282,14 @@ watch(
   () => focusActive()
 )
 
-defineExpose({ createSession, createOrFocus, openForKnowledgeBase, focusActive, showTask })
+defineExpose({
+  createSession,
+  createOrFocus,
+  openForKnowledgeBase,
+  focusActive,
+  showTask,
+  closeFocusedTab
+})
 </script>
 
 <template>
@@ -283,6 +322,8 @@ defineExpose({ createSession, createOrFocus, openForKnowledgeBase, focusActive, 
           :aria-selected="task.id === commandTasks.activeTaskId"
           :title="`${task.title} — ${task.cwd}`"
           @click="selectTask(task.id)"
+          @mousedown="preventMiddleClickAutoscroll"
+          @auxclick="closeWithMiddleButton($event, () => commandTasks.closeTask(task.id))"
         >
           <span class="command-tab-dot" :data-status="task.status" aria-hidden="true" />
           <span class="terminal-tab-title">{{ task.title }}</span>
@@ -320,6 +361,8 @@ defineExpose({ createSession, createOrFocus, openForKnowledgeBase, focusActive, 
           :title="`${session.title} — ${session.cwd}`"
           @click="selectSession(session.id)"
           @dblclick="beginRename(session)"
+          @mousedown="preventMiddleClickAutoscroll"
+          @auxclick="closeWithMiddleButton($event, () => closeSession(session))"
         >
           <input
             v-if="renamingId === session.id"

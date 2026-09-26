@@ -20,7 +20,7 @@ import {
   syntaxTree
 } from '@codemirror/language'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
-import { Annotation, Compartment, EditorSelection, EditorState } from '@codemirror/state'
+import { Compartment, EditorSelection, EditorState } from '@codemirror/state'
 import {
   EditorView,
   drawSelection,
@@ -54,13 +54,14 @@ import {
 } from './commands'
 import { cardKnowledgeBase, codeGroupTabs, keepCursorOutOfHiddenCodeGroup, livePreviewField } from './decorations'
 import { codeBlockFullscreenClass } from './codeBlockChrome'
+import { codeLineNumberClick } from './codeLines'
 import { applyHeadingFoldCommand, headingFoldService, keepCursorOutOfFold, type HeadingFoldCommand } from './headingFold'
 import { livePreviewEnabled, livePreviewHost } from './host'
 import { tnotesMarkdown } from './language'
 import { collectHeadings, type OutlineHeading } from './outline'
 import { captureSelection } from './selectionCapture'
-import { agentReviewExtension } from './agentReview'
-import { frontmatterIdGuard } from './frontmatterIdGuard'
+import { agentReviewExtension, agentReviewNote, adoptArchivedReviews } from './agentReview'
+import { externalSync, frontmatterIdGuard } from './frontmatterIdGuard'
 import { registerLiveEditor, unregisterLiveEditor } from './editorRegistry'
 
 import type { EditorSelectionAnchor, EditorSelectionPayload } from '../selection/selectionReporter'
@@ -107,8 +108,6 @@ let view: EditorView | null = null
 const modeCompartment = new Compartment()
 const readOnlyCompartment = new Compartment()
 const contextCompartment = new Compartment()
-/** 外部同步（磁盘重载等）产生的修改不回抛 change */
-const externalSync = Annotation.define<boolean>()
 let lastHeadingLevel: number | null | undefined
 let outlineTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -172,7 +171,8 @@ function contextExtensions() {
       openCanvas,
       openMindmap
     }),
-    cardKnowledgeBase.of(props.knowledgeBaseId)
+    cardKnowledgeBase.of(props.knowledgeBaseId),
+    agentReviewNote.of({ knowledgeBaseId: props.knowledgeBaseId, noteUuid: props.noteUuid })
   ]
 }
 
@@ -291,6 +291,7 @@ function createState(doc: string): EditorState {
       headingFoldService,
       codeBlockFullscreenClass,
       keepCursorOutOfHiddenCodeGroup,
+      codeLineNumberClick,
       keepCursorOutOfFold,
       codeFolding({ placeholderText: '…' }),
       livePreviewField,
@@ -522,6 +523,7 @@ defineExpose({
 onMounted(() => {
   if (!host.value) return
   view = new EditorView({ state: createState(props.content), parent: host.value })
+  adoptArchivedReviews(view)
   registerLiveEditor(props.knowledgeBaseId, props.noteUuid, view)
   window.addEventListener(DESK_SELECT_ALL_EVENT, selectAll)
   refreshOutline()

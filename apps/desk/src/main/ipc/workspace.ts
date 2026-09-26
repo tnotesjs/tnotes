@@ -26,7 +26,12 @@ export function registerWorkspace(getWindow: GetWindow): () => void {
     IPC_CHANNELS.contextMenuShow,
     getWindow,
     z.discriminatedUnion('kind', [
-      z.object({ kind: z.literal('note'), pinned: z.boolean(), completed: z.boolean() }),
+      z.object({
+        kind: z.literal('note'),
+        pinned: z.boolean(),
+        tocPinned: z.boolean(),
+        completed: z.boolean()
+      }),
       z.object({ kind: z.literal('group') }),
       z.object({
         kind: z.literal('tab'),
@@ -40,7 +45,8 @@ export function registerWorkspace(getWindow: GetWindow): () => void {
           'note-history',
           'text-file'
         ]),
-        pinned: z.boolean()
+        pinned: z.boolean(),
+        othersClosable: z.boolean().optional()
       }),
       z.object({ kind: z.literal('code-group-tab') })
     ]),
@@ -69,7 +75,8 @@ export function registerWorkspace(getWindow: GetWindow): () => void {
     z.object({
       ready: z.boolean(),
       previewLabel: z.string().min(1),
-      buildBusy: z.boolean()
+      buildBusy: z.boolean(),
+      noteCount: z.number().int().min(0)
     }),
     (request) => {
       const window = getWindow()

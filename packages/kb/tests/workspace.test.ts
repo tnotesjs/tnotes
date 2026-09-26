@@ -119,6 +119,27 @@ describe('notes', () => {
     expect(onDisk).toMatch(/^---\nid: [0-9a-f-]{36}\n---/)
   })
 
+  it('creates several root notes in one write and keeps them in order', async () => {
+    const ws = createWorkspace({ rootPath: root })
+    const { value: docs } = await ws.notes.createMany({
+      title: 'new',
+      count: 2,
+      placement: { type: 'root', placement: 'start' }
+    })
+    expect(docs.map((doc) => doc.index)).toEqual(['0004', '0005'])
+    expect(docs[0]?.content).toContain('# 0004. new')
+    const toc = (await read('TOC.md')).trimEnd().split('\n')
+    expect(toc[0]).toBe('- [ ] 0004. new')
+    expect(toc[1]).toBe('- [ ] 0005. new')
+    await expect(ws.notes.createMany({ title: 'new', count: 0 })).rejects.toThrow('999')
+  })
+
+  it('refuses a batch that would pass index 9999', async () => {
+    const ws = createWorkspace({ rootPath: root })
+    await write('notes/9999. 末号.md', `---\nid: uuid-last\n---\n\n# 末号\n`)
+    await expect(ws.notes.createMany({ title: 'new', count: 1 })).rejects.toThrow('编号已用尽')
+  })
+
   it('creates a root-level note by default', async () => {
     const ws = createWorkspace({ rootPath: root })
     await ws.notes.create({ title: '末尾' })
@@ -139,6 +160,28 @@ describe('notes', () => {
     })
     expect(await read('notes/0002. 第二篇（改）.md')).toBe('# 第二篇\n')
     expect(await read('TOC.md')).toContain('- [ ] 0002. 第二篇（改）')
+  })
+
+  it('reindexes a note without colliding, and moves its assets', async () => {
+    const ws = createWorkspace({ rootPath: root })
+    await write('notes/0002. 第二篇.md', `---\nid: uuid-2\n---\n\n# 0002. 第二篇\n\n![](../assets/0002-pic.png)\n`)
+    await write('assets/0002-pic.png', 'png')
+    await write('notes/0001. 第一篇.md', `# 第一篇\n\n![](../assets/0002-pic.png)\n`)
+    const { value } = await ws.notes.reindex({ index: '0002', nextIndex: '42' })
+    expect(value.index).toBe('0042')
+    expect(value.content).toContain('# 0042. 第二篇')
+    expect(value.content).toContain('../assets/0042-pic.png')
+    expect(await read('notes/0042. 第二篇.md')).toContain('# 0042. 第二篇')
+    expect(await read('assets/0042-pic.png')).toBe('png')
+    await expect(read('notes/0002. 第二篇.md')).rejects.toThrow()
+    await expect(read('assets/0002-pic.png')).rejects.toThrow()
+    expect(await read('TOC.md')).toContain('- [ ] 0042. 第二篇')
+    expect(await read('TOC.md')).not.toContain('0002. 第二篇')
+    expect(await read('notes/0001. 第一篇.md')).toContain('../assets/0042-pic.png')
+    await expect(ws.notes.reindex({ index: '0042', nextIndex: '0001' })).rejects.toThrow('已被占用')
+    await expect(ws.notes.reindex({ index: '0042', nextIndex: '0' })).rejects.toThrow('0001 到 9999')
+    const same = await ws.notes.reindex({ index: '0042', nextIndex: '0042' })
+    expect(same.changedFiles).toEqual([])
   })
 
   it('removes a childless note', async () => {
@@ -200,6 +243,35 @@ describe('toc', () => {
     expect(await read('TOC.md')).not.toContain('分组 B')
     expect(changedFiles.some((f) => f.kind === 'deleted' && f.path.includes('0003'))).toBe(true)
     await expect(read('notes/0003. 第三篇.md')).rejects.toThrow()
+  })
+
+  it('removes several notes at once and promotes the child that stays', async () => {
+    await write(
+      'TOC.md',
+      `- 分组 A
+  - [ ] 0001. 第一篇
+    - [ ] 0002. 第二篇
+- 分组 B
+  - [ ] 0003. 第三篇
+`
+    )
+    const ws = createWorkspace({ rootPath: root })
+    const { changedFiles } = await ws.toc.removeNotes(['0001', '0003'])
+    const toc = await read('TOC.md')
+    expect(toc).toBe(`- 分组 A
+  - [ ] 0002. 第二篇
+- 分组 B
+`)
+    await expect(read('notes/0001. 第一篇.md')).rejects.toThrow()
+    await expect(read('notes/0003. 第三篇.md')).rejects.toThrow()
+    expect(await read('notes/0002. 第二篇.md')).toContain('# 第二篇')
+    expect(changedFiles.filter((file) => file.kind === 'deleted')).toHaveLength(2)
+    const snapshot = await ws.scan()
+    expect(snapshot.notes.map((note) => note.index)).toEqual(['0002'])
+    expect(snapshot.notes[0]?.groupPath).toEqual(['分组 A'])
+    await expect(ws.toc.removeNotes([])).rejects.toThrow('没有要删除的笔记')
+    await expect(ws.toc.removeNotes(['0009'])).rejects.toThrow('未找到笔记: 0009')
+    expect(await read('notes/0002. 第二篇.md')).toContain('# 第二篇')
   })
 
   it('sets done state via the checkbox', async () => {

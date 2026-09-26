@@ -15,6 +15,9 @@ import type {
   GitRepositoryStateDto
 } from '../shared/contracts'
 
+/** 切到某个知识库时，这么短时间内刚检查过就不再重复。 */
+const FOCUSED_FETCH_FRESH_MS = 60_000
+
 /**
  * 后台（定时 / 初次刷新）fetch 的超时。
  *
@@ -621,6 +624,10 @@ export class GitManager {
   /** 当前设置里后台自动抓取是否开启（与调度器同步，避免每次判定都读配置） */
   private backgroundFetchEnabled = false
   private periodicFetchTimer: NodeJS.Timeout | null = null
+  /** 后台只检查用户正在看的那个知识库；其它库不在后台联网。 */
+  private focusedKnowledgeBaseId: string | null = null
+  /** 窗口在后台时暂停定时检查，回到前台再按需补查。 */
+  private windowActive = true
   private assetWritePaused = new Set<string>()
 
   constructor(
@@ -719,21 +726,44 @@ export class GitManager {
   }
 
   /**
-   * 对所有已就绪的知识库请求一次后台抓取。
+   * 对当前知识库请求一次后台抓取（定时器与开关打开时走这里）。窗口在后台时跳过。
    *
-   * 是否真的执行由调度器裁决：同一目标不会重复入队，处于失败退避窗口内的会被跳过，
-   * 全局并发也有上限。这里只负责"把候选目标交上去"。定时器与开关打开时都走它。
+   * 是否真的执行由调度器裁决：同一目标不会重复入队，处于失败退避窗口内的会被跳过。
    */
   scheduleBackgroundFetches(): void {
+    if (!this.windowActive) return
+    this.requestFocusedFetch('periodic', FOCUSED_FETCH_FRESH_MS)
+  }
+
+  /**
+   * 用户切换到另一个知识库：立刻检查一次它的远端，定时器从这一刻重新计时。
+   * 1 分钟内刚检查过的不再重复（来回切库不刷屏）。
+   */
+  setFocusedKnowledgeBase(knowledgeBaseId: string | null): void {
+    if (this.focusedKnowledgeBaseId === knowledgeBaseId) return
+    this.focusedKnowledgeBaseId = knowledgeBaseId
     if (!this.backgroundFetchEnabled || this.disposed) return
-    for (const state of this.states.values()) {
-      if (!state.initialized) continue
-      // 手动操作正在跑（fetch/pull/publish 会置 busy）：这一轮先不跟它抢队列，
-      // 下一轮定时器再来（不 busy 时才入队）。
-      if (state.busy) continue
-      if (this.assetWritePaused.has(state.knowledgeBaseId)) continue
-      this.backgroundFetch.request(state.knowledgeBaseId, 'periodic')
-    }
+    this.stopPeriodicFetchTimer()
+    this.startPeriodicFetchTimer()
+    this.requestFocusedFetch('initial', FOCUSED_FETCH_FRESH_MS)
+  }
+
+  /** 窗口回到前台时，若距上次检查已超过一个周期就补查一次。 */
+  setWindowActive(active: boolean): void {
+    if (this.windowActive === active) return
+    this.windowActive = active
+    if (active) this.requestFocusedFetch('periodic', BACKGROUND_FETCH_INTERVAL_MS)
+  }
+
+  private requestFocusedFetch(trigger: 'initial' | 'periodic', freshWithinMs: number): void {
+    const knowledgeBaseId = this.focusedKnowledgeBaseId
+    if (!knowledgeBaseId || !this.backgroundFetchEnabled || this.disposed) return
+    const state = this.states.get(knowledgeBaseId)
+    // 手动操作正在跑（fetch/pull/publish 会置 busy）时不跟它抢，下一轮再来
+    if (!state?.initialized || state.busy || this.assetWritePaused.has(knowledgeBaseId)) return
+    const last = state.lastFetchedAt ? Date.parse(state.lastFetchedAt) : Number.NaN
+    if (freshWithinMs > 0 && Number.isFinite(last) && Date.now() - last < freshWithinMs) return
+    this.backgroundFetch.request(knowledgeBaseId, trigger)
   }
 
   /** 后台抓取的调度状态（测试与排查用）。 */
@@ -753,19 +783,10 @@ export class GitManager {
       }
     }
     void this.refresh().then(() => {
-      // 初次刷新只在开关打开时联网：默认关闭意味着启动时不碰远端。
-      if (this.backgroundFetchEnabled) {
-        for (const repository of repositories) {
-          const state = this.states.get(repository.knowledgeBaseId)
-          if (
-            state?.initialized &&
-            !state.lastFetchedAt &&
-            !this.assetWritePaused.has(repository.knowledgeBaseId)
-          ) {
-            this.backgroundFetch.request(repository.knowledgeBaseId, 'initial')
-          }
-        }
-      }
+      // 只在开关打开时联网，且只查当前知识库。configure 在保存时也会触发，
+      // 所以这里只补「从没检查过」的那一次，不按时间重复抓。
+      const focused = this.focusedKnowledgeBaseId ? this.states.get(this.focusedKnowledgeBaseId) : null
+      if (focused && !focused.lastFetchedAt) this.requestFocusedFetch('initial', 0)
       this.applyAutoPushSchedules(true)
     })
     // configure 期间只把开关落到运行时（不额外安排一轮）：refresh 完成后自会安排初次抓取
