@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import DOMPurify from 'dompurify'
-import MarkdownIt from 'markdown-it'
 import { computed, ref, watch } from 'vue'
 
+import { createAgentMarkdown, renderAgentMarkdown } from './agentMarkdown'
 import AgentIcon from './AgentIcon.vue'
 import { useAgentStore } from './agentStore'
 import { attachmentUrl } from './attachmentCache'
@@ -17,7 +16,7 @@ const props = defineProps<{
 }>()
 
 const agent = useAgentStore()
-const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true })
+const markdown = createAgentMarkdown()
 const imageUrls = ref<Record<string, string>>({})
 const zoomed = ref('')
 const copied = ref<'' | 'ok' | 'failed'>('')
@@ -32,7 +31,7 @@ const TOOL_ICONS: Record<string, string> = {
 }
 
 function render(text: string): string {
-  return DOMPurify.sanitize(markdown.render(text || ''))
+  return renderAgentMarkdown(markdown, text)
 }
 
 function mergeReads(parts: AgentMessagePart[]): AgentMessagePart[] {
@@ -372,6 +371,39 @@ article.assistant {
 
 .body :deep(p:last-child) {
   margin-bottom: 0;
+}
+
+.body :deep(.katex-display) {
+  margin: 0.6em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.body :deep(table) {
+  border-collapse: collapse;
+  margin: 16px 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.body :deep(th),
+.body :deep(td) {
+  border: 1px solid var(--tn-c-divider);
+  padding: 8px 16px;
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.body :deep(th) {
+  font-weight: 600;
+  background: var(--tn-c-bg-soft);
+  text-align: left;
+}
+
+.body :deep(td p),
+.body :deep(th p) {
+  margin: 0;
+  line-height: 24px;
 }
 
 .waiting {

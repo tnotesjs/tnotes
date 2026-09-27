@@ -343,6 +343,44 @@ describe('live preview editing', () => {
     expect(view.contentDOM.textContent).not.toContain('正文')
   })
 
+  it('selects an image alt on click so the next input replaces the title', () => {
+    const doc = '前文\n\n![风景照](a.png)\n'
+    const view = mount(doc, 0)
+    const image = view.dom.querySelector<HTMLElement>('.cm-lp-image')!
+    image.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    const selection = view.state.selection.main
+    expect(view.state.sliceDoc(selection.from, selection.to)).toBe('风景照')
+    view.dispatch({
+      changes: { from: selection.from, to: selection.to, insert: '新标题' },
+      selection: EditorSelection.cursor(selection.from + '新标题'.length)
+    })
+    expect(view.state.doc.toString()).toContain('![新标题](a.png)')
+  })
+
+  it('leaves the cursor in an empty image alt and does not move a revealed image', () => {
+    const emptyDoc = '前文\n\n![](a.png)\n'
+    const empty = mount(emptyDoc, 0)
+    empty.dom.querySelector('.cm-lp-image')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(empty.state.selection.main.empty).toBe(true)
+    expect(empty.state.selection.main.head).toBe(emptyDoc.indexOf(']'))
+
+    const doc = '![风景照](a.png)\n'
+    const revealed = mount(doc, doc.indexOf('风景'))
+    const before = revealed.state.selection.main.head
+    revealed.dom.querySelector('.cm-lp-image')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(revealed.state.selection.main.head).toBe(before)
+    expect(revealed.state.selection.main.empty).toBe(true)
+  })
+
+  it('does not select the alt when the click is on an image toolbar button', () => {
+    const doc = '前文\n\n![风景照](a.png)\n'
+    const view = mount(doc, 0)
+    const button = view.dom.querySelector<HTMLElement>('.cm-lp-image button')!
+    button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(view.state.selection.main.head).toBe(0)
+    expect(view.state.doc.toString()).toContain('![风景照](a.png)')
+  })
+
   it('puts a wrap toggle immediately left of copy and nowraps code until it is clicked', () => {
     const doc = ['```js', 'const value = 1', '```', '', '::: code-group', '```js [a.js]', 'aaa', '```', ':::', ''].join('\n')
     const parent = document.createElement('div')

@@ -999,6 +999,7 @@ async function openHeaderMenu(): Promise<void> {
 }
 
 .search-wrap {
+  position: relative;
   height: 43px;
   flex: none;
   display: flex;
@@ -1010,8 +1011,15 @@ async function openHeaderMenu(): Promise<void> {
 
 .search-wrap > span {
   position: absolute;
-  margin-left: 9px;
+  z-index: 1;
+  left: 9px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  margin: 0;
   color: var(--muted);
+  line-height: 1;
   pointer-events: none;
 }
 

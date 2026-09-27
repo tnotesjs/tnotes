@@ -6,12 +6,7 @@
  * 切换时光标、选区、滚动、撤销历史都保留；保存的就是这份文本（所写即所存）。
  */
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import {
-  defaultKeymap,
-  history,
-  historyKeymap,
-  insertNewlineAndIndent
-} from '@codemirror/commands'
+import { defaultKeymap, history, historyKeymap, insertNewlineAndIndent } from '@codemirror/commands'
 import {
   codeFolding,
   foldKeymap,
@@ -52,10 +47,20 @@ import {
   tabCommand,
   wrapSelection as wrapSelectionCommand
 } from './commands'
-import { cardKnowledgeBase, codeGroupTabs, keepCursorOutOfHiddenCodeGroup, livePreviewField } from './decorations'
+import {
+  cardKnowledgeBase,
+  codeGroupTabs,
+  keepCursorOutOfHiddenCodeGroup,
+  livePreviewField
+} from './decorations'
 import { codeBlockFullscreenClass } from './codeBlockChrome'
-import { codeLineNumberClick } from './codeLines'
-import { applyHeadingFoldCommand, headingFoldService, keepCursorOutOfFold, type HeadingFoldCommand } from './headingFold'
+import { codeLineNumberClick, pruneStaleCodeHighlights } from './codeLines'
+import {
+  applyHeadingFoldCommand,
+  headingFoldService,
+  keepCursorOutOfFold,
+  type HeadingFoldCommand
+} from './headingFold'
 import { livePreviewEnabled, livePreviewHost } from './host'
 import { sourceChrome } from './sourceChrome'
 import { tnotesMarkdown } from './language'
@@ -192,7 +197,9 @@ function openHref(href: string): void {
   }
   if (href.startsWith('#')) {
     const target = headings.value.find(
-      (heading) => heading.text.replace(/\s+/g, '-').toLowerCase() === decodeURIComponent(href.slice(1)).toLowerCase()
+      (heading) =>
+        heading.text.replace(/\s+/g, '-').toLowerCase() ===
+        decodeURIComponent(href.slice(1)).toLowerCase()
     )
     if (target) scrollToHeading(target.id)
     return
@@ -247,7 +254,10 @@ function syncActiveHeading(): void {
     return
   }
   const top = view.scrollDOM.getBoundingClientRect().top + 24
-  const pos = view.posAtCoords({ x: view.contentDOM.getBoundingClientRect().left + 8, y: top }, false)
+  const pos = view.posAtCoords(
+    { x: view.contentDOM.getBoundingClientRect().left + 8, y: top },
+    false
+  )
   let active: OutlineHeading | null = headings.value[0]
   for (const heading of headings.value) {
     if (heading.from <= pos) active = heading
@@ -294,6 +304,7 @@ function createState(doc: string): EditorState {
       codeBlockFullscreenClass,
       keepCursorOutOfHiddenCodeGroup,
       codeLineNumberClick,
+      pruneStaleCodeHighlights,
       keepCursorOutOfFold,
       codeFolding({ placeholderText: '…' }),
       livePreviewField,
@@ -305,7 +316,11 @@ function createState(doc: string): EditorState {
       modeCompartment.of(modeExtensions(props.mode)),
       readOnlyCompartment.of(readOnlyExtensions(props.readOnly)),
       contextCompartment.of(contextExtensions()),
-      EditorView.contentAttributes.of({ spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
+      EditorView.contentAttributes.of({
+        spellcheck: 'false',
+        autocorrect: 'off',
+        autocapitalize: 'off'
+      }),
       keymap.of([
         { key: 'Enter', run: continueMarkup },
         { key: 'Enter', run: insertNewlineAndIndent },
@@ -359,7 +374,9 @@ function createState(doc: string): EditorState {
           const file = imageFileFrom(event.dataTransfer)
           if (!file || editorView.state.readOnly) return false
           event.preventDefault()
-          const pos = editorView.posAtCoords({ x: event.clientX, y: event.clientY }) ?? editorView.state.selection.main.from
+          const pos =
+            editorView.posAtCoords({ x: event.clientX, y: event.clientY }) ??
+            editorView.state.selection.main.from
           emit('pasteImage', file, pos)
           return true
         },
@@ -397,7 +414,11 @@ function syncContent(next: string): void {
   while (start < limit && current.charCodeAt(start) === next.charCodeAt(start)) start += 1
   let endCurrent = current.length
   let endNext = next.length
-  while (endCurrent > start && endNext > start && current.charCodeAt(endCurrent - 1) === next.charCodeAt(endNext - 1)) {
+  while (
+    endCurrent > start &&
+    endNext > start &&
+    current.charCodeAt(endCurrent - 1) === next.charCodeAt(endNext - 1)
+  ) {
     endCurrent -= 1
     endNext -= 1
   }
@@ -441,7 +462,10 @@ function selectionCapture(): EditorSelectionPayload | null {
   return view ? captureSelection(view.state) : null
 }
 
-function pinnableSelection(): { capture: EditorSelectionPayload; anchor: EditorSelectionAnchor } | null {
+function pinnableSelection(): {
+  capture: EditorSelectionPayload
+  anchor: EditorSelectionAnchor
+} | null {
   const payload = selectionCapture()
   if (!payload || payload.empty || payload.unsupportedReason || !payload.anchor) return null
   return { capture: payload, anchor: payload.anchor }
@@ -515,7 +539,8 @@ defineExpose({
       const result = stripHeadingNumbers(v.state.doc.toString())
       if (result.changed) replaceByLines(result.text)
     }),
-  applyHeadingFold: (command: HeadingFoldCommand) => (view ? applyHeadingFoldCommand(view, command) : false),
+  applyHeadingFold: (command: HeadingFoldCommand) =>
+    view ? applyHeadingFoldCommand(view, command) : false,
   selectAll,
   focus: () => view?.focus(),
   flush: () => undefined,
@@ -555,7 +580,8 @@ watch(
 
 watch(
   () => props.readOnly,
-  (readOnly) => view?.dispatch({ effects: readOnlyCompartment.reconfigure(readOnlyExtensions(readOnly)) })
+  (readOnly) =>
+    view?.dispatch({ effects: readOnlyCompartment.reconfigure(readOnlyExtensions(readOnly)) })
 )
 
 watch(

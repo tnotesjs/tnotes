@@ -27,6 +27,7 @@ import {
   toggleCodeWrap
 } from './codeBlockChrome'
 import { codeLineDecorations } from './codeLines'
+import { CodeHScrollWidget, codeBlockScrollSync } from './codeBlockScroll'
 import { CardWidget, isKnownComponent, setCodeGroupTab, type CardKind } from './cards'
 import { headingFoldKey, headingSections, HeadingFoldToggle, isHeadingFolded } from './headingFold'
 import { livePreviewEnabled } from './host'
@@ -1098,14 +1099,29 @@ function build(state: EditorState): LivePreviewState {
           const closed = node.getChildren('CodeMark').length > 1 && closeLine.number > openLine.number
           const chrome = codeChromeAt(state, openLine.from)
           const nowrap = chrome?.wrapped ? '' : ' cm-lp-code-nowrap'
+          const scrollKey = String(openLine.from)
           for (let number = openLine.number; number <= closeLine.number; number += 1) {
+            const isOpen = number === openLine.number
             const className =
-              (number === openLine.number
+              (isOpen
                 ? 'cm-lp-codeblock cm-lp-codeblock-first'
                 : number === closeLine.number
                   ? 'cm-lp-codeblock cm-lp-codeblock-last'
-                  : 'cm-lp-codeblock') + (number === openLine.number ? '' : nowrap)
-            ranges.push(Decoration.line({ class: className }).range(doc.line(number).from))
+                  : 'cm-lp-codeblock') + (isOpen ? '' : nowrap)
+            ranges.push(
+              Decoration.line({
+                class: className,
+                attributes: isOpen || chrome?.wrapped ? undefined : { 'data-code-scroll': scrollKey }
+              }).range(doc.line(number).from)
+            )
+          }
+          if (!chrome?.collapsed && !chrome?.wrapped && closeLine.number > openLine.number) {
+            const scrollAt = closed ? closeLine.from : closeLine.number < doc.lines ? doc.line(closeLine.number + 1).from : null
+            if (scrollAt != null) {
+              ranges.push(
+                Decoration.widget({ widget: new CodeHScrollWidget(openLine.from), block: true, side: -1 }).range(scrollAt)
+              )
+            }
           }
           if (!chrome?.collapsed) {
             ranges.push(
@@ -1230,8 +1246,18 @@ function build(state: EditorState): LivePreviewState {
                 for (let number = start.number + 1; number < end.number; number += 1) {
                   ranges.push(
                     Decoration.line({
-                      class: groupWrapped ? 'cm-lp-codeblock' : 'cm-lp-codeblock cm-lp-code-nowrap'
+                      class: groupWrapped ? 'cm-lp-codeblock' : 'cm-lp-codeblock cm-lp-code-nowrap',
+                      attributes: groupWrapped ? undefined : { 'data-code-scroll': String(start.from) }
                     }).range(doc.line(number).from)
+                  )
+                }
+                if (!groupWrapped) {
+                  ranges.push(
+                    Decoration.widget({
+                      widget: new CodeHScrollWidget(start.from),
+                      block: true,
+                      side: -1
+                    }).range(end.from)
                   )
                 }
               }
@@ -1355,6 +1381,7 @@ export const livePreviewField: Extension = [
   codeHighlightLoader,
   livePreviewStateField,
   pointerTracker,
+  codeBlockScrollSync,
   // 标题输入框在编辑器内部。焦点从正文移到输入框时仍算在编辑，否则分组会退回卡片并把输入框拆掉。
   EditorView.domEventHandlers({
     focusin(_event, view) {

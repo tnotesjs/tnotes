@@ -636,26 +636,57 @@
   padding-bottom: 4px;
 }
 
-/* 行号画在左内边距里；点这块区域切换行高亮（见 codeLines.ts，按 padding-left 判定）。 */
+/* 行号列宽由这一块最大行号的位数决定（data-digits），点这块区域切换行高亮。 */
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits] {
+  --tn-line-digits: 1;
+}
+
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='2'] {
+  --tn-line-digits: 2;
+}
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='3'] {
+  --tn-line-digits: 3;
+}
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='4'] {
+  --tn-line-digits: 4;
+}
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='5'] {
+  --tn-line-digits: 5;
+}
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='6'] {
+  --tn-line-digits: 6;
+}
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='7'] {
+  --tn-line-digits: 7;
+}
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='8'] {
+  --tn-line-digits: 8;
+}
+
 .live-editor .cm-lp-visual .cm-lp-codeblock.cm-lp-code-line[data-line] {
   position: relative;
-  padding-left: 52px;
+  --lp-code-gutter: calc(12px + var(--tn-line-digits, 1) * 1ch + 8px);
+  padding-left: var(--lp-code-gutter);
 }
 
 .live-editor .cm-lp-visual .cm-lp-code-line[data-line]::before {
   content: attr(data-line);
   position: absolute;
   left: 0;
-  width: 36px;
-  color: var(--tn-c-text-3, var(--tn-c-text-2));
-  opacity: 0.7;
+  top: 0;
+  box-sizing: border-box;
+  width: var(--lp-code-gutter);
+  height: 22px;
+  padding: 0 8px 0 12px;
+  color: color-mix(in srgb, var(--tn-c-text-3, var(--tn-c-text-2)) 70%, transparent);
   text-align: right;
+  line-height: 22px;
   cursor: pointer;
   user-select: none;
 }
 
 .live-editor .cm-lp-visual .cm-lp-code-line[data-line]:hover::before {
-  opacity: 1;
+  color: var(--tn-c-text-3, var(--tn-c-text-2));
 }
 
 .live-editor .cm-lp-visual .cm-lp-codeblock.cm-lp-code-highlighted {
@@ -755,7 +786,9 @@
 }
 
 .live-editor .cm-lp-code-copy svg {
-  transition: opacity 0.16s ease, transform 0.16s ease;
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
 }
 
 .live-editor .cm-lp-code-copy.is-leaving svg {
@@ -781,28 +814,73 @@
 .live-editor .cm-lineWrapping .cm-line.cm-lp-code-nowrap {
   white-space: pre;
   overflow-x: auto;
+  overflow-y: hidden;
   max-width: 100%;
+  /* 滚动条只留在块底部那一条上，避免每一行各画一条。 */
+  scrollbar-width: none;
 }
 
-/* 不换行时行号自己占左侧一列，避免被卷进正文；横向滚动时钉在这一列。 */
+/*
+ * 每一行放一个和最长一行等宽的占位，横向滚动时短内容才会一起离开视口。
+ * 绝对定位不占行内位置，空行里的 <br> 后面不会多出一行。
+ */
+.live-editor .cm-lineWrapping .cm-line.cm-lp-code-nowrap {
+  position: relative;
+}
+
+.live-editor .cm-lineWrapping .cm-line.cm-lp-code-nowrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 1px;
+  pointer-events: none;
+}
+
+.live-editor .cm-lineWrapping .cm-line.cm-lp-code-nowrap::-webkit-scrollbar {
+  display: none;
+  height: 0;
+}
+
+.live-editor .cm-lp-code-hscroll {
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  height: 12px;
+  background: var(--tn-c-bg-soft);
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  scrollbar-width: thin;
+}
+
+.live-editor .cm-lp-code-hscroll.is-idle {
+  height: 0;
+  overflow: hidden;
+  border-radius: 0;
+}
+
+.live-editor .cm-lp-code-hscroll-inner {
+  height: 1px;
+}
+
+/* 不换行时行号钉在左侧，背景不透明，正文滚到这一列下面时被盖住。 */
 .live-editor .cm-lp-visual .cm-lp-codeblock.cm-lp-code-line.cm-lp-code-nowrap[data-line] {
   padding-left: 0;
 }
 
 .live-editor .cm-lp-visual .cm-lp-code-line.cm-lp-code-nowrap[data-line]::before {
   position: sticky;
-  left: 0;
-  z-index: 1;
+  z-index: 2;
   display: inline-block;
-  box-sizing: border-box;
-  width: 52px;
-  padding-right: 16px;
-  line-height: 22px;
   vertical-align: top;
   background: var(--tn-c-bg-soft);
 }
 
-.live-editor .cm-lp-visual .cm-lp-code-line.cm-lp-code-highlighted.cm-lp-code-nowrap[data-line]::before {
+.live-editor
+  .cm-lp-visual
+  .cm-lp-code-line.cm-lp-code-highlighted.cm-lp-code-nowrap[data-line]::before {
   background-color: var(--tn-c-bg-soft);
   background-image: linear-gradient(var(--tn-c-highlight), var(--tn-c-highlight));
 }

@@ -22,7 +22,7 @@ import {
 } from '../editor/excalidraw/canvasImage'
 import { subscribeExcalidrawSession } from '../editor/excalidraw/sessionRegistry'
 import { resolveNoteAssetRelPath } from '../markdown/noteAssetPath'
-import { imageBefore, imageAttrChange } from './images'
+import { imageAt, imageBefore, imageAttrChange } from './images'
 import { livePreviewHost } from './host'
 
 import type { ImageAlign } from '@tnotesjs/ui/image-markdown'
@@ -55,6 +55,19 @@ export function taskToggleChange(
 /** 点击组件后把光标放进它的源码里（露出源码）。 */
 export function revealAt(view: EditorView, pos: number): void {
   view.dispatch({ selection: { anchor: pos }, scrollIntoView: false, userEvent: 'select.pointer' })
+  view.focus()
+}
+
+/** 点击还藏着源码的图片：选中 alt，接着输入就替换标题。alt 为空时只把光标留在标题位置。 */
+export function selectImageAlt(view: EditorView, pos: number): void {
+  const image = imageAt(view.state, pos) ?? imageBefore(view.state, pos)
+  const from = image ? image.from + 2 : Math.min(view.state.doc.length, pos + 2)
+  const to = image ? from + image.alt.length : from
+  view.dispatch({
+    selection: { anchor: from, head: to },
+    scrollIntoView: false,
+    userEvent: 'select.pointer'
+  })
   view.focus()
 }
 
@@ -572,10 +585,10 @@ export class ImageWidget extends WidgetType {
     figure.addEventListener('mousedown', (event) => {
       if (this.revealed) return
       const target = event.target as HTMLElement | null
-      if (target?.closest('button')) return
+      if (target?.closest('button, .cm-lp-image-handle')) return
       event.preventDefault()
       const pos = widgetPos(view, figure)
-      if (pos != null) revealAt(view, pos + 2)
+      if (pos != null) selectImageAlt(view, pos)
     })
     return figure
   }
