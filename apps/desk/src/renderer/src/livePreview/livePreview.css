@@ -418,11 +418,11 @@
 /* ---------- 行内 ---------- */
 
 .live-editor .cm-lp-visual .cm-lp-inline-code {
-  padding: 1px 5px;
+  color: var(--tn-c-brand);
+  background: var(--tn-c-default-soft);
   border-radius: 4px;
-  background: var(--tn-c-bg-soft);
-  font-family: var(--tn-font-mono);
-  font-size: 0.875em;
+  font: 0.875em var(--tn-font-mono);
+  padding: 3px 6px;
 }
 
 .live-editor .cm-lp-visual .cm-lp-link {
@@ -621,8 +621,12 @@
   display: none;
 }
 
+.live-editor .cm-lp-visual .cm-line.cm-lp-codeblock-first:has(.cm-lp-code-header) {
+  padding-left: 12px;
+}
+
 .live-editor .cm-lp-visual .cm-line:has(.cm-lp-code-header):not(.cm-lp-codeblock) {
-  padding: 4px 16px 0;
+  padding: 4px 16px 0 12px;
   background: var(--tn-c-bg-soft);
   border-top-left-radius: 8px;
   border-top-right-radius: 8px;
@@ -637,29 +641,37 @@
 }
 
 /* 行号列宽由这一块最大行号的位数决定（data-digits），点这块区域切换行高亮。 */
-.live-editor .cm-lp-visual .cm-lp-code-line[data-digits] {
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits],
+.live-editor .cm-lp-visual .cm-lp-code-fold-slot[data-digits] {
   --tn-line-digits: 1;
 }
 
-.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='2'] {
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='2'],
+.live-editor .cm-lp-visual .cm-lp-code-fold-slot[data-digits='2'] {
   --tn-line-digits: 2;
 }
-.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='3'] {
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='3'],
+.live-editor .cm-lp-visual .cm-lp-code-fold-slot[data-digits='3'] {
   --tn-line-digits: 3;
 }
-.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='4'] {
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='4'],
+.live-editor .cm-lp-visual .cm-lp-code-fold-slot[data-digits='4'] {
   --tn-line-digits: 4;
 }
-.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='5'] {
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='5'],
+.live-editor .cm-lp-visual .cm-lp-code-fold-slot[data-digits='5'] {
   --tn-line-digits: 5;
 }
-.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='6'] {
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='6'],
+.live-editor .cm-lp-visual .cm-lp-code-fold-slot[data-digits='6'] {
   --tn-line-digits: 6;
 }
-.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='7'] {
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='7'],
+.live-editor .cm-lp-visual .cm-lp-code-fold-slot[data-digits='7'] {
   --tn-line-digits: 7;
 }
-.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='8'] {
+.live-editor .cm-lp-visual .cm-lp-code-line[data-digits='8'],
+.live-editor .cm-lp-visual .cm-lp-code-fold-slot[data-digits='8'] {
   --tn-line-digits: 8;
 }
 
@@ -705,7 +717,7 @@
   gap: 6px;
   box-sizing: border-box;
   min-height: 28px;
-  padding: 2px 4px 2px 2px;
+  padding: 2px 4px 2px 0;
   color: var(--tn-c-text-2);
   font: 12px/22px var(--tn-font-sans);
   line-height: 22px;
@@ -737,6 +749,26 @@
 
 .live-editor .cm-lp-code-fold.is-collapsed svg {
   transform: rotate(-90deg);
+}
+
+/* 槽和行号数字同一段：左边距由标题行的 12px 留出，槽宽是位数 × 1ch。按钮保持 22px，在槽里居中。 */
+.live-editor .cm-lp-code-fold-slot {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: content-box;
+  width: calc(var(--tn-line-digits, 1) * 1ch);
+  min-width: 0;
+  height: 22px;
+  margin-right: max(0px, calc((22px - var(--tn-line-digits, 1) * 1ch) / 2));
+  font: 14px var(--tn-font-mono);
+}
+
+.live-editor .cm-lp-code-fold-slot .cm-lp-code-fold {
+  flex: none;
+  width: 22px;
+  height: 22px;
 }
 
 .live-editor .cm-lp-code-title,

@@ -4,17 +4,20 @@
  *
  * 用 CodeMirror 查看，不走笔记的实时预览。读失败时显示主进程给出的原因。
  */
-import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { defaultHighlightStyle, LanguageDescription, syntaxHighlighting } from '@codemirror/language'
 import { languages } from '@codemirror/language-data'
 import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView, lineNumbers } from '@codemirror/view'
 
 import KbPathBreadcrumb from './KbPathBreadcrumb.vue'
+import { useWorkspaceStore } from '../stores/workspace'
 
 import type { KbTextFileDto, TextFileEditorTab as TextFileTab } from '../../../shared/contracts'
 
 const props = defineProps<{ tab: TextFileTab; active: boolean; groupId: string }>()
+const workspace = useWorkspaceStore()
+const showPathBreadcrumb = computed(() => workspace.settings?.showPathBreadcrumb !== false)
 
 const hostRef = ref<HTMLDivElement | null>(null)
 const phase = ref<'loading' | 'ready' | 'error'>('loading')
@@ -118,7 +121,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="text-file-pane">
     <header class="pane-header">
-      <div class="path">
+      <div v-if="showPathBreadcrumb" class="path">
         <KbPathBreadcrumb
           :knowledge-base-id="tab.knowledgeBaseId"
           :rel-path="tab.relPath"

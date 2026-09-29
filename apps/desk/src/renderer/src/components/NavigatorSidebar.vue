@@ -854,6 +854,8 @@ async function openHeaderMenu(): Promise<void> {
             :nodes="visibleToc"
             :selected-note-uuid="selectedTocNoteUuid"
             :focus-request-id="tocFocusRequestId"
+            :persist-collapse="true"
+            :force-expand="query.trim().length > 0"
             :batch-deleting="batchDeleting"
             :batch-selected="batchSelected"
             @select="store.selectNote"
@@ -901,6 +903,13 @@ async function openHeaderMenu(): Promise<void> {
   flex-direction: column;
   background: var(--panel);
   border-right: 1px solid var(--border);
+}
+
+.navigator-sidebar.is-panel-collapsed {
+  overflow: hidden;
+  border-right-width: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 @keyframes spin {

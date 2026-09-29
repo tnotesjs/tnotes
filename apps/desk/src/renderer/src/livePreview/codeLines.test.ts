@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   codeLineDecorations,
+  fenceLineDigits,
   pruneStaleCodeHighlights,
   staleHighlightChanges,
   toggleFenceHighlight
@@ -158,5 +159,18 @@ describe('code line highlight', () => {
     expect(lineAttrs('```js:no-line-numbers {2}\na\nb\n```', 1, 3)).toEqual([
       { line: 3, class: 'cm-lp-code-line cm-lp-code-highlighted', attrs: {} }
     ])
+  })
+
+  it('counts fold-slot digits from the largest line number, and uses one digit without numbers', () => {
+    const doc = (source: string) => Text.of(source.split('\n'))
+    const nine = ['```js', ...Array.from({ length: 9 }, () => 'a'), '```'].join('\n')
+    const ten = ['```js', ...Array.from({ length: 10 }, () => 'a'), '```'].join('\n')
+    expect(fenceLineDigits(doc(nine), 1, 10)).toBe(1)
+    expect(fenceLineDigits(doc(ten), 1, 11)).toBe(2)
+    expect(fenceLineDigits(doc('```js:line-numbers=100\na\n```'), 1, 2)).toBe(3)
+    expect(fenceLineDigits(doc('```js:no-line-numbers\n' + 'x\n'.repeat(12) + '```'), 1, 13)).toBe(
+      1
+    )
+    expect(fenceLineDigits(doc('```js\n```'), 1, 1)).toBe(1)
   })
 })

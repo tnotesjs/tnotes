@@ -38,16 +38,14 @@ export function codeLineDecorations(
   const start = Number(LINE_NUMBERS_START.exec(info)?.[1] ?? 1)
   const last = Math.min(lastBodyLine, doc.lines)
   const rows: { number: number; index: number; highlighted: boolean }[] = []
-  let maxLabel = start
   for (let number = openLineNumber + 1; number <= last; number += 1) {
     const index = number - openLineNumber
     const highlighted = highlights.has(index)
     if (!numbered && !highlighted) continue
-    if (numbered) maxLabel = Math.max(maxLabel, start + index - 1)
     rows.push({ number, index, highlighted })
   }
   // 整块共用同一列宽，按这一块里最大的行号有几位来定，避免每一行按自己的数字收缩。
-  const digits = String(maxLabel).length
+  const digits = fenceLineDigits(doc, openLineNumber, lastBodyLine)
   for (const row of rows) {
     const classes = ['cm-lp-code-line']
     if (row.highlighted) classes.push('cm-lp-code-highlighted')
@@ -65,6 +63,24 @@ export function codeLineDecorations(
     )
   }
   return ranges
+}
+
+/**
+ * 这一块行号有几位。没有正文、或关掉了行号时按 1 位，折叠按钮用同一宽度居中。
+ */
+export function fenceLineDigits(doc: Text, openLineNumber: number, lastBodyLine: number): number {
+  if (openLineNumber < 1 || openLineNumber > doc.lines) return 1
+  const match = FENCE_OPEN.exec(doc.line(openLineNumber).text)
+  if (!match || LINE_NUMBERS_OFF.test(match[3])) return 1
+  const start = Number(LINE_NUMBERS_START.exec(match[3])?.[1] ?? 1)
+  const last = Math.min(lastBodyLine, doc.lines)
+  let maxLabel = start
+  let numbered = false
+  for (let number = openLineNumber + 1; number <= last; number += 1) {
+    numbered = true
+    maxLabel = Math.max(maxLabel, start + (number - openLineNumber) - 1)
+  }
+  return numbered ? String(maxLabel).length : 1
 }
 
 /** 行号列的像素宽度。点行号、以及横向滚动时给光标留白，都用这一列的实际宽度。 */

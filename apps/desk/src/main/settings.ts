@@ -35,6 +35,7 @@ const settingsSchema = z.object({
   defaultNoteView: z.enum(['visual', 'source']).default('visual'),
   defaultNotePageWidth: z.enum(['standard', 'wide']).default('standard'),
   noteTocDisplay: z.enum(['hidden', 'collapsed', 'expanded']).default('expanded'),
+  showPathBreadcrumb: z.boolean().default(true),
   headingNumberMaxDepth: z
     .number()
     .transform(clampHeadingNumberMaxDepth)

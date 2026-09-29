@@ -438,4 +438,18 @@ describe('live preview editing', () => {
     expect(failed.innerHTML).toBe(COPY_ICON)
     vi.useRealTimers()
   })
+
+  it('gives the fold button a slot as wide as the line-number digits', () => {
+    const block = (lines: number, info = 'js') =>
+      ['```' + info, ...Array.from({ length: lines }, () => 'x'), '```'].join('\n')
+    const slotDigits = (doc: string, selector: string) => {
+      const view = mount(doc, doc.indexOf('x'))
+      return view.dom.querySelector(selector)?.getAttribute('data-digits')
+    }
+    expect(slotDigits(block(9), '.cm-lp-code-header .cm-lp-code-fold-slot')).toBe('1')
+    expect(slotDigits(block(10), '.cm-lp-code-header .cm-lp-code-fold-slot')).toBe('2')
+    expect(slotDigits(block(12, 'js:no-line-numbers'), '.cm-lp-code-header .cm-lp-code-fold-slot')).toBe('1')
+    const group = ['::: code-group', '```js [a.js]', ...Array.from({ length: 10 }, () => 'a'), '```', ':::'].join('\n')
+    expect(slotDigits(group, '.cm-lp-code-tabs .cm-lp-code-fold-slot')).toBe('2')
+  })
 })

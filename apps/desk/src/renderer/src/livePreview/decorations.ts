@@ -26,7 +26,7 @@ import {
   toggleCodeFullscreen,
   toggleCodeWrap
 } from './codeBlockChrome'
-import { codeLineDecorations } from './codeLines'
+import { codeLineDecorations, fenceLineDigits } from './codeLines'
 import { CodeHScrollWidget, codeBlockScrollSync } from './codeBlockScroll'
 import { CardWidget, isKnownComponent, setCodeGroupTab, type CardKind } from './cards'
 import { headingFoldKey, headingSections, HeadingFoldToggle, isHeadingFolded } from './headingFold'
@@ -40,6 +40,7 @@ import {
   HorizontalRuleWidget,
   codeWrapButton,
   flashCopied,
+  foldButtonSlot,
   iconButton,
   ImageWidget,
   MathWidget
@@ -516,7 +517,8 @@ class CodeGroupTabsWidget extends WidgetType {
     private readonly lang: string,
     private readonly collapsed: boolean,
     private readonly fullscreen: boolean,
-    private readonly wrapped: boolean
+    private readonly wrapped: boolean,
+    private readonly lineDigits: number
   ) {
     super()
   }
@@ -528,7 +530,8 @@ class CodeGroupTabsWidget extends WidgetType {
       other.lang === this.lang &&
       other.collapsed === this.collapsed &&
       other.fullscreen === this.fullscreen &&
-      other.wrapped === this.wrapped
+      other.wrapped === this.wrapped &&
+      other.lineDigits === this.lineDigits
     )
   }
 
@@ -550,7 +553,7 @@ class CodeGroupTabsWidget extends WidgetType {
         userEvent: 'select.code-clamp'
       })
     })
-    bar.append(fold)
+    bar.append(foldButtonSlot(fold, this.lineDigits))
 
     this.labels.forEach((label, index) => {
       const tab = document.createElement('button')
@@ -1147,6 +1150,7 @@ function build(state: EditorState): LivePreviewState {
               ranges.push(Decoration.line({ class: 'cm-lp-codeblock-fs' }).range(doc.line(number).from))
             }
           }
+          const lastBodyLine = closed ? closeLine.number - 1 : closeLine.number
           ranges.push(
             Decoration.replace({
               widget: new CodeFenceHeaderWidget(
@@ -1156,7 +1160,8 @@ function build(state: EditorState): LivePreviewState {
                 openLine.from,
                 Boolean(chrome?.collapsed),
                 fullscreen,
-                Boolean(chrome?.wrapped)
+                Boolean(chrome?.wrapped),
+                fenceLineDigits(doc, openLine.number, lastBodyLine)
               )
             }).range(Math.max(openLine.from, from), openLine.to)
           )
@@ -1203,6 +1208,14 @@ function build(state: EditorState): LivePreviewState {
             const groupFullscreen = Boolean(groupChrome?.fullscreen)
             const groupWrapped = Boolean(groupChrome?.wrapped)
             const activeLang = panels[active] ? fenceLang(doc.lineAt(panels[active].from).text) : ''
+            const activePanel = panels[active]
+            let lineDigits = 1
+            if (activePanel) {
+              const start = doc.lineAt(activePanel.from)
+              const end = doc.lineAt(activePanel.to)
+              const endIsFence = end.number > start.number && /^[ \t]*(?:`{3,}|~{3,})[ \t]*$/.test(end.text)
+              lineDigits = fenceLineDigits(doc, start.number, endIsFence ? end.number - 1 : end.number)
+            }
             const openClasses = ['cm-lp-code-group-open']
             if (groupCollapsed) openClasses.push('cm-lp-code-group-collapsed')
             if (groupFullscreen) openClasses.push('cm-lp-codeblock-fs')
@@ -1216,7 +1229,8 @@ function build(state: EditorState): LivePreviewState {
                   activeLang,
                   groupCollapsed,
                   groupFullscreen,
-                  groupWrapped
+                  groupWrapped,
+                  lineDigits
                 )
               }).range(openLine.from, openLine.to)
             )

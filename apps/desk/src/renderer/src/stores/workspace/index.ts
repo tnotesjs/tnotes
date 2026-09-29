@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import { useEditorStore } from '../editor'
@@ -606,6 +606,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       candidate.tabs.some((item) => item.id === tab.id)
     )
     if (group) editor.activate(group.id, tab.id)
+    // 整栏收起时，定位发生在看不见的目录里。先展开，等这一栏有了宽度，再滚动到笔记。
+    editor.navigatorSidebarCollapsed = false
+    await nextTick()
     await syncToActiveTab(true)
   }
 

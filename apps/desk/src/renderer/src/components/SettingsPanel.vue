@@ -85,6 +85,7 @@ const groupDefaults: Record<string, Partial<AppSettings>> = {
     defaultNoteView: 'visual',
     defaultNotePageWidth: 'standard',
     noteTocDisplay: 'expanded',
+    showPathBreadcrumb: true,
     autosave: { enabled: true, delayMs: 1000 },
     workspaceLayout: 'kb-dir-content',
     prettier: false,

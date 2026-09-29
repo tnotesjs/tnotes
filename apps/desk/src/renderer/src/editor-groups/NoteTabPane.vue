@@ -675,7 +675,7 @@ function openLink(url: string): void {
       <button type="button" @click="workspace.keepEditorAgainstDisk">保留编辑内容</button>
     </div>
 
-    <div class="note-path-bar">
+    <div v-if="workspace.settings?.showPathBreadcrumb !== false" class="note-path-bar">
       <KbPathBreadcrumb
         :knowledge-base-id="tab.knowledgeBaseId"
         :rel-path="session.document.relPath"

@@ -25,6 +25,10 @@ const props = withDefaults(
     allowReorder?: boolean
     /** 指针正停在置顶组上，用来标出整组可放下。 */
     pinDropActive?: boolean
+    /** 主目录记住收起状态。置顶列表不传，保持全展开。 */
+    persistCollapse?: boolean
+    /** 搜索时忽略收起，让匹配到的子节点露出来。 */
+    forceExpand?: boolean
   }>(),
   { allowReorder: true }
 )
@@ -48,13 +52,108 @@ const collapsedKey: InjectionKey<Ref<Set<string>>> = Symbol.for('tnotes-desk-toc
 const inheritedCollapsed = inject(collapsedKey, null)
 const collapsed = inheritedCollapsed ?? ref(new Set<string>())
 if (!inheritedCollapsed) provide(collapsedKey, collapsed)
+const store = useWorkspaceStore()
+
+function collapseStorageKey(kbId: string): string {
+  return `desk-toc-collapsed:${kbId}`
+}
+
+function readStoredCollapse(kbId: string): string[] | null {
+  try {
+    const raw = sessionStorage.getItem(collapseStorageKey(kbId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return null
+    return parsed.filter((key): key is string => typeof key === 'string')
+  } catch {
+    return null
+  }
+}
+
+function writeStoredCollapse(kbId: string, ids: ReadonlySet<string>): void {
+  sessionStorage.setItem(collapseStorageKey(kbId), JSON.stringify([...ids]))
+}
+
+/** 通向当前笔记的分支，含当前笔记自己（它有子节点时子列表要露出来）。 */
+function openKeysForNote(nodes: DeskTocNode[], noteUuid: string, parents: string[] = []): string[] | null {
+  for (const node of nodes) {
+    if (node.type === 'note' && node.uuid === noteUuid) {
+      return node.children.length ? [...parents, node.nodeId] : [...parents]
+    }
+    const match = openKeysForNote(node.children, noteUuid, [...parents, node.nodeId])
+    if (match) return match
+  }
+  return null
+}
+
+function revealNote(target: Set<string>, nodes: DeskTocNode[], noteUuid: string | null): void {
+  if (!noteUuid) return
+  const open = openKeysForNote(nodes, noteUuid)
+  if (!open) return
+  for (const id of open) target.delete(id)
+}
+
+function defaultCollapsedIds(nodes: DeskTocNode[], noteUuid: string | null): Set<string> {
+  const open = new Set(noteUuid ? (openKeysForNote(nodes, noteUuid) ?? []) : [])
+  return new Set(collectBranchIds(nodes).filter((id) => !open.has(id)))
+}
+
+function isCollapsed(nodeId: string): boolean {
+  return !props.forceExpand && collapsed.value.has(nodeId)
+}
+
+let seededKbId: string | null = null
+let writingCollapse = false
+let seedGeneration = 0
+
+watch(
+  () => [props.persistCollapse, store.selectedKnowledgeBaseId, props.nodes] as const,
+  async ([persist, kbId]) => {
+    if (!persist || inheritedCollapsed) return
+    const generation = ++seedGeneration
+    await nextTick()
+    if (generation !== seedGeneration || store.selectedKnowledgeBaseId !== kbId) return
+    if (!kbId) {
+      seededKbId = null
+      return
+    }
+    if (props.nodes.length === 0 || seededKbId === kbId) return
+    const stored = readStoredCollapse(kbId)
+    const next = stored ? new Set(stored) : defaultCollapsedIds(props.nodes, props.selectedNoteUuid)
+    revealNote(next, props.nodes, props.selectedNoteUuid)
+    writingCollapse = true
+    collapsed.value = next
+    writingCollapse = false
+    seededKbId = kbId
+    writeStoredCollapse(kbId, next)
+  },
+  { flush: 'post', immediate: true }
+)
+
+watch(collapsed, (value) => {
+  if (writingCollapse || !props.persistCollapse || inheritedCollapsed) return
+  const kbId = store.selectedKnowledgeBaseId
+  if (!kbId || seededKbId !== kbId) return
+  writeStoredCollapse(kbId, value)
+})
+
+watch(
+  () => props.selectedNoteUuid,
+  (noteUuid) => {
+    if (!props.persistCollapse || inheritedCollapsed || !noteUuid) return
+    if (seededKbId !== store.selectedKnowledgeBaseId) return
+    const next = new Set(collapsed.value)
+    const size = next.size
+    revealNote(next, props.nodes, noteUuid)
+    if (next.size !== size) collapsed.value = next
+  }
+)
 const listHost = ref<HTMLElement | null>(null)
 const focusedNoteUuid = ref<string | null>(null)
 const dropTarget = ref<{ nodeId: string; placement: 'before' | 'after' | 'inside' } | null>(null)
 const draggingNodeId = ref<string | null>(null)
 let expandTimer: ReturnType<typeof setTimeout> | null = null
 
-const store = useWorkspaceStore()
 const editor = useEditorStore()
 const agent = useAgentStore()
 
@@ -425,7 +524,11 @@ defineExpose({ toggleAllCollapsed })
 </script>
 
 <template>
-  <ul ref="listHost" class="toc-nodes" :class="{ 'is-pin-drop': pinDropActive }">
+  <ul
+    ref="listHost"
+    class="toc-nodes"
+    :class="{ 'is-pin-drop': pinDropActive, 'is-nested': (depth ?? 0) > 0 }"
+  >
     <li v-for="node in nodes" :key="node.nodeId">
       <div
         class="toc-row"
@@ -437,7 +540,6 @@ defineExpose({ toggleAllCollapsed })
           [`drop-${dropTarget?.placement}`]: dropTarget?.nodeId === node.nodeId
         }"
         :data-note-uuid="node.type === 'note' ? node.uuid : undefined"
-        :style="{ '--depth': depth ?? 0 }"
         :draggable="batchDeleting || !allowReorder ? 'false' : 'true'"
         @dragstart.stop="dragStart($event, node)"
         @dragend.stop="dragEnd"
@@ -450,12 +552,21 @@ defineExpose({ toggleAllCollapsed })
           v-if="node.children.length"
           type="button"
           class="disclosure"
-          :aria-label="collapsed.has(node.nodeId) ? '展开' : '折叠'"
-          :data-tooltip="collapsed.has(node.nodeId) ? '展开' : '折叠'"
+          :class="{ 'is-collapsed': isCollapsed(node.nodeId) }"
+          :aria-expanded="isCollapsed(node.nodeId) ? 'false' : 'true'"
+          :aria-label="isCollapsed(node.nodeId) ? '展开' : '折叠'"
+          :data-tooltip="isCollapsed(node.nodeId) ? '展开' : '折叠'"
           @click="toggle(node.nodeId)"
         >
-          <svg viewBox="0 0 12 12" aria-hidden="true">
-            <path :d="collapsed.has(node.nodeId) ? 'M4 2.5 7.5 6 4 9.5' : 'M2.5 4 6 7.5 9.5 4'" />
+          <svg class="toc-chevron" viewBox="0 0 12 12" aria-hidden="true">
+            <path
+              d="M4.5 2.5 8 6l-3.5 3.5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
         </button>
         <span v-else class="disclosure spacer" />
@@ -522,10 +633,11 @@ defineExpose({ toggleAllCollapsed })
       </div>
 
       <TocNodeList
-        v-if="node.children.length && !collapsed.has(node.nodeId)"
+        v-if="node.children.length && !isCollapsed(node.nodeId)"
         :nodes="node.children"
         :selected-note-uuid="selectedNoteUuid"
         :focus-request-id="focusRequestId"
+        :force-expand="forceExpand"
         :depth="(depth ?? 0) + 1"
         :batch-deleting="batchDeleting"
         :batch-selected="batchSelected"
@@ -560,13 +672,19 @@ defineExpose({ toggleAllCollapsed })
   list-style: none;
 }
 
+.toc-nodes.is-nested {
+  margin: 0 0 0 7px;
+  padding: 0 0 0 5px;
+  border-left: 1px solid var(--tn-c-divider);
+}
+
 .toc-row {
   position: relative;
   min-height: 28px;
   display: flex;
   align-items: center;
   gap: 3px;
-  padding: 2px 5px 2px calc(5px + var(--depth) * 12px);
+  padding: 2px 5px;
   border-radius: 5px;
   color: var(--text);
 }
@@ -656,7 +774,7 @@ defineExpose({ toggleAllCollapsed })
   position: absolute;
   z-index: 2;
   right: 4px;
-  left: calc(18px + var(--depth) * 12px);
+  left: 18px;
   height: 2px;
   border-radius: 2px;
   background: var(--accent);
@@ -702,9 +820,15 @@ defineExpose({ toggleAllCollapsed })
   overflow: visible;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.6;
+  stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
+  transform: rotate(90deg);
+  transition: transform 0.15s ease;
+}
+
+.disclosure.is-collapsed svg {
+  transform: rotate(0deg);
 }
 
 .disclosure.spacer {

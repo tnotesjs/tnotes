@@ -126,6 +126,14 @@ describe('配置文件字段级容错', () => {
     )
     expect(loadSettings().imageUpload.optimize.strength).toBe('high')
   })
+
+  it('缺省显示路径面包屑，也可以改成隐藏', () => {
+    expect(loadSettings().showPathBreadcrumb).toBe(true)
+    writeFileSync(path(), JSON.stringify({ theme: 'dark' }))
+    expect(loadSettings().showPathBreadcrumb).toBe(true)
+    expect(saveSettings({ showPathBreadcrumb: false }).showPathBreadcrumb).toBe(false)
+    expect(loadSettings().showPathBreadcrumb).toBe(false)
+  })
 })
 
 describe('保存时格式化（Prettier）', () => {

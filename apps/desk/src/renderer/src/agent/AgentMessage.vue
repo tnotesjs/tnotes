@@ -365,6 +365,14 @@ article.assistant {
   background: color-mix(in srgb, var(--editor-bg, #111) 80%, transparent);
 }
 
+.body :deep(:not(pre) > code) {
+  color: var(--tn-c-brand);
+  background: var(--tn-c-default-soft);
+  border-radius: 4px;
+  font: 0.875em var(--tn-font-mono);
+  padding: 3px 6px;
+}
+
 .body :deep(p) {
   margin: 0 0 0.4em;
 }

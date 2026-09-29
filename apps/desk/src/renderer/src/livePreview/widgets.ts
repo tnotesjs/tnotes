@@ -173,6 +173,7 @@ export class CodeFenceHeaderWidget extends WidgetType {
     private readonly collapsed: boolean,
     private readonly fullscreen: boolean,
     private readonly wrapped: boolean,
+    private readonly lineDigits = 1,
     private readonly showFold = true
   ) {
     super()
@@ -187,6 +188,7 @@ export class CodeFenceHeaderWidget extends WidgetType {
       other.collapsed === this.collapsed &&
       other.fullscreen === this.fullscreen &&
       other.wrapped === this.wrapped &&
+      other.lineDigits === this.lineDigits &&
       other.showFold === this.showFold
     )
   }
@@ -207,7 +209,7 @@ export class CodeFenceHeaderWidget extends WidgetType {
           userEvent: 'select.code-clamp'
         })
       })
-      header.append(fold)
+      header.append(foldButtonSlot(fold, this.lineDigits))
     }
 
     const title = document.createElement('input')
@@ -293,6 +295,15 @@ export class CodeFenceHeaderWidget extends WidgetType {
   ignoreEvent(): boolean {
     return true
   }
+}
+
+/** 折叠按钮放进行号那么宽的槽里，按钮本身仍是 22px，在槽内居中。 */
+export function foldButtonSlot(button: HTMLButtonElement, digits: number): HTMLSpanElement {
+  const slot = document.createElement('span')
+  slot.className = 'cm-lp-code-fold-slot'
+  slot.dataset.digits = String(Math.max(1, digits))
+  slot.append(button)
+  return slot
 }
 
 export function iconButton(label: string, svg: string, className: string): HTMLButtonElement {

@@ -27,6 +27,7 @@ const autosaveSettings: AppSettings = {
   defaultNoteView: 'visual',
   defaultNotePageWidth: 'standard',
   noteTocDisplay: 'expanded',
+  showPathBreadcrumb: true,
   appZoomPercent: 100,
   autosave: { enabled: true, delayMs: 50 },
   createNotePosition: 'top',
@@ -765,5 +766,56 @@ describe('workspace document saving', () => {
 
     pendingSaves[1].resolve(mutation('second edit', 'revision-3'))
     await vi.runAllTimersAsync()
+  })
+})
+
+describe('在目录列表中显示', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    Object.defineProperty(window, 'desk', {
+      configurable: true,
+      value: {
+        notes: {
+          read: vi.fn(async () => ({ ok: true, value: note('disk', 'v1') }))
+        },
+        knowledgeBases: {
+          read: vi.fn(async () => ({ ok: true, value: knowledgeBase }))
+        }
+      }
+    })
+  })
+
+  afterEach(() => {
+    Reflect.deleteProperty(window, 'desk')
+  })
+
+  it('目录整栏收起时先展开，再发起定位', async () => {
+    const workspace = useWorkspaceStore()
+    const editor = useEditorStore()
+    editor.openNote(knowledgeBase, 'note-a', 'A', 'visual', undefined, 'permanent')
+    editor.navigatorSidebarCollapsed = true
+    const tab = editor.activeTab
+    expect(tab?.type).toBe('note')
+    if (!tab || tab.type !== 'note') return
+
+    await workspace.revealTabInToc(tab)
+
+    expect(editor.navigatorSidebarCollapsed).toBe(false)
+    expect(workspace.tocFocusRequest).toMatchObject({
+      knowledgeBaseId: knowledgeBase.id,
+      noteUuid: 'note-a'
+    })
+  })
+
+  it('切换标签时的自动定位不会展开已收起的目录栏', async () => {
+    const workspace = useWorkspaceStore()
+    const editor = useEditorStore()
+    workspace.settings = autosaveSettings
+    editor.openNote(knowledgeBase, 'note-a', 'A', 'visual', undefined, 'permanent')
+    editor.navigatorSidebarCollapsed = true
+
+    await workspace.syncToActiveTab()
+
+    expect(editor.navigatorSidebarCollapsed).toBe(true)
   })
 })

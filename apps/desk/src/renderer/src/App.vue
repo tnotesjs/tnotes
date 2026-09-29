@@ -142,12 +142,28 @@ let unsubscribeUpdates: (() => void) | null = null
 const workspaceColumns = computed(() => {
   const knowledgeWidth = editor.knowledgeSidebarCollapsed ? 48 : editor.knowledgeSidebarWidth
   const navigatorWidth = editor.navigatorSidebarCollapsed ? 0 : editor.navigatorSidebarWidth
+  const navigatorGap = editor.navigatorSidebarCollapsed ? 0 : 6
   const reversed = store.settings?.workspaceLayout === 'content-dir-kb'
   const base = reversed
-    ? `minmax(0, 1fr) 6px ${navigatorWidth}px 6px ${knowledgeWidth}px`
-    : `${knowledgeWidth}px 6px ${navigatorWidth}px 6px minmax(0, 1fr)`
+    ? `minmax(0, 1fr) ${navigatorGap}px ${navigatorWidth}px 6px ${knowledgeWidth}px`
+    : `${knowledgeWidth}px 6px ${navigatorWidth}px ${navigatorGap}px minmax(0, 1fr)`
   return agentStore.open ? `${base} 6px ${agentStore.width}px` : base
 })
+
+/** 目录栏朝编辑区的那条边。收起后这条边贴着知识库栏，手柄留在这里。 */
+const navigatorEdge = computed(() => {
+  const knowledgeWidth = editor.knowledgeSidebarCollapsed ? 48 : editor.knowledgeSidebarWidth
+  const navigatorWidth = editor.navigatorSidebarCollapsed ? 0 : editor.navigatorSidebarWidth
+  return `${knowledgeWidth + 6 + navigatorWidth}px`
+})
+
+const navigatorLayoutReversed = computed(
+  () => store.settings?.workspaceLayout === 'content-dir-kb'
+)
+
+function toggleNavigatorSidebar(): void {
+  editor.navigatorSidebarCollapsed = !editor.navigatorSidebarCollapsed
+}
 
 const workspaceAreas = computed(() => {
   const base = store.settings?.workspaceLayout === 'content-dir-kb' ? 'i5 i4 i3 i2 i1' : 'i1 i2 i3 i4 i5'
@@ -958,7 +974,11 @@ onUnmounted(() => {
     <main
       v-if="store.hasWorkspace"
       class="workspace-layout"
-      :style="{ gridTemplateColumns: workspaceColumns, gridTemplateAreas: workspaceAreas }"
+      :style="{
+        gridTemplateColumns: workspaceColumns,
+        gridTemplateAreas: workspaceAreas,
+        '--nav-edge': navigatorEdge
+      }"
     >
       <KnowledgeSidebar style="grid-area: i1" @create-knowledge-base="openCreateKbDialog" />
       <div
@@ -969,8 +989,10 @@ onUnmounted(() => {
         @mousedown="startResize('knowledge', $event)"
       />
       <NavigatorSidebar
+        id="navigator-sidebar"
         ref="navigatorSidebar"
         style="grid-area: i3"
+        :class="{ 'is-panel-collapsed': editor.navigatorSidebarCollapsed }"
         @create-note="createNoteNow"
         @create-notes="openCreateNotesDialog"
         @create-group="openGroupDialog"
@@ -980,12 +1002,36 @@ onUnmounted(() => {
         @request-batch-delete="requestBatchDelete"
       />
       <div
-        class="resize-handle"
+        v-show="!editor.navigatorSidebarCollapsed"
+        class="resize-handle navigator-resize"
         role="separator"
         aria-orientation="vertical"
         style="grid-area: i4"
         @mousedown="startResize('navigator', $event)"
-      />
+      >
+        <button
+          type="button"
+          class="navigator-collapse-handle"
+          :class="{ 'is-reversed': navigatorLayoutReversed }"
+          aria-controls="navigator-sidebar"
+          aria-expanded="true"
+          aria-label="隐藏目录"
+          title="隐藏目录"
+          @mousedown.stop
+          @click="toggleNavigatorSidebar"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="m15 6l-6 6l6 6"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
       <EditorPane style="grid-area: i5" />
       <div
         v-if="agentStore.open"
@@ -996,6 +1042,28 @@ onUnmounted(() => {
         @mousedown="startResize('agent', $event)"
       />
       <AgentPanel v-if="agentStore.open" ref="agentPanel" style="grid-area: i7" />
+      <button
+        v-if="editor.navigatorSidebarCollapsed"
+        type="button"
+        class="navigator-collapse-handle is-collapsed"
+        :class="{ 'is-reversed': navigatorLayoutReversed }"
+        aria-controls="navigator-sidebar"
+        aria-expanded="false"
+        aria-label="显示目录"
+        title="显示目录"
+        @click="toggleNavigatorSidebar"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="m15 6l-6 6l6 6"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
     </main>
 
     <TerminalPanel v-if="store.hasWorkspace" ref="terminalPanel" />
@@ -1505,10 +1573,96 @@ onUnmounted(() => {
 }
 
 .workspace-layout {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: grid;
   grid-template-columns: 218px 292px minmax(0, 1fr);
+}
+
+.navigator-collapse-handle {
+  position: absolute;
+  z-index: 8;
+  top: 50%;
+  left: var(--nav-edge, 0px);
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 46px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--editor-bg);
+  color: var(--muted);
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.navigator-resize {
+  z-index: 9;
+  width: calc(100% + 10px);
+  margin-left: -5px;
+}
+
+.navigator-resize .navigator-collapse-handle,
+.navigator-resize .navigator-collapse-handle.is-reversed {
+  left: 50%;
+  right: auto;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.navigator-resize:hover .navigator-collapse-handle,
+.navigator-resize:focus-within .navigator-collapse-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.navigator-collapse-handle.is-reversed {
+  left: auto;
+  right: var(--nav-edge, 0px);
+  transform: translate(50%, -50%);
+}
+
+.navigator-collapse-handle.is-collapsed:not(.is-reversed) {
+  width: 28px;
+  padding-left: 14px;
+  border: 1px solid var(--border);
+  clip-path: inset(0 0 0 50%);
+}
+
+.navigator-collapse-handle.is-collapsed.is-reversed {
+  width: 28px;
+  padding-right: 14px;
+  border: 1px solid var(--border);
+  clip-path: inset(0 50% 0 0);
+}
+
+.navigator-collapse-handle:hover {
+  color: var(--accent);
+}
+
+.navigator-collapse-handle.is-collapsed:hover {
+  border-color: var(--accent);
+}
+
+.navigator-collapse-handle svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.15s ease;
+}
+
+.navigator-collapse-handle.is-collapsed svg {
+  width: 12px;
+  height: 12px;
+}
+
+.navigator-collapse-handle.is-collapsed:not(.is-reversed) svg,
+.navigator-collapse-handle.is-reversed:not(.is-collapsed) svg {
+  transform: rotate(180deg);
 }
 
 .workspace-layout .resize-handle {

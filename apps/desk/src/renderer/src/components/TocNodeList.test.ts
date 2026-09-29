@@ -475,4 +475,120 @@ describe('TocNodeList', () => {
     expect(wrapper.emitted('toggleBatchGroup')).toEqual([[group]])
     expect(wrapper.find('[data-note-uuid="note-b"]').exists()).toBe(true)
   })
+
+  it('collapses other branches and remembers them for the knowledge base', async () => {
+    sessionStorage.clear()
+    const current: DeskTocNode = {
+      type: 'group',
+      title: '当前',
+      nodeId: 'group-current',
+      tocLineIndex: 0,
+      folderPath: ['当前'],
+      children: [sourceNote]
+    }
+    const otherNote: Extract<DeskTocNode, { type: 'note' }> = {
+      ...targetNote,
+      uuid: 'note-c',
+      nodeId: 'note-c',
+      title: '另一篇'
+    }
+    const other: DeskTocNode = {
+      type: 'group',
+      title: '其他',
+      nodeId: 'group-other',
+      tocLineIndex: 2,
+      folderPath: ['其他'],
+      children: [otherNote]
+    }
+    useWorkspaceStore().selectedKnowledgeBaseId = 'kb-fold'
+    const wrapper = mount(TocNodeList, {
+      props: {
+        nodes: [current, other],
+        selectedNoteUuid: sourceNote.uuid,
+        persistCollapse: true
+      }
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-note-uuid="note-a"]').exists()).toBe(true)
+    expect(wrapper.find('[data-note-uuid="note-c"]').exists()).toBe(false)
+    const stored = JSON.parse(sessionStorage.getItem('desk-toc-collapsed:kb-fold') ?? '[]') as string[]
+    expect(stored).toContain('group-other')
+    expect(stored).not.toContain('group-current')
+
+    await wrapper.setProps({ forceExpand: true })
+    expect(wrapper.find('[data-note-uuid="note-c"]').exists()).toBe(true)
+    wrapper.unmount()
+    sessionStorage.clear()
+  })
+
+  it('opens the selected note even when the saved collapse had hidden it', async () => {
+    const current: DeskTocNode = {
+      type: 'group',
+      title: '当前',
+      nodeId: 'group-current',
+      tocLineIndex: 0,
+      folderPath: ['当前'],
+      children: [sourceNote]
+    }
+    sessionStorage.setItem('desk-toc-collapsed:kb-fold', JSON.stringify(['group-current']))
+    useWorkspaceStore().selectedKnowledgeBaseId = 'kb-fold'
+    const wrapper = mount(TocNodeList, {
+      props: { nodes: [current], selectedNoteUuid: sourceNote.uuid, persistCollapse: true }
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-note-uuid="note-a"]').exists()).toBe(true)
+    const stored = JSON.parse(sessionStorage.getItem('desk-toc-collapsed:kb-fold') ?? '[]') as string[]
+    expect(stored).not.toContain('group-current')
+    wrapper.unmount()
+    sessionStorage.clear()
+  })
+
+  it('remembers a different collapse set after the knowledge base changes', async () => {
+    sessionStorage.clear()
+    const current: DeskTocNode = {
+      type: 'group',
+      title: '当前',
+      nodeId: 'group-current',
+      tocLineIndex: 0,
+      folderPath: ['当前'],
+      children: [sourceNote]
+    }
+    const otherNote: Extract<DeskTocNode, { type: 'note' }> = {
+      ...targetNote,
+      uuid: 'note-c',
+      nodeId: 'note-c',
+      title: '另一篇'
+    }
+    const other: DeskTocNode = {
+      type: 'group',
+      title: '其他',
+      nodeId: 'group-other',
+      tocLineIndex: 2,
+      folderPath: ['其他'],
+      children: [otherNote]
+    }
+    const store = useWorkspaceStore()
+    store.selectedKnowledgeBaseId = 'kb-a'
+    const wrapper = mount(TocNodeList, {
+      props: { nodes: [current, other], selectedNoteUuid: sourceNote.uuid, persistCollapse: true }
+    })
+    await flushPromises()
+    const moved: DeskTocNode = {
+      type: 'group',
+      title: '乙组',
+      nodeId: 'group-b2',
+      tocLineIndex: 0,
+      folderPath: ['乙组'],
+      children: [otherNote]
+    }
+    store.selectedKnowledgeBaseId = 'kb-b'
+    await wrapper.setProps({ nodes: [moved], selectedNoteUuid: null })
+    await flushPromises()
+    expect(wrapper.find('[data-note-uuid="note-c"]').exists()).toBe(false)
+    const stored = JSON.parse(sessionStorage.getItem('desk-toc-collapsed:kb-b') ?? '[]') as string[]
+    expect(stored).toEqual(['group-b2'])
+    expect(JSON.parse(sessionStorage.getItem('desk-toc-collapsed:kb-a') ?? '[]')).toContain('group-other')
+    wrapper.unmount()
+    sessionStorage.clear()
+  })
 })

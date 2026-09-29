@@ -96,6 +96,12 @@ async function checkNow(): Promise<void> {
         @update:model-value="setZoom"
       />
     </div>
+    <div class="settings-row">
+      <label class="switch-field">
+        <input v-model="draft.showPathBreadcrumb" type="checkbox" />
+        <span>显示路径面包屑</span>
+      </label>
+    </div>
     <div class="layout-picker">
       <button
         type="button"

@@ -27,6 +27,7 @@ const settings: AppSettings = {
   defaultNoteView: 'visual',
   defaultNotePageWidth: 'standard',
   noteTocDisplay: 'expanded',
+  showPathBreadcrumb: true,
   appZoomPercent: 100,
   autosave: { enabled: true, delayMs: 800 },
   createNotePosition: 'top',
