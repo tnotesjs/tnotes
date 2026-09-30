@@ -10,16 +10,14 @@ import type { AppSettings, KnowledgeBaseDescriptor } from '../../../shared/contr
 const settings: AppSettings = {
   version: 1,
   theme: 'system',
-  density: 'comfortable',
   defaultNoteView: 'visual',
   defaultNotePageWidth: 'standard',
-  noteTocDisplay: 'expanded',
+  noteOutline: 'shown',
   showPathBreadcrumb: true,
   appZoomPercent: 100,
   autosave: { enabled: true, delayMs: 800 },
   createNotePosition: 'top',
   workspaceLayout: 'kb-dir-content',
-  prettier: true,
   ide: 'vscode',
   gitPath: null,
   nodePath: null,
@@ -157,6 +155,20 @@ describe('editor store tab semantics', () => {
     expect(editor.activeTab).toMatchObject({ id: firstId, outlineVisible: false })
     editor.toggleNoteOutlineVisible(firstId)
     expect(editor.activeTab).toMatchObject({ id: firstId, outlineVisible: true })
+  })
+
+  it('opens notes with the outline default and applies a change without clearing a later toggle', () => {
+    const editor = useEditorStore()
+    editor.configure({ ...settings, noteOutline: 'hidden' })
+    const hiddenId = editor.openNote(knowledgeBase, 'note-a', 'A', 'visual', undefined, 'permanent')
+    expect(editor.activeTab).toMatchObject({ id: hiddenId, outlineVisible: false })
+
+    editor.configure({ ...settings, noteOutline: 'shown' })
+    expect(editor.activeTab).toMatchObject({ id: hiddenId, outlineVisible: true })
+
+    editor.toggleNoteOutlineVisible(hiddenId)
+    editor.configure({ ...settings, theme: 'dark', noteOutline: 'shown' })
+    expect(editor.activeTab).toMatchObject({ id: hiddenId, outlineVisible: false })
   })
 
   it('keeps the last note scope while a web tab is active', () => {

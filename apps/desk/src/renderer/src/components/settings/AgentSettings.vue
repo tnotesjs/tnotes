@@ -2,6 +2,8 @@
 import { onMounted, reactive, ref } from 'vue'
 
 import { isCursorProvider, providerFromBaseUrl } from '../../../../shared/agentModels'
+import ResetGroupButton from './ResetGroupButton.vue'
+import CloseIconButton from './CloseIconButton.vue'
 
 import type { AgentKeyStatus, AgentListedModel, AgentProviderConfig, AppSettings } from '../../../../shared/contracts'
 
@@ -150,19 +152,19 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
       <strong>内置 Agent</strong>
       <span>按服务商填写 OpenAI 兼容接口的地址和密钥，每个服务商下可以挂多个模型；也可以接入 Cursor，用 Cursor 账户的额度</span>
     </header>
-    <button type="button" class="reset-group" @click="emit('reset')">重置服务商和模型</button>
+    <ResetGroupButton @reset="emit('reset')" />
     <div v-for="(provider, index) in props.draft.agent.providers" :key="provider.id" class="provider">
       <div class="provider-head">
         <input v-model="provider.name" class="provider-name" type="text" spellcheck="false" aria-label="服务商名称" />
         <span v-if="isCursorProvider(provider)" class="provider-kind">Cursor Agent</span>
-        <button type="button" class="link danger" @click="removeProvider(index)">删除服务商</button>
+        <CloseIconButton label="删除服务商" @click="removeProvider(index)" />
       </div>
       <div class="field-grid">
         <div v-if="isCursorProvider(provider)" class="cursor-auth">
           <span>Cursor 账号</span>
           <div class="key-actions">
-            <button type="button" :disabled="busy[provider.id]" @click="loginCursor(provider)">用 Cursor 账号登录</button>
-            <button type="button" :disabled="busy[provider.id] || !status?.providers[provider.id]" @click="loadModels(provider)">
+            <button type="button" class="settings-action" :disabled="busy[provider.id]" @click="loginCursor(provider)">用 Cursor 账号登录</button>
+            <button type="button" class="settings-action" :disabled="busy[provider.id] || !status?.providers[provider.id]" @click="loadModels(provider)">
               读取模型
             </button>
           </div>
@@ -197,11 +199,12 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
           </small>
         </label>
         <div class="key-actions">
-          <button type="button" @click="saveKey(provider)">保存密钥</button>
-          <button type="button" @click="clearKey(provider)">清除密钥</button>
+          <button type="button" class="settings-action" @click="saveKey(provider)">保存密钥</button>
+          <button type="button" class="settings-action" @click="clearKey(provider)">清除密钥</button>
           <button
             v-if="!isCursorProvider(provider)"
             type="button"
+            class="settings-action"
             :disabled="busy[provider.id] || !status?.providers[provider.id]"
             @click="loadModels(provider)"
           >
@@ -245,7 +248,9 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
                 @change="props.draft.agent.defaultModel = `${provider.id}/${model.id}`"
               />
             </td>
-            <td><button type="button" class="link danger" @click="provider.models.splice(modelIndex, 1)">删除</button></td>
+            <td class="model-remove">
+              <CloseIconButton label="删除模型" @click="provider.models.splice(modelIndex, 1)" />
+            </td>
           </tr>
         </tbody>
       </table>
@@ -268,8 +273,8 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
       </div>
     </div>
     <div class="add-actions">
-      <button type="button" class="add-provider" @click="addProvider">添加服务商</button>
-      <button type="button" class="add-provider" :disabled="hasCursorProvider()" @click="addCursorProvider">接入 Cursor</button>
+      <button type="button" class="settings-action" @click="addProvider">添加服务商</button>
+      <button type="button" class="settings-action" :disabled="hasCursorProvider()" @click="addCursorProvider">接入 Cursor</button>
     </div>
   </section>
 </template>
@@ -326,6 +331,16 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
   width: 100%;
 }
 
+.models td:last-child,
+.models th:last-child {
+  width: 28px;
+  text-align: right;
+}
+
+.model-remove {
+  vertical-align: middle;
+}
+
 .link {
   border: 0;
   background: transparent;
@@ -333,14 +348,6 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
   cursor: pointer;
   padding: 0;
   font: inherit;
-  align-self: flex-start;
-}
-
-.link.danger {
-  color: #e03131;
-}
-
-.add-provider {
   align-self: flex-start;
 }
 

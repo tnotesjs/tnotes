@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 
 import { useBackgroundFailureStore } from '../../stores/backgroundFailure'
 import { useWorkspaceStore } from '../../stores/workspace'
+import ResetGroupButton from './ResetGroupButton.vue'
 
 import type { AppSettings } from '../../../../shared/contracts'
 
@@ -57,7 +58,7 @@ const lastCheck = computed(() => rows.value.find((row) => row.at)?.at ?? null)
       <strong>Git 与远端</strong>
       <span>自动检查远端更新与上次远端检查时间</span>
     </header>
-    <button type="button" class="reset-group" @click="emit('reset')">重置</button>
+    <ResetGroupButton @reset="emit('reset')" />
     <div class="field-grid">
       <label class="card-toggle">
         <input v-model="draft.git.autoFetch" data-testid="git-auto-fetch" type="checkbox" />

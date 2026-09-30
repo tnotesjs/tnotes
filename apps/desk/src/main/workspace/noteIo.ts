@@ -1,6 +1,5 @@
 import path from 'node:path'
 import fs from 'node:fs/promises'
-import prettier from 'prettier'
 
 import {
   KbError,
@@ -11,7 +10,6 @@ import {
   type Placement
 } from '@tnotesjs/kb'
 import { formatImageFileName, LOCAL_PASTED_ASSET_NAME_FORMAT } from '../imageBed'
-import { loadSettings } from '../settings'
 
 import type {
   AttachmentWriteLocalRequest,
@@ -122,21 +120,9 @@ export async function saveNote(
   request: NoteSaveRequest,
   effects: MutationSideEffects
 ): Promise<NoteMutationDto> {
-  const settings = loadSettings()
-  // 生效链：单次请求 > 库级约定（tnotes.json）> desk 全局默认
-  const usePrettier = request.prettier ?? handle.snapshot.config.prettier ?? settings.prettier
-  let content = request.content
-  if (usePrettier) {
-    try {
-      content = await prettier.format(request.content, { parser: 'markdown' })
-    } catch {
-      // 格式失败不阻塞保存（原文落盘）。
-      content = request.content
-    }
-  }
   const index = resolveNoteIndex(handle, request.noteUuid)
   const existing = handle.snapshot.notes.find((note) => note.index === index)?.frontmatter
-  content = normalizeWhitelistedFrontmatter(content, existing)
+  const content = normalizeWhitelistedFrontmatter(request.content, existing)
   const result = await handle.workspace.notes.save({
     index,
     content,

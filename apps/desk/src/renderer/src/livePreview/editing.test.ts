@@ -131,6 +131,34 @@ describe('live preview editing', () => {
     expect(text).not.toContain('<NotesTable')
   })
 
+  it('renders math inside a table cell instead of leaving the dollar source', () => {
+    const doc = ['前文。', '', '| 式子 |', '| --- |', '| $1\\times2=2$ |', ''].join('\n')
+    const view = mount(doc, 0)
+    const card = view.dom.querySelector('.cm-lp-table-card')
+    expect(card?.querySelector('.katex')).not.toBeNull()
+    expect(card?.innerHTML ?? '').not.toContain('$1\\times2=2$')
+  })
+
+  it('keeps an image inside a callout card', () => {
+    const doc = ['前文。', '', '::: warning 注意', '', '说明', '', '![图](https://example.com/wide.png)', '', ':::', ''].join('\n')
+    const view = mount(doc, 0)
+    const block = view.dom.querySelector('.tn-custom-block.warning')
+    const image = block?.querySelector('img')
+    expect(block).not.toBeNull()
+    expect(image?.getAttribute('src')).toBe('https://example.com/wide.png')
+    expect(image?.closest('.tn-custom-block')).toBe(block)
+  })
+
+  it('applies an image width attr inside a callout card', () => {
+    const doc = ['前文。', '', '::: tip', '', '![](https://example.com/a.webp) {w=596px}', '', ':::', ''].join('\n')
+    const view = mount(doc, 0)
+    const block = view.dom.querySelector('.tn-custom-block.tip')
+    const image = block?.querySelector('img')
+    expect(image?.getAttribute('src')).toBe('https://example.com/a.webp')
+    expect(image?.style.width).toBe('596px')
+    expect(block?.textContent ?? '').not.toContain('w=596')
+  })
+
   it('toggles a task marker from either side of the checkbox syntax', () => {
     const doc = '- [ ] 待办\n'
     const mark = doc.indexOf('[')

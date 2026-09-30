@@ -56,9 +56,7 @@ const noopEffects = {
 }
 
 /**
- * 一段「处处不合 Prettier 内置默认」的正文：列表记号、分割线、代码块内部
- * 都会被整篇重排改掉（`* 甲`→`- 甲`、`***`→`---`、代码加半角分号/换双引号）。
- * 保存时格式化默认关闭，所以未显式开启时这些字节必须原样落盘。
+ * 一段「处处不合 Prettier 内置默认」的正文。保存不再整篇重排，这些字节必须原样落盘。
  */
 const STYLED_BODY = [
   '---',
@@ -106,8 +104,7 @@ describe('desk noteIo over @tnotesjs/kb', () => {
         knowledgeBaseId: handle.id,
         noteUuid: '0001',
         content: '# 第一篇\n\n改过的正文。\n',
-        expectedRevision: doc.revision,
-        prettier: false
+        expectedRevision: doc.revision
       },
       noopEffects
     )
@@ -119,8 +116,7 @@ describe('desk noteIo over @tnotesjs/kb', () => {
           knowledgeBaseId: handle.id,
           noteUuid: '0001',
           content: 'stale',
-          expectedRevision: doc.revision,
-          prettier: false
+          expectedRevision: doc.revision
         },
         noopEffects
       )
@@ -148,8 +144,7 @@ describe('desk noteIo over @tnotesjs/kb', () => {
           '正文',
           ''
         ].join('\n'),
-        expectedRevision: doc.revision,
-        prettier: false
+        expectedRevision: doc.revision
       },
       noopEffects
     )
@@ -162,9 +157,7 @@ describe('desk noteIo over @tnotesjs/kb', () => {
     expect(saved.note.content).not.toContain('title:')
   })
 
-  // 保存时格式化默认关闭：这是「未编辑的字节不许被改写」的底线回归。
-  // 把 settings.ts 的 prettier 默认值改回 true，这条会立刻红。
-  it('默认不做保存时格式化，未编辑的字节原样落盘', async () => {
+  it('保存不整篇重排，未编辑的字节原样落盘', async () => {
     const handle = await makeHandle()
     const doc = await readNote(handle, '0001')
     const saved = await saveNote(
@@ -184,8 +177,7 @@ describe('desk noteIo over @tnotesjs/kb', () => {
     ).resolves.toBe(STYLED_BODY)
   })
 
-  // 库级 tnotes.json 里显式写 prettier:true 是用户（协作者共享）的选择，仍然生效。
-  it('库级显式开启保存时格式化后，整篇按 Prettier 重排', async () => {
+  it('tnotes.json 里的 prettier 被忽略，正文仍原样落盘', async () => {
     const handle = await makeHandle({ prettier: true })
     const doc = await readNote(handle, '0001')
     const saved = await saveNote(
@@ -199,11 +191,9 @@ describe('desk noteIo over @tnotesjs/kb', () => {
       noopEffects
     )
 
-    expect(saved.note.content).toContain('- 甲')
-    expect(saved.note.content).toContain('\n---\n')
-    expect(saved.note.content).toContain('const a = 1;')
-    expect(saved.note.content).toContain('const s = "x";')
-    expect(saved.note.content).not.toContain('* 甲')
+    expect(saved.note.content).toBe(STYLED_BODY)
+    expect(saved.note.content).toContain('* 甲')
+    expect(saved.note.content).not.toContain('- 甲')
   })
 
   it('names pasted local assets with the note index and timestamp', async () => {

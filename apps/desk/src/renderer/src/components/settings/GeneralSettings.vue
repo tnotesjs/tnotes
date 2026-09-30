@@ -4,12 +4,27 @@ import { computed } from 'vue'
 import { checkForUpdates, useUpdateState } from '../../stores/update'
 import { useWorkspaceStore } from '../../stores/workspace'
 import AppZoomControl from './AppZoomControl.vue'
+import ResetGroupButton from './ResetGroupButton.vue'
 
 import type { AppSettings } from '../../../../shared/contracts'
 
-defineProps<{ draft: AppSettings }>()
+const props = defineProps<{ draft: AppSettings }>()
 const emit = defineEmits<{ reset: [] }>()
 const store = useWorkspaceStore()
+
+const breadcrumbChoice = computed({
+  get: () => (props.draft.showPathBreadcrumb ? 'shown' : 'hidden'),
+  set: (value: string) => {
+    props.draft.showPathBreadcrumb = value === 'shown'
+  }
+})
+
+const autosaveChoice = computed({
+  get: () => (props.draft.autosave.enabled ? 'on' : 'off'),
+  set: (value: string) => {
+    props.draft.autosave.enabled = value === 'on'
+  }
+})
 
 async function setZoom(value: number): Promise<void> {
   try {
@@ -41,7 +56,7 @@ async function checkNow(): Promise<void> {
       <strong>外观与编辑</strong>
       <span>适用于整个 Desk 工作区</span>
     </header>
-    <button type="button" class="reset-group" @click="emit('reset')">重置</button>
+    <ResetGroupButton @reset="emit('reset')" />
     <div class="field-grid cols-3">
       <label class="field">
         <span>主题</span>
@@ -51,11 +66,15 @@ async function checkNow(): Promise<void> {
           <option value="dark">深色</option>
         </select>
       </label>
+      <AppZoomControl
+        :model-value="store.settings?.appZoomPercent ?? 100"
+        @update:model-value="setZoom"
+      />
       <label class="field">
-        <span>界面密度</span>
-        <select v-model="draft.density">
-          <option value="comfortable">舒适</option>
-          <option value="compact">紧凑</option>
+        <span>显示路径面包屑</span>
+        <select v-model="breadcrumbChoice">
+          <option value="shown">显示</option>
+          <option value="hidden">隐藏</option>
         </select>
       </label>
       <label class="field">
@@ -74,10 +93,9 @@ async function checkNow(): Promise<void> {
       </label>
       <label class="field">
         <span>笔记内目录</span>
-        <select v-model="draft.noteTocDisplay">
+        <select v-model="draft.noteOutline">
+          <option value="shown">显示</option>
           <option value="hidden">隐藏</option>
-          <option value="collapsed">折叠显示</option>
-          <option value="expanded">展开显示</option>
         </select>
       </label>
       <label class="field">
@@ -91,15 +109,27 @@ async function checkNow(): Promise<void> {
           <option :value="6">6 层</option>
         </select>
       </label>
-      <AppZoomControl
-        :model-value="store.settings?.appZoomPercent ?? 100"
-        @update:model-value="setZoom"
-      />
-    </div>
-    <div class="settings-row">
-      <label class="switch-field">
-        <input v-model="draft.showPathBreadcrumb" type="checkbox" />
-        <span>显示路径面包屑</span>
+      <label class="field">
+        <span>自动保存</span>
+        <select v-model="autosaveChoice">
+          <option value="on">开启</option>
+          <option value="off">关闭</option>
+        </select>
+      </label>
+      <label class="field" :class="{ 'is-disabled': !draft.autosave.enabled }">
+        <span>自动保存延迟</span>
+        <span class="delay-input">
+          <input
+            v-model.number="draft.autosave.delayMs"
+            type="number"
+            min="250"
+            max="30000"
+            step="250"
+            aria-label="自动保存延迟"
+            :disabled="!draft.autosave.enabled"
+          />
+          <em>ms</em>
+        </span>
       </label>
     </div>
     <div class="layout-picker">
@@ -130,34 +160,6 @@ async function checkNow(): Promise<void> {
         <span>内容 · 目录 · 知识库</span>
       </button>
     </div>
-    <div class="settings-row">
-      <label class="switch-field">
-        <input v-model="draft.autosave.enabled" type="checkbox" />
-        <span>自动保存</span>
-      </label>
-      <label class="field inline-number">
-        <span>延迟</span>
-        <span class="input-with-unit">
-          <input
-            v-model.number="draft.autosave.delayMs"
-            type="number"
-            min="250"
-            max="30000"
-            step="250"
-          />
-          <em>ms</em>
-        </span>
-      </label>
-      <label class="switch-field" title="仅源码视图保存时生效；可视化编辑不会整篇重排">
-        <input v-model="draft.prettier" type="checkbox" />
-        <span>保存时用 Prettier 格式化 Markdown</span>
-      </label>
-    </div>
-    <p class="settings-note">
-      默认关闭。开启后只影响源码视图里的保存（可视化编辑不会整篇重排），并且使用 Prettier
-      内置默认风格、不读取仓库里的 .prettierrc；需要自定义格式风格请在 IDE（VSCode /
-      Cursor）中格式化。
-    </p>
     <div class="settings-row update-row">
       <label class="switch-field">
         <input v-model="draft.updates.autoCheck" type="checkbox" />
@@ -182,7 +184,51 @@ async function checkNow(): Promise<void> {
 .layout-picker {
   display: flex;
   gap: 10px;
-  margin: 12px 0;
+  margin: 0 0 12px;
+}
+
+.delay-input {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--input-bg);
+  padding-right: 10px;
+  box-sizing: border-box;
+}
+
+.delay-input input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']) {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0 10px;
+}
+
+.delay-input input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']):focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.delay-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.delay-input em {
+  flex: none;
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.field.is-disabled {
+  opacity: 0.45;
 }
 
 .layout-option {

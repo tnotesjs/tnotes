@@ -18,8 +18,8 @@ mkdirSync(profile, { recursive: true })
 writeFileSync(join(kb, 'tnotes.json'), JSON.stringify({ title: 'fidelity' }))
 writeFileSync(join(kb, 'TOC.md'), '- [ ] 0001. fidelity\n- [ ] 0002. upgrade\n- [ ] 0003. format\n')
 
-// 保存时格式化：默认关闭。这段「处处不合 Prettier 内置默认」的正文用来验
-// 「源码视图保存不许重排未编辑的字节」，以及「库级显式开启后确实会重排」。
+// 保存不再整篇重排。这段「处处不合 Prettier 内置默认」的正文用来验源码视图保存只落用户改动。
+// 第二个库的 tnotes.json 仍写着 prettier:true，保存时也必须原样落盘。
 const styled = [
   '---',
   'id: fidelity-format',
@@ -41,7 +41,7 @@ const styledEdited = `${styled}追加。\n`
 const note3File = join(kb, 'notes', '0003. format.md')
 writeFileSync(note3File, styled)
 
-// 第二个库：库级约定显式写 prettier:true（随仓库走、协作者共享），格式化必须仍然生效。
+// 第二个库：tnotes.json 里残留 prettier:true，保存时必须忽略。
 const kb2 = join(workspace, 'TNotes.format-on')
 const note2File = join(kb2, 'notes', '0001. format-on.md')
 mkdirSync(join(kb2, 'notes'), { recursive: true })
@@ -278,7 +278,7 @@ try {
   )
   await page.screenshot({ path: join(deskDir, 'scripts', 'shots', 'fidelity-upgrade.png') })
 
-  // ---- 保存时格式化默认关闭：源码视图保存只落用户改动，未编辑的字节不许被重排 ----
+  // ---- 源码视图保存只落用户改动，未编辑的字节不许被重排 ----
   await page.locator('.toc-row', { hasText: '0003' }).first().locator('.node-label').click()
   await page.waitForTimeout(2500)
   check(
@@ -313,7 +313,7 @@ try {
     JSON.stringify(savedDefault.slice(0, 40))
   )
 
-  // ---- 库级显式开启（tnotes.json prettier:true）后格式化照旧生效，能力没丢 ----
+  // ---- tnotes.json 里残留 prettier:true 时，保存仍只落用户改动 ----
   await page.getByText('format-on', { exact: true }).first().click()
   await page.waitForTimeout(1800)
   await page.locator('.toc-row', { hasText: 'format-on' }).first().locator('.node-label').click()
@@ -329,16 +329,11 @@ try {
   await page.keyboard.press('ControlOrMeta+a')
   await page.keyboard.insertText(styledEdited)
   await page.keyboard.press('ControlOrMeta+s')
-  const savedOn = await waitForFile(note2File, (text) => text.includes('- 甲'))
+  const savedOn = await waitForFile(note2File, (text) => text === styledEdited)
   check(
-    '库级开启后整篇按 Prettier 重排（列表记号 / 分割线）',
-    savedOn.includes('- 甲') && !savedOn.includes('* 甲') && savedOn.includes('\n---\n'),
-    JSON.stringify(savedOn.slice(0, 30))
-  )
-  check(
-    '库级开启后代码块内部也会被改写（这正是默认关闭要避免的破坏）',
-    savedOn.includes('const a = 1;') && savedOn.includes('const s = "x";'),
-    JSON.stringify(savedOn.slice(-40))
+    'tnotes.json 里的 prettier 被忽略，源码视图保存不整篇重排',
+    savedOn === styledEdited && savedOn.includes('* 甲') && !savedOn.includes('- 甲'),
+    JSON.stringify(savedOn.slice(0, 40))
   )
   await page.screenshot({ path: join(deskDir, 'scripts', 'shots', 'fidelity-prettier.png') })
 

@@ -23,16 +23,14 @@ import type {
 const autosaveSettings: AppSettings = {
   version: 1,
   theme: 'system',
-  density: 'comfortable',
   defaultNoteView: 'visual',
   defaultNotePageWidth: 'standard',
-  noteTocDisplay: 'expanded',
+  noteOutline: 'shown',
   showPathBreadcrumb: true,
   appZoomPercent: 100,
   autosave: { enabled: true, delayMs: 50 },
   createNotePosition: 'top',
   workspaceLayout: 'kb-dir-content',
-  prettier: true,
   ide: 'vscode',
   gitPath: null,
   nodePath: null,
@@ -215,7 +213,7 @@ describe('inline note rename', () => {
     rename.mockReturnValue(result.promise)
     const pending = workspace.renameNote('kb-a', 'note-a', 'Renamed')
     await vi.advanceTimersByTimeAsync(0)
-    workspace.updateDocumentContent(key, 'typed during rename', true)
+    workspace.updateDocumentContent(key, 'typed during rename')
     await vi.advanceTimersByTimeAsync(100)
     expect(save).not.toHaveBeenCalled()
     result.resolve(renamed())
@@ -232,8 +230,7 @@ describe('inline note rename', () => {
     expect(save).toHaveBeenCalledWith(
       expect.objectContaining({
         content: 'typed during rename',
-        expectedRevision: 'v3',
-        prettier: false
+        expectedRevision: 'v3'
       })
     )
   })
@@ -573,7 +570,7 @@ describe('workspace document saving', () => {
     await workspace.ensureDocument(knowledgeBase.id, 'note-a')
     editor.openNote(knowledgeBase, 'note-a', 'A', 'visual', undefined, 'permanent')
 
-    workspace.updateDocumentContent(key, 'first edit', true)
+    workspace.updateDocumentContent(key, 'first edit')
     const firstSave = workspace.saveDocument(key)
 
     expect(saveRequests).toEqual([
@@ -581,12 +578,11 @@ describe('workspace document saving', () => {
         knowledgeBaseId: knowledgeBase.id,
         noteUuid: 'note-a',
         content: 'first edit',
-        expectedRevision: 'revision-1',
-        prettier: false
+        expectedRevision: 'revision-1'
       }
     ])
 
-    workspace.updateDocumentContent(key, 'second edit', true)
+    workspace.updateDocumentContent(key, 'second edit')
     pendingSaves[0].resolve(mutation('first edit', 'revision-2'))
     await firstSave
 
@@ -605,8 +601,7 @@ describe('workspace document saving', () => {
       knowledgeBaseId: knowledgeBase.id,
       noteUuid: 'note-a',
       content: 'second edit',
-      expectedRevision: 'revision-2',
-      prettier: false
+      expectedRevision: 'revision-2'
     })
 
     pendingSaves[1].resolve(mutation('second edit', 'revision-3'))
@@ -652,7 +647,7 @@ describe('workspace document saving', () => {
     const key = `${knowledgeBase.id}:note-a`
     await workspace.ensureDocument(knowledgeBase.id, 'note-a')
     editor.openNote(knowledgeBase, 'note-a', 'A', 'visual', undefined, 'permanent')
-    workspace.updateDocumentContent(key, '未保存内容', true)
+    workspace.updateDocumentContent(key, '未保存内容')
 
     const confirmTabClose = vi.mocked(window.desk.app.confirmTabClose)
     const quitting = workspace.prepareToQuit()
@@ -671,7 +666,7 @@ describe('workspace document saving', () => {
     const key = `${knowledgeBase.id}:note-a`
     await workspace.ensureDocument(knowledgeBase.id, 'note-a')
     editor.openNote(knowledgeBase, 'note-a', 'A', 'visual', undefined, 'permanent')
-    workspace.updateDocumentContent(key, '未保存内容', true)
+    workspace.updateDocumentContent(key, '未保存内容')
     vi.mocked(window.desk.app.confirmTabClose).mockResolvedValueOnce({
       ok: true,
       value: 'cancel'
@@ -688,7 +683,7 @@ describe('workspace document saving', () => {
     workspace.settings = autosaveSettings
     await workspace.ensureDocument(knowledgeBase.id, 'note-a')
 
-    workspace.updateDocumentContent(key, '自动保存内容', true)
+    workspace.updateDocumentContent(key, '自动保存内容')
     await vi.advanceTimersByTimeAsync(50)
     expect(saveRequests).toHaveLength(1)
     pendingSaves[0].resolve(mutation('自动保存内容', 'revision-2'))
@@ -703,7 +698,7 @@ describe('workspace document saving', () => {
     const key = `${knowledgeBase.id}:note-a`
     await workspace.ensureDocument(knowledgeBase.id, 'note-a')
 
-    workspace.updateDocumentContent(key, '手动保存内容', true)
+    workspace.updateDocumentContent(key, '手动保存内容')
     const saving = workspace.saveAllDocuments()
     for (let tick = 0; tick < 20; tick += 1) await Promise.resolve()
     pendingSaves[0].resolve(mutation('手动保存内容', 'revision-2'))
@@ -725,7 +720,7 @@ describe('workspace document saving', () => {
       noteUuid: () => 'note-a',
       dirty: () => true,
       flush: () => {
-        workspace.updateDocumentContent(key, '块内草稿已提交', true)
+        workspace.updateDocumentContent(key, '块内草稿已提交')
         registration.dispose()
       }
     })
@@ -747,9 +742,9 @@ describe('workspace document saving', () => {
     workspace.settings = autosaveSettings
     await workspace.ensureDocument(knowledgeBase.id, 'note-a')
 
-    workspace.updateDocumentContent(key, 'first edit', true)
+    workspace.updateDocumentContent(key, 'first edit')
     const firstSave = workspace.saveDocument(key)
-    workspace.updateDocumentContent(key, 'second edit', true)
+    workspace.updateDocumentContent(key, 'second edit')
 
     await vi.advanceTimersByTimeAsync(50)
     expect(saveRequests).toHaveLength(1)
@@ -760,8 +755,7 @@ describe('workspace document saving', () => {
 
     expect(saveRequests[1]).toMatchObject({
       content: 'second edit',
-      expectedRevision: 'revision-2',
-      prettier: false
+      expectedRevision: 'revision-2'
     })
 
     pendingSaves[1].resolve(mutation('second edit', 'revision-3'))

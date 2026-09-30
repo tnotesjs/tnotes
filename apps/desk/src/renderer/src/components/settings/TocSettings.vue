@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AppSettings } from '../../../../shared/contracts'
+import ResetGroupButton from './ResetGroupButton.vue'
 
 defineProps<{ draft: AppSettings }>()
 const emit = defineEmits<{ reset: [] }>()
@@ -11,7 +12,7 @@ const emit = defineEmits<{ reset: [] }>()
       <strong>目录管理</strong>
       <span>控制目录树与变更区域显示</span>
     </header>
-    <button type="button" class="reset-group" @click="emit('reset')">重置</button>
+    <ResetGroupButton @reset="emit('reset')" />
     <div class="field-grid cols-3">
       <label class="field">
         <span>新增笔记位置</span>

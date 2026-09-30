@@ -84,8 +84,7 @@ function writeFence(nextFence: string): void {
       content.slice(0, located.from) + nextFence + content.slice(located.to)
     workspace.updateDocumentContent(
       documentKey(props.tab.knowledgeBaseId, props.tab.noteUuid),
-      next,
-      true
+      next
     )
   }
 

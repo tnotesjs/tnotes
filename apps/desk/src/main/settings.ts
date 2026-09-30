@@ -31,10 +31,10 @@ const knowledgeBaseSettingsSchema = z.object({
 const settingsSchema = z.object({
   version: z.literal(1).default(1),
   theme: z.enum(['system', 'light', 'dark']).default('system'),
-  density: z.enum(['compact', 'comfortable']).default('comfortable'),
   defaultNoteView: z.enum(['visual', 'source']).default('visual'),
   defaultNotePageWidth: z.enum(['standard', 'wide']).default('standard'),
-  noteTocDisplay: z.enum(['hidden', 'collapsed', 'expanded']).default('expanded'),
+  // 打开笔记时右侧大纲的默认显隐。旧的 noteTocDisplay 不再读取。
+  noteOutline: z.enum(['shown', 'hidden']).default('shown'),
   showPathBreadcrumb: z.boolean().default(true),
   headingNumberMaxDepth: z
     .number()
@@ -49,9 +49,6 @@ const settingsSchema = z.object({
     .default({ enabled: true, delayMs: 1000 }),
   createNotePosition: z.enum(['top', 'end']).default('top'),
   workspaceLayout: z.enum(['kb-dir-content', 'content-dir-kb']).default('kb-dir-content'),
-  // 保存时用 Prettier 整篇重排。默认关闭：保存不应隐式改写用户没编辑过的内容。
-  // 开启后用的是 Prettier 内置默认风格（不读取仓库里的 .prettierrc）；只在源码视图保存时生效。
-  prettier: z.boolean().default(false),
   ide: z.enum(['vscode', 'cursor']).default('vscode'),
   gitPath: z.string().trim().min(1).nullable().default(null),
   nodePath: z.string().trim().min(1).nullable().default(null),

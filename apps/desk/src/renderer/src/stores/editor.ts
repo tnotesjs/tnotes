@@ -214,6 +214,7 @@ export const useEditorStore = defineStore('editor', () => {
   const maxOpenTabCount = ref(10)
   const wrapTabs = ref(true)
   const defaultNotePageWidth = ref<NotePageWidth>('standard')
+  const noteOutlineShown = ref(true)
   const activeKnowledgeBaseId = ref<string | null>(null)
   /**
    * 「查看固定上下文」请求：由状态条发起，目标标签页收到后把自己的锚点选出来。
@@ -264,6 +265,11 @@ export const useEditorStore = defineStore('editor', () => {
     defaultNotePageWidth.value = settings.defaultNotePageWidth
     // 改主题 / 自动保存等无关设置不应该重置每个标签的页宽覆盖
     if (widthChanged) applyDefaultNotePageWidth(settings.defaultNotePageWidth)
+    const outlineShown = settings.noteOutline !== 'hidden'
+    const outlineChanged = noteOutlineShown.value !== outlineShown
+    noteOutlineShown.value = outlineShown
+    // 只在这项默认值变化时改已打开的笔记；工具栏对单篇的开关在此之前保留
+    if (outlineChanged) applyDefaultNoteOutline(outlineShown)
     trimToLimit()
   }
 
@@ -273,6 +279,31 @@ export const useEditorStore = defineStore('editor', () => {
         return {
           ...node,
           tabs: node.tabs.map((tab) => (tab.type === 'note' ? { ...tab, pageWidth } : tab))
+        }
+      }
+      return {
+        ...node,
+        first: applyToLayout(node.first),
+        second: applyToLayout(node.second)
+      }
+    }
+    layout.value = applyToLayout(layout.value)
+    const nextEditors: Record<string, KnowledgeBaseEditorSession> = {}
+    for (const [knowledgeBaseId, session] of Object.entries(knowledgeBaseEditors.value)) {
+      nextEditors[knowledgeBaseId] = {
+        ...session,
+        layout: applyToLayout(session.layout)
+      }
+    }
+    knowledgeBaseEditors.value = nextEditors
+  }
+
+  function applyDefaultNoteOutline(outlineVisible: boolean): void {
+    const applyToLayout = (node: EditorLayoutNode): EditorLayoutNode => {
+      if (node.type === 'group') {
+        return {
+          ...node,
+          tabs: node.tabs.map((tab) => (tab.type === 'note' ? { ...tab, outlineVisible } : tab))
         }
       }
       return {
@@ -740,7 +771,7 @@ export const useEditorStore = defineStore('editor', () => {
       icon: knowledgeBase.icon,
       viewMode,
       pageWidth: defaultNotePageWidth.value,
-      outlineVisible: true,
+      outlineVisible: noteOutlineShown.value,
       noteAssetsVisible: false,
       preview: openBehavior === 'preview',
       pinned: false,

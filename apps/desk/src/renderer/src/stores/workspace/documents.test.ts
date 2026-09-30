@@ -20,7 +20,6 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     },
     content: '# 原文\n',
     dirty: false,
-    preserveSourceOnSave: false,
     externalConflict: false,
     saving: false,
     unsavedDraft: false,
@@ -89,7 +88,7 @@ describe('外部冲突标记', () => {
     const { ctx, documents } = makeContext(session)
     const docs = createDocuments(ctx)
 
-    docs.updateDocumentContent('kb:note-1', '# 原文\n\n继续编辑\n', true)
+    docs.updateDocumentContent('kb:note-1', '# 原文\n\n继续编辑\n')
 
     expect(documents.value['kb:note-1']?.content).toBe('# 原文\n\n继续编辑\n')
     expect(documents.value['kb:note-1']?.externalConflict).toBe(true)
@@ -99,7 +98,7 @@ describe('外部冲突标记', () => {
     const { ctx, documents } = makeContext(makeSession())
     const docs = createDocuments(ctx)
 
-    docs.updateDocumentContent('kb:note-1', '# 原文\n\n编辑\n', true)
+    docs.updateDocumentContent('kb:note-1', '# 原文\n\n编辑\n')
 
     expect(documents.value['kb:note-1']?.externalConflict).toBe(false)
   })
@@ -220,7 +219,7 @@ describe('外部修改与未保存冲突', () => {
     })
     const store = createDocuments(ctx)
 
-    store.updateDocumentContent('kb:note-1', '# 本地编辑\n继续写\n', true)
+    store.updateDocumentContent('kb:note-1', '# 本地编辑\n继续写\n')
 
     expect(documents.value['kb:note-1']?.externalConflict).toBe(true)
     expect(documents.value['kb:note-1']?.dirty).toBe(true)

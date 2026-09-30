@@ -14,6 +14,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import { writeClipboardText } from '../../clipboardText'
+import ResetGroupButton from './ResetGroupButton.vue'
 
 import type { AppSettings, McpServerStatusDto } from '../../../../shared/contracts'
 
@@ -119,7 +120,7 @@ async function rotate(): Promise<void> {
         <code>get_current_selection</code> 提供给本机 Agent。只监听本机回环地址，请求必须带令牌。
       </span>
     </header>
-    <button type="button" class="reset-group" @click="emit('reset')">重置</button>
+    <ResetGroupButton @reset="emit('reset')" />
 
     <div class="settings-row">
       <label class="switch-field">
@@ -167,12 +168,13 @@ async function rotate(): Promise<void> {
       <div class="mcp-actions">
         <button
           type="button"
+          class="settings-action"
           data-testid="mcp-copy-token"
           @click="copy(status?.token ?? '', '令牌')"
         >
           {{ copied === '令牌' ? '已复制' : '复制令牌' }}
         </button>
-        <button type="button" data-testid="mcp-rotate" @click="rotate">重置令牌</button>
+        <button type="button" class="settings-action" data-testid="mcp-rotate" @click="rotate">重置令牌</button>
       </div>
     </div>
     <p class="mcp-state-detail">
@@ -204,7 +206,7 @@ async function rotate(): Promise<void> {
           <strong>不要按返回的行列坐标直接修改磁盘文件</strong>。
         </p>
         <p>只读：工具不会修改笔记内容、文件或 Git 状态。</p>
-        <button type="button" data-testid="mcp-copy-config" @click="copy(configExample, '配置')">
+        <button type="button" class="settings-action" data-testid="mcp-copy-config" @click="copy(configExample, '配置')">
           {{ copied === '配置' ? '已复制配置' : '复制配置示例' }}
         </button>
       </div>

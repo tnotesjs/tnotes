@@ -120,11 +120,12 @@ import {
 
 import type {
   NotePageWidth,
-  NoteTocDisplay,
   NoteViewMode,
   PinnedSelectionAnchor
 } from '../../../shared/contracts'
 import type { DisplayLimitedItem } from '../editor/markdown/projectionFidelity'
+
+type NoteTocDisplay = 'hidden' | 'collapsed' | 'expanded'
 
 const props = withDefaults(
   defineProps<{

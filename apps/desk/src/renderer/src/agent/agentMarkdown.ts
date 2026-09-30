@@ -37,15 +37,19 @@ interface InlineState {
 }
 
 /**
- * 对话正文的 Markdown。公式定界跟笔记的 `math` 对齐，但没有闭合美元符号时保持原文，
+ * 给 markdown-it 接上 `$…$` / `$$…$$`。定界跟笔记的 `math` 对齐，但没有闭合美元符号时保持原文，
  * 避免流式输出写到一半时把后面的正文吞进公式。
  */
-export function createAgentMarkdown(): AgentMarkdown {
-  const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true })
+export function installMarkdownMath(markdown: AgentMarkdown): void {
   markdown.block.ruler.before('fence', 'math_block', mathBlock)
   markdown.inline.ruler.before('emphasis', 'math_inline', mathInline)
   markdown.renderer.rules.math_inline = (tokens, idx) => renderKatex(tokens[idx].content, false)
   markdown.renderer.rules.math_block = (tokens, idx) => renderKatex(tokens[idx].content, true)
+}
+
+export function createAgentMarkdown(): AgentMarkdown {
+  const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true })
+  installMarkdownMath(markdown)
   return markdown
 }
 

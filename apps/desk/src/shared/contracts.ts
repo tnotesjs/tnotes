@@ -226,8 +226,6 @@ export interface KnowledgeBaseDescriptor {
   port?: number
   rootUrl?: string
   statsEnabled?: boolean
-  /** 库级约定（tnotes.json）：保存时格式化。undefined = 未设置，跟随 desk 全局。 */
-  prettier?: boolean
   /** 库级约定（tnotes.json）：自动提交推送。 */
   autoPush?: { enabled: boolean; idleMinutes: number }
   /** 库级约定（tnotes.json）：标题编号层级上限（1-6）。 */
@@ -253,8 +251,6 @@ export interface KnowledgeBaseSettingsDto {
   originUrl: string | null
   /** Suggested name when `name` is empty (origin / directory). */
   suggestedName: string | null
-  /** 库级约定，null = 未设置（跟随 desk 全局）。 */
-  prettier: boolean | null
   autoPush: { enabled: boolean; idleMinutes: number } | null
   headingNumberMaxDepth: number | null
 }
@@ -268,8 +264,6 @@ export interface KnowledgeBaseSettingsWriteRequest {
   port: number
   pageUrl?: string
   statsEnabled: boolean
-  /** null = 从 tnotes.json 删除该键（跟随全局）。 */
-  prettier?: boolean | null
   autoPush?: { enabled: boolean; idleMinutes: number } | null
   headingNumberMaxDepth?: number | null
 }
@@ -494,7 +488,8 @@ export interface WorkspaceOverview {
  */
 export type NoteViewMode = 'visual' | 'source'
 export type NotePageWidth = 'standard' | 'wide'
-export type NoteTocDisplay = 'hidden' | 'collapsed' | 'expanded'
+/** 打开笔记时右侧大纲的默认状态。 */
+export type NoteOutlineVisibility = 'shown' | 'hidden'
 export type TabCloseChoice = 'save' | 'discard' | 'cancel'
 export type ContextMenuAction =
   | 'close'
@@ -591,7 +586,6 @@ export type TabShortcutCommand =
   | 'open-quick-open'
   | 'open-command-palette'
 export type ThemeMode = 'system' | 'light' | 'dark'
-export type InterfaceDensity = 'compact' | 'comfortable'
 export type IdeKind = 'vscode' | 'cursor'
 export type ImageDefaultTarget = 'local' | 'github'
 
@@ -678,10 +672,10 @@ export interface KnowledgeBaseSettings {
 export interface AppSettings {
   version: 1
   theme: ThemeMode
-  density: InterfaceDensity
   defaultNoteView: NoteViewMode
   defaultNotePageWidth: NotePageWidth
-  noteTocDisplay: NoteTocDisplay
+  /** 打开笔记时右侧大纲默认显示或隐藏。工具栏仍可单独开关当前笔记。 */
+  noteOutline: NoteOutlineVisibility
   /** 笔记和文本文件标题上方的路径面包屑。默认显示。 */
   showPathBreadcrumb: boolean
   /** 标题编号层级上限（1-6）：1. 与 1.1. 允许出现的最大段数。 */
@@ -693,7 +687,6 @@ export interface AppSettings {
   }
   createNotePosition: 'top' | 'end'
   workspaceLayout: 'kb-dir-content' | 'content-dir-kb'
-  prettier: boolean
   ide: IdeKind
   gitPath: string | null
   nodePath: string | null
@@ -1371,7 +1364,6 @@ export interface NoteSaveRequest {
   noteUuid: string
   content: string
   expectedRevision: string
-  prettier?: boolean
 }
 
 export interface NoteCreateRequest {

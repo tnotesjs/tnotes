@@ -3,6 +3,7 @@ import taskLists from 'markdown-it-task-lists'
 import linkAttributes from 'markdown-it-link-attributes'
 import DOMPurify from 'dompurify'
 import CodeGroup from '@tnotesjs/ui/code-group'
+import { parseImageAttrs } from '@tnotesjs/ui/image-markdown'
 import { createApp, h, type App } from 'vue'
 
 import { hydrateTnSwipers, parseSwiperSlides, swiperSlideTabTitle } from './swiperSlides'
@@ -156,8 +157,29 @@ function rewriteImageSources(html: string, resolveImage: ResolveImage): string {
     const resolved = source ? resolveImage(source) : ''
     if (resolved) image.setAttribute('src', resolved)
     else image.removeAttribute('src')
+    applyImageSizeAttrs(image)
   })
   return host.innerHTML
+}
+
+/** 块外图片由 `readImage` 吃掉 ` {w=…}`。容器正文是整段 markdown-it，同一段语法会留在图后面。 */
+function applyImageSizeAttrs(image: HTMLImageElement): void {
+  const text = image.nextSibling
+  if (!text || text.nodeType !== Node.TEXT_NODE) return
+  const raw = text.textContent ?? ''
+  if (!raw.includes('{')) return
+  const parsed = parseImageAttrs(raw)
+  if (parsed.rest !== '') return
+  text.remove()
+  if (parsed.width) image.style.width = parsed.width
+  if (parsed.align === 'center') {
+    image.style.display = 'block'
+    image.style.marginLeft = 'auto'
+    image.style.marginRight = 'auto'
+  } else if (parsed.align === 'right') {
+    image.style.display = 'block'
+    image.style.marginLeft = 'auto'
+  }
 }
 
 function renderBody(body: string, resolveImage: ResolveImage): string {

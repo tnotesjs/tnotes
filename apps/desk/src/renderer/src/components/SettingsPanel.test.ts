@@ -4,7 +4,8 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AppSettings } from '../../../shared/contracts'
+import { DEFAULT_MCP_PORT, type AppSettings } from '../../../shared/contracts'
+import { DEFAULT_AGENT_SETTINGS } from '../../../shared/agentModels'
 import { MARKDOWN_BLOCK_SHORTCUTS, MARKDOWN_INLINE_SHORTCUTS } from '../markdown/markdownInputRules'
 import { TN_NOTES_SLASH_ITEMS } from '../markdown/slashMenu'
 import { useWorkspaceStore } from '../stores/workspace'
@@ -13,16 +14,18 @@ import SettingsPanel from './SettingsPanel.vue'
 const settings: AppSettings = {
   version: 1,
   theme: 'system',
-  density: 'comfortable',
   defaultNoteView: 'visual',
   defaultNotePageWidth: 'standard',
-  noteTocDisplay: 'expanded',
+  noteOutline: 'shown',
   showPathBreadcrumb: true,
+  headingNumberMaxDepth: 2,
+  git: { autoFetch: false },
+  mcp: { enabled: false, port: DEFAULT_MCP_PORT },
+  agent: structuredClone(DEFAULT_AGENT_SETTINGS),
   appZoomPercent: 100,
   autosave: { enabled: true, delayMs: 800 },
   createNotePosition: 'top',
   workspaceLayout: 'kb-dir-content',
-  prettier: true,
   ide: 'vscode',
   gitPath: null,
   nodePath: null,
@@ -67,7 +70,28 @@ beforeEach(() => {
         imageTokenStatus: vi.fn(async () => ({
           ok: true,
           value: { configured: false, encryptionAvailable: true }
+        })),
+        readRaw: vi.fn(async () => ({ ok: true, value: '{}\n' }))
+      },
+      agent: {
+        keyStatus: vi.fn(async () => ({
+          ok: true,
+          value: { encryptionAvailable: true, providers: {} }
         }))
+      },
+      mcp: {
+        status: vi.fn(async () => ({
+          ok: true,
+          value: {
+            enabled: false,
+            running: false,
+            url: null,
+            token: '',
+            error: null,
+            sessions: 0
+          }
+        })),
+        onChanged: vi.fn(() => () => undefined)
       }
     }
   })
@@ -85,15 +109,41 @@ describe('SettingsPanel Markdown quick-input catalog', () => {
       .find((candidate) => candidate.text().includes('笔记默认页宽'))
 
     expect(field?.find('select').element.value).toBe('standard')
+    const reset = wrapper.get('.reset-group')
+    expect(reset.attributes('aria-label')).toBe('重置设置')
+    expect(reset.find('svg').exists()).toBe(true)
+    expect(reset.text()).toBe('')
   })
 
-  it('defaults the in-note table of contents control to expanded', () => {
+  it('defaults the note outline control to shown', () => {
     const wrapper = mount(SettingsPanel)
     const field = wrapper
       .findAll('label.field')
       .find((candidate) => candidate.text().includes('笔记内目录'))
+    const select = field?.find('select')
 
-    expect(field?.find('select').element.value).toBe('expanded')
+    expect(select?.element.value).toBe('shown')
+    expect(select?.findAll('option').map((option) => option.text())).toEqual(['显示', '隐藏'])
+  })
+
+  it('uses dropdowns for the breadcrumb and autosave, and disables the delay when autosave is off', async () => {
+    const wrapper = mount(SettingsPanel)
+    const field = (label: string) =>
+      wrapper.findAll('label.field').find((candidate) => candidate.find('span').text() === label)
+    const breadcrumb = field('显示路径面包屑')?.find('select')
+    const autosave = field('自动保存')?.find('select')
+    const delay = field('自动保存延迟')?.find('input')
+
+    expect(breadcrumb?.findAll('option').map((option) => option.text())).toEqual(['显示', '隐藏'])
+    expect(breadcrumb?.element.value).toBe('shown')
+    expect(autosave?.findAll('option').map((option) => option.text())).toEqual(['开启', '关闭'])
+    expect(autosave?.element.value).toBe('on')
+    expect((delay?.element as HTMLInputElement).value).toBe('800')
+    expect((delay?.element as HTMLInputElement).disabled).toBe(false)
+
+    await autosave?.setValue('off')
+
+    expect((delay?.element as HTMLInputElement).disabled).toBe(true)
   })
 
   it('renders every shared slash, block, and inline shortcut entry', async () => {
@@ -177,10 +227,77 @@ describe('SettingsPanel 编辑器', () => {
   })
 })
 
+describe('SettingsPanel section scroll', () => {
+  it('shows form groups in one scroll and keeps config and shortcuts on their own pages', async () => {
+    const wrapper = mount(SettingsPanel)
+
+    expect(wrapper.find('[data-settings-group="general"]').exists()).toBe(true)
+    expect(wrapper.find('[data-settings-group="toc"]').exists()).toBe(true)
+    expect(wrapper.find('.config-editor').exists()).toBe(false)
+
+    const configNav = wrapper
+      .findAll('button.nav-item')
+      .find((item) => item.text().includes('配置文件'))
+    await configNav?.trigger('click')
+    expect(wrapper.find('.config-editor').exists()).toBe(true)
+    expect(wrapper.find('[data-settings-group="general"]').exists()).toBe(false)
+
+    const generalNav = wrapper
+      .findAll('button.nav-item')
+      .find((item) => item.text().includes('常规'))
+    await generalNav?.trigger('click')
+    expect(wrapper.find('[data-settings-group="general"]').exists()).toBe(true)
+    expect(wrapper.find('.config-editor').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('highlights the form group that has reached the top of the scroll', async () => {
+    const wrapper = mount(SettingsPanel)
+    const content = wrapper.get('.settings-content')
+    vi.spyOn(content.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 500))
+    const tops = [0, 20, 400, 800, 1200, 1600, 2000, 2400]
+    const sections = wrapper.findAll('[data-settings-group]')
+    expect(sections.map((item) => item.attributes('data-settings-group'))).toEqual([
+      'general',
+      'tabs',
+      'toc',
+      'tools',
+      'git',
+      'image',
+      'agent',
+      'mcp'
+    ])
+    sections.forEach((section, index) => {
+      vi.spyOn(section.element, 'getBoundingClientRect').mockReturnValue(
+        new DOMRect(0, tops[index] ?? 0, 400, 200)
+      )
+    })
+
+    await content.trigger('scroll')
+
+    expect(wrapper.get('.nav-item.active').text()).toContain('标签与导航')
+    wrapper.unmount()
+  })
+
+  it('scrolls a form group into view from the side nav', async () => {
+    const wrapper = mount(SettingsPanel)
+    const content = wrapper.get('.settings-content').element
+    const scrollTo = vi.fn()
+    content.scrollTo = scrollTo
+    const tocNav = wrapper
+      .findAll('button.nav-item')
+      .find((item) => item.text().includes('目录管理'))
+    await tocNav?.trigger('click')
+
+    expect(wrapper.get('.nav-item.active').text()).toContain('目录管理')
+    expect(scrollTo).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+})
+
 describe('SettingsPanel 目录管理', () => {
   it('不再提供 emoji 配置，只保留完成状态开关', async () => {
     const wrapper = mount(SettingsPanel)
-    // 目录管理是第三个分组；分组是 v-if 渲染的，激活后直接断言 DOM。
     const tocNav = wrapper
       .findAll('button.nav-item')
       .find((item) => item.text().includes('目录管理'))

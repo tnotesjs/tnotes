@@ -554,9 +554,9 @@ function setMode(mode: NoteViewMode): void {
   editor.setNoteViewMode(props.tab.id, mode)
 }
 
-/** 编辑器内容变化：所写即所存（保存时不跑 prettier，不改用户没动过的字符） */
+/** 编辑器内容变化：所写即所存，保存时不改用户没动过的字符 */
 function updateContent(content: string): void {
-  workspace.updateDocumentContent(key.value, content, true)
+  workspace.updateDocumentContent(key.value, content)
 }
 
 function activate(): void {
@@ -621,8 +621,7 @@ function commitDescription(): void {
   }
   workspace.updateDocumentContent(
     key.value,
-    current.slice(0, change.from) + change.insert + current.slice(change.to),
-    true
+    current.slice(0, change.from) + change.insert + current.slice(change.to)
   )
 }
 

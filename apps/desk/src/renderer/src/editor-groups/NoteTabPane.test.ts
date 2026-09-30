@@ -80,7 +80,6 @@ function setup(readOnly = false) {
     dirty: false,
     saving: false,
     externalConflict: false,
-    preserveSourceOnSave: false,
     unsavedDraft: false
   }
   const rename = vi.spyOn(workspace, 'renameNote').mockResolvedValue()

@@ -77,8 +77,7 @@ export function createDocuments(ctx: DocumentsContext) {
       dirty: false,
       saving: false,
       externalConflict: false,
-      unsavedDraft: false,
-      preserveSourceOnSave: false
+      unsavedDraft: false
     })
     ctx.editor.setNoteDirty(document.knowledgeBaseId, document.uuid, false)
   }
@@ -140,7 +139,6 @@ export function createDocuments(ctx: DocumentsContext) {
       content: next.content,
       dirty: false,
       unsavedDraft: false,
-      preserveSourceOnSave: false,
       externalConflict: false,
       saving: false
     }
@@ -148,24 +146,18 @@ export function createDocuments(ctx: DocumentsContext) {
     return session
   }
 
-  function updateDocumentContent(key: string, content: string, preserveSource = false): void {
+  function updateDocumentContent(key: string, content: string): void {
     const session = ctx.documents.value[key]
     if (!session || session.document.readOnly) return
     // 草稿标记只由编辑器上报（setDocumentUnsavedDraft）翻转：内容同步不动它，
     // 否则「内容刚好回到磁盘内容」会把仍存在的草稿误判成已保存
     const unsavedDraft = session.unsavedDraft
     const dirty = documentDirty(content, session.document.content, unsavedDraft)
-    const preserveSourceOnSave = dirty
-      ? session.preserveSourceOnSave || preserveSource
-      : session.saving
-        ? session.preserveSourceOnSave || preserveSource
-        : false
     ctx.setDocumentSession(key, {
       ...session,
       content,
       dirty,
       unsavedDraft,
-      preserveSourceOnSave,
       // 外部冲突标记要保留到用户显式选择「载入磁盘 / 保留编辑」为止：
       // 之前任何一次击键都会清掉它，冲突横幅消失，用户失去选择权
       externalConflict: session.externalConflict
@@ -255,10 +247,7 @@ export function createDocuments(ctx: DocumentsContext) {
           knowledgeBaseId: session.document.knowledgeBaseId,
           noteUuid: session.document.uuid,
           content: contentToSave,
-          expectedRevision: session.document.revision,
-          // Core still owns generated title/TOC updates. Only visual edits opt
-          // out of whole-document Prettier so unrelated source remains intact.
-          ...(session.preserveSourceOnSave ? { prettier: false } : {})
+          expectedRevision: session.document.revision
         })
       )
       const current = ctx.documents.value[key]
@@ -274,7 +263,6 @@ export function createDocuments(ctx: DocumentsContext) {
           content: current.content,
           dirty: stillDirty,
           unsavedDraft: draftAppeared,
-          preserveSourceOnSave: stillDirty && current.preserveSourceOnSave,
           externalConflict: false,
           saving: false
         })
@@ -285,7 +273,6 @@ export function createDocuments(ctx: DocumentsContext) {
           content: mutation.note.content,
           dirty: false,
           unsavedDraft: false,
-          preserveSourceOnSave: false,
           externalConflict: false,
           saving: false
         })
@@ -421,7 +408,6 @@ export function createDocuments(ctx: DocumentsContext) {
       content: next.content,
       dirty: false,
       unsavedDraft: false,
-      preserveSourceOnSave: false,
       externalConflict: false,
       saving: false
     })
@@ -437,7 +423,6 @@ export function createDocuments(ctx: DocumentsContext) {
       content: record.content,
       dirty: record.content !== loaded.document.content,
       unsavedDraft: false,
-      preserveSourceOnSave: record.content !== loaded.document.content,
       externalConflict: false
     })
     ctx.editor.setNoteDirty(
@@ -495,7 +480,6 @@ export function createDocuments(ctx: DocumentsContext) {
       // 否则「保留编辑内容」点下去会把关闭保护一起关掉
       dirty: documentDirty(session.content, next.content, session.unsavedDraft),
       unsavedDraft: session.unsavedDraft,
-      preserveSourceOnSave: session.content !== next.content && session.preserveSourceOnSave,
       externalConflict: false,
       saving: false
     })

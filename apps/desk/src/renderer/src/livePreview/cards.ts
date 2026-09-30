@@ -26,6 +26,7 @@ import {
 import { parseFencedCode } from '../editor/markdown/diagramRenderer'
 import { mindmapPreviewMarkdown } from '../editor/markdown/mindmapFence'
 import { parseFootprintsSource } from '@tnotesjs/ui'
+import { installMarkdownMath } from '../agent/agentMarkdown'
 import { livePreviewHost } from './host'
 import { revealAt } from './widgets'
 
@@ -41,7 +42,10 @@ const measuredHeights = new Map<string, number>()
 
 let inlineRenderer: InstanceType<typeof MarkdownIt> | null = null
 function markdownRenderer(): InstanceType<typeof MarkdownIt> {
-  inlineRenderer ??= new MarkdownIt({ html: true, linkify: true, breaks: false })
+  if (!inlineRenderer) {
+    inlineRenderer = new MarkdownIt({ html: true, linkify: true, breaks: false })
+    installMarkdownMath(inlineRenderer)
+  }
   return inlineRenderer
 }
 

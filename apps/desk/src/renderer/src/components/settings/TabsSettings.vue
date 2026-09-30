@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AppSettings } from '../../../../shared/contracts'
+import ResetGroupButton from './ResetGroupButton.vue'
 
 defineProps<{ draft: AppSettings }>()
 const emit = defineEmits<{ reset: []; 'open-shortcuts': [] }>()
@@ -11,7 +12,7 @@ const emit = defineEmits<{ reset: []; 'open-shortcuts': [] }>()
       <strong>标签与导航</strong>
       <span>控制标签容量、布局和目录联动</span>
     </header>
-    <button type="button" class="reset-group" @click="emit('reset')">重置</button>
+    <ResetGroupButton @reset="emit('reset')" />
     <div class="field-grid cols-3">
       <label class="field">
         <span>最多打开标签数</span>

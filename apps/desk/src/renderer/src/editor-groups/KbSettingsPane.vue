@@ -40,8 +40,6 @@ const draft = reactive({
   pageUrl: '',
   statsEnabled: false,
   letter: '',
-  // 库级约定（tnotes.json）：null = 跟随 desk 全局
-  prettier: null as boolean | null,
   autoPushEnabled: false,
   autoPushIdleMinutes: 5,
   headingNumberMaxDepth: null as number | null
@@ -94,13 +92,6 @@ const canSave = computed(
     !saving.value
 )
 
-// 三态选择（跟随全局 / 开 / 关）与 boolean | null 的互转
-const prettierChoice = computed({
-  get: () => (draft.prettier === null ? 'inherit' : draft.prettier ? 'on' : 'off'),
-  set: (value: string) => {
-    draft.prettier = value === 'inherit' ? null : value === 'on'
-  }
-})
 const headingDepthChoice = computed({
   get: () =>
     draft.headingNumberMaxDepth === null ? 'inherit' : String(draft.headingNumberMaxDepth),
@@ -108,7 +99,6 @@ const headingDepthChoice = computed({
     draft.headingNumberMaxDepth = value === 'inherit' ? null : Number(value)
   }
 })
-const globalPrettierLabel = computed(() => ((workspace.settings?.prettier ?? false) ? '开' : '关'))
 const globalHeadingDepth = computed(() => workspace.settings?.headingNumberMaxDepth ?? 2)
 
 function formSnapshot(): string {
@@ -121,7 +111,6 @@ function formSnapshot(): string {
     pageUrl: draft.pageUrl.trim(),
     statsEnabled: draft.statsEnabled,
     letter: draft.letter.trim(),
-    prettier: draft.prettier,
     autoPushEnabled: draft.autoPushEnabled,
     autoPushIdleMinutes: draft.autoPushIdleMinutes,
     headingNumberMaxDepth: draft.headingNumberMaxDepth,
@@ -151,7 +140,6 @@ function applyLoaded(settings: KnowledgeBaseSettingsDto): void {
   draft.pageUrl = settings.pageUrl
   draft.statsEnabled = settings.isGitRepo ? settings.statsEnabled : false
   draft.letter = settings.icon?.letter ?? ''
-  draft.prettier = settings.prettier
   draft.autoPushEnabled = settings.autoPush?.enabled === true
   draft.autoPushIdleMinutes = settings.autoPush?.idleMinutes ?? 5
   draft.headingNumberMaxDepth = settings.headingNumberMaxDepth
@@ -243,8 +231,6 @@ async function persistSettings(): Promise<void> {
         port: draft.port,
         pageUrl: draft.pageUrl.trim() || undefined,
         statsEnabled: isGitRepo.value ? draft.statsEnabled : false,
-        // 库级约定：null = 从 tnotes.json 删键（跟随全局）；autoPush 无全局项，关 = 删键
-        prettier: draft.prettier,
         autoPush: draft.autoPushEnabled
           ? { enabled: true, idleMinutes: draft.autoPushIdleMinutes }
           : null,
@@ -413,14 +399,6 @@ onUnmounted(() => {
           <span>写入 tnotes.json 随仓库走，协作者共享；「跟随全局」则不写入</span>
         </header>
         <div class="field-grid cols-2">
-          <label class="field">
-            <span>保存时格式化（Prettier）</span>
-            <select v-model="prettierChoice">
-              <option value="inherit">跟随全局（当前：{{ globalPrettierLabel }}）</option>
-              <option value="on">开</option>
-              <option value="off">关</option>
-            </select>
-          </label>
           <label class="field">
             <span>标题编号层级上限</span>
             <select v-model="headingDepthChoice">

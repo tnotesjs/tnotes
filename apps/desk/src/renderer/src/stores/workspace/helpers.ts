@@ -12,8 +12,6 @@ export interface DocumentSession {
   document: NoteDocumentDto
   content: string
   dirty: boolean
-  /** At least one unsaved edit came from the source-preserving visual editor. */
-  preserveSourceOnSave: boolean
   externalConflict: boolean
   saving: boolean
   /**

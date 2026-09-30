@@ -1225,6 +1225,12 @@
 
 .live-editor .cm-lp-card .tn-custom-block {
   margin: 0;
+  max-width: 100%;
+}
+
+.live-editor .cm-lp-card .tn-custom-block img {
+  max-width: 100%;
+  height: auto;
 }
 
 .live-editor .cm-lp-table-card table {

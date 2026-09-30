@@ -71,6 +71,38 @@ describe('renderContainerFromSource', () => {
     expect(warning.querySelector('.tn-custom-block-title')?.textContent).toBe('WARNING')
   })
 
+  it('applies {w=} on an image inside a callout and drops the attr text', () => {
+    const el = renderContainerFromSource(
+      '::: tip\n\n![](https://example.com/a.webp) {w=596px}\n\n:::',
+      (src) => src
+    )
+    const image = el.querySelector('img')
+    expect(image?.getAttribute('src')).toBe('https://example.com/a.webp')
+    expect(image?.style.width).toBe('596px')
+    expect(el.textContent ?? '').not.toContain('w=596')
+  })
+
+  it('centers a callout image when align=center is set', () => {
+    const el = renderContainerFromSource(
+      '::: tip\n\n![](https://example.com/a.webp) {w=50% align=center}\n\n:::',
+      (src) => src
+    )
+    const image = el.querySelector('img')
+    expect(image?.style.width).toBe('50%')
+    expect(image?.style.marginLeft).toBe('auto')
+    expect(image?.style.marginRight).toBe('auto')
+    expect(el.textContent ?? '').not.toContain('align=')
+  })
+
+  it('leaves a brace run that is not an image attr', () => {
+    const el = renderContainerFromSource(
+      '::: tip\n\n![](https://example.com/a.webp) {not-an-attr}\n\n:::',
+      (src) => src
+    )
+    expect(el.querySelector('img')?.style.width).toBe('')
+    expect(el.textContent ?? '').toContain('{not-an-attr}')
+  })
+
   it('resolves relative images through the provided resolver', () => {
     const el = renderContainerFromSource('::: swiper\n\n![1](./assets/1.png)\n\n:::', (src) => {
       return src === './assets/1.png' ? 'tnotes-asset://asset?path=1' : src

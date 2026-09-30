@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { pushToast } from '../../stores/toast'
 
@@ -11,6 +11,14 @@ const emit = defineEmits<{
 
 const configText = ref('')
 const configBusy = ref(false)
+const configMenu = ref<HTMLDetailsElement | null>(null)
+
+function closeConfigMenuOnOutsidePointer(event: PointerEvent): void {
+  const menu = configMenu.value
+  if (!menu?.open) return
+  if (event.target instanceof Node && menu.contains(event.target)) return
+  menu.open = false
+}
 
 function resultValue<T>(result: DeskResult<T>): T {
   if (result.ok) return result.value
@@ -96,6 +104,11 @@ function closeConfigMenu(event: Event, action: () => void): void {
 
 onMounted(() => {
   void loadConfigText()
+  document.addEventListener('pointerdown', closeConfigMenuOnOutsidePointer, true)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', closeConfigMenuOnOutsidePointer, true)
 })
 </script>
 
@@ -105,7 +118,7 @@ onMounted(() => {
       <strong>配置文件</strong>
       <span>.tn-desk-config.json · 修改非法值会自动回退到默认配置</span>
     </header>
-    <details class="config-actions">
+    <details ref="configMenu" class="config-actions">
       <summary class="config-actions-trigger" title="配置操作" aria-label="配置操作">⋮</summary>
       <div class="config-actions-popover">
         <button type="button" :disabled="configBusy" @click="closeConfigMenu($event, applyConfig)">

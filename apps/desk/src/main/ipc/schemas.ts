@@ -223,8 +223,7 @@ export const noteSaveSchema = z.object({
   knowledgeBaseId: z.string().min(1),
   noteUuid: z.string().min(1),
   content: z.string(),
-  expectedRevision: z.string().min(1),
-  prettier: z.boolean().optional()
+  expectedRevision: z.string().min(1)
 })
 
 export const noteCreateSchema = z.object({

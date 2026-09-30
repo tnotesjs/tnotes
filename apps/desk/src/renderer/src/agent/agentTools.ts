@@ -187,10 +187,10 @@ async function writeAgentChange(
   const live = liveEditorFor(knowledgeBaseId, node.uuid)
   if (live && live.state.doc.toString() === content) {
     applyAgentChanges(live, planned.change, label)
-    workspace.updateDocumentContent(key, live.state.doc.toString(), true)
+    workspace.updateDocumentContent(key, live.state.doc.toString())
   } else {
     const next = applyAgentEditToContent({ knowledgeBaseId, noteUuid: node.uuid }, content, planned.change, label)
-    workspace.updateDocumentContent(key, next, true)
+    workspace.updateDocumentContent(key, next)
   }
   const saveError = await saveQuietly(key)
   if (!live) syncArchiveContent(knowledgeBaseId, node.uuid, workspace.documents[key]?.content ?? '')
@@ -370,7 +370,7 @@ export async function rejectNoteEdits(
   const view = reviewViewFor(knowledgeBaseId, noteUuid)
   if (view) {
     rejectAgentEdits(view)
-    workspace.updateDocumentContent(key, view.state.doc.toString(), true)
+    workspace.updateDocumentContent(key, view.state.doc.toString())
   } else {
     const entry = archivedEntry(knowledgeBaseId, noteUuid)
     if (entry) {
@@ -381,7 +381,7 @@ export async function rejectNoteEdits(
         return { ok: false, message: `「${title}」在外部被改过，无法自动撤销` }
       }
       dropArchive(knowledgeBaseId, noteUuid)
-      workspace.updateDocumentContent(key, revertArchived(entry.content, entry.reviews), true)
+      workspace.updateDocumentContent(key, revertArchived(entry.content, entry.reviews))
     }
   }
   const saveError = await saveQuietly(key)

@@ -360,8 +360,7 @@ export class WorkspaceManager {
       port: request.port,
       pageUrl: request.pageUrl?.trim() || undefined,
       stats,
-      // 库级约定：null → 删键（跟随 desk 全局）；undefined → 不动
-      ...(request.prettier !== undefined ? { prettier: request.prettier ?? undefined } : {}),
+      // 库级约定：null → 删键；undefined → 不动
       ...(request.autoPush !== undefined ? { autoPush: request.autoPush ?? undefined } : {}),
       ...(request.headingNumberMaxDepth !== undefined
         ? { headingNumberMaxDepth: request.headingNumberMaxDepth ?? undefined }

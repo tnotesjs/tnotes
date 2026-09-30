@@ -22,7 +22,6 @@ function session(overrides: Partial<DocumentSession> = {}): DocumentSession {
     document: { uuid: 'note-1', title: '第一篇', content: '# 第一篇\n', revision: 'r1' },
     content: '# 第一篇\n',
     dirty: false,
-    preserveSourceOnSave: false,
     externalConflict: false,
     saving: false,
     ...overrides

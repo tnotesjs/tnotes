@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import { useWorkspaceStore } from '../stores/workspace'
 
@@ -25,6 +25,10 @@ const draft = ref<AppSettings | null>(
 )
 const fullscreen = ref(false)
 const activeGroup = ref('general')
+const contentEl = ref<HTMLElement | null>(null)
+/** 程序滚到某个分组时，先别让滚动监听把高亮抢回去。 */
+let spyLock = 0
+let spyTimer = 0
 const groups = [
   {
     id: 'general',
@@ -81,14 +85,12 @@ const groups = [
 const groupDefaults: Record<string, Partial<AppSettings>> = {
   general: {
     theme: 'system',
-    density: 'comfortable',
     defaultNoteView: 'visual',
     defaultNotePageWidth: 'standard',
-    noteTocDisplay: 'expanded',
+    noteOutline: 'shown',
     showPathBreadcrumb: true,
     autosave: { enabled: true, delayMs: 1000 },
     workspaceLayout: 'kb-dir-content',
-    prettier: false,
     updates: { autoCheck: true }
   },
   tabs: {
@@ -179,9 +181,69 @@ async function applyDraft(): Promise<void> {
 
 watch(draft, () => scheduleApply(), { deep: true })
 
+const pageGroupIds = new Set(['config', 'shortcuts'])
+const formGroups = groups.filter((group) => !pageGroupIds.has(group.id))
+const pageMode = computed(() => pageGroupIds.has(activeGroup.value))
+
 function activateGroup(id: string): void {
+  const leavingPage = pageMode.value
   activeGroup.value = id
+  if (pageGroupIds.has(id)) return
+  void nextTick(() => scrollToGroup(id, leavingPage ? 'auto' : 'smooth'))
 }
+
+function scrollToGroup(id: string, behavior: ScrollBehavior): void {
+  const root = contentEl.value
+  const section = root?.querySelector<HTMLElement>(`[data-settings-group="${id}"]`)
+  if (!root || !section) return
+  const top = section.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop
+  const lock = ++spyLock
+  root.scrollTo({ top: Math.max(0, top - 4), behavior })
+  const release = () => releaseSpy(lock)
+  root.addEventListener('scrollend', release, { once: true })
+  window.clearTimeout(spyTimer)
+  spyTimer = window.setTimeout(release, behavior === 'smooth' ? 800 : 0)
+}
+
+function releaseSpy(lock: number): void {
+  if (lock !== spyLock) return
+  spyLock = 0
+  window.clearTimeout(spyTimer)
+  if (!contentEl.value?.isConnected) return
+  syncActiveFromScroll()
+}
+
+function syncActiveFromScroll(): void {
+  const root = contentEl.value
+  if (!root || pageMode.value) return
+  const rootTop = root.getBoundingClientRect().top
+  const sections = formGroups
+    .map((group) => root.querySelector<HTMLElement>(`[data-settings-group="${group.id}"]`))
+    .filter((section): section is HTMLElement => section instanceof HTMLElement)
+  if (sections.length === 0) return
+  const atBottom = root.scrollTop > 0 && root.scrollTop + root.clientHeight >= root.scrollHeight - 2
+  if (atBottom) {
+    const last = sections[sections.length - 1]?.dataset.settingsGroup
+    if (last) activeGroup.value = last
+    return
+  }
+  let current = sections[0]?.dataset.settingsGroup ?? 'general'
+  for (const section of sections) {
+    if (section.getBoundingClientRect().top - rootTop <= 80) {
+      current = section.dataset.settingsGroup ?? current
+    }
+  }
+  activeGroup.value = current
+}
+
+function onContentScroll(): void {
+  if (spyLock) return
+  syncActiveFromScroll()
+}
+
+onBeforeUnmount(() => {
+  window.clearTimeout(spyTimer)
+})
 
 function onSettingsSynced(settings: AppSettings): void {
   store.applySettings(settings)
@@ -220,62 +282,60 @@ function onSettingsSynced(settings: AppSettings): void {
 
       <div class="settings-body">
         <nav class="settings-nav" aria-label="设置分组">
-          <button
-            v-for="group in groups"
-            :key="group.id"
-            type="button"
-            class="nav-item"
-            :class="{ active: activeGroup === group.id }"
-            @click="activateGroup(group.id)"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path :d="group.icon" />
-            </svg>
-            <span>{{ group.label }}</span>
-          </button>
+          <template v-for="group in groups" :key="group.id">
+            <div v-if="group.id === 'config'" class="nav-sep" role="separator" />
+            <button
+              type="button"
+              class="nav-item"
+              :class="{ active: activeGroup === group.id }"
+              :aria-current="activeGroup === group.id ? 'location' : undefined"
+              @click="activateGroup(group.id)"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="group.icon" />
+              </svg>
+              <span>{{ group.label }}</span>
+            </button>
+          </template>
         </nav>
-        <div class="settings-content">
-          <GeneralSettings
-            v-if="activeGroup === 'general'"
-            :draft="draft"
-            @reset="resetGroup('general')"
-          />
-          <TabsSettings
-            v-else-if="activeGroup === 'tabs'"
-            :draft="draft"
-            @reset="resetGroup('tabs')"
-            @open-shortcuts="activateGroup('shortcuts')"
-          />
-          <TocSettings
-            v-else-if="activeGroup === 'toc'"
-            :draft="draft"
-            @reset="resetGroup('toc')"
-          />
-          <ToolsSettings
-            v-else-if="activeGroup === 'tools'"
-            :draft="draft"
-            @reset="resetGroup('tools')"
-          />
-          <GitSettings
-            v-else-if="activeGroup === 'git'"
-            :draft="draft"
-            @reset="resetGroup('git')"
-          />
-          <ImageSettings
-            v-else-if="activeGroup === 'image'"
-            :draft="draft"
-            @reset="resetGroup('image')"
-          />
-          <AgentSettings
-            v-else-if="activeGroup === 'agent'"
-            :draft="draft"
-            @reset="resetGroup('agent')"
-          />
-          <McpSettings
-            v-else-if="activeGroup === 'mcp'"
-            :draft="draft"
-            @reset="resetGroup('mcp')"
-          />
+        <div
+          ref="contentEl"
+          class="settings-content"
+          :class="{ 'is-config': activeGroup === 'config' }"
+          @scroll="onContentScroll"
+        >
+          <template v-if="draft && !pageMode">
+            <GeneralSettings
+              data-settings-group="general"
+              :draft="draft"
+              @reset="resetGroup('general')"
+            />
+            <TabsSettings
+              data-settings-group="tabs"
+              :draft="draft"
+              @reset="resetGroup('tabs')"
+              @open-shortcuts="activateGroup('shortcuts')"
+            />
+            <TocSettings data-settings-group="toc" :draft="draft" @reset="resetGroup('toc')" />
+            <ToolsSettings
+              data-settings-group="tools"
+              :draft="draft"
+              @reset="resetGroup('tools')"
+            />
+            <GitSettings data-settings-group="git" :draft="draft" @reset="resetGroup('git')" />
+            <ImageSettings
+              data-settings-group="image"
+              :draft="draft"
+              @reset="resetGroup('image')"
+            />
+            <AgentSettings
+              data-settings-group="agent"
+              :draft="draft"
+              @reset="resetGroup('agent')"
+            />
+            <McpSettings data-settings-group="mcp" :draft="draft" @reset="resetGroup('mcp')" />
+            <div class="settings-scroll-pad" aria-hidden="true" />
+          </template>
           <ConfigSettings
             v-else-if="activeGroup === 'config'"
             @settings-synced="onSettingsSynced"
@@ -424,10 +484,35 @@ function onSettingsSynced(settings: AppSettings): void {
   color: var(--accent-strong);
 }
 
+.nav-sep {
+  height: 1px;
+  margin: 8px 10px;
+  background: var(--border);
+}
+
 .settings-content {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   overflow-y: auto;
   padding: 16px 18px 22px;
+  container-type: size;
+}
+
+.settings-content.is-config {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settings-content.is-config :deep(.config-section) {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  margin-bottom: 0;
+}
+
+.settings-scroll-pad {
+  height: calc(100cqh - 120px);
 }
 </style>

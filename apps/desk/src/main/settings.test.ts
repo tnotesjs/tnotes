@@ -53,6 +53,17 @@ describe('persisted app zoom', () => {
 describe('配置文件字段级容错', () => {
   const path = () => join(environment.profile, '.tn-desk-config.json')
 
+  it('drops a previously saved density field on the next save', () => {
+    writeFileSync(path(), JSON.stringify({ theme: 'dark', density: 'compact' }))
+    const loaded = loadSettings()
+    expect(loaded).not.toHaveProperty('density')
+    expect(loaded.theme).toBe('dark')
+    saveSettings({ theme: 'light' })
+    const saved = JSON.parse(readFileSync(path(), 'utf8')) as { theme?: string; density?: string }
+    expect(saved.theme).toBe('light')
+    expect(saved.density).toBeUndefined()
+  })
+
   it('单个字段非法时只回退该字段，其余偏好保留', () => {
     writeFileSync(
       path(),
@@ -136,15 +147,37 @@ describe('配置文件字段级容错', () => {
   })
 })
 
-describe('保存时格式化（Prettier）', () => {
-  it('默认关闭，用户显式开关都按选择持久化', () => {
-    expect(loadSettings().prettier).toBe(false)
+describe('已移除的笔记内目录三项', () => {
+  const path = () => join(environment.profile, '.tn-desk-config.json')
 
-    expect(saveSettings({ prettier: true }).prettier).toBe(true)
-    expect(loadSettings().prettier).toBe(true)
+  it('旧的 hidden/collapsed/expanded 被忽略，大纲默认改为显示', () => {
+    writeFileSync(path(), JSON.stringify({ theme: 'dark', noteTocDisplay: 'collapsed' }))
+    const loaded = loadSettings()
+    expect(loaded).not.toHaveProperty('noteTocDisplay')
+    expect(loaded.noteOutline).toBe('shown')
+    expect(loaded.theme).toBe('dark')
+    saveSettings({ noteOutline: 'hidden' })
+    const saved = JSON.parse(readFileSync(path(), 'utf8')) as {
+      noteOutline?: string
+      noteTocDisplay?: string
+    }
+    expect(saved.noteOutline).toBe('hidden')
+    expect(saved.noteTocDisplay).toBeUndefined()
+  })
+})
 
-    expect(saveSettings({ prettier: false }).prettier).toBe(false)
-    expect(loadSettings().prettier).toBe(false)
+describe('已移除的保存时 Prettier', () => {
+  const path = () => join(environment.profile, '.tn-desk-config.json')
+
+  it('旧配置里的 prettier 被忽略，下次保存时从文件里丢掉', () => {
+    writeFileSync(path(), JSON.stringify({ theme: 'dark', prettier: true }))
+    const loaded = loadSettings()
+    expect(loaded).not.toHaveProperty('prettier')
+    expect(loaded.theme).toBe('dark')
+    saveSettings({ theme: 'light' })
+    const saved = JSON.parse(readFileSync(path(), 'utf8')) as { theme?: string; prettier?: boolean }
+    expect(saved.theme).toBe('light')
+    expect(saved.prettier).toBeUndefined()
   })
 })
 

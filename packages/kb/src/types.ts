@@ -96,11 +96,6 @@ export interface KbConfig {
   /** kb-level comments switch (giscus). */
   discussions?: boolean
   /**
-   * Save-time Prettier formatting convention for this repo. When set, it
-   * overrides the app-level default (Desk 全局设置)。
-   */
-  prettier?: boolean
-  /**
    * Auto commit+push convention for this repo (Desk)。随仓库走，协作者/CI 一致。
    */
   autoPush?: { enabled: boolean; idleMinutes: number }

@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import { pushToast } from '../../stores/toast'
 import { useWorkspaceStore } from '../../stores/workspace'
 import ImageOptimizePlayground from './ImageOptimizePlayground.vue'
+import ResetGroupButton from './ResetGroupButton.vue'
 
 import type { AppSettings, DeskResult, ImageTokenStatus } from '../../../../shared/contracts'
 
@@ -77,7 +78,7 @@ onMounted(() => {
       <strong>图片处理与 GitHub 图床</strong>
       <span>图床上传失败时始终自动回退到当前笔记的 assets 目录</span>
     </header>
-    <button type="button" class="reset-group" @click="emit('reset')">重置</button>
+    <ResetGroupButton @reset="emit('reset')" />
 
     <div class="target-choice">
       <label :class="{ selected: draft.imageUpload.defaultTarget === 'local' }">

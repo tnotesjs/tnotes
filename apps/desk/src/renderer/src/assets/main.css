@@ -38,10 +38,6 @@
   color-scheme: light;
 }
 
-:root[data-density='compact'] {
-  font-size: 13px;
-}
-
 * {
   box-sizing: border-box;
 }
@@ -71,8 +67,8 @@ body {
 
 .cm-editor .cm-content ::selection,
 .cm-editor .cm-line ::selection {
+  /* 只加背景。再写 color 会把代码块里的词法色盖成同一种正文色。 */
   background: color-mix(in srgb, var(--accent) 65%, transparent) !important;
-  color: var(--text) !important;
 }
 
 button,

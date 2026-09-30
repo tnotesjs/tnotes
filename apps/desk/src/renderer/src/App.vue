@@ -415,7 +415,6 @@ function applyAppearance(): void {
   const selected = store.settings?.theme ?? 'system'
   const theme = selected === 'system' ? (systemTheme?.matches ? 'dark' : 'light') : selected
   document.documentElement.dataset.theme = theme
-  document.documentElement.dataset.density = store.settings?.density ?? 'comfortable'
 }
 
 const DEFAULT_NOTE_TITLE = 'new'

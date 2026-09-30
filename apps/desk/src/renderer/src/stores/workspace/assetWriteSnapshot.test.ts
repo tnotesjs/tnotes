@@ -49,7 +49,6 @@ describe('collectAssetEditorSnapshot', () => {
         content: 'x',
         dirty: true,
         saving: false,
-        preserveSourceOnSave: false,
         externalConflict: false
       }
     }

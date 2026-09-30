@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AppSettings } from '../../../../shared/contracts'
+import ResetGroupButton from './ResetGroupButton.vue'
 
 defineProps<{ draft: AppSettings }>()
 const emit = defineEmits<{ reset: [] }>()
@@ -11,7 +12,7 @@ const emit = defineEmits<{ reset: [] }>()
       <strong>外部工具</strong>
       <span>冲突处理和右键快捷入口会使用这里的 IDE</span>
     </header>
-    <button type="button" class="reset-group" @click="emit('reset')">重置</button>
+    <ResetGroupButton @reset="emit('reset')" />
     <div class="field-grid cols-3">
       <label class="field">
         <span>默认 IDE</span>
