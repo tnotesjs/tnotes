@@ -129,8 +129,8 @@ describe('deleteToc 快照版本守卫', () => {
     await expect(
       fs.readFile(path.join(handle.rootPath, 'notes', '0001. 第一篇.md'), 'utf8')
     ).rejects.toThrow()
-    expect(await fs.readFile(path.join(handle.rootPath, 'notes', '0002. 第二篇.md'), 'utf8')).toMatch(
-      /第二篇/
-    )
+    expect(
+      await fs.readFile(path.join(handle.rootPath, 'notes', '0002. 第二篇.md'), 'utf8')
+    ).toMatch(/第二篇/)
   })
 })

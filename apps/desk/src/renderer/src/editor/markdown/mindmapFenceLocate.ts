@@ -3,9 +3,7 @@
  * 恰好一份 → 可替换；零份或多份 → 失效，不再写入。
  */
 export type FenceLocateResult =
-  | { status: 'ok'; from: number; to: number }
-  | { status: 'missing' }
-  | { status: 'ambiguous' }
+  { status: 'ok'; from: number; to: number } | { status: 'missing' } | { status: 'ambiguous' }
 
 /** 按出现顺序收集 mindmap 围栏（不含围栏后的换行）。 */
 export function listMindmapFences(content: string): string[] {

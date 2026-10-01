@@ -58,7 +58,9 @@ export function readImage(state: EditorState, node: SyntaxNode): ImageSyntax | n
 /** 找到覆盖 `pos` 的图片语法（组件事件发生时按当前文档重新定位，不信任旧坐标）。 */
 export function imageAt(state: EditorState, pos: number): ImageSyntax | null {
   const doc = state.doc
-  const candidates = [pos, pos - 1, pos + 1, pos - 2].filter((candidate) => candidate >= 0 && candidate <= doc.length)
+  const candidates = [pos, pos - 1, pos + 1, pos - 2].filter(
+    (candidate) => candidate >= 0 && candidate <= doc.length
+  )
   for (const candidate of candidates) {
     let node: SyntaxNode | null = syntaxTree(state).resolveInner(candidate, -1)
     while (node && node.name !== 'Image') node = node.parent

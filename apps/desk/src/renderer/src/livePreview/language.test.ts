@@ -32,7 +32,11 @@ function names(doc: string, nodeName: string): string[] {
 describe('tnotesMarkdown', () => {
   it('parses frontmatter only at document start', () => {
     const doc = '---\ntitle: 闭包\n---\n\n# 闭包\n\n正文\n'
-    expect(topLevel(doc).map((node) => node.name)).toEqual(['Frontmatter', 'ATXHeading1', 'Paragraph'])
+    expect(topLevel(doc).map((node) => node.name)).toEqual([
+      'Frontmatter',
+      'ATXHeading1',
+      'Paragraph'
+    ])
     expect(topLevel(doc)[0].text).toBe('---\ntitle: 闭包\n---')
   })
 
@@ -72,14 +76,14 @@ describe('tnotesMarkdown', () => {
   })
 
   it('parses a standalone Vue component as its own block', () => {
-    const doc = [
-      '介绍。',
-      '',
-      `<NotesTable :ids="['0028', '0014', '0002']" />`,
-      '',
-      '后文'
-    ].join('\n')
-    expect(topLevel(doc).map((node) => node.name)).toEqual(['Paragraph', 'ComponentBlock', 'Paragraph'])
+    const doc = ['介绍。', '', `<NotesTable :ids="['0028', '0014', '0002']" />`, '', '后文'].join(
+      '\n'
+    )
+    expect(topLevel(doc).map((node) => node.name)).toEqual([
+      'Paragraph',
+      'ComponentBlock',
+      'Paragraph'
+    ])
     expect(topLevel(doc)[1].text).toBe(`<NotesTable :ids="['0028', '0014', '0002']" />`)
   })
 
@@ -89,7 +93,15 @@ describe('tnotesMarkdown', () => {
   })
 
   it('parses the WordList note sample without swallowing the following heading', () => {
-    const doc = ['最终效果如下：', '', '<WordList :words="[', "'cancel',", ']" />', '', '### 1.3. 词典数据源'].join('\n')
+    const doc = [
+      '最终效果如下：',
+      '',
+      '<WordList :words="[',
+      "'cancel',",
+      ']" />',
+      '',
+      '### 1.3. 词典数据源'
+    ].join('\n')
     expect(topLevel(doc).map((node) => node.name)).toEqual([
       'Paragraph',
       'ComponentBlock',

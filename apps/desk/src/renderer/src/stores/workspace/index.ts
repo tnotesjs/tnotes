@@ -212,41 +212,47 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     await saveCurrentNoteDocument()
   }
 
-  const { requestCloseTab, requestCloseTabs, requestCloseOtherTabs, isTabDirty, closingTabs, prepareToQuit } =
-    createTabClosing({
-      editor,
-      error,
-      status,
-      noteIndex: (knowledgeBaseId, noteUuid) =>
-        documents.value[documentKey(knowledgeBaseId, noteUuid)]?.document.index ?? null,
-      resourcesFor: (tab) => {
-        if (tab.type === 'web') return []
-        const resources: ClosingResource[] = []
-        if (tab.type === 'note') {
-          const key = documentKey(tab.knowledgeBaseId, tab.noteUuid)
-          resources.push({
-            key,
-            title: tab.title,
-            dirty: () => Boolean(documents.value[key]?.dirty),
-            saving: () => Boolean(documents.value[key]?.saving),
-            pauseAutosave: () => pauseDocumentAutosave(key),
-            waitForSave: () => waitForDocumentSave(key),
-            save: () => saveDocument(key),
-            discard: () => discardDocumentChanges(key)
-          })
-        }
-        if (tab.type === 'kb-settings') {
-          const resource = kbSettingsCloseResource(tab.id)
-          if (resource) resources.push(resource)
-        }
-        // 画布自动写盘：关闭时先 flush，失败才让用户选择重试或丢弃
-        if (tab.type === 'excalidraw') {
-          const resource = excalidrawCloseResource(tab.id)
-          if (resource) resources.push(resource)
-        }
-        return resources
+  const {
+    requestCloseTab,
+    requestCloseTabs,
+    requestCloseOtherTabs,
+    isTabDirty,
+    closingTabs,
+    prepareToQuit
+  } = createTabClosing({
+    editor,
+    error,
+    status,
+    noteIndex: (knowledgeBaseId, noteUuid) =>
+      documents.value[documentKey(knowledgeBaseId, noteUuid)]?.document.index ?? null,
+    resourcesFor: (tab) => {
+      if (tab.type === 'web') return []
+      const resources: ClosingResource[] = []
+      if (tab.type === 'note') {
+        const key = documentKey(tab.knowledgeBaseId, tab.noteUuid)
+        resources.push({
+          key,
+          title: tab.title,
+          dirty: () => Boolean(documents.value[key]?.dirty),
+          saving: () => Boolean(documents.value[key]?.saving),
+          pauseAutosave: () => pauseDocumentAutosave(key),
+          waitForSave: () => waitForDocumentSave(key),
+          save: () => saveDocument(key),
+          discard: () => discardDocumentChanges(key)
+        })
       }
-    })
+      if (tab.type === 'kb-settings') {
+        const resource = kbSettingsCloseResource(tab.id)
+        if (resource) resources.push(resource)
+      }
+      // 画布自动写盘：关闭时先 flush，失败才让用户选择重试或丢弃
+      if (tab.type === 'excalidraw') {
+        const resource = excalidrawCloseResource(tab.id)
+        if (resource) resources.push(resource)
+      }
+      return resources
+    }
+  })
 
   async function saveAllDocuments(): Promise<void> {
     await saveAllNoteDocuments()

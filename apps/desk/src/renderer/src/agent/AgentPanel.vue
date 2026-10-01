@@ -103,7 +103,13 @@ function onScroll(): void {
 }
 
 watch(
-  () => [agent.active?.messages.length, agent.streaming, agent.pending, agent.liveParts.length, agent.reasoning.length],
+  () => [
+    agent.active?.messages.length,
+    agent.streaming,
+    agent.pending,
+    agent.liveParts.length,
+    agent.reasoning.length
+  ],
   async (next, previous) => {
     const sent = next[0] !== previous?.[0]
     if (!pinned.value && !sent) return
@@ -193,7 +199,9 @@ defineExpose({ focusInput })
         <button v-else type="button" class="history-title" @click="agent.selectChat(chat.id)">
           {{ chat.title }}
         </button>
-        <small v-if="chat.knowledgeBaseName && renamingId !== chat.id" class="chat-kb">{{ chat.knowledgeBaseName }}</small>
+        <small v-if="chat.knowledgeBaseName && renamingId !== chat.id" class="chat-kb">{{
+          chat.knowledgeBaseName
+        }}</small>
         <button
           v-if="renamingId !== chat.id"
           type="button"
@@ -219,9 +227,16 @@ defineExpose({ focusInput })
     <div ref="scroller" class="log" @scroll="onScroll">
       <p v-if="!agent.active || agent.active.messages.length === 0" class="empty">
         <template v-if="!agent.keyReady">还没有填写 API Key。打开设置 → 内置 Agent。</template>
-        <template v-else>用 @ 点名笔记，⌘L 把选中的文字加进来。改动会直接保存并标在正文里，你可以保留或撤销。</template>
+        <template v-else
+          >用 @ 点名笔记，⌘L
+          把选中的文字加进来。改动会直接保存并标在正文里，你可以保留或撤销。</template
+        >
       </p>
-      <AgentMessage v-for="(message, index) in agent.active?.messages ?? []" :key="index" :message="message" />
+      <AgentMessage
+        v-for="(message, index) in agent.active?.messages ?? []"
+        :key="index"
+        :message="message"
+      />
       <AgentMessage
         v-if="agent.pending"
         :streaming="agent.streaming"

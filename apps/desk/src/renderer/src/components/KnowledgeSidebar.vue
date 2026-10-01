@@ -45,8 +45,7 @@ const pinnedKnowledgeBases = computed(() => {
 const knowledgePinsCollapsed = computed(() => editor.pinnedKnowledgeBasesCollapsed)
 
 type KnowledgeRow =
-  | { kind: 'heading' }
-  | { kind: 'item'; item: (typeof filteredKnowledgeBases.value)[number] }
+  { kind: 'heading' } | { kind: 'item'; item: (typeof filteredKnowledgeBases.value)[number] }
 
 const knowledgeRows = computed((): KnowledgeRow[] => {
   const pinned = pinnedKnowledgeBases.value
@@ -159,7 +158,10 @@ async function openHeaderMenu(): Promise<void> {
     </div>
 
     <div v-if="filteredKnowledgeBases.length" class="knowledge-list">
-      <template v-for="row in knowledgeRows" :key="row.kind === 'item' ? row.item.id : 'pin-heading'">
+      <template
+        v-for="row in knowledgeRows"
+        :key="row.kind === 'item' ? row.item.id : 'pin-heading'"
+      >
         <button
           v-if="row.kind === 'heading'"
           type="button"

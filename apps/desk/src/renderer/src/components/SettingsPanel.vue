@@ -192,14 +192,15 @@ function activateGroup(id: string): void {
   void nextTick(() => scrollToGroup(id, leavingPage ? 'auto' : 'smooth'))
 }
 
-function scrollToGroup(id: string, behavior: ScrollBehavior): void {
+function scrollToGroup(id: string, behavior: 'auto' | 'smooth'): void {
   const root = contentEl.value
   const section = root?.querySelector<HTMLElement>(`[data-settings-group="${id}"]`)
   if (!root || !section) return
-  const top = section.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop
+  const top =
+    section.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop
   const lock = ++spyLock
   root.scrollTo({ top: Math.max(0, top - 4), behavior })
-  const release = () => releaseSpy(lock)
+  const release = (): void => releaseSpy(lock)
   root.addEventListener('scrollend', release, { once: true })
   window.clearTimeout(spyTimer)
   spyTimer = window.setTimeout(release, behavior === 'smooth' ? 800 : 0)

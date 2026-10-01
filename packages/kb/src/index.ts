@@ -31,7 +31,13 @@ export {
 } from './toc'
 export type { ParsedTocLine, TocLineKind } from './toc'
 export { scanKnowledgeBase, readKbConfig, readTocLines, contentRevision } from './scanner'
-export { createWorkspace, validateTitle, assertNoteBatchCapacity, NOTE_BATCH_LIMIT, NOTE_COUNT_LIMIT } from './workspace'
+export {
+  createWorkspace,
+  validateTitle,
+  assertNoteBatchCapacity,
+  NOTE_BATCH_LIMIT,
+  NOTE_COUNT_LIMIT
+} from './workspace'
 export type {
   TNotesKbWorkspace,
   CreateWorkspaceOptions,

@@ -83,7 +83,10 @@ function findTocNode(nodes: readonly DeskTocNode[], noteUuid: string): DeskTocNo
 
 function toggleBatchNote(noteUuid: string): void {
   const node = findTocNode(store.knowledgeBase?.toc ?? [], noteUuid)
-  batchSelected.value = toggleBatchIds(batchSelected.value, node ? batchTargetIds(node) : [noteUuid])
+  batchSelected.value = toggleBatchIds(
+    batchSelected.value,
+    node ? batchTargetIds(node) : [noteUuid]
+  )
 }
 
 function toggleBatchGroup(node: DeskTocNode): void {
@@ -467,428 +470,430 @@ async function openHeaderMenu(): Promise<void> {
     </div>
 
     <template v-if="store.knowledgeBase">
-    <div
-      class="navigator-body"
-      :class="{
-        'is-searching': Boolean(query.trim()),
-        'has-pins': (pinnedNotes.length > 0 || draggingNote) && !query.trim()
-      }"
-      @dragover.capture="onNavigatorDragOver"
-      @drop.capture="onNavigatorDrop"
-    >
-      <section class="changes-section">
-        <div class="section-heading git-heading">
+      <div
+        class="navigator-body"
+        :class="{
+          'is-searching': Boolean(query.trim()),
+          'has-pins': (pinnedNotes.length > 0 || draggingNote) && !query.trim()
+        }"
+        @dragover.capture="onNavigatorDragOver"
+        @drop.capture="onNavigatorDrop"
+      >
+        <section class="changes-section">
+          <div class="section-heading git-heading">
+            <button
+              type="button"
+              class="section-toggle"
+              :aria-expanded="changesExpanded"
+              :aria-label="changesExpanded ? '折叠变更列表' : '展开变更列表'"
+              @click="changesExpanded = !changesExpanded"
+            >
+              <svg
+                class="chevron"
+                :class="{ collapsed: !changesExpanded }"
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+              >
+                <path
+                  d="M4 6l4 4 4-4"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <strong>变更</strong>
+              <span v-if="gitState?.behind" class="behind-state">↓{{ gitState.behind }}</span>
+            </button>
+            <em>{{ gitState?.changes.length ?? 0 }}</em>
+            <div class="git-actions">
+              <UiTooltip label="刷新 Git 状态" align="end">
+                <button
+                  type="button"
+                  aria-label="刷新本地 Git 状态"
+                  :disabled="Boolean(gitState?.busy)"
+                  @click="store.refreshGit(store.selectedKnowledgeBaseId ?? undefined)"
+                >
+                  ↻
+                </button>
+              </UiTooltip>
+              <UiTooltip label="拉取远端更新" align="end">
+                <button
+                  type="button"
+                  aria-label="获取并拉取远端更新"
+                  :disabled="!gitState?.initialized || Boolean(gitState.busy)"
+                  @click="store.pullGit(store.selectedKnowledgeBaseId!)"
+                >
+                  ⇣
+                </button>
+              </UiTooltip>
+              <UiTooltip label="提交并推送" align="end">
+                <button
+                  type="button"
+                  aria-label="提交并推送当前变更"
+                  :disabled="!gitState?.initialized || Boolean(gitState.busy)"
+                  @click="store.requestGitPublish(store.selectedKnowledgeBaseId!)"
+                >
+                  ⇡
+                </button>
+              </UiTooltip>
+            </div>
+          </div>
+          <template v-if="changesExpanded">
+            <template v-if="noteFileChanges.length">
+              <button
+                type="button"
+                class="change-group-toggle"
+                :aria-expanded="noteFileExpanded"
+                :aria-label="noteFileExpanded ? '折叠笔记文件' : '展开笔记文件'"
+                @click="noteFileExpanded = !noteFileExpanded"
+              >
+                <svg
+                  class="chevron"
+                  :class="{ collapsed: !noteFileExpanded }"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M4 6l4 4 4-4"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <strong>笔记文件</strong>
+                <em>{{ noteFileChanges.length }}</em>
+              </button>
+              <div v-show="noteFileExpanded">
+                <button
+                  v-for="change in displayNoteFileChanges"
+                  :key="`note-file:${change.status}:${change.path}`"
+                  type="button"
+                  class="change-item"
+                  :class="change.status"
+                  :disabled="!change.noteUuid"
+                  @click="store.openNoteByUuid(store.selectedKnowledgeBaseId!, change.noteUuid!)"
+                  @contextmenu.prevent="showNoteMenu(change.noteUuid!)"
+                >
+                  <span class="change-item__label">
+                    <strong v-if="change.noteUuid"
+                      ><template v-if="tocShowIndex">{{ change.noteIndex }} </template
+                      >{{ change.noteTitle }}</strong
+                    >
+                    <strong v-else>{{ change.path }}</strong>
+                    <small v-if="change.noteUuid">{{
+                      change.status === 'renamed' && change.previousPath
+                        ? `${change.previousPath} → ${change.path}`
+                        : change.path
+                    }}</small>
+                  </span>
+                  <span class="change-item__status">{{ statusSymbol[change.status] }}</span>
+                </button>
+              </div>
+            </template>
+
+            <template v-if="configFileChanges.length">
+              <button
+                type="button"
+                class="change-group-toggle"
+                :aria-expanded="configFileExpanded"
+                :aria-label="configFileExpanded ? '折叠笔记配置' : '展开笔记配置'"
+                @click="configFileExpanded = !configFileExpanded"
+              >
+                <svg
+                  class="chevron"
+                  :class="{ collapsed: !configFileExpanded }"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M4 6l4 4 4-4"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <strong>笔记配置</strong>
+                <em>{{ configFileChanges.length }}</em>
+              </button>
+              <div v-show="configFileExpanded">
+                <button
+                  v-for="change in displayConfigFileChanges"
+                  :key="`config:${change.status}:${change.path}`"
+                  type="button"
+                  class="change-item"
+                  :class="change.status"
+                  @contextmenu.prevent="showFilePathMenu(change.path)"
+                >
+                  <span class="change-item__label">
+                    <strong>{{ change.path }}</strong>
+                  </span>
+                  <span class="change-item__status">{{ statusSymbol[change.status] }}</span>
+                </button>
+              </div>
+            </template>
+
+            <template v-if="otherFileChanges.length">
+              <button
+                type="button"
+                class="change-group-toggle"
+                :aria-expanded="otherFileExpanded"
+                :aria-label="otherFileExpanded ? '折叠其它文件' : '展开其它文件'"
+                @click="otherFileExpanded = !otherFileExpanded"
+              >
+                <svg
+                  class="chevron"
+                  :class="{ collapsed: !otherFileExpanded }"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M4 6l4 4 4-4"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <strong>其它文件</strong>
+                <em>{{ otherFileChanges.length }}</em>
+              </button>
+              <div v-show="otherFileExpanded">
+                <button
+                  v-for="change in displayOtherFileChanges"
+                  :key="`other:${change.status}:${change.path}`"
+                  type="button"
+                  class="change-item"
+                  :class="change.status"
+                  @contextmenu.prevent="showFilePathMenu(change.path)"
+                >
+                  <span class="change-item__label">
+                    <strong>{{ change.path }}</strong>
+                  </span>
+                  <span class="change-item__status">{{ statusSymbol[change.status] }}</span>
+                </button>
+              </div>
+            </template>
+
+            <div v-if="gitState?.busy" class="changes-empty">
+              {{
+                gitState.busy === 'publish'
+                  ? '正在提交并推送…'
+                  : gitState.busy === 'pull'
+                    ? '正在拉取…'
+                    : '正在获取远端状态…'
+              }}
+            </div>
+            <div v-else-if="gitState?.error" class="changes-empty git-error">
+              {{ gitState.error }}
+            </div>
+            <div v-else-if="!gitState?.initialized" class="changes-empty">
+              当前目录不是 Git 仓库
+            </div>
+            <div v-else-if="!gitState.changes.length" class="changes-empty">工作区干净</div>
+          </template>
+        </section>
+
+        <section v-if="store.knowledgeBase.health !== 'ready'" class="diagnostics">
+          <strong>配置异常，当前知识库只读</strong>
+          <ul>
+            <li
+              v-for="diagnostic in store.knowledgeBase.diagnostics"
+              :key="`${diagnostic.code}:${diagnostic.path ?? ''}`"
+            >
+              {{ diagnostic.message }}
+            </li>
+          </ul>
+          <div class="diagnostic-actions">
+            <button type="button" @click="store.refreshWorkspace">重新检查</button>
+            <button type="button" @click="revealKnowledgeBase">打开目录</button>
+            <button type="button" @click="showKnowledgeBaseMenu">用 IDE 查看</button>
+          </div>
+        </section>
+
+        <section v-if="query.trim()" class="search-results-section">
+          <div class="section-heading static">
+            <span>⌕</span>
+            <strong>搜索结果</strong>
+            <em>{{ store.searchResults.length }}</em>
+          </div>
+          <div v-if="store.searchLoading" class="changes-empty">正在查询后台索引…</div>
           <button
+            v-for="result in store.searchResults"
+            v-else
+            :key="`${result.knowledgeBaseId}:${result.noteUuid}`"
             type="button"
-            class="section-toggle"
-            :aria-expanded="changesExpanded"
-            :aria-label="changesExpanded ? '折叠变更列表' : '展开变更列表'"
-            @click="changesExpanded = !changesExpanded"
+            class="search-result"
+            @click="store.openNoteByUuid(result.knowledgeBaseId, result.noteUuid)"
           >
-            <svg
-              class="chevron"
-              :class="{ collapsed: !changesExpanded }"
-              viewBox="0 0 16 16"
-              aria-hidden="true"
+            <span
+              ><strong>{{ noteFileName(result) }}</strong></span
             >
-              <path
-                d="M4 6l4 4 4-4"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.6"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <strong>变更</strong>
-            <span v-if="gitState?.behind" class="behind-state">↓{{ gitState.behind }}</span>
+            <small>{{ result.snippet }}</small>
           </button>
-          <em>{{ gitState?.changes.length ?? 0 }}</em>
-          <div class="git-actions">
-            <UiTooltip label="刷新 Git 状态" align="end">
-              <button
-                type="button"
-                aria-label="刷新本地 Git 状态"
-                :disabled="Boolean(gitState?.busy)"
-                @click="store.refreshGit(store.selectedKnowledgeBaseId ?? undefined)"
-              >
-                ↻
-              </button>
-            </UiTooltip>
-            <UiTooltip label="拉取远端更新" align="end">
-              <button
-                type="button"
-                aria-label="获取并拉取远端更新"
-                :disabled="!gitState?.initialized || Boolean(gitState.busy)"
-                @click="store.pullGit(store.selectedKnowledgeBaseId!)"
-              >
-                ⇣
-              </button>
-            </UiTooltip>
-            <UiTooltip label="提交并推送" align="end">
-              <button
-                type="button"
-                aria-label="提交并推送当前变更"
-                :disabled="!gitState?.initialized || Boolean(gitState.busy)"
-                @click="store.requestGitPublish(store.selectedKnowledgeBaseId!)"
-              >
-                ⇡
-              </button>
-            </UiTooltip>
+          <div v-if="!store.searchLoading && !store.searchResults.length" class="toc-empty">
+            没有匹配标题或正文的笔记
           </div>
-        </div>
-        <template v-if="changesExpanded">
-          <template v-if="noteFileChanges.length">
-            <button
-              type="button"
-              class="change-group-toggle"
-              :aria-expanded="noteFileExpanded"
-              :aria-label="noteFileExpanded ? '折叠笔记文件' : '展开笔记文件'"
-              @click="noteFileExpanded = !noteFileExpanded"
-            >
-              <svg
-                class="chevron"
-                :class="{ collapsed: !noteFileExpanded }"
-                viewBox="0 0 16 16"
-                aria-hidden="true"
-              >
-                <path
-                  d="M4 6l4 4 4-4"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-              <strong>笔记文件</strong>
-              <em>{{ noteFileChanges.length }}</em>
-            </button>
-            <div v-show="noteFileExpanded">
-              <button
-                v-for="change in displayNoteFileChanges"
-                :key="`note-file:${change.status}:${change.path}`"
-                type="button"
-                class="change-item"
-                :class="change.status"
-                :disabled="!change.noteUuid"
-                @click="store.openNoteByUuid(store.selectedKnowledgeBaseId!, change.noteUuid!)"
-                @contextmenu.prevent="showNoteMenu(change.noteUuid!)"
-              >
-                <span class="change-item__label">
-                  <strong v-if="change.noteUuid"
-                    ><template v-if="tocShowIndex">{{ change.noteIndex }} </template
-                    >{{ change.noteTitle }}</strong
-                  >
-                  <strong v-else>{{ change.path }}</strong>
-                  <small v-if="change.noteUuid">{{
-                    change.status === 'renamed' && change.previousPath
-                      ? `${change.previousPath} → ${change.path}`
-                      : change.path
-                  }}</small>
-                </span>
-                <span class="change-item__status">{{ statusSymbol[change.status] }}</span>
-              </button>
-            </div>
-          </template>
+        </section>
 
-          <template v-if="configFileChanges.length">
-            <button
-              type="button"
-              class="change-group-toggle"
-              :aria-expanded="configFileExpanded"
-              :aria-label="configFileExpanded ? '折叠笔记配置' : '展开笔记配置'"
-              @click="configFileExpanded = !configFileExpanded"
-            >
-              <svg
-                class="chevron"
-                :class="{ collapsed: !configFileExpanded }"
-                viewBox="0 0 16 16"
-                aria-hidden="true"
-              >
-                <path
-                  d="M4 6l4 4 4-4"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-              <strong>笔记配置</strong>
-              <em>{{ configFileChanges.length }}</em>
-            </button>
-            <div v-show="configFileExpanded">
+        <template v-else>
+          <section
+            v-show="pinnedNotes.length > 0 || draggingNote"
+            class="pin-section"
+            data-pin-group="notes"
+          >
+            <div class="section-heading pin-heading" :class="{ 'is-drop': pinDropHover }">
               <button
-                v-for="change in displayConfigFileChanges"
-                :key="`config:${change.status}:${change.path}`"
                 type="button"
-                class="change-item"
-                :class="change.status"
-                @contextmenu.prevent="showFilePathMenu(change.path)"
+                class="section-toggle"
+                :aria-expanded="!pinnedNotesCollapsed"
+                :aria-label="pinnedNotesCollapsed ? '展开置顶' : '折叠置顶'"
+                @click="editor.togglePinnedNotesCollapsed(store.knowledgeBase!.id)"
               >
-                <span class="change-item__label">
-                  <strong>{{ change.path }}</strong>
-                </span>
-                <span class="change-item__status">{{ statusSymbol[change.status] }}</span>
+                <svg
+                  class="chevron"
+                  :class="{ collapsed: pinnedNotesCollapsed }"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M4 6l4 4 4-4"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <strong>置顶</strong>
               </button>
+              <em v-if="pinnedNotes.length">{{ pinnedNotes.length }}</em>
             </div>
-          </template>
-
-          <template v-if="otherFileChanges.length">
-            <button
-              type="button"
-              class="change-group-toggle"
-              :aria-expanded="otherFileExpanded"
-              :aria-label="otherFileExpanded ? '折叠其它文件' : '展开其它文件'"
-              @click="otherFileExpanded = !otherFileExpanded"
-            >
-              <svg
-                class="chevron"
-                :class="{ collapsed: !otherFileExpanded }"
-                viewBox="0 0 16 16"
-                aria-hidden="true"
-              >
-                <path
-                  d="M4 6l4 4 4-4"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-              <strong>其它文件</strong>
-              <em>{{ otherFileChanges.length }}</em>
-            </button>
-            <div v-show="otherFileExpanded">
+            <TocNodeList
+              v-show="pinnedNotes.length > 0 && !pinnedNotesCollapsed"
+              :nodes="pinnedNotes"
+              :selected-note-uuid="selectedTocNoteUuid"
+              :allow-reorder="false"
+              :pin-drop-active="pinDropHover"
+              :batch-deleting="batchDeleting"
+              :batch-selected="batchSelected"
+              @select="store.selectNote"
+              @select-permanent="store.selectNote($event, undefined, true)"
+              @select-split="store.selectNote($event, 'right')"
+              @toggle-done="store.toggleDone"
+              @request-create="(node, placement) => emit('createNote', node, placement)"
+              @request-rename="emit('requestRename', $event)"
+              @request-reindex="emit('requestReindex', $event)"
+              @request-delete="emit('requestDelete', $event)"
+              @toggle-batch-note="toggleBatchNote"
+              @toggle-batch-group="toggleBatchGroup"
+            />
+          </section>
+          <section class="toc-section">
+            <div class="section-heading toc-heading">
               <button
-                v-for="change in displayOtherFileChanges"
-                :key="`other:${change.status}:${change.path}`"
                 type="button"
-                class="change-item"
-                :class="change.status"
-                @contextmenu.prevent="showFilePathMenu(change.path)"
+                class="section-toggle"
+                :aria-expanded="tocExpanded"
+                :aria-label="tocExpanded ? '折叠目录' : '展开目录'"
+                @click="tocExpanded = !tocExpanded"
               >
-                <span class="change-item__label">
-                  <strong>{{ change.path }}</strong>
-                </span>
-                <span class="change-item__status">{{ statusSymbol[change.status] }}</span>
+                <svg
+                  class="chevron"
+                  :class="{ collapsed: !tocExpanded }"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M4 6l4 4 4-4"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <strong>目录</strong>
               </button>
+              <UiTooltip label="折叠/展开全部">
+                <button
+                  type="button"
+                  class="toc-batch-toggle"
+                  aria-label="折叠/展开全部"
+                  @click="toggleTocBatch"
+                >
+                  <svg class="toc-batch-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      fill="currentColor"
+                      d="M2 4h20v2H2zm0 5.57L5.887 12L2 14.43zM7 11h15v2H7zm-5 7h20v2H2z"
+                    />
+                  </svg>
+                </button>
+              </UiTooltip>
+              <UiTooltip label="手动刷新目录">
+                <button
+                  type="button"
+                  class="toc-batch-toggle"
+                  :disabled="store.loading"
+                  aria-label="手动刷新目录"
+                  data-tooltip="手动刷新目录"
+                  @click="store.reloadKnowledgeBase"
+                >
+                  <svg class="toc-batch-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="currentColor" d="M12 4a8 8 0 108 8h-2a6 6 0 11-6-6v3l5-4-5-4z" />
+                  </svg>
+                </button>
+              </UiTooltip>
+              <em>{{ store.knowledgeBase.noteCount }}</em>
             </div>
-          </template>
-
-          <div v-if="gitState?.busy" class="changes-empty">
-            {{
-              gitState.busy === 'publish'
-                ? '正在提交并推送…'
-                : gitState.busy === 'pull'
-                  ? '正在拉取…'
-                  : '正在获取远端状态…'
-            }}
-          </div>
-          <div v-else-if="gitState?.error" class="changes-empty git-error">
-            {{ gitState.error }}
-          </div>
-          <div v-else-if="!gitState?.initialized" class="changes-empty">当前目录不是 Git 仓库</div>
-          <div v-else-if="!gitState.changes.length" class="changes-empty">工作区干净</div>
+            <div v-show="tocExpanded">
+              <TocNodeList
+                v-if="visibleToc.length"
+                ref="tocListRef"
+                :nodes="visibleToc"
+                :selected-note-uuid="selectedTocNoteUuid"
+                :focus-request-id="tocFocusRequestId"
+                :persist-collapse="true"
+                :force-expand="query.trim().length > 0"
+                :batch-deleting="batchDeleting"
+                :batch-selected="batchSelected"
+                @select="store.selectNote"
+                @select-permanent="store.selectNote($event, undefined, true)"
+                @select-split="store.selectNote($event, 'right')"
+                @toggle-done="store.toggleDone"
+                @request-create="(node, placement) => emit('createNote', node, placement)"
+                @request-rename="emit('requestRename', $event)"
+                @request-reindex="emit('requestReindex', $event)"
+                @request-delete="emit('requestDelete', $event)"
+                @toggle-batch-note="toggleBatchNote"
+                @toggle-batch-group="toggleBatchGroup"
+                @move="store.moveTocNode"
+                @drag-note="onTocDrag"
+              />
+              <div v-else class="toc-empty">{{ query ? '没有匹配项' : 'TOC.md 中没有条目' }}</div>
+            </div>
+          </section>
         </template>
-      </section>
-
-      <section v-if="store.knowledgeBase.health !== 'ready'" class="diagnostics">
-        <strong>配置异常，当前知识库只读</strong>
-        <ul>
-          <li
-            v-for="diagnostic in store.knowledgeBase.diagnostics"
-            :key="`${diagnostic.code}:${diagnostic.path ?? ''}`"
-          >
-            {{ diagnostic.message }}
-          </li>
-        </ul>
-        <div class="diagnostic-actions">
-          <button type="button" @click="store.refreshWorkspace">重新检查</button>
-          <button type="button" @click="revealKnowledgeBase">打开目录</button>
-          <button type="button" @click="showKnowledgeBaseMenu">用 IDE 查看</button>
-        </div>
-      </section>
-
-      <section v-if="query.trim()" class="search-results-section">
-        <div class="section-heading static">
-          <span>⌕</span>
-          <strong>搜索结果</strong>
-          <em>{{ store.searchResults.length }}</em>
-        </div>
-        <div v-if="store.searchLoading" class="changes-empty">正在查询后台索引…</div>
+      </div>
+      <div v-if="batchDeleting" class="batch-delete-bar" data-batch-delete-bar>
+        <span>已选 {{ batchSelectedCount }} 篇</span>
+        <button type="button" @click="exitBatchDelete">取消</button>
         <button
-          v-for="result in store.searchResults"
-          v-else
-          :key="`${result.knowledgeBaseId}:${result.noteUuid}`"
           type="button"
-          class="search-result"
-          @click="store.openNoteByUuid(result.knowledgeBaseId, result.noteUuid)"
+          class="danger"
+          data-batch-delete-confirm
+          :disabled="batchSelectedCount === 0"
+          @click="confirmBatchDelete"
         >
-          <span
-            ><strong>{{ noteFileName(result) }}</strong></span
-          >
-          <small>{{ result.snippet }}</small>
+          删除
         </button>
-        <div v-if="!store.searchLoading && !store.searchResults.length" class="toc-empty">
-          没有匹配标题或正文的笔记
-        </div>
-      </section>
-
-      <template v-else>
-      <section
-        v-show="pinnedNotes.length > 0 || draggingNote"
-        class="pin-section"
-        data-pin-group="notes"
-      >
-        <div class="section-heading pin-heading" :class="{ 'is-drop': pinDropHover }">
-          <button
-            type="button"
-            class="section-toggle"
-            :aria-expanded="!pinnedNotesCollapsed"
-            :aria-label="pinnedNotesCollapsed ? '展开置顶' : '折叠置顶'"
-            @click="editor.togglePinnedNotesCollapsed(store.knowledgeBase!.id)"
-          >
-            <svg
-              class="chevron"
-              :class="{ collapsed: pinnedNotesCollapsed }"
-              viewBox="0 0 16 16"
-              aria-hidden="true"
-            >
-              <path
-                d="M4 6l4 4 4-4"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.6"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <strong>置顶</strong>
-          </button>
-          <em v-if="pinnedNotes.length">{{ pinnedNotes.length }}</em>
-        </div>
-        <TocNodeList
-          v-show="pinnedNotes.length > 0 && !pinnedNotesCollapsed"
-          :nodes="pinnedNotes"
-          :selected-note-uuid="selectedTocNoteUuid"
-          :allow-reorder="false"
-          :pin-drop-active="pinDropHover"
-          :batch-deleting="batchDeleting"
-          :batch-selected="batchSelected"
-          @select="store.selectNote"
-          @select-permanent="store.selectNote($event, undefined, true)"
-          @select-split="store.selectNote($event, 'right')"
-          @toggle-done="store.toggleDone"
-          @request-create="(node, placement) => emit('createNote', node, placement)"
-          @request-rename="emit('requestRename', $event)"
-          @request-reindex="emit('requestReindex', $event)"
-          @request-delete="emit('requestDelete', $event)"
-          @toggle-batch-note="toggleBatchNote"
-          @toggle-batch-group="toggleBatchGroup"
-        />
-      </section>
-      <section class="toc-section">
-        <div class="section-heading toc-heading">
-          <button
-            type="button"
-            class="section-toggle"
-            :aria-expanded="tocExpanded"
-            :aria-label="tocExpanded ? '折叠目录' : '展开目录'"
-            @click="tocExpanded = !tocExpanded"
-          >
-            <svg
-              class="chevron"
-              :class="{ collapsed: !tocExpanded }"
-              viewBox="0 0 16 16"
-              aria-hidden="true"
-            >
-              <path
-                d="M4 6l4 4 4-4"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.6"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <strong>目录</strong>
-          </button>
-          <UiTooltip label="折叠/展开全部">
-            <button
-              type="button"
-              class="toc-batch-toggle"
-              aria-label="折叠/展开全部"
-              @click="toggleTocBatch"
-            >
-              <svg class="toc-batch-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  fill="currentColor"
-                  d="M2 4h20v2H2zm0 5.57L5.887 12L2 14.43zM7 11h15v2H7zm-5 7h20v2H2z"
-                />
-              </svg>
-            </button>
-          </UiTooltip>
-          <UiTooltip label="手动刷新目录">
-            <button
-              type="button"
-              class="toc-batch-toggle"
-              :disabled="store.loading"
-              aria-label="手动刷新目录"
-              data-tooltip="手动刷新目录"
-              @click="store.reloadKnowledgeBase"
-            >
-              <svg class="toc-batch-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path fill="currentColor" d="M12 4a8 8 0 108 8h-2a6 6 0 11-6-6v3l5-4-5-4z" />
-              </svg>
-            </button>
-          </UiTooltip>
-          <em>{{ store.knowledgeBase.noteCount }}</em>
-        </div>
-        <div v-show="tocExpanded">
-          <TocNodeList
-            v-if="visibleToc.length"
-            ref="tocListRef"
-            :nodes="visibleToc"
-            :selected-note-uuid="selectedTocNoteUuid"
-            :focus-request-id="tocFocusRequestId"
-            :persist-collapse="true"
-            :force-expand="query.trim().length > 0"
-            :batch-deleting="batchDeleting"
-            :batch-selected="batchSelected"
-            @select="store.selectNote"
-            @select-permanent="store.selectNote($event, undefined, true)"
-            @select-split="store.selectNote($event, 'right')"
-            @toggle-done="store.toggleDone"
-            @request-create="(node, placement) => emit('createNote', node, placement)"
-            @request-rename="emit('requestRename', $event)"
-            @request-reindex="emit('requestReindex', $event)"
-            @request-delete="emit('requestDelete', $event)"
-            @toggle-batch-note="toggleBatchNote"
-            @toggle-batch-group="toggleBatchGroup"
-            @move="store.moveTocNode"
-            @drag-note="onTocDrag"
-          />
-          <div v-else class="toc-empty">{{ query ? '没有匹配项' : 'TOC.md 中没有条目' }}</div>
-        </div>
-      </section>
-      </template>
-    </div>
-    <div v-if="batchDeleting" class="batch-delete-bar" data-batch-delete-bar>
-      <span>已选 {{ batchSelectedCount }} 篇</span>
-      <button type="button" @click="exitBatchDelete">取消</button>
-      <button
-        type="button"
-        class="danger"
-        data-batch-delete-confirm
-        :disabled="batchSelectedCount === 0"
-        @click="confirmBatchDelete"
-      >
-        删除
-      </button>
-    </div>
+      </div>
     </template>
 
     <div v-else class="column-empty">从左侧选择一个知识库</div>

@@ -118,11 +118,7 @@ import {
   type BlockBoundaryNavigationOptions
 } from './blockBoundaryNavigation'
 
-import type {
-  NotePageWidth,
-  NoteViewMode,
-  PinnedSelectionAnchor
-} from '../../../shared/contracts'
+import type { NotePageWidth, NoteViewMode, PinnedSelectionAnchor } from '../../../shared/contracts'
 import type { DisplayLimitedItem } from '../editor/markdown/projectionFidelity'
 
 type NoteTocDisplay = 'hidden' | 'collapsed' | 'expanded'

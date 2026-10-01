@@ -13,7 +13,15 @@ type Options = {
   local?: {
     cwd?: string
     settingSources?: string[]
-    customTools?: Record<string, { execute: (args: Record<string, unknown>, context: { toolCallId?: string }) => Promise<unknown> }>
+    customTools?: Record<
+      string,
+      {
+        execute: (
+          args: Record<string, unknown>,
+          context: { toolCallId?: string }
+        ) => Promise<unknown>
+      }
+    >
   }
 }
 
@@ -36,21 +44,29 @@ function fakeSdk(script: {
         created.push(options)
         return {
           [Symbol.asyncDispose]: dispose,
-          send: vi.fn(async (_message: unknown, sendOptions: { onDelta: (delta: Delta) => void }) => {
-            await script.onSend?.(options, sendOptions.onDelta)
-            let cancelled = false
-            cancel.mockImplementation(async () => {
-              cancelled = true
-              release?.()
-            })
-            return {
-              cancel,
-              stream: async function* () {
-                if (script.hang) await new Promise<void>((resolve) => (release = resolve))
-              },
-              wait: async () => ({ id: 'run-1', status: cancelled ? 'cancelled' : (script.status ?? 'finished'), error: { message: '模型出错' } })
+          send: vi.fn(
+            async (_message: unknown, sendOptions: { onDelta: (delta: Delta) => void }) => {
+              await script.onSend?.(options, sendOptions.onDelta)
+              let cancelled = false
+              cancel.mockImplementation(async () => {
+                cancelled = true
+                release?.()
+              })
+              return {
+                cancel,
+                stream: async function* () {
+                  if (script.hang) await new Promise<void>((resolve) => (release = resolve))
+                  // 没有增量时也要有一次 yield，否则这是个空生成器。
+                  yield* []
+                },
+                wait: async () => ({
+                  id: 'run-1',
+                  status: cancelled ? 'cancelled' : (script.status ?? 'finished'),
+                  error: { message: '模型出错' }
+                })
+              }
             }
-          })
+          )
         }
       })
     }
@@ -82,7 +98,10 @@ describe('runCursorTurn', () => {
     const fake = fakeSdk({
       onSend: async (options, onDelta) => {
         onDelta({ update: { type: 'thinking-delta', text: '想一下' } })
-        await options.local!.customTools!.edit_note.execute({ note: '0001', old_string: 'a', new_string: 'b' }, { toolCallId: 'call-1' })
+        await options.local!.customTools!.edit_note.execute(
+          { note: '0001', old_string: 'a', new_string: 'b' },
+          { toolCallId: 'call-1' }
+        )
         onDelta({ update: { type: 'text-delta', text: '改好了' } })
       }
     })
@@ -118,13 +137,20 @@ describe('runCursorTurn', () => {
   it('问答模式只给读工具', async () => {
     const fake = fakeSdk({})
     await runCursorTurn({ ...input({ mode: 'ask' }), loadSdk: async () => fake.sdk })
-    expect(Object.keys(fake.created[0].local?.customTools ?? {})).toEqual(['list_notes', 'search_notes', 'read_note'])
+    expect(Object.keys(fake.created[0].local?.customTools ?? {})).toEqual([
+      'list_notes',
+      'search_notes',
+      'read_note'
+    ])
   })
 
   it('停止时取消这一轮并释放 Agent', async () => {
     const fake = fakeSdk({ hang: true })
     const controller = new AbortController()
-    const running = runCursorTurn({ ...input({ signal: controller.signal }), loadSdk: async () => fake.sdk })
+    const running = runCursorTurn({
+      ...input({ signal: controller.signal }),
+      loadSdk: async () => fake.sdk
+    })
     await vi.waitFor(() => expect(fake.created).toHaveLength(1))
     await new Promise((resolve) => setTimeout(resolve, 10))
     controller.abort()
@@ -135,16 +161,33 @@ describe('runCursorTurn', () => {
 
   it('密钥无效时提示重新登录，执行失败时带上原因', async () => {
     const auth = fakeSdk({ createError: new Error('Invalid User API Key') })
-    await expect(runCursorTurn({ ...input(), loadSdk: async () => auth.sdk })).rejects.toThrow('重新登录 Cursor')
+    await expect(runCursorTurn({ ...input(), loadSdk: async () => auth.sdk })).rejects.toThrow(
+      '重新登录 Cursor'
+    )
     const unknown = fakeSdk({
-      createError: new Error('Cannot use this model: no-such-model. Available models: default, composer-2.5, gpt-5.5. Use Cursor.models.list() to discover valid selections.')
+      createError: new Error(
+        'Cannot use this model: no-such-model. Available models: default, composer-2.5, gpt-5.5. Use Cursor.models.list() to discover valid selections.'
+      )
     })
-    const unknownError = await runCursorTurn({ ...input(), loadSdk: async () => unknown.sdk }).catch((error: Error) => error.message)
-    expect(unknownError).toBe('Cursor 没有模型「no-such-model」。打开设置 → 内置 Agent，点「读取模型」重新选。')
-    const dotted = fakeSdk({ createError: new Error('Cannot use this model: gpt-9.9. Available models: default.') })
-    expect(await runCursorTurn({ ...input(), loadSdk: async () => dotted.sdk }).catch((error: Error) => error.message)).toContain('「gpt-9.9」')
+    const unknownError = await runCursorTurn({
+      ...input(),
+      loadSdk: async () => unknown.sdk
+    }).catch((error: Error) => error.message)
+    expect(unknownError).toBe(
+      'Cursor 没有模型「no-such-model」。打开设置 → 内置 Agent，点「读取模型」重新选。'
+    )
+    const dotted = fakeSdk({
+      createError: new Error('Cannot use this model: gpt-9.9. Available models: default.')
+    })
+    expect(
+      await runCursorTurn({ ...input(), loadSdk: async () => dotted.sdk }).catch(
+        (error: Error) => error.message
+      )
+    ).toContain('「gpt-9.9」')
     const failed = fakeSdk({ status: 'error' })
-    await expect(runCursorTurn({ ...input(), loadSdk: async () => failed.sdk })).rejects.toThrow('Cursor Agent 执行失败：模型出错')
+    await expect(runCursorTurn({ ...input(), loadSdk: async () => failed.sdk })).rejects.toThrow(
+      'Cursor Agent 执行失败：模型出错'
+    )
     expect(failed.dispose).toHaveBeenCalledOnce()
   })
 

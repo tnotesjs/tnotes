@@ -10,14 +10,22 @@ function key(knowledgeBaseId: string, noteUuid: string): string {
   return `${knowledgeBaseId}:${noteUuid}`
 }
 
-export function registerLiveEditor(knowledgeBaseId: string, noteUuid: string, view: EditorView): void {
+export function registerLiveEditor(
+  knowledgeBaseId: string,
+  noteUuid: string,
+  view: EditorView
+): void {
   const id = key(knowledgeBaseId, noteUuid)
   const set = views.get(id) ?? new Set()
   set.add(view)
   views.set(id, set)
 }
 
-export function unregisterLiveEditor(knowledgeBaseId: string, noteUuid: string, view: EditorView): void {
+export function unregisterLiveEditor(
+  knowledgeBaseId: string,
+  noteUuid: string,
+  view: EditorView
+): void {
   const id = key(knowledgeBaseId, noteUuid)
   const set = views.get(id)
   if (!set) return
@@ -25,7 +33,11 @@ export function unregisterLiveEditor(knowledgeBaseId: string, noteUuid: string, 
   if (set.size === 0) views.delete(id)
 }
 
-export function allLiveEditors(): Array<{ knowledgeBaseId: string; noteUuid: string; views: EditorView[] }> {
+export function allLiveEditors(): Array<{
+  knowledgeBaseId: string
+  noteUuid: string
+  views: EditorView[]
+}> {
   return [...views].map(([id, set]) => {
     const split = id.indexOf(':')
     return { knowledgeBaseId: id.slice(0, split), noteUuid: id.slice(split + 1), views: [...set] }

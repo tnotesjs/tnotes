@@ -17,9 +17,14 @@ export const INLINE_BUDGET = 24_000
 export const SELECTION_CLIPPED = '（选区过长，已截断）'
 
 /** 只保留最近若干条，并保证第一条是用户消息。单条超长会截断。 */
-export function trimHistory<T extends { role: string; content: string }>(messages: readonly T[], limit = HISTORY_LIMIT): T[] {
+export function trimHistory<T extends { role: string; content: string }>(
+  messages: readonly T[],
+  limit = HISTORY_LIMIT
+): T[] {
   const clipped = messages.map((message) =>
-    message.content.length > MESSAGE_CHAR_LIMIT ? { ...message, content: message.content.slice(0, MESSAGE_CHAR_LIMIT) } : message
+    message.content.length > MESSAGE_CHAR_LIMIT
+      ? { ...message, content: message.content.slice(0, MESSAGE_CHAR_LIMIT) }
+      : message
   )
   let start = Math.max(0, clipped.length - limit)
   while (start < clipped.length && clipped[start]?.role !== 'user') start += 1
@@ -33,7 +38,10 @@ export function clipSelection(text: string): string {
 }
 
 /** 按顺序附上全文，直到总字数超过预算；超长的笔记只附元信息。 */
-export function inlineNotes(notes: readonly AgentNoteContext[], budget = INLINE_BUDGET): AgentNoteContext[] {
+export function inlineNotes(
+  notes: readonly AgentNoteContext[],
+  budget = INLINE_BUDGET
+): AgentNoteContext[] {
   let used = 0
   return notes.map((note) => {
     const fits = note.content.length <= CONTENT_LIMIT && used + note.content.length <= budget
@@ -49,7 +57,10 @@ export function defaultNoteFor(
 ): { knowledgeBaseId: string; noteUuid: string } | null {
   const keys = new Map<string, { knowledgeBaseId: string; noteUuid: string }>()
   for (const item of [...notes, ...selections]) {
-    keys.set(`${item.knowledgeBaseId}:${item.noteUuid}`, { knowledgeBaseId: item.knowledgeBaseId, noteUuid: item.noteUuid })
+    keys.set(`${item.knowledgeBaseId}:${item.noteUuid}`, {
+      knowledgeBaseId: item.knowledgeBaseId,
+      noteUuid: item.noteUuid
+    })
   }
   return keys.size === 1 ? [...keys.values()][0] : null
 }

@@ -170,9 +170,7 @@ describe('native context menus', () => {
         tocPinned: false,
         completed: false
       })
-    ).toBe(
-      'toggle-pin'
-    )
+    ).toBe('toggle-pin')
     expect(mocks.popup).toHaveBeenCalledWith(expect.objectContaining({ window }))
   })
 

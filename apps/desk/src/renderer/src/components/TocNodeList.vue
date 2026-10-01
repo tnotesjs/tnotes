@@ -75,7 +75,11 @@ function writeStoredCollapse(kbId: string, ids: ReadonlySet<string>): void {
 }
 
 /** 通向当前笔记的分支，含当前笔记自己（它有子节点时子列表要露出来）。 */
-function openKeysForNote(nodes: DeskTocNode[], noteUuid: string, parents: string[] = []): string[] | null {
+function openKeysForNote(
+  nodes: DeskTocNode[],
+  noteUuid: string,
+  parents: string[] = []
+): string[] | null {
   for (const node of nodes) {
     if (node.type === 'note' && node.uuid === noteUuid) {
       return node.children.length ? [...parents, node.nodeId] : [...parents]
@@ -391,7 +395,7 @@ async function showNodeContextMenu(event: MouseEvent, node: DeskTocNode): Promis
     const action = resultValue(
       await window.desk.app.showContextMenu(
         node.type === 'note'
-            ? {
+          ? {
               kind: 'note',
               pinned: Boolean(findNoteTab(knowledgeBaseId, node.uuid)?.pinned),
               tocPinned: Boolean(
@@ -578,10 +582,16 @@ defineExpose({ toggleAllCollapsed })
           :data-state="rowCheckState(node)"
           role="checkbox"
           :aria-checked="
-            rowCheckState(node) === 'all' ? 'true' : rowCheckState(node) === 'some' ? 'mixed' : 'false'
+            rowCheckState(node) === 'all'
+              ? 'true'
+              : rowCheckState(node) === 'some'
+                ? 'mixed'
+                : 'false'
           "
           :disabled="rowCheckState(node) === 'empty'"
-          :aria-label="node.type === 'note' ? `选择 ${node.title}` : `选择「${node.title}」里的笔记`"
+          :aria-label="
+            node.type === 'note' ? `选择 ${node.title}` : `选择「${node.title}」里的笔记`
+          "
           @click.stop="onBatchToggle(node)"
         >
           <svg v-if="rowCheckState(node) === 'all'" viewBox="0 0 12 12" aria-hidden="true">

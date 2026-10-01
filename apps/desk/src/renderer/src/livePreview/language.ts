@@ -264,7 +264,13 @@ export function tnotesMarkdown(): Extension {
     markdown({
       base: markdownLanguage,
       codeLanguages: deskCodeMirrorLanguages,
-      extensions: [frontmatter, containers, componentBlock, math, { remove: ['Superscript', 'Subscript'] }],
+      extensions: [
+        frontmatter,
+        containers,
+        componentBlock,
+        math,
+        { remove: ['Superscript', 'Subscript'] }
+      ],
       addKeymap: false
     })
   ]

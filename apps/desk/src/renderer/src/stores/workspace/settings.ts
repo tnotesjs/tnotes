@@ -76,7 +76,9 @@ export function createSettings(ctx: SettingsContext) {
     if (!ctx.settings.value) return
     const map = { ...(ctx.settings.value.pinnedNoteUuids ?? {}) }
     const current = map[knowledgeBaseId] ?? []
-    const next = current.includes(noteUuid) ? unpinId(current, noteUuid) : pinToFront(current, noteUuid)
+    const next = current.includes(noteUuid)
+      ? unpinId(current, noteUuid)
+      : pinToFront(current, noteUuid)
     if (next.length === 0) delete map[knowledgeBaseId]
     else map[knowledgeBaseId] = next
     void updateSettings({ pinnedNoteUuids: map })

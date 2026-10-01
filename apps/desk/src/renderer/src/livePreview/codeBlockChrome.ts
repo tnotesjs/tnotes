@@ -1,5 +1,11 @@
 import { syntaxTree } from '@codemirror/language'
-import { EditorSelection, EditorState, StateEffect, StateField, Transaction } from '@codemirror/state'
+import {
+  EditorSelection,
+  EditorState,
+  StateEffect,
+  StateField,
+  Transaction
+} from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 
 import type { Extension, TransactionSpec } from '@codemirror/state'
@@ -24,7 +30,9 @@ export const codeBlockChrome = StateField.define<CodeChromeMark[]>({
       !tr.docChanged &&
       !tr.effects.some(
         (effect) =>
-          effect.is(toggleCodeCollapse) || effect.is(toggleCodeFullscreen) || effect.is(toggleCodeWrap)
+          effect.is(toggleCodeCollapse) ||
+          effect.is(toggleCodeFullscreen) ||
+          effect.is(toggleCodeWrap)
       )
     ) {
       return marks

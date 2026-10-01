@@ -139,7 +139,10 @@ try {
     const image = page.locator('.tab-content:visible .cm-lp-image').first()
     await image.waitFor({ timeout: 30000 })
     await image.hover()
-    const edit = page.locator('.tab-content:visible').getByRole('button', { name: '编辑', exact: true }).first()
+    const edit = page
+      .locator('.tab-content:visible')
+      .getByRole('button', { name: '编辑', exact: true })
+      .first()
     await edit.waitFor({ timeout: 30000 })
     await edit.click()
     await canvasPane().waitFor({ timeout: 30000 })

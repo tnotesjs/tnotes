@@ -175,27 +175,26 @@ export const codeBlockScrollSync = ViewPlugin.fromClass(
     }
 
     private schedule(): void {
-      const plugin = this
       this.view.requestMeasure({
         key: this,
-        read(measureView) {
-          const reveal = plugin.revealPending
-          plugin.revealPending = false
+        read: (measureView) => {
+          const reveal = this.revealPending
+          this.revealPending = false
           return {
             root: measureView.dom,
             scroll: reveal ? readCursorScroll(measureView) : null
           }
         },
-        write(value) {
+        write: (value) => {
           if (value.root.isConnected) {
             layoutCodeBlockScroll(value.root)
             // 短行刚被补宽，按底部滚动条的位置再对齐一次，否则它们还停在 0。
             for (const bar of value.root.querySelectorAll<HTMLElement>('.cm-lp-code-hscroll')) {
               const id = bar.dataset.codeScroll
-              if (id) plugin.apply(id, bar.scrollLeft, null)
+              if (id) this.apply(id, bar.scrollLeft, null)
             }
           }
-          if (value.scroll) plugin.apply(value.scroll.id, value.scroll.left, null)
+          if (value.scroll) this.apply(value.scroll.id, value.scroll.left, null)
         }
       })
     }

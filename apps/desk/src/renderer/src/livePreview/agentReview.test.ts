@@ -63,7 +63,12 @@ describe('review archive', () => {
   })
 
   it('edits a note without an editor and restores the marks when it opens', () => {
-    const content = applyAgentEditToContent(identity, '前 A 后', { from: 2, to: 3, insert: 'B' }, '修改')
+    const content = applyAgentEditToContent(
+      identity,
+      '前 A 后',
+      { from: 2, to: 3, insert: 'B' },
+      '修改'
+    )
     expect(content).toBe('前 B 后')
     expect(archivedEntry('kb', 'n1')?.content).toBe('前 B 后')
     const opened = applyArchivedReviews(reopen(content))
@@ -71,8 +76,18 @@ describe('review archive', () => {
   })
 
   it('reverts several archived edits from last to first', () => {
-    const first = applyAgentEditToContent(identity, '一\n二\n', { from: 0, to: 1, insert: '甲' }, '修改')
-    const second = applyAgentEditToContent(identity, first, { from: first.length, insert: '三\n' }, '修改')
+    const first = applyAgentEditToContent(
+      identity,
+      '一\n二\n',
+      { from: 0, to: 1, insert: '甲' },
+      '修改'
+    )
+    const second = applyAgentEditToContent(
+      identity,
+      first,
+      { from: first.length, insert: '三\n' },
+      '修改'
+    )
     expect(second).toBe('甲\n二\n三\n')
     const entry = archivedEntry('kb', 'n1')
     expect(entry?.reviews).toHaveLength(2)
@@ -83,7 +98,10 @@ describe('review archive', () => {
 
 describe('user edits over agent edits', () => {
   it('drops the review when the agent edit is undone, so reject cannot duplicate text', () => {
-    let state = EditorState.create({ doc: '前 A 后', extensions: [history(), agentReviewExtension()] })
+    let state = EditorState.create({
+      doc: '前 A 后',
+      extensions: [history(), agentReviewExtension()]
+    })
     state = applyAgentChangeToState(state, { from: 2, to: 3, insert: 'B' }, '修改')
     state = runUndo(state)
     expect(state.doc.toString()).toBe('前 A 后')

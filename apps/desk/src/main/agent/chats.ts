@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
+
+const nodeRequire = createRequire(import.meta.url)
 
 import type { AgentStoredChat } from '../../shared/contracts'
 
@@ -14,7 +17,7 @@ export function setAgentChatRootForTests(root: string | null): void {
 
 function directory(): string {
   if (rootOverride) return rootOverride
-  const { app } = require('electron') as { app: { getPath: (name: string) => string } }
+  const { app } = nodeRequire('electron') as { app: { getPath: (name: string) => string } }
   return join(app.getPath('userData'), 'agent-chats')
 }
 

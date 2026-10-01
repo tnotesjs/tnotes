@@ -33,7 +33,9 @@ describe('终端标签的 ⌘W', () => {
       activeSessionId: 'shell-1'
     }
     expect(terminalShortcutCloseTarget(base)).toBeNull()
-    expect(terminalShortcutCloseTarget({ ...base, panelOpen: false, focusInsidePanel: true })).toBeNull()
+    expect(
+      terminalShortcutCloseTarget({ ...base, panelOpen: false, focusInsidePanel: true })
+    ).toBeNull()
     expect(
       terminalShortcutCloseTarget({
         panelOpen: true,

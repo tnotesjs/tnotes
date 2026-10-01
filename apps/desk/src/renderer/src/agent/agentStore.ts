@@ -2,7 +2,11 @@ import { defineStore } from 'pinia'
 import { computed, markRaw, nextTick, ref, watch } from 'vue'
 
 import { allModelRefs, resolveModelRef } from '../../../shared/agentModels'
-import { dismissStaleReview, onAgentReviewsChanged, setAgentReviewActions } from '../livePreview/agentReview'
+import {
+  dismissStaleReview,
+  onAgentReviewsChanged,
+  setAgentReviewActions
+} from '../livePreview/agentReview'
 import { liveEditorFor } from '../livePreview/editorRegistry'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
@@ -29,6 +33,7 @@ import type {
   AgentMessagePart,
   AgentMode,
   AgentNoteContext,
+  AgentOpenNote,
   AgentReasoningEffort,
   AgentSelectionContext,
   AgentStoredChat,
@@ -79,7 +84,10 @@ function baseName(path: string, fallback: string): string {
 }
 
 function kbDisplayName(knowledgeBaseId: string): string {
-  return useWorkspaceStore().overview.knowledgeBases.find((item) => item.id === knowledgeBaseId)?.displayName ?? knowledgeBaseId
+  return (
+    useWorkspaceStore().overview.knowledgeBases.find((item) => item.id === knowledgeBaseId)
+      ?.displayName ?? knowledgeBaseId
+  )
 }
 
 const RUNNING: Record<string, string> = {
@@ -129,7 +137,9 @@ export const useAgentStore = defineStore('agent', () => {
   const currentModel = computed(() => {
     const settings = agentSettings.value
     if (!settings) return null
-    return resolveModelRef(settings, modelRef.value) ?? resolveModelRef(settings, settings.defaultModel)
+    return (
+      resolveModelRef(settings, modelRef.value) ?? resolveModelRef(settings, settings.defaultModel)
+    )
   })
   const currentModelRef = computed(() =>
     currentModel.value ? `${currentModel.value.provider.id}/${currentModel.value.model.id}` : ''
@@ -154,7 +164,9 @@ export const useAgentStore = defineStore('agent', () => {
 
   function patchTool(id: string, patch: Partial<AgentToolRow>): void {
     liveParts.value = liveParts.value.map((part) =>
-      part.type === 'tool' && part.tool?.id === id ? { ...part, tool: { ...part.tool, ...patch } } : part
+      part.type === 'tool' && part.tool?.id === id
+        ? { ...part, tool: { ...part.tool, ...patch } }
+        : part
     )
   }
 
@@ -185,12 +197,18 @@ export const useAgentStore = defineStore('agent', () => {
           }
         ]
       }
-      if (event.type === 'tool-end') patchTool(event.id, { ok: event.ok, summary: event.summary, running: false })
+      if (event.type === 'tool-end')
+        patchTool(event.id, { ok: event.ok, summary: event.summary, running: false })
       if (event.type === 'error' && event.message !== '已停止') error.value = event.message
     })
     window.desk.agent.onToolCall((request) => {
       if (!eventMatchesTurn(request.turnId, turnId)) {
-        void window.desk.agent.toolResult({ id: request.id, ok: false, summary: '已停止', detail: '' })
+        void window.desk.agent.toolResult({
+          id: request.id,
+          ok: false,
+          summary: '已停止',
+          detail: ''
+        })
         return
       }
       void runAgentTool(request.name, request.args, created, toolContext).then((result) => {
@@ -284,7 +302,8 @@ export const useAgentStore = defineStore('agent', () => {
         item.from === selection.from &&
         item.to === selection.to
     )
-    if (!duplicate) selections.value = [...selections.value, { ...selection, id: crypto.randomUUID() }]
+    if (!duplicate)
+      selections.value = [...selections.value, { ...selection, id: crypto.randomUUID() }]
     return true
   }
 
@@ -293,7 +312,13 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   function addMention(item: MentionItem): void {
-    if (mentions.value.some((mention) => mention.knowledgeBaseId === item.knowledgeBaseId && mention.noteUuid === item.noteUuid)) return
+    if (
+      mentions.value.some(
+        (mention) =>
+          mention.knowledgeBaseId === item.knowledgeBaseId && mention.noteUuid === item.noteUuid
+      )
+    )
+      return
     mentions.value = [...mentions.value, item]
   }
 
@@ -310,7 +335,13 @@ export const useAgentStore = defineStore('agent', () => {
       title = session.document.title
       index = session.document.index ?? ''
     }
-    addMention({ knowledgeBaseId, knowledgeBaseName: kbDisplayName(knowledgeBaseId), noteUuid, title, index })
+    addMention({
+      knowledgeBaseId,
+      knowledgeBaseName: kbDisplayName(knowledgeBaseId),
+      noteUuid,
+      title,
+      index
+    })
     open.value = true
     await nextTick()
     document.querySelector<HTMLTextAreaElement>('.agent-dock textarea')?.focus()
@@ -319,7 +350,8 @@ export const useAgentStore = defineStore('agent', () => {
 
   function removeMention(item: MentionItem): void {
     mentions.value = mentions.value.filter(
-      (mention) => !(mention.knowledgeBaseId === item.knowledgeBaseId && mention.noteUuid === item.noteUuid)
+      (mention) =>
+        !(mention.knowledgeBaseId === item.knowledgeBaseId && mention.noteUuid === item.noteUuid)
     )
   }
 
@@ -341,7 +373,9 @@ export const useAgentStore = defineStore('agent', () => {
     const sameWorkspace = chatsWorkspace === workspacePath
     const local = sameWorkspace
       ? chats.value.filter(
-          (chat) => !result.value.some((saved) => saved.id === chat.id) && (chat.messages.length > 0 || chat.id === activeId.value)
+          (chat) =>
+            !result.value.some((saved) => saved.id === chat.id) &&
+            (chat.messages.length > 0 || chat.id === activeId.value)
         )
       : []
     chatsWorkspace = workspacePath
@@ -408,7 +442,7 @@ export const useAgentStore = defineStore('agent', () => {
     if (activeId.value === id) activeId.value = chats.value[0]?.id ?? null
   }
 
-  function currentNote() {
+  function currentNote(): AgentOpenNote | null {
     const tab = useEditorStore().activeTab
     if (tab?.type !== 'note') return null
     const session = useWorkspaceStore().getDocumentSession(tab.knowledgeBaseId, tab.noteUuid)
@@ -439,7 +473,8 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   function contextRefs(kbId: string): AgentContextRef[] {
-    const name = (item: MentionItem): string => (item.knowledgeBaseId === kbId ? item.title : `${item.knowledgeBaseName} · ${item.title}`)
+    const name = (item: MentionItem): string =>
+      item.knowledgeBaseId === kbId ? item.title : `${item.knowledgeBaseName} · ${item.title}`
     return [
       ...mentions.value.map((item) => ({
         type: 'note' as const,
@@ -492,7 +527,11 @@ export const useAgentStore = defineStore('agent', () => {
     const workspacePath = workspace.overview.path ?? ''
     const attachedImages: AgentImageRef[] = []
     for (const image of images.value) {
-      const saved = await window.desk.agent.saveAttachment({ data: image.data, width: image.width, height: image.height })
+      const saved = await window.desk.agent.saveAttachment({
+        data: image.data,
+        width: image.width,
+        height: image.height
+      })
       if (!saved.ok) {
         error.value = saved.error.message
         return
@@ -513,7 +552,12 @@ export const useAgentStore = defineStore('agent', () => {
     const refs = contextRefs(kb.id)
     const mentioned = [...mentions.value]
     const selected = [...selections.value]
-    chat.messages.push({ role: 'user', content, refs, images: attachedImages.length ? attachedImages : undefined })
+    chat.messages.push({
+      role: 'user',
+      content,
+      refs,
+      images: attachedImages.length ? attachedImages : undefined
+    })
     draft.value = ''
     mentions.value = []
     selections.value = []
@@ -538,7 +582,9 @@ export const useAgentStore = defineStore('agent', () => {
       text: item.text
     }))
     toolContext = createToolContext(kb.id)
-    toolContext.contextKbIds = [...new Set([...mentioned, ...selected].map((item) => item.knowledgeBaseId))]
+    toolContext.contextKbIds = [
+      ...new Set([...mentioned, ...selected].map((item) => item.knowledgeBaseId))
+    ]
     toolContext.isCurrent = () => turnId === thisTurn
     try {
       const notes = await Promise.all(mentioned.map(noteContext))
@@ -563,7 +609,9 @@ export const useAgentStore = defineStore('agent', () => {
       })
       toolContext.defaultNote = payload.defaultNote
       const result = await window.desk.agent.turn(payload)
-      const thoughtMs = reasoningStartedAt.value ? Math.max(1000, reasoningEndedAt.value - reasoningStartedAt.value) : undefined
+      const thoughtMs = reasoningStartedAt.value
+        ? Math.max(1000, reasoningEndedAt.value - reasoningStartedAt.value)
+        : undefined
       if (!result.ok) {
         const stopped = result.error.message === '已停止'
         if (!stopped) error.value = result.error.message
@@ -617,21 +665,24 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   const pendingNotes = computed(() => {
-    reviewTick.value
-    useWorkspaceStore().knowledgeBase
+    void reviewTick.value
+    void useWorkspaceStore().knowledgeBase
     return pendingReviewList()
   })
 
   const pendingByKb = computed(() => {
     const counts: Record<string, number> = {}
-    for (const item of pendingNotes.value) counts[item.knowledgeBaseId] = (counts[item.knowledgeBaseId] ?? 0) + 1
+    for (const item of pendingNotes.value)
+      counts[item.knowledgeBaseId] = (counts[item.knowledgeBaseId] ?? 0) + 1
     return counts
   })
 
-  const pendingNoteKeys = computed(() => new Set(pendingNotes.value.map((item) => `${item.knowledgeBaseId}:${item.uuid}`)))
+  const pendingNoteKeys = computed(
+    () => new Set(pendingNotes.value.map((item) => `${item.knowledgeBaseId}:${item.uuid}`))
+  )
 
   const staleNotes = computed(() => {
-    reviewTick.value
+    void reviewTick.value
     return staleReviewList()
   })
 
@@ -642,7 +693,12 @@ export const useAgentStore = defineStore('agent', () => {
   type Target = { knowledgeBaseId: string; uuid: string }
 
   async function accept(target?: Target): Promise<void> {
-    const list = target ? [target] : pendingNotes.value.map((item) => ({ knowledgeBaseId: item.knowledgeBaseId, uuid: item.uuid }))
+    const list = target
+      ? [target]
+      : pendingNotes.value.map((item) => ({
+          knowledgeBaseId: item.knowledgeBaseId,
+          uuid: item.uuid
+        }))
     for (const item of list) {
       const result = await acceptNoteEdits(item.knowledgeBaseId, item.uuid)
       if (!result.ok) {
@@ -654,7 +710,12 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   async function reject(target?: Target): Promise<void> {
-    const list = target ? [target] : pendingNotes.value.map((item) => ({ knowledgeBaseId: item.knowledgeBaseId, uuid: item.uuid }))
+    const list = target
+      ? [target]
+      : pendingNotes.value.map((item) => ({
+          knowledgeBaseId: item.knowledgeBaseId,
+          uuid: item.uuid
+        }))
     for (const item of list) {
       const result = await rejectNoteEdits(item.knowledgeBaseId, item.uuid, created)
       if (!result.ok) error.value = result.message
@@ -754,4 +815,3 @@ export const useAgentStore = defineStore('agent', () => {
     refreshKey
   }
 })
-

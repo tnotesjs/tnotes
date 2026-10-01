@@ -53,7 +53,9 @@ function cleanModel(value: unknown): AgentModelConfig | null {
 function cleanProvider(value: unknown, index: number): AgentProviderConfig | null {
   if (!value || typeof value !== 'object') return null
   const raw = value as Record<string, unknown>
-  const models = Array.isArray(raw.models) ? raw.models.map(cleanModel).filter((item): item is AgentModelConfig => Boolean(item)) : []
+  const models = Array.isArray(raw.models)
+    ? raw.models.map(cleanModel).filter((item): item is AgentModelConfig => Boolean(item))
+    : []
   if (raw.kind === 'cursor') {
     const id = text(raw.id).replace(/[^a-zA-Z0-9_-]/g, '') || `cursor-${index + 1}`
     return { id, name: text(raw.name) || 'Cursor', kind: 'cursor', baseUrl: '', models }
@@ -82,7 +84,14 @@ export function normalizeAgentSettings(value: unknown): AgentSettings {
     if (!baseUrl || !model) return structuredClone(DEFAULT_AGENT_SETTINGS)
     const provider = providerFromBaseUrl(baseUrl)
     return {
-      providers: [{ id: provider.id, name: provider.name, baseUrl, models: [{ id: model, vision: true, reasoning: false }] }],
+      providers: [
+        {
+          id: provider.id,
+          name: provider.name,
+          baseUrl,
+          models: [{ id: model, vision: true, reasoning: false }]
+        }
+      ],
       defaultModel: `${provider.id}/${model}`
     }
   }
@@ -93,7 +102,8 @@ export function normalizeAgentSettings(value: unknown): AgentSettings {
     .filter((item) => (seen.has(item.id) ? false : (seen.add(item.id), true)))
   if (providers.length === 0) return structuredClone(DEFAULT_AGENT_SETTINGS)
   const settings = { providers, defaultModel: text(raw.defaultModel) }
-  if (!resolveModelRef(settings, settings.defaultModel)) settings.defaultModel = firstModelRef(settings)
+  if (!resolveModelRef(settings, settings.defaultModel))
+    settings.defaultModel = firstModelRef(settings)
   return settings
 }
 
@@ -118,7 +128,9 @@ export function resolveModelRef(
   return provider && model ? { provider, model } : null
 }
 
-export function allModelRefs(settings: AgentSettings): Array<{ ref: string; provider: AgentProviderConfig; model: AgentModelConfig }> {
+export function allModelRefs(
+  settings: AgentSettings
+): Array<{ ref: string; provider: AgentProviderConfig; model: AgentModelConfig }> {
   return settings.providers.flatMap((provider) =>
     provider.models.map((model) => ({ ref: `${provider.id}/${model.id}`, provider, model }))
   )

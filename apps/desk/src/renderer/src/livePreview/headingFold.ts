@@ -1,14 +1,23 @@
-import { foldEffect, foldService, foldedRanges, syntaxTree, unfoldEffect } from '@codemirror/language'
+import {
+  foldEffect,
+  foldService,
+  foldedRanges,
+  syntaxTree,
+  unfoldEffect
+} from '@codemirror/language'
 import { EditorView, WidgetType } from '@codemirror/view'
 
-import { EditorSelection, EditorState, Transaction, type StateEffect, type TransactionSpec } from '@codemirror/state'
+import {
+  EditorSelection,
+  EditorState,
+  Transaction,
+  type StateEffect,
+  type TransactionSpec
+} from '@codemirror/state'
 
 export type HeadingFoldLevel = 1 | 2 | 3 | 4 | 5 | 6
 export type HeadingFoldCommand =
-  | 'fold-all'
-  | 'unfold-all'
-  | `fold-level-${HeadingFoldLevel}`
-  | `unfold-level-${HeadingFoldLevel}`
+  'fold-all' | 'unfold-all' | `fold-level-${HeadingFoldLevel}` | `unfold-level-${HeadingFoldLevel}`
 
 interface HeadingSection {
   level: number
@@ -85,7 +94,9 @@ export function applyHeadingFoldCommand(view: EditorView, command: HeadingFoldCo
   const levelMatch = /(\d)$/.exec(command)
   let targets: HeadingSection[]
   if (command.includes('All') || command.includes('all')) {
-    targets = levelMatch ? sections.filter((section) => section.level === Number(levelMatch[1])) : sections
+    targets = levelMatch
+      ? sections.filter((section) => section.level === Number(levelMatch[1]))
+      : sections
   } else if (levelMatch) {
     targets = sections.filter((section) => section.level === Number(levelMatch[1]))
   } else {
@@ -102,8 +113,10 @@ export function applyHeadingFoldCommand(view: EditorView, command: HeadingFoldCo
     folded.between(section.lineEnd, section.lineEnd, (from, to) => {
       if (from === section.lineEnd && to === section.end) isFolded = true
     })
-    if (unfold && isFolded) effects.push(unfoldEffect.of({ from: section.lineEnd, to: section.end }))
-    if (!unfold && !isFolded) effects.push(foldEffect.of({ from: section.lineEnd, to: section.end }))
+    if (unfold && isFolded)
+      effects.push(unfoldEffect.of({ from: section.lineEnd, to: section.end }))
+    if (!unfold && !isFolded)
+      effects.push(foldEffect.of({ from: section.lineEnd, to: section.end }))
   }
   if (effects.length > 0) view.dispatch({ effects })
   return true

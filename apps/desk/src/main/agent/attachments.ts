@@ -4,7 +4,10 @@
  */
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
+
+const nodeRequire = createRequire(import.meta.url)
 
 import type { AgentImageRef, AgentStoredChat } from '../../shared/contracts'
 
@@ -19,7 +22,7 @@ export function setAgentAttachmentRootForTests(root: string | null): void {
 
 function root(): string {
   if (rootOverride) return rootOverride
-  const { app } = require('electron') as { app: { getPath: (name: string) => string } }
+  const { app } = nodeRequire('electron') as { app: { getPath: (name: string) => string } }
   return join(app.getPath('userData'), 'agent-attachments')
 }
 
@@ -28,7 +31,11 @@ function fileFor(id: string): string {
   return join(root(), `${id}.jpg`)
 }
 
-export function saveAgentAttachment(data: Uint8Array, width: number, height: number): AgentImageRef {
+export function saveAgentAttachment(
+  data: Uint8Array,
+  width: number,
+  height: number
+): AgentImageRef {
   if (data.byteLength === 0 || data.byteLength > MAX_BYTES) throw new Error('图片太大（最多 8MB）')
   if (data[0] !== 0xff || data[1] !== 0xd8) throw new Error('只接受 JPEG 图片')
   const id = randomUUID()

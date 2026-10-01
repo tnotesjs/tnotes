@@ -41,7 +41,8 @@ function renumberList(state: EditorState, list: SyntaxNode, changes: ChangeSpec[
 export function renumberOrderedLists(state: EditorState, from: number, to: number): ChangeSpec[] {
   const changes: ChangeSpec[] = []
   const seen = new Set<number>()
-  const tree = ensureSyntaxTree(state, Math.min(state.doc.length, to + 2000), 50) ?? syntaxTree(state)
+  const tree =
+    ensureSyntaxTree(state, Math.min(state.doc.length, to + 2000), 50) ?? syntaxTree(state)
   const lineFrom = state.doc.lineAt(Math.max(0, from)).from
   const lineTo = state.doc.lineAt(Math.min(state.doc.length, to)).to
   tree.iterate({

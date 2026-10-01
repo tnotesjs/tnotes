@@ -733,144 +733,144 @@ function openLink(url: string): void {
           </button>
         </UiTooltip>
         <FormatOverflowBar :items="formatActions" :disabled="formatDisabled">
-        <template #item="{ item }">
-          <BlockInsertMenu
-            v-if="item === 'insert'"
-            :disabled="formatDisabled"
-            :active="active"
-            @select="insertBlock"
-          />
-          <UiTooltip v-else-if="item === 'bold'" label="粗体" shortcut="⌘ B">
-            <button
-              type="button"
-              aria-label="粗体"
+          <template #item="{ item }">
+            <BlockInsertMenu
+              v-if="item === 'insert'"
               :disabled="formatDisabled"
-              @click="markdownEditor?.wrapSelection('**', '**')"
-            >
-              <FormatIcon name="bold" />
-            </button>
-          </UiTooltip>
-          <UiTooltip v-else-if="item === 'italic'" label="斜体" shortcut="⌘ I">
-            <button
-              type="button"
-              aria-label="斜体"
+              :active="active"
+              @select="insertBlock"
+            />
+            <UiTooltip v-else-if="item === 'bold'" label="粗体" shortcut="⌘ B">
+              <button
+                type="button"
+                aria-label="粗体"
+                :disabled="formatDisabled"
+                @click="markdownEditor?.wrapSelection('**', '**')"
+              >
+                <FormatIcon name="bold" />
+              </button>
+            </UiTooltip>
+            <UiTooltip v-else-if="item === 'italic'" label="斜体" shortcut="⌘ I">
+              <button
+                type="button"
+                aria-label="斜体"
+                :disabled="formatDisabled"
+                @click="markdownEditor?.wrapSelection('*', '*')"
+              >
+                <FormatIcon name="italic" />
+              </button>
+            </UiTooltip>
+            <UiTooltip v-else-if="item === 'strikethrough'" label="删除线" shortcut="⇧ ⌘ X">
+              <button
+                type="button"
+                aria-label="删除线"
+                :disabled="formatDisabled"
+                @mousedown.prevent
+                @click="markdownEditor?.wrapSelection('~~', '~~')"
+              >
+                <FormatIcon name="strikethrough" />
+              </button>
+            </UiTooltip>
+            <UiTooltip v-else-if="item === 'inline-code'" label="行内代码" shortcut="⌘ E">
+              <button
+                type="button"
+                aria-label="行内代码"
+                :disabled="formatDisabled"
+                @mousedown.prevent
+                @click="markdownEditor?.wrapSelection('`', '`')"
+              >
+                <FormatIcon name="inline-code" />
+              </button>
+            </UiTooltip>
+            <HeadingMenu
+              v-else-if="item === 'heading'"
+              :level="headingLevel"
               :disabled="formatDisabled"
-              @click="markdownEditor?.wrapSelection('*', '*')"
-            >
-              <FormatIcon name="italic" />
-            </button>
-          </UiTooltip>
-          <UiTooltip v-else-if="item === 'strikethrough'" label="删除线" shortcut="⇧ ⌘ X">
-            <button
-              type="button"
-              aria-label="删除线"
-              :disabled="formatDisabled"
-              @mousedown.prevent
-              @click="markdownEditor?.wrapSelection('~~', '~~')"
-            >
-              <FormatIcon name="strikethrough" />
-            </button>
-          </UiTooltip>
-          <UiTooltip v-else-if="item === 'inline-code'" label="行内代码" shortcut="⌘ E">
-            <button
-              type="button"
-              aria-label="行内代码"
-              :disabled="formatDisabled"
-              @mousedown.prevent
-              @click="markdownEditor?.wrapSelection('`', '`')"
-            >
-              <FormatIcon name="inline-code" />
-            </button>
-          </UiTooltip>
-          <HeadingMenu
-            v-else-if="item === 'heading'"
-            :level="headingLevel"
-            :disabled="formatDisabled"
-            :active="active"
-            :platform="workspace.runtimePlatform"
-            @select="markdownEditor?.setLinePrefix($event === 0 ? '' : `${'#'.repeat($event)} `)"
-          />
-          <UiTooltip v-else-if="item === 'heading-number'" label="标题编号（重排）">
-            <button
-              type="button"
-              aria-label="标题编号（重排）"
-              :disabled="formatDisabled"
-              @click="markdownEditor?.addHeadingNumbers(headingNumberMaxDepth)"
-            >
-              <FormatIcon name="heading-number" />
-            </button>
-          </UiTooltip>
-          <UiTooltip v-else-if="item === 'heading-number-remove'" label="移除标题编号">
-            <button
-              type="button"
-              aria-label="移除标题编号"
-              :disabled="formatDisabled"
-              @click="markdownEditor?.removeHeadingNumbers()"
-            >
-              <FormatIcon name="heading-number-remove" />
-            </button>
-          </UiTooltip>
-          <UiTooltip v-else-if="item === 'quote'" label="引用" shortcut="⇧ ⌘ U">
-            <button
-              type="button"
-              aria-label="引用"
-              :disabled="formatDisabled"
-              @click="markdownEditor?.setLinePrefix('> ')"
-            >
-              <FormatIcon name="quote" />
-            </button>
-          </UiTooltip>
-          <UiTooltip v-else-if="item === 'unordered-list'" label="无序列表" shortcut="⇧ ⌘ 8">
-            <button
-              type="button"
-              aria-label="无序列表"
-              :disabled="formatDisabled"
-              @click="markdownEditor?.setLinePrefix('- ')"
-            >
-              <FormatIcon name="unordered-list" />
-            </button>
-          </UiTooltip>
-          <UiTooltip v-else-if="item === 'ordered-list'" label="有序列表">
-            <button
-              type="button"
-              aria-label="有序列表"
-              :disabled="formatDisabled"
-              @click="markdownEditor?.setLinePrefix('1. ')"
-            >
-              <FormatIcon name="ordered-list" />
-            </button>
-          </UiTooltip>
-          <UiTooltip v-else-if="item === 'checkbox'" label="复选框">
-            <button
-              type="button"
-              aria-label="复选框"
-              :disabled="formatDisabled"
-              @click="markdownEditor?.setLinePrefix('- [ ] ')"
-            >
-              <FormatIcon name="checkbox" />
-            </button>
-          </UiTooltip>
-          <UiTooltip v-else-if="item === 'link'" label="链接">
-            <button
-              type="button"
-              aria-label="链接"
-              :disabled="formatDisabled"
-              @click="markdownEditor?.wrapSelection('[', '](https://)', '链接')"
-            >
-              <FormatIcon name="link" />
-            </button>
-          </UiTooltip>
-          <UiTooltip v-else-if="item === 'divider'" label="分割线">
-            <button
-              type="button"
-              aria-label="分割线"
-              :disabled="formatDisabled"
-              @click="insertTemplate('\n---\n')"
-            >
-              <FormatIcon name="divider" />
-            </button>
-          </UiTooltip>
-        </template>
+              :active="active"
+              :platform="workspace.runtimePlatform"
+              @select="markdownEditor?.setLinePrefix($event === 0 ? '' : `${'#'.repeat($event)} `)"
+            />
+            <UiTooltip v-else-if="item === 'heading-number'" label="标题编号（重排）">
+              <button
+                type="button"
+                aria-label="标题编号（重排）"
+                :disabled="formatDisabled"
+                @click="markdownEditor?.addHeadingNumbers(headingNumberMaxDepth)"
+              >
+                <FormatIcon name="heading-number" />
+              </button>
+            </UiTooltip>
+            <UiTooltip v-else-if="item === 'heading-number-remove'" label="移除标题编号">
+              <button
+                type="button"
+                aria-label="移除标题编号"
+                :disabled="formatDisabled"
+                @click="markdownEditor?.removeHeadingNumbers()"
+              >
+                <FormatIcon name="heading-number-remove" />
+              </button>
+            </UiTooltip>
+            <UiTooltip v-else-if="item === 'quote'" label="引用" shortcut="⇧ ⌘ U">
+              <button
+                type="button"
+                aria-label="引用"
+                :disabled="formatDisabled"
+                @click="markdownEditor?.setLinePrefix('> ')"
+              >
+                <FormatIcon name="quote" />
+              </button>
+            </UiTooltip>
+            <UiTooltip v-else-if="item === 'unordered-list'" label="无序列表" shortcut="⇧ ⌘ 8">
+              <button
+                type="button"
+                aria-label="无序列表"
+                :disabled="formatDisabled"
+                @click="markdownEditor?.setLinePrefix('- ')"
+              >
+                <FormatIcon name="unordered-list" />
+              </button>
+            </UiTooltip>
+            <UiTooltip v-else-if="item === 'ordered-list'" label="有序列表">
+              <button
+                type="button"
+                aria-label="有序列表"
+                :disabled="formatDisabled"
+                @click="markdownEditor?.setLinePrefix('1. ')"
+              >
+                <FormatIcon name="ordered-list" />
+              </button>
+            </UiTooltip>
+            <UiTooltip v-else-if="item === 'checkbox'" label="复选框">
+              <button
+                type="button"
+                aria-label="复选框"
+                :disabled="formatDisabled"
+                @click="markdownEditor?.setLinePrefix('- [ ] ')"
+              >
+                <FormatIcon name="checkbox" />
+              </button>
+            </UiTooltip>
+            <UiTooltip v-else-if="item === 'link'" label="链接">
+              <button
+                type="button"
+                aria-label="链接"
+                :disabled="formatDisabled"
+                @click="markdownEditor?.wrapSelection('[', '](https://)', '链接')"
+              >
+                <FormatIcon name="link" />
+              </button>
+            </UiTooltip>
+            <UiTooltip v-else-if="item === 'divider'" label="分割线">
+              <button
+                type="button"
+                aria-label="分割线"
+                :disabled="formatDisabled"
+                @click="insertTemplate('\n---\n')"
+              >
+                <FormatIcon name="divider" />
+              </button>
+            </UiTooltip>
+          </template>
         </FormatOverflowBar>
       </div>
       <div class="layout-toggles">
@@ -973,7 +973,12 @@ function openLink(url: string): void {
               资源
             </button>
           </div>
-          <button type="button" class="properties-close" aria-label="关闭文档属性" @click="closeProperties">
+          <button
+            type="button"
+            class="properties-close"
+            aria-label="关闭文档属性"
+            @click="closeProperties"
+          >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M6 6l12 12M18 6 6 18" />
             </svg>

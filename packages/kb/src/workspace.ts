@@ -594,7 +594,9 @@ export function createWorkspace(options: CreateWorkspaceOptions): TNotesKbWorksp
           await fs.rm(path.join(rootPath, meta.relPath), { force: true })
         } catch (error) {
           for (const move of renamedAssets.reverse()) {
-            await fs.rename(path.join(rootPath, move.to), path.join(rootPath, move.from)).catch(() => {})
+            await fs
+              .rename(path.join(rootPath, move.to), path.join(rootPath, move.from))
+              .catch(() => {})
           }
           throw error
         }

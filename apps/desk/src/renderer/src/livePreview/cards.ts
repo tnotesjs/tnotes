@@ -50,7 +50,8 @@ function markdownRenderer(): InstanceType<typeof MarkdownIt> {
 }
 
 /** 卡片里这些元素有自己的交互，点它们不应该把光标移进源码。 */
-const INTERACTIVE = 'button, a, input, select, textarea, summary, video, iframe, [role="tab"], .tn-swiper-tabs, .swiper-button-prev, .swiper-button-next'
+const INTERACTIVE =
+  'button, a, input, select, textarea, summary, video, iframe, [role="tab"], .tn-swiper-tabs, .swiper-button-prev, .swiper-button-next'
 
 interface Mounted {
   destroy(): void
@@ -82,7 +83,11 @@ function renderHtml(source: string, resolveImage: (src: string) => string): HTML
   return wrapper
 }
 
-function mountComponent(host: HTMLElement, source: string, knowledgeBaseId: string): Mounted | null {
+function mountComponent(
+  host: HTMLElement,
+  source: string,
+  knowledgeBaseId: string
+): Mounted | null {
   if (isBilibiliVideoSource(source)) {
     const parsed = parseBilibiliVideoSource(source)
     const handle = mountBilibiliVideoPreview(host, {

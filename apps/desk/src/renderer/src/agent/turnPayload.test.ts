@@ -1,7 +1,14 @@
 import { reactive } from 'vue'
 import { describe, expect, it } from 'vitest'
 
-import { agentTurnPayload, clipSelection, defaultNoteFor, inlineNotes, SELECTION_CLIPPED, trimHistory } from './turnPayload'
+import {
+  agentTurnPayload,
+  clipSelection,
+  defaultNoteFor,
+  inlineNotes,
+  SELECTION_CLIPPED,
+  trimHistory
+} from './turnPayload'
 
 import type { AgentNoteContext } from '../../../shared/contracts'
 
@@ -69,7 +76,13 @@ describe('context limits', () => {
   })
 
   it('inlines mentioned notes until the budget runs out', () => {
-    const result = inlineNotes([note({ noteUuid: 'a', content: 'x'.repeat(10) }), note({ noteUuid: 'b', content: 'y'.repeat(10) })], 15)
+    const result = inlineNotes(
+      [
+        note({ noteUuid: 'a', content: 'x'.repeat(10) }),
+        note({ noteUuid: 'b', content: 'y'.repeat(10) })
+      ],
+      15
+    )
     expect(result.map((item) => item.content.length)).toEqual([10, 0])
   })
 })

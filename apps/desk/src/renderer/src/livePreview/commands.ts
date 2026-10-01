@@ -32,7 +32,12 @@ function selectionOffsets(view: EditorView): { text: string; from: number; to: n
 /**
  * 包裹选区（加粗、斜体等）。选区已经被同样的标记包住时反过来去掉标记（与 Typora 一致）。
  */
-export function wrapSelection(view: EditorView, prefix: string, suffix: string, placeholder = '文字'): void {
+export function wrapSelection(
+  view: EditorView,
+  prefix: string,
+  suffix: string,
+  placeholder = '文字'
+): void {
   if (view.state.readOnly) return
   const { from, to } = view.state.selection.main
   const doc = view.state.doc
@@ -51,7 +56,11 @@ export function wrapSelection(view: EditorView, prefix: string, suffix: string, 
     return
   }
   const inner = doc.sliceString(from, to)
-  if (inner.length > prefix.length + suffix.length && inner.startsWith(prefix) && inner.endsWith(suffix)) {
+  if (
+    inner.length > prefix.length + suffix.length &&
+    inner.startsWith(prefix) &&
+    inner.endsWith(suffix)
+  ) {
     view.dispatch({
       changes: { from, to, insert: inner.slice(prefix.length, inner.length - suffix.length) },
       selection: { anchor: from, head: to - prefix.length - suffix.length },
@@ -89,7 +98,11 @@ export function clearLineStyles(view: EditorView): boolean {
   const changes = sourceLineStyleChangesFor(text, from, to)
   if (changes.length > 0) {
     view.dispatch({
-      changes: changes.map((change) => ({ from: change.from, to: change.to, insert: change.insert })),
+      changes: changes.map((change) => ({
+        from: change.from,
+        to: change.to,
+        insert: change.insert
+      })),
       userEvent: 'input'
     })
   }

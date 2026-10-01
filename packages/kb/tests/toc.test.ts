@@ -181,11 +181,7 @@ describe('line ops', () => {
   })
 
   it('promotes a child out from under a removed parent and child', () => {
-    const lines = [
-      '- [ ] 0001. 父',
-      '  - [ ] 0002. 子',
-      '    - [ ] 0003. 孙'
-    ]
+    const lines = ['- [ ] 0001. 父', '  - [ ] 0002. 子', '    - [ ] 0003. 孙']
     expect(removeSelectedNoteLines(lines, new Set(['0001', '0002']))).toEqual(['- [ ] 0003. 孙'])
   })
 

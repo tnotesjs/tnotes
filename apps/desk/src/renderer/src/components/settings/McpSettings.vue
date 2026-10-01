@@ -174,7 +174,9 @@ async function rotate(): Promise<void> {
         >
           {{ copied === '令牌' ? '已复制' : '复制令牌' }}
         </button>
-        <button type="button" class="settings-action" data-testid="mcp-rotate" @click="rotate">重置令牌</button>
+        <button type="button" class="settings-action" data-testid="mcp-rotate" @click="rotate">
+          重置令牌
+        </button>
       </div>
     </div>
     <p class="mcp-state-detail">
@@ -206,7 +208,12 @@ async function rotate(): Promise<void> {
           <strong>不要按返回的行列坐标直接修改磁盘文件</strong>。
         </p>
         <p>只读：工具不会修改笔记内容、文件或 Git 状态。</p>
-        <button type="button" class="settings-action" data-testid="mcp-copy-config" @click="copy(configExample, '配置')">
+        <button
+          type="button"
+          class="settings-action"
+          data-testid="mcp-copy-config"
+          @click="copy(configExample, '配置')"
+        >
           {{ copied === '配置' ? '已复制配置' : '复制配置示例' }}
         </button>
       </div>

@@ -785,7 +785,9 @@ export class GitManager {
     void this.refresh().then(() => {
       // 只在开关打开时联网，且只查当前知识库。configure 在保存时也会触发，
       // 所以这里只补「从没检查过」的那一次，不按时间重复抓。
-      const focused = this.focusedKnowledgeBaseId ? this.states.get(this.focusedKnowledgeBaseId) : null
+      const focused = this.focusedKnowledgeBaseId
+        ? this.states.get(this.focusedKnowledgeBaseId)
+        : null
       if (focused && !focused.lastFetchedAt) this.requestFocusedFetch('initial', 0)
       this.applyAutoPushSchedules(true)
     })

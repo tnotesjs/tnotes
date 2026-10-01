@@ -42,7 +42,11 @@ import {
   resolveKnowledgeBase
 } from './agentNoteQuery'
 
-import type { DeskTocNode, KnowledgeBaseDescriptor, KnowledgeBaseDetail } from '../../../shared/contracts'
+import type {
+  DeskTocNode,
+  KnowledgeBaseDescriptor,
+  KnowledgeBaseDetail
+} from '../../../shared/contracts'
 
 type NoteNode = Extract<DeskTocNode, { type: 'note' }>
 
@@ -78,7 +82,10 @@ export function createToolContext(knowledgeBaseId = ''): AgentToolContext {
   }
 }
 
-async function waitForEditor(knowledgeBaseId: string, noteUuid: string): Promise<EditorView | null> {
+async function waitForEditor(
+  knowledgeBaseId: string,
+  noteUuid: string
+): Promise<EditorView | null> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const view = liveEditorFor(knowledgeBaseId, noteUuid)
     if (view) return view
@@ -96,10 +103,16 @@ function knowledgeBases(): KnowledgeBaseDescriptor[] {
 }
 
 function kbName(knowledgeBaseId: string): string {
-  return knowledgeBases().find((item) => item.id === knowledgeBaseId)?.displayName ?? knowledgeBaseId
+  return (
+    knowledgeBases().find((item) => item.id === knowledgeBaseId)?.displayName ?? knowledgeBaseId
+  )
 }
 
-async function kbDetail(context: AgentToolContext, knowledgeBaseId: string, fresh = false): Promise<KnowledgeBaseDetail> {
+async function kbDetail(
+  context: AgentToolContext,
+  knowledgeBaseId: string,
+  fresh = false
+): Promise<KnowledgeBaseDetail> {
   const current = useWorkspaceStore().knowledgeBase
   if (current?.id === knowledgeBaseId && !fresh) return current
   const cached = context.details.get(knowledgeBaseId)
@@ -120,19 +133,29 @@ function noteLabel(node: NoteNode): string {
 type Target = { knowledgeBaseId: string; node: NoteNode } | { error: string }
 
 /** kb 写了就只在那个库找；没写先找默认库，再找点名笔记和选区所在的库。 */
-async function findTarget(args: Record<string, unknown>, context: AgentToolContext): Promise<Target> {
+async function findTarget(
+  args: Record<string, unknown>,
+  context: AgentToolContext
+): Promise<Target> {
   const requested = String(args.note ?? '').trim()
   if (args.kb !== undefined && String(args.kb).trim()) {
     const resolved = resolveKnowledgeBase(knowledgeBases(), args.kb, context.knowledgeBaseId)
     if ('error' in resolved) return { error: resolved.error }
-    const needle = requested || (context.defaultNote?.knowledgeBaseId === resolved.kb.id ? context.defaultNote.noteUuid : '')
+    const needle =
+      requested ||
+      (context.defaultNote?.knowledgeBaseId === resolved.kb.id ? context.defaultNote.noteUuid : '')
     const node = needle ? findNote((await kbDetail(context, resolved.kb.id)).toc, needle) : null
-    return node ? { knowledgeBaseId: resolved.kb.id, node } : { error: `在「${resolved.kb.displayName}」里找不到这篇笔记` }
+    return node
+      ? { knowledgeBaseId: resolved.kb.id, node }
+      : { error: `在「${resolved.kb.displayName}」里找不到这篇笔记` }
   }
   if (!requested) {
     const fallback = context.defaultNote
     if (!fallback) return { error: '请指明是哪一篇笔记（note 参数）' }
-    const node = findNote((await kbDetail(context, fallback.knowledgeBaseId)).toc, fallback.noteUuid)
+    const node = findNote(
+      (await kbDetail(context, fallback.knowledgeBaseId)).toc,
+      fallback.noteUuid
+    )
     return node ? { knowledgeBaseId: fallback.knowledgeBaseId, node } : { error: '找不到这篇笔记' }
   }
   const order = [...new Set([context.knowledgeBaseId, ...context.contextKbIds])].filter(Boolean)
@@ -175,21 +198,34 @@ async function writeAgentChange(
   label: string,
   plan: (content: string) => ChangePlan,
   context: AgentToolContext
-): Promise<{ ok: false; message: string } | { ok: true; oldText: string; newText: string; saveError: string }> {
+): Promise<
+  { ok: false; message: string } | { ok: true; oldText: string; newText: string; saveError: string }
+> {
   const workspace = useWorkspaceStore()
   const key = documentKey(knowledgeBaseId, node.uuid)
   const view = liveEditorFor(knowledgeBaseId, node.uuid)
-  const content = view ? view.state.doc.toString() : (await workspace.ensureDocument(knowledgeBaseId, node.uuid)).content
+  const content = view
+    ? view.state.doc.toString()
+    : (await workspace.ensureDocument(knowledgeBaseId, node.uuid)).content
   const planned = plan(content)
   if ('error' in planned) return { ok: false, message: planned.error }
   if (!context.isCurrent()) return { ok: false, message: '已停止' }
-  setReviewMeta(knowledgeBaseId, node.uuid, { title: node.title, index: node.noteIndex, knowledgeBaseName: kbName(knowledgeBaseId) })
+  setReviewMeta(knowledgeBaseId, node.uuid, {
+    title: node.title,
+    index: node.noteIndex,
+    knowledgeBaseName: kbName(knowledgeBaseId)
+  })
   const live = liveEditorFor(knowledgeBaseId, node.uuid)
   if (live && live.state.doc.toString() === content) {
     applyAgentChanges(live, planned.change, label)
     workspace.updateDocumentContent(key, live.state.doc.toString())
   } else {
-    const next = applyAgentEditToContent({ knowledgeBaseId, noteUuid: node.uuid }, content, planned.change, label)
+    const next = applyAgentEditToContent(
+      { knowledgeBaseId, noteUuid: node.uuid },
+      content,
+      planned.change,
+      label
+    )
     workspace.updateDocumentContent(key, next)
   }
   const saveError = await saveQuietly(key)
@@ -236,8 +272,14 @@ export async function runAgentTool(
       if (!query) return { ok: false, summary: '缺少搜索词', detail: '' }
       const result = await window.desk.search({ query, knowledgeBaseId: kb.id, limit })
       if (!result.ok) return { ok: false, summary: result.error.message, detail: '' }
-      const lines = result.value.map((item) => `${item.noteIndex} ${item.title} ${item.noteUuid}\n${item.snippet}`)
-      return { ok: true, summary: `搜索 ${label}「${query}」· ${lines.length} 条`, detail: clip(lines.join('\n\n')) }
+      const lines = result.value.map(
+        (item) => `${item.noteIndex} ${item.title} ${item.noteUuid}\n${item.snippet}`
+      )
+      return {
+        ok: true,
+        summary: `搜索 ${label}「${query}」· ${lines.length} 条`,
+        detail: clip(lines.join('\n\n'))
+      }
     }
     if (name === 'read_note') {
       const target = await findTarget(args, context)
@@ -246,11 +288,20 @@ export async function runAgentTool(
       const readKey = `${knowledgeBaseId}:${node.uuid}`
       const reads = (context.readCounts.get(readKey) ?? 0) + 1
       context.readCounts.set(readKey, reads)
-      const slice = readLineSlice(await liveContent(knowledgeBaseId, node.uuid), Number(args.offset) || 1, Number(args.limit) || 400)
+      const slice = readLineSlice(
+        await liveContent(knowledgeBaseId, node.uuid),
+        Number(args.offset) || 1,
+        Number(args.limit) || 400
+      )
       const more =
-        slice.toLine < slice.total ? `\n\n还有第 ${slice.toLine + 1}–${slice.total} 行，需要时用 offset=${slice.toLine + 1} 继续读。` : ''
+        slice.toLine < slice.total
+          ? `\n\n还有第 ${slice.toLine + 1}–${slice.total} 行，需要时用 offset=${slice.toLine + 1} 继续读。`
+          : ''
       const hint =
-        more + (reads >= 3 ? '\n\n你已经读过这篇笔记多次，请直接根据已有内容作答或调用 edit_note，不要再读。' : '')
+        more +
+        (reads >= 3
+          ? '\n\n你已经读过这篇笔记多次，请直接根据已有内容作答或调用 edit_note，不要再读。'
+          : '')
       return {
         ok: true,
         summary: `读取 ${prefix(context, knowledgeBaseId)}${noteLabel(node)}（第 ${slice.fromLine}–${slice.toLine} 行）`,
@@ -273,13 +324,22 @@ export async function runAgentTool(
           if (args.position === 'end') {
             if (!inserted) return { error: '缺少要追加的内容' }
             const range = appendRange(content, inserted)
-            return { change: { from: range.from, to: range.from, insert: range.insert }, oldText: '', newText: range.insert }
+            return {
+              change: { from: range.from, to: range.from, insert: range.insert },
+              oldText: '',
+              newText: range.insert
+            }
           }
           if (!oldString) return { error: '缺少要替换的原文' }
           const located = locateUniqueReplace(content, oldString)
           if ('error' in located) return { error: located.error }
-          if (overlapsProtectedFrontmatter(content, located.from, located.to)) return { error: '不能修改 frontmatter 的 id 行' }
-          return { change: { from: located.from, to: located.to, insert: inserted }, oldText: oldString, newText: inserted }
+          if (overlapsProtectedFrontmatter(content, located.from, located.to))
+            return { error: '不能修改 frontmatter 的 id 行' }
+          return {
+            change: { from: located.from, to: located.to, insert: inserted },
+            oldText: oldString,
+            newText: inserted
+          }
         },
         context
       )
@@ -303,7 +363,8 @@ export async function runAgentTool(
       if ('error' in resolved) return { ok: false, summary: resolved.error, detail: '' }
       const knowledgeBaseId = resolved.kb.id
       const detail = await kbDetail(context, knowledgeBaseId, true)
-      if (detail.health !== 'ready') return { ok: false, summary: '这个知识库现在不能新建笔记', detail: '' }
+      if (detail.health !== 'ready')
+        return { ok: false, summary: '这个知识库现在不能新建笔记', detail: '' }
       if (!context.isCurrent()) return { ok: false, summary: '已停止', detail: '' }
       const mutation = resultValue(
         await window.desk.notes.create(
@@ -321,18 +382,36 @@ export async function runAgentTool(
       if (!node) return { ok: false, summary: '笔记已创建，但在目录里找不到', detail: '' }
       created.add(`${knowledgeBaseId}:${node.uuid}`)
       const label = `新建 ${prefix(context, knowledgeBaseId)}${title}`
-      if (!content) return { ok: true, summary: label, detail: `已新建「${title}」。`, noteUuid: node.uuid, knowledgeBaseId }
+      if (!content)
+        return {
+          ok: true,
+          summary: label,
+          detail: `已新建「${title}」。`,
+          noteUuid: node.uuid,
+          knowledgeBaseId
+        }
       const written = await writeAgentChange(
         knowledgeBaseId,
         node,
         `新建 ${title}`,
         (current) => {
           const range = appendRange(current, content)
-          return { change: { from: range.from, insert: range.insert }, oldText: '', newText: range.insert }
+          return {
+            change: { from: range.from, insert: range.insert },
+            oldText: '',
+            newText: range.insert
+          }
         },
         context
       )
-      if (!written.ok) return { ok: false, summary: written.message, detail: '', noteUuid: node.uuid, knowledgeBaseId }
+      if (!written.ok)
+        return {
+          ok: false,
+          summary: written.message,
+          detail: '',
+          noteUuid: node.uuid,
+          knowledgeBaseId
+        }
       const counts = lineChangeCounts('', content)
       return {
         ok: true,
@@ -345,12 +424,19 @@ export async function runAgentTool(
       }
     }
   } catch (cause) {
-    return { ok: false, summary: cause instanceof Error ? cause.message : String(cause), detail: '' }
+    return {
+      ok: false,
+      summary: cause instanceof Error ? cause.message : String(cause),
+      detail: ''
+    }
   }
   return { ok: false, summary: `不认识的工具：${name}`, detail: '' }
 }
 
-export async function acceptNoteEdits(knowledgeBaseId: string, noteUuid: string): Promise<{ ok: boolean; message: string }> {
+export async function acceptNoteEdits(
+  knowledgeBaseId: string,
+  noteUuid: string
+): Promise<{ ok: boolean; message: string }> {
   const view = reviewViewFor(knowledgeBaseId, noteUuid)
   if (view) acceptAgentEdits(view)
   dropArchive(knowledgeBaseId, noteUuid)
@@ -405,10 +491,16 @@ export interface PendingNote {
   removed: number
 }
 
-function describeNote(knowledgeBaseId: string, noteUuid: string): { title: string; index: string; knowledgeBaseName: string } | null {
+function describeNote(
+  knowledgeBaseId: string,
+  noteUuid: string
+): { title: string; index: string; knowledgeBaseName: string } | null {
   const workspace = useWorkspaceStore()
   const meta = reviewMeta(knowledgeBaseId, noteUuid)
-  const name = knowledgeBases().find((item) => item.id === knowledgeBaseId)?.displayName ?? meta?.knowledgeBaseName ?? knowledgeBaseId
+  const name =
+    knowledgeBases().find((item) => item.id === knowledgeBaseId)?.displayName ??
+    meta?.knowledgeBaseName ??
+    knowledgeBaseId
   if (workspace.knowledgeBase?.id === knowledgeBaseId) {
     const node = findNote(workspace.knowledgeBase.toc, noteUuid)
     if (!node) return null
@@ -436,9 +528,17 @@ export function pendingReviewList(): PendingNote[] {
       orphans.push(entry)
       continue
     }
-    items.push({ knowledgeBaseId: entry.knowledgeBaseId, uuid: entry.noteUuid, ...info, ...reviewLineCounts(entry.content, entry.reviews) })
+    items.push({
+      knowledgeBaseId: entry.knowledgeBaseId,
+      uuid: entry.noteUuid,
+      ...info,
+      ...reviewLineCounts(entry.content, entry.reviews)
+    })
   }
-  if (orphans.length) queueMicrotask(() => orphans.forEach((item) => dropArchive(item.knowledgeBaseId, item.noteUuid)))
+  if (orphans.length)
+    queueMicrotask(() =>
+      orphans.forEach((item) => dropArchive(item.knowledgeBaseId, item.noteUuid))
+    )
   return items
 }
 
@@ -451,9 +551,13 @@ export function staleReviewList(): Array<{ knowledgeBaseId: string; uuid: string
 }
 
 /** 切到笔记所在的知识库并打开它，返回编辑器。 */
-export async function openNoteIn(knowledgeBaseId: string, noteUuid: string): Promise<EditorView | null> {
+export async function openNoteIn(
+  knowledgeBaseId: string,
+  noteUuid: string
+): Promise<EditorView | null> {
   const workspace = useWorkspaceStore()
-  if (workspace.knowledgeBase?.id !== knowledgeBaseId) await workspace.selectKnowledgeBase(knowledgeBaseId)
+  if (workspace.knowledgeBase?.id !== knowledgeBaseId)
+    await workspace.selectKnowledgeBase(knowledgeBaseId)
   const kb = workspace.knowledgeBase
   if (!kb || kb.id !== knowledgeBaseId) return null
   const node = findNote(kb.toc, noteUuid)
@@ -473,7 +577,13 @@ export async function revealPendingNote(knowledgeBaseId: string, noteUuid: strin
  * 读取 → 选中读过的那几行；修改/新建 → 还有待确认的改动就跳到第一处，否则选中写进去的文字。
  */
 export async function revealToolTarget(
-  tool: { name: string; noteUuid?: string; knowledgeBaseId?: string; summary: string; args: Record<string, unknown> },
+  tool: {
+    name: string
+    noteUuid?: string
+    knowledgeBaseId?: string
+    summary: string
+    args: Record<string, unknown>
+  },
   fallbackKbId: string
 ): Promise<void> {
   const knowledgeBaseId = tool.knowledgeBaseId ?? fallbackKbId
@@ -489,7 +599,8 @@ export async function revealToolTarget(
   let range: { from: number; to: number } | null = null
   if (tool.name === 'read_note') {
     const lines = tool.summary.match(/第 (\d+)–(\d+) 行/)
-    if (lines) range = locateSelection(doc, { startLine: Number(lines[1]), endLine: Number(lines[2]) })
+    if (lines)
+      range = locateSelection(doc, { startLine: Number(lines[1]), endLine: Number(lines[2]) })
   } else {
     range = locateWritten(doc, String(tool.args.new_string ?? tool.args.content ?? ''))
   }
@@ -503,7 +614,9 @@ export async function revealToolTarget(
 }
 
 /** 跳到选区原文并选中；内容挪了位置就按原文重新找，找不到就选中原来那几行。 */
-export async function revealSelection(ref: SelectionTarget & { knowledgeBaseId: string; noteUuid: string }): Promise<void> {
+export async function revealSelection(
+  ref: SelectionTarget & { knowledgeBaseId: string; noteUuid: string }
+): Promise<void> {
   const view = await openNoteIn(ref.knowledgeBaseId, ref.noteUuid)
   if (!view) return
   const range = locateSelection(view.state.doc.toString(), ref)

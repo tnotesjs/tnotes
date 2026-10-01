@@ -15,7 +15,12 @@ export function collectHeadings(state: EditorState): OutlineHeading[] {
     enter(node) {
       const match = /^(ATX|Setext)Heading([1-6])$/.exec(node.name)
       if (!match) {
-        return node.name === 'Document' || node.name === 'Blockquote' || node.name.endsWith('List') || node.name === 'ListItem'
+        return (
+          node.name === 'Document' ||
+          node.name === 'Blockquote' ||
+          node.name.endsWith('List') ||
+          node.name === 'ListItem'
+        )
       }
       const level = Number(match[2]) as NoteOutlineHeading['level']
       let text = doc.sliceString(node.from, node.to)

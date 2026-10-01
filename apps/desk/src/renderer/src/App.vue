@@ -157,16 +157,15 @@ const navigatorEdge = computed(() => {
   return `${knowledgeWidth + 6 + navigatorWidth}px`
 })
 
-const navigatorLayoutReversed = computed(
-  () => store.settings?.workspaceLayout === 'content-dir-kb'
-)
+const navigatorLayoutReversed = computed(() => store.settings?.workspaceLayout === 'content-dir-kb')
 
 function toggleNavigatorSidebar(): void {
   editor.navigatorSidebarCollapsed = !editor.navigatorSidebarCollapsed
 }
 
 const workspaceAreas = computed(() => {
-  const base = store.settings?.workspaceLayout === 'content-dir-kb' ? 'i5 i4 i3 i2 i1' : 'i1 i2 i3 i4 i5'
+  const base =
+    store.settings?.workspaceLayout === 'content-dir-kb' ? 'i5 i4 i3 i2 i1' : 'i1 i2 i3 i4 i5'
   return agentStore.open ? `"${base} i6 i7"` : `"${base}"`
 })
 
@@ -241,7 +240,12 @@ function onKeydown(event: KeyboardEvent): void {
     if (terminalStore.open) void terminalPanel.value?.createOrFocus()
     return
   }
-  if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'l') {
+  if (
+    (event.metaKey || event.ctrlKey) &&
+    !event.shiftKey &&
+    !event.altKey &&
+    event.key.toLowerCase() === 'l'
+  ) {
     event.preventDefault()
     toggleAgent()
     return
@@ -444,7 +448,9 @@ async function createNoteNow(
 
 const batchMax = computed(() => maxBatchNoteCount(store.knowledgeBase?.noteCount ?? 0))
 const batchCountError = computed(() =>
-  batchDialogOpen.value ? batchNoteCountError(batchCount.value, store.knowledgeBase?.noteCount ?? 0) : null
+  batchDialogOpen.value
+    ? batchNoteCountError(batchCount.value, store.knowledgeBase?.noteCount ?? 0)
+    : null
 )
 
 function selectBatchCount(event: FocusEvent): void {
@@ -1082,11 +1088,7 @@ onUnmounted(() => {
       </div>
     </main>
 
-    <div
-      v-if="batchDialogOpen"
-      class="dialog-backdrop"
-      @mousedown.self="batchDialogOpen = false"
-    >
+    <div v-if="batchDialogOpen" class="dialog-backdrop" @mousedown.self="batchDialogOpen = false">
       <form class="dialog" @submit.prevent="confirmCreateNotes">
         <header>
           <div>
@@ -1111,7 +1113,12 @@ onUnmounted(() => {
         <p v-else class="dialog-hint">可新建 1–{{ batchMax }} 篇</p>
         <footer>
           <button type="button" class="secondary" @click="batchDialogOpen = false">取消</button>
-          <button type="button" class="primary" :disabled="Boolean(batchCountError) || dialogBusy" @click="confirmCreateNotes">
+          <button
+            type="button"
+            class="primary"
+            :disabled="Boolean(batchCountError) || dialogBusy"
+            @click="confirmCreateNotes"
+          >
             {{ dialogBusy ? '创建中…' : '创建' }}
           </button>
         </footer>

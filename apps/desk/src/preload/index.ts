@@ -461,11 +461,13 @@ const api: DeskApi = {
       invoke<AgentListedModel[]>(IPC_CHANNELS.agentListModels, request),
     saveAttachment: (request: AgentAttachmentSaveRequest) =>
       invoke<AgentImageRef>(IPC_CHANNELS.agentAttachmentSave, request),
-    readAttachment: (request: { id: string }) => invoke<string>(IPC_CHANNELS.agentAttachmentRead, request),
+    readAttachment: (request: { id: string }) =>
+      invoke<string>(IPC_CHANNELS.agentAttachmentRead, request),
     turn: (request: AgentTurnRequest) => invoke<AgentTurnResult>(IPC_CHANNELS.agentTurn, request),
     cancel: () => invoke<void>(IPC_CHANNELS.agentCancel),
     onEvent: (callback: (event: AgentEvent) => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, event: AgentEvent): void => callback(event)
+      const listener = (_event: Electron.IpcRendererEvent, event: AgentEvent): void =>
+        callback(event)
       ipcRenderer.on(IPC_CHANNELS.agentEvent, listener)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.agentEvent, listener)
     },

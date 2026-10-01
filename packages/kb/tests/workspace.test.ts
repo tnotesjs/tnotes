@@ -164,7 +164,10 @@ describe('notes', () => {
 
   it('reindexes a note without colliding, and moves its assets', async () => {
     const ws = createWorkspace({ rootPath: root })
-    await write('notes/0002. 第二篇.md', `---\nid: uuid-2\n---\n\n# 0002. 第二篇\n\n![](../assets/0002-pic.png)\n`)
+    await write(
+      'notes/0002. 第二篇.md',
+      `---\nid: uuid-2\n---\n\n# 0002. 第二篇\n\n![](../assets/0002-pic.png)\n`
+    )
     await write('assets/0002-pic.png', 'png')
     await write('notes/0001. 第一篇.md', `# 第一篇\n\n![](../assets/0002-pic.png)\n`)
     const { value } = await ws.notes.reindex({ index: '0002', nextIndex: '42' })
@@ -179,7 +182,9 @@ describe('notes', () => {
     expect(await read('TOC.md')).not.toContain('0002. 第二篇')
     expect(await read('notes/0001. 第一篇.md')).toContain('../assets/0042-pic.png')
     await expect(ws.notes.reindex({ index: '0042', nextIndex: '0001' })).rejects.toThrow('已被占用')
-    await expect(ws.notes.reindex({ index: '0042', nextIndex: '0' })).rejects.toThrow('0001 到 9999')
+    await expect(ws.notes.reindex({ index: '0042', nextIndex: '0' })).rejects.toThrow(
+      '0001 到 9999'
+    )
     const same = await ws.notes.reindex({ index: '0042', nextIndex: '0042' })
     expect(same.changedFiles).toEqual([])
   })

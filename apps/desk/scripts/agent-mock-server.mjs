@@ -50,9 +50,19 @@ function replyFor(body) {
   if (images > 0) return [sse({ content: `收到 ${images} 张图片` }), done()]
   const tools = body.tools ?? []
   if (text.includes('跨库修改')) {
-    return [toolCall('edit_note', { kb: 'test', note: '0002', position: 'end', new_string: '跨库追加的一行' }), done()]
+    return [
+      toolCall('edit_note', {
+        kb: 'test',
+        note: '0002',
+        position: 'end',
+        new_string: '跨库追加的一行'
+      }),
+      done()
+    ]
   }
-  const canWrite = tools.some((tool) => tool.function?.name === 'edit_note' || tool.function?.name === 'create_note')
+  const canWrite = tools.some(
+    (tool) => tool.function?.name === 'edit_note' || tool.function?.name === 'create_note'
+  )
   if (text.includes('截断')) {
     return [sse({ content: '写到一半' }), sse({}, 'length'), done()]
   }

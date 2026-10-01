@@ -198,7 +198,8 @@ async function checkNow(): Promise<void> {
   box-sizing: border-box;
 }
 
-.delay-input input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']) {
+.delay-input
+  input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']) {
   width: 100%;
   min-width: 0;
   height: 100%;
@@ -210,7 +211,8 @@ async function checkNow(): Promise<void> {
   padding: 0 10px;
 }
 
-.delay-input input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']):focus {
+.delay-input
+  input:not([type='checkbox']):not([type='radio']):not([type='file']):not([type='range']):focus {
   border: 0;
   box-shadow: none;
 }

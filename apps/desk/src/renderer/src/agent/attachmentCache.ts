@@ -24,7 +24,9 @@ export function attachmentUrl(id: string): Promise<string> {
 const MAX_EDGE = 1600
 
 /** 缩到长边 1600 像素以内，转成 JPEG（透明处铺白）。 */
-export async function prepareImage(file: Blob): Promise<{ url: string; data: Uint8Array; width: number; height: number }> {
+export async function prepareImage(
+  file: Blob
+): Promise<{ url: string; data: Uint8Array; width: number; height: number }> {
   const bitmap = await createImageBitmap(file)
   const scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height))
   const width = Math.max(1, Math.round(bitmap.width * scale))
@@ -39,7 +41,9 @@ export async function prepareImage(file: Blob): Promise<{ url: string; data: Uin
   context.drawImage(bitmap, 0, 0, width, height)
   bitmap.close()
   const url = canvas.toDataURL('image/jpeg', 0.85)
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85))
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, 'image/jpeg', 0.85)
+  )
   if (!blob) throw new Error('无法处理这张图片')
   return { url, data: new Uint8Array(await blob.arrayBuffer()), width, height }
 }

@@ -239,7 +239,8 @@
 :is(.tn-prose, .vp-doc, .cm-lp-card) :where(details.tn-custom-block:not([open]) > summary) {
   margin-bottom: 0;
 }
-:is(.tn-prose, .vp-doc, .cm-lp-card) :where(details.tn-custom-block > summary::-webkit-details-marker) {
+:is(.tn-prose, .vp-doc, .cm-lp-card)
+  :where(details.tn-custom-block > summary::-webkit-details-marker) {
   display: none;
 }
 :is(.tn-prose, .vp-doc, .cm-lp-card) :where(details.tn-custom-block > summary::before) {

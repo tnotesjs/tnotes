@@ -5,7 +5,13 @@ import type {
   AgentReasoningEffort,
   AgentSelectionContext
 } from '../../shared/contracts'
-import { applyChoiceDelta, consumeSse, emptyMessage, type MessageAcc, type ToolCallAcc } from './stream'
+import {
+  applyChoiceDelta,
+  consumeSse,
+  emptyMessage,
+  type MessageAcc,
+  type ToolCallAcc
+} from './stream'
 
 const MAX_ROUNDS = 10
 const MAX_TOKENS = 8192
@@ -37,18 +43,29 @@ export interface AgentChatInput {
   defaultNote?: { knowledgeBaseId: string; noteUuid: string } | null
   signal: AbortSignal
   fetchImpl?: typeof fetch
-  executeTool: (call: { id: string; name: string; args: Record<string, unknown> }) => Promise<AgentToolResult>
+  executeTool: (call: {
+    id: string
+    name: string
+    args: Record<string, unknown>
+  }) => Promise<AgentToolResult>
   onText?: (delta: string) => void
   onReasoning?: (delta: string) => void
   onRequest?: (info: { url: string; model: string; reasoningEffort: string }) => void
 }
 
-type ApiContent = string | null | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
+type ApiContent =
+  | string
+  | null
+  | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
 
 interface ApiMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: ApiContent
-  tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>
+  tool_calls?: Array<{
+    id: string
+    type: 'function'
+    function: { name: string; arguments: string }
+  }>
   tool_call_id?: string
 }
 
@@ -59,7 +76,8 @@ export const READ_TOOLS = [
     type: 'function',
     function: {
       name: 'list_notes',
-      description: '列出一个知识库的笔记（编号、标题、uuid）。offset 从 0 起，limit 默认 200。query 按编号或标题过滤。',
+      description:
+        '列出一个知识库的笔记（编号、标题、uuid）。offset 从 0 起，limit 默认 200。query 按编号或标题过滤。',
       parameters: {
         type: 'object',
         properties: {
@@ -91,7 +109,8 @@ export const READ_TOOLS = [
     type: 'function',
     function: {
       name: 'read_note',
-      description: '按行读取一篇笔记。note 可以是 uuid、编号、相对路径或标题。offset 是起始行（从 1 开始），limit 是行数，默认 400，最多 800。',
+      description:
+        '按行读取一篇笔记。note 可以是 uuid、编号、相对路径或标题。offset 是起始行（从 1 开始），limit 是行数，默认 400，最多 800。',
       parameters: {
         type: 'object',
         properties: {
@@ -165,7 +184,9 @@ function contextBlock(input: Pick<AgentChatInput, 'current' | 'notes' | 'selecti
       '',
       `点名的笔记：${noteName(note)}`,
       `知识库 id：${note.knowledgeBaseId}，uuid：${note.noteUuid}，路径：${note.path}，共 ${note.lines} 行`,
-      note.content ? `全文：\n${note.content}` : '这篇较长，没有附上全文。需要时用 read_note 按行分段读取。'
+      note.content
+        ? `全文：\n${note.content}`
+        : '这篇较长，没有附上全文。需要时用 read_note 按行分段读取。'
     )
   }
   for (const selection of input.selections ?? []) {
@@ -179,7 +200,10 @@ function contextBlock(input: Pick<AgentChatInput, 'current' | 'notes' | 'selecti
 }
 
 export function systemPrompt(
-  input: Pick<AgentChatInput, 'model' | 'mode' | 'knowledgeBaseName' | 'current' | 'notes' | 'selections' | 'defaultNote'>
+  input: Pick<
+    AgentChatInput,
+    'model' | 'mode' | 'knowledgeBaseName' | 'current' | 'notes' | 'selections' | 'defaultNote'
+  >
 ): string {
   const kbName = input.knowledgeBaseName || '当前知识库'
   const defaultNote = input.defaultNote
@@ -199,7 +223,8 @@ export function systemPrompt(
 }
 
 function toApiMessage(message: AgentInputMessage): ApiMessage {
-  if (message.role !== 'user' || !message.imageUrls?.length) return { role: message.role, content: message.content }
+  if (message.role !== 'user' || !message.imageUrls?.length)
+    return { role: message.role, content: message.content }
   return {
     role: 'user',
     content: [
@@ -238,7 +263,10 @@ async function readStream(
     for (const data of consumed.data) {
       if (data.trim() === '[DONE]') return acc
       const parsed = JSON.parse(data) as {
-        choices?: Array<{ finish_reason?: string | null; delta?: Parameters<typeof applyChoiceDelta>[1] }>
+        choices?: Array<{
+          finish_reason?: string | null
+          delta?: Parameters<typeof applyChoiceDelta>[1]
+        }>
       }
       const choice = parsed.choices?.[0]
       if (choice?.finish_reason) acc.finishReason = choice.finish_reason
@@ -252,10 +280,15 @@ async function readStream(
   return acc
 }
 
-export async function runAgentChat(input: AgentChatInput): Promise<{ reply: string; edits: number; truncated: boolean }> {
+export async function runAgentChat(
+  input: AgentChatInput
+): Promise<{ reply: string; edits: number; truncated: boolean }> {
   const url = endpoint(input.baseUrl)
   const tools = input.mode === 'ask' ? READ_TOOLS : [...READ_TOOLS, ...WRITE_TOOLS]
-  const messages: ApiMessage[] = [{ role: 'system', content: systemPrompt(input) }, ...input.messages.map(toApiMessage)]
+  const messages: ApiMessage[] = [
+    { role: 'system', content: systemPrompt(input) },
+    ...input.messages.map(toApiMessage)
+  ]
   let edits = 0
   const fetchImpl = input.fetchImpl ?? fetch
   const effort = input.reasoningEffort || ''
@@ -289,7 +322,9 @@ export async function runAgentChat(input: AgentChatInput): Promise<{ reply: stri
       const reply = message.content.trim()
       if (truncated) {
         return {
-          reply: reply ? `${reply}\n\n回复被截断，可以说「继续」。` : '回复被截断，可以说「继续」。',
+          reply: reply
+            ? `${reply}\n\n回复被截断，可以说「继续」。`
+            : '回复被截断，可以说「继续」。',
           edits,
           truncated: true
         }

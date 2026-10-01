@@ -1,7 +1,15 @@
 /**
  * 内置 Agent 的 API Key：按服务商存，只进系统凭据存储，不进设置 JSON、不进日志。
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { join } from 'node:path'
 
 import { app, safeStorage } from 'electron'
@@ -67,7 +75,8 @@ export function readAgentKeys(legacyProviderId = ''): Record<string, string> {
       if (parsed && typeof parsed === 'object') {
         return Object.fromEntries(
           Object.entries(parsed as Record<string, unknown>).filter(
-            (entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].trim() !== ''
+            (entry): entry is [string, string] =>
+              typeof entry[1] === 'string' && entry[1].trim() !== ''
           )
         )
       }

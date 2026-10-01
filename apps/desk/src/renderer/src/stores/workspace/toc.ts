@@ -64,8 +64,8 @@ export function createToc(ctx: TocContext) {
       document: mutation.note,
       content: mutation.note.content,
       dirty: false,
-        unsavedDraft: false,
-        externalConflict: false,
+      unsavedDraft: false,
+      externalConflict: false,
       saving: false
     })
     ctx.editor.openNote(
@@ -102,8 +102,8 @@ export function createToc(ctx: TocContext) {
       document: mutation.note,
       content: mutation.note.content,
       dirty: false,
-        unsavedDraft: false,
-        externalConflict: false,
+      unsavedDraft: false,
+      externalConflict: false,
       saving: false
     })
     ctx.editor.openNote(
@@ -326,8 +326,8 @@ export function createToc(ctx: TocContext) {
       document: mutation.note,
       content: mutation.note.content,
       dirty: false,
-        unsavedDraft: false,
-        externalConflict: false,
+      unsavedDraft: false,
+      externalConflict: false,
       saving: false
     })
   }

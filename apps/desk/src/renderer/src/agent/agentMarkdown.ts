@@ -73,12 +73,18 @@ function escapeHtml(value: string): string {
 }
 
 /** 行首 `$$ … $$`。空内容、以及还没写到闭合 `$$` 的块，都不认。 */
-function mathBlock(state: BlockState, startLine: number, endLine: number, silent: boolean): boolean {
+function mathBlock(
+  state: BlockState,
+  startLine: number,
+  endLine: number,
+  silent: boolean
+): boolean {
   if (state.sCount[startLine] - state.blkIndent >= 4) return false
   const start = state.bMarks[startLine] + state.tShift[startLine]
   const max = state.eMarks[startLine]
   if (start + 1 >= max) return false
-  if (state.src.charCodeAt(start) !== DOLLAR || state.src.charCodeAt(start + 1) !== DOLLAR) return false
+  if (state.src.charCodeAt(start) !== DOLLAR || state.src.charCodeAt(start + 1) !== DOLLAR)
+    return false
 
   const rest = state.src.slice(start + 2, max).trimEnd()
   let content = ''

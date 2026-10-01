@@ -6,10 +6,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { Mindmap } from '@tnotesjs/ui'
 
-import {
-  mindmapPreviewMarkdown,
-  rebuildMindmapFence
-} from '../editor/markdown/mindmapFence'
+import { mindmapPreviewMarkdown, rebuildMindmapFence } from '../editor/markdown/mindmapFence'
 import { locateUniqueFence } from '../editor/markdown/mindmapFenceLocate'
 import { liveEditorFor } from '../livePreview/editorRegistry'
 import { resolveMarkdownImageUrl } from '../markdown/markdownAssetUrl'
@@ -80,8 +77,7 @@ function writeFence(nextFence: string): void {
       userEvent: 'input.mindmap'
     })
   } else {
-    const next =
-      content.slice(0, located.from) + nextFence + content.slice(located.to)
+    const next = content.slice(0, located.from) + nextFence + content.slice(located.to)
     workspace.updateDocumentContent(
       documentKey(props.tab.knowledgeBaseId, props.tab.noteUuid),
       next
@@ -116,11 +112,7 @@ async function writeAsset(blob: Blob): Promise<{ relativePath: string; alt?: str
           : 'png'
   const file =
     blob instanceof File ? blob : new File([blob], `paste-${Date.now()}.${ext}`, { type })
-  const uploaded = await workspace.uploadImage(
-    props.tab.knowledgeBaseId,
-    props.tab.noteUuid,
-    file
-  )
+  const uploaded = await workspace.uploadImage(props.tab.knowledgeBaseId, props.tab.noteUuid, file)
   return { relativePath: uploaded.markdownPath, alt: file.name }
 }
 

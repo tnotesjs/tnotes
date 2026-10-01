@@ -6,14 +6,25 @@ import type { BrowserWindow } from 'electron'
 import { app, shell } from 'electron'
 import { z } from 'zod'
 
-import { chatImageIds, deleteAgentAttachments, readAgentAttachment, saveAgentAttachment } from '../agent/attachments'
+import {
+  chatImageIds,
+  deleteAgentAttachments,
+  readAgentAttachment,
+  saveAgentAttachment
+} from '../agent/attachments'
 import { deleteAgentChat, listAgentChats, saveAgentChat } from '../agent/chats'
 import { runAgentChat } from '../agent/chat'
 import { listCursorModels, loginCursor, runCursorTurn } from '../agent/cursorRunner'
 import { listOpenAiModels } from '../agent/models'
 import { withImages } from '../agent/messages'
 import { deskLog } from '../log'
-import { clearAgentKey, encryptionAvailable, readAgentKey, readAgentKeys, writeAgentKey } from '../agent/key'
+import {
+  clearAgentKey,
+  encryptionAvailable,
+  readAgentKey,
+  readAgentKeys,
+  writeAgentKey
+} from '../agent/key'
 import { loadSettings } from '../settings'
 import { isCursorProvider, resolveModelRef } from '../../shared/agentModels'
 import { IPC_CHANNELS } from '../../shared/contracts'
@@ -43,7 +54,9 @@ function legacyProviderId(): string {
 
 function keyStatus(): AgentKeyStatus {
   const keys = readAgentKeys(legacyProviderId())
-  const providers = Object.fromEntries(loadSettings().agent.providers.map((provider) => [provider.id, Boolean(keys[provider.id])]))
+  const providers = Object.fromEntries(
+    loadSettings().agent.providers.map((provider) => [provider.id, Boolean(keys[provider.id])])
+  )
   return { providers, encryptionAvailable: encryptionAvailable() }
 }
 
@@ -84,13 +97,17 @@ function requestTool(
   })
 }
 
-const chatSchema = z.object({
-  id: z.string().min(1),
-  title: z.string(),
-  updatedAt: z.string(),
-  mode: z.enum(['agent', 'ask']),
-  messages: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() }).passthrough())
-}).passthrough()
+const chatSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string(),
+    updatedAt: z.string(),
+    mode: z.enum(['agent', 'ask']),
+    messages: z.array(
+      z.object({ role: z.enum(['user', 'assistant']), content: z.string() }).passthrough()
+    )
+  })
+  .passthrough()
 
 const kbName = z.string().max(200).default('')
 const noteRef = {
@@ -106,7 +123,11 @@ export function registerAgent(getWindow: GetWindow): void {
   handle(
     IPC_CHANNELS.agentKeyUpdate,
     getWindow,
-    z.object({ providerId: z.string().min(1).max(80), apiKey: z.string().max(4096).optional(), clear: z.boolean() }),
+    z.object({
+      providerId: z.string().min(1).max(80),
+      apiKey: z.string().max(4096).optional(),
+      clear: z.boolean()
+    }),
     ({ providerId, apiKey, clear }) => {
       if (clear) {
         clearAgentKey(providerId, legacyProviderId())
@@ -117,11 +138,16 @@ export function registerAgent(getWindow: GetWindow): void {
       return keyStatus()
     }
   )
-  handle(IPC_CHANNELS.agentCursorLogin, getWindow, z.object({ providerId: z.string().min(1).max(80) }), async ({ providerId }) => {
-    const { apiKey, email } = await loginCursor((url) => shell.openExternal(url))
-    writeAgentKey(providerId, apiKey, legacyProviderId())
-    return { status: keyStatus(), email }
-  })
+  handle(
+    IPC_CHANNELS.agentCursorLogin,
+    getWindow,
+    z.object({ providerId: z.string().min(1).max(80) }),
+    async ({ providerId }) => {
+      const { apiKey, email } = await loginCursor((url) => shell.openExternal(url))
+      writeAgentKey(providerId, apiKey, legacyProviderId())
+      return { status: keyStatus(), email }
+    }
+  )
   handle(
     IPC_CHANNELS.agentListModels,
     getWindow,
@@ -134,7 +160,10 @@ export function registerAgent(getWindow: GetWindow): void {
       const saved = loadSettings().agent.providers.find((provider) => provider.id === providerId)
       const cursor = (kind ?? saved?.kind) === 'cursor'
       const apiKey = readAgentKey(providerId, legacyProviderId())?.trim()
-      if (!apiKey) throw new Error(cursor ? '还没有登录 Cursor 或填写 API Key' : '还没有保存这个服务商的 API Key')
+      if (!apiKey)
+        throw new Error(
+          cursor ? '还没有登录 Cursor 或填写 API Key' : '还没有保存这个服务商的 API Key'
+        )
       if (cursor) return listCursorModels(apiKey)
       const url = baseUrl?.trim() || saved?.baseUrl || ''
       if (!/^https?:\/\//i.test(url)) throw new Error('先填写接口地址')
@@ -178,11 +207,16 @@ export function registerAgent(getWindow: GetWindow): void {
     }),
     ({ data, width, height }) => saveAgentAttachment(data, width, height)
   )
-  handle(IPC_CHANNELS.agentAttachmentRead, getWindow, z.object({ id: z.string().min(1) }), ({ id }) => {
-    const url = readAgentAttachment(id)
-    if (!url) throw new Error('图片不存在')
-    return url
-  })
+  handle(
+    IPC_CHANNELS.agentAttachmentRead,
+    getWindow,
+    z.object({ id: z.string().min(1) }),
+    ({ id }) => {
+      const url = readAgentAttachment(id)
+      if (!url) throw new Error('图片不存在')
+      return url
+    }
+  )
   handle(
     IPC_CHANNELS.agentToolResult,
     getWindow,
@@ -238,7 +272,10 @@ export function registerAgent(getWindow: GetWindow): void {
         )
         .max(8)
         .default([]),
-      defaultNote: z.object({ knowledgeBaseId: z.string().min(1), noteUuid: z.string().min(1) }).nullable().default(null),
+      defaultNote: z
+        .object({ knowledgeBaseId: z.string().min(1), noteUuid: z.string().min(1) })
+        .nullable()
+        .default(null),
       modelRef: z.string().default(''),
       reasoningEffort: z.enum(['low', 'medium', 'high', '']).default(''),
       turnId: z.string().min(1)

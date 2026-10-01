@@ -6,7 +6,12 @@ import AgentIcon from './AgentIcon.vue'
 import { useAgentStore } from './agentStore'
 import { attachmentUrl } from './attachmentCache'
 import { writeClipboardText } from '../clipboardText'
-import type { AgentContextRef, AgentMessagePart, AgentStoredMessage, AgentToolRow } from '../../../shared/contracts'
+import type {
+  AgentContextRef,
+  AgentMessagePart,
+  AgentStoredMessage,
+  AgentToolRow
+} from '../../../shared/contracts'
 
 const props = defineProps<{
   message?: AgentStoredMessage
@@ -20,7 +25,9 @@ const markdown = createAgentMarkdown()
 const imageUrls = ref<Record<string, string>>({})
 const zoomed = ref('')
 const copied = ref<'' | 'ok' | 'failed'>('')
-const copyLabel = computed(() => (copied.value === 'ok' ? '已复制' : copied.value === 'failed' ? '复制失败' : '复制'))
+const copyLabel = computed(() =>
+  copied.value === 'ok' ? '已复制' : copied.value === 'failed' ? '复制失败' : '复制'
+)
 
 const TOOL_ICONS: Record<string, string> = {
   list_notes: 'list',
@@ -91,7 +98,9 @@ const thoughtLabel = computed(() => {
   return ms ? `已思考 ${Math.max(1, Math.round(ms / 1000))} 秒` : '思考过程'
 })
 
-const liveThinking = computed(() => Boolean(props.reasoning) && !shown.value.some((part) => part.type === 'text' && part.text))
+const liveThinking = computed(
+  () => Boolean(props.reasoning) && !shown.value.some((part) => part.type === 'text' && part.text)
+)
 
 const refs = computed<AgentContextRef[]>(() => props.message?.refs ?? [])
 const legacyContext = computed(() => (refs.value.length ? [] : (props.message?.context ?? [])))
@@ -130,7 +139,13 @@ async function copy(): Promise<void> {
 <template>
   <article v-if="message" :class="message.role">
     <div v-if="refs.length || legacyContext.length" class="refs">
-      <button v-for="(item, index) in refs" :key="index" type="button" class="ref" @click="agent.revealRef(item)">
+      <button
+        v-for="(item, index) in refs"
+        :key="index"
+        type="button"
+        class="ref"
+        @click="agent.revealRef(item)"
+      >
         <AgentIcon name="file" />
         <span>{{ item.label }}</span>
       </button>
@@ -157,7 +172,12 @@ async function copy(): Promise<void> {
       <details v-else-if="part.tool" class="tool" :class="{ failed: !part.tool.ok }">
         <summary>
           <AgentIcon :name="TOOL_ICONS[part.tool.name] ?? 'file'" />
-          <button v-if="canOpen(part.tool)" type="button" class="link" @click.stop="openTool(part.tool)">
+          <button
+            v-if="canOpen(part.tool)"
+            type="button"
+            class="link"
+            @click.stop="openTool(part.tool)"
+          >
             {{ part.tool.ok ? '' : '失败 · ' }}{{ part.tool.summary }}
           </button>
           <span v-else>{{ part.tool.ok ? '' : '失败 · ' }}{{ part.tool.summary }}</span>
@@ -198,7 +218,9 @@ async function copy(): Promise<void> {
       <div v-if="part.type === 'text'" class="body" v-html="render(part.text || '')" />
       <details v-else-if="part.tool" class="tool" :class="{ failed: !part.tool.ok }">
         <summary>
-          <AgentIcon :name="part.tool.running ? 'spinner' : (TOOL_ICONS[part.tool.name] ?? 'file')" />
+          <AgentIcon
+            :name="part.tool.running ? 'spinner' : (TOOL_ICONS[part.tool.name] ?? 'file')"
+          />
           <span>{{ part.tool.ok ? '' : '失败 · ' }}{{ part.tool.summary }}</span>
           <template v-if="part.tool.added !== undefined">
             <span class="added">+{{ part.tool.added }}</span>
@@ -208,7 +230,9 @@ async function copy(): Promise<void> {
         <pre v-if="part.tool.detail">{{ part.tool.detail }}</pre>
       </details>
     </template>
-    <div v-if="!reasoning && !shown.length" class="body waiting"><AgentIcon name="spinner" /> 正在思考…</div>
+    <div v-if="!reasoning && !shown.length" class="body waiting">
+      <AgentIcon name="spinner" /> 正在思考…
+    </div>
   </article>
 </template>
 

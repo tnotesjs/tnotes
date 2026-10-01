@@ -132,11 +132,15 @@ describe('live preview decorations', () => {
   })
 
   const docsKb = '/Users/huyouda/tnotesjs/kbs/TNotes.docs/notes'
-  it.runIf(existsSync(docsKb))('handles every TNotes.docs note', () => {
-    for (const name of readdirSync(docsKb).filter((file) => file.endsWith('.md'))) {
-      const view = mount(readFileSync(join(docsKb, name), 'utf8'))
-      expect(() => walk(view), name).not.toThrow()
-      view.destroy()
-    }
-  }, 120_000)
+  it.runIf(existsSync(docsKb))(
+    'handles every TNotes.docs note',
+    () => {
+      for (const name of readdirSync(docsKb).filter((file) => file.endsWith('.md'))) {
+        const view = mount(readFileSync(join(docsKb, name), 'utf8'))
+        expect(() => walk(view), name).not.toThrow()
+        view.destroy()
+      }
+    },
+    120_000
+  )
 })

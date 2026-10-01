@@ -15,7 +15,11 @@ export const externalSync = Annotation.define<boolean>()
  * id: …
  * ---
  */
-export function frontmatterGuardRanges(doc: { line: (n: number) => { from: number; to: number; text: string }; lines: number; length: number }): number[] | null {
+export function frontmatterGuardRanges(doc: {
+  line: (n: number) => { from: number; to: number; text: string }
+  lines: number
+  length: number
+}): number[] | null {
   const first = doc.line(1)
   if (first.text.trimEnd() !== '---') return null
   const openTo = first.to < doc.length ? first.to + 1 : first.to
@@ -39,7 +43,11 @@ export function frontmatterGuardRanges(doc: { line: (n: number) => { from: numbe
   return [first.from, openTo, idFrom, idTo, closeFrom, closeTo]
 }
 
-function unprotectedGaps(from: number, to: number, ranges: number[]): Array<{ from: number; to: number }> {
+function unprotectedGaps(
+  from: number,
+  to: number,
+  ranges: number[]
+): Array<{ from: number; to: number }> {
   let cursor = from
   const gaps: Array<{ from: number; to: number }> = []
   for (let index = 0; index < ranges.length; index += 2) {

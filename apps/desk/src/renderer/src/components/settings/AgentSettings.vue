@@ -5,7 +5,12 @@ import { isCursorProvider, providerFromBaseUrl } from '../../../../shared/agentM
 import ResetGroupButton from './ResetGroupButton.vue'
 import CloseIconButton from './CloseIconButton.vue'
 
-import type { AgentKeyStatus, AgentListedModel, AgentProviderConfig, AppSettings } from '../../../../shared/contracts'
+import type {
+  AgentKeyStatus,
+  AgentListedModel,
+  AgentProviderConfig,
+  AppSettings
+} from '../../../../shared/contracts'
 
 const props = defineProps<{ draft: AppSettings }>()
 const emit = defineEmits<{ reset: [] }>()
@@ -63,8 +68,16 @@ function hasCursorProvider(): boolean {
 
 function addCursorProvider(): void {
   if (hasCursorProvider()) return
-  const id = providers().some((provider) => provider.id === 'cursor') ? `cursor-${Math.random().toString(36).slice(2, 6)}` : 'cursor'
-  providers().push({ id, name: 'Cursor', kind: 'cursor', baseUrl: '', models: [{ id: 'composer-2.5', vision: true, reasoning: false }] })
+  const id = providers().some((provider) => provider.id === 'cursor')
+    ? `cursor-${Math.random().toString(36).slice(2, 6)}`
+    : 'cursor'
+  providers().push({
+    id,
+    name: 'Cursor',
+    kind: 'cursor',
+    baseUrl: '',
+    models: [{ id: 'composer-2.5', vision: true, reasoning: false }]
+  })
 }
 
 async function loginCursor(provider: AgentProviderConfig): Promise<void> {
@@ -77,13 +90,14 @@ async function loginCursor(provider: AgentProviderConfig): Promise<void> {
       return
     }
     status.value = result.value.status
-    messages[provider.id] = result.value.email ? `已登录 ${result.value.email}，密钥已保存` : '已登录，密钥已保存'
+    messages[provider.id] = result.value.email
+      ? `已登录 ${result.value.email}，密钥已保存`
+      : '已登录，密钥已保存'
   } finally {
     busy[provider.id] = false
   }
   if (status.value?.providers[provider.id]) void loadModels(provider, true)
 }
-
 
 async function refresh(): Promise<void> {
   const result = await window.desk.agent.keyStatus()
@@ -104,12 +118,18 @@ function providers(): AgentProviderConfig[] {
 
 function addProvider(): void {
   const id = `p-${Math.random().toString(36).slice(2, 8)}`
-  providers().push({ id, name: '新服务商', baseUrl: 'https://', models: [{ id: '', vision: true, reasoning: false }] })
+  providers().push({
+    id,
+    name: '新服务商',
+    baseUrl: 'https://',
+    models: [{ id: '', vision: true, reasoning: false }]
+  })
 }
 
 function removeProvider(index: number): void {
   const [removed] = providers().splice(index, 1)
-  if (removed && props.draft.agent.defaultModel.startsWith(`${removed.id}/`)) props.draft.agent.defaultModel = ''
+  if (removed && props.draft.agent.defaultModel.startsWith(`${removed.id}/`))
+    props.draft.agent.defaultModel = ''
 }
 
 function addModel(provider: AgentProviderConfig): void {
@@ -123,14 +143,20 @@ function guessName(provider: AgentProviderConfig): void {
 
 async function saveKey(provider: AgentProviderConfig): Promise<void> {
   messages[provider.id] = ''
-  const result = await window.desk.agent.updateKey({ providerId: provider.id, apiKey: keys[provider.id] ?? '', clear: false })
+  const result = await window.desk.agent.updateKey({
+    providerId: provider.id,
+    apiKey: keys[provider.id] ?? '',
+    clear: false
+  })
   if (!result.ok) {
     messages[provider.id] = result.error.message
     return
   }
   status.value = result.value
   keys[provider.id] = ''
-  messages[provider.id] = result.value.providers[provider.id] ? '密钥已保存（不写入配置文件）' : '没有写入密钥'
+  messages[provider.id] = result.value.providers[provider.id]
+    ? '密钥已保存（不写入配置文件）'
+    : '没有写入密钥'
   if (result.value.providers[provider.id]) void loadModels(provider, true)
 }
 
@@ -150,12 +176,25 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
   <section class="settings-section">
     <header class="section-heading">
       <strong>内置 Agent</strong>
-      <span>按服务商填写 OpenAI 兼容接口的地址和密钥，每个服务商下可以挂多个模型；也可以接入 Cursor，用 Cursor 账户的额度</span>
+      <span
+        >按服务商填写 OpenAI 兼容接口的地址和密钥，每个服务商下可以挂多个模型；也可以接入 Cursor，用
+        Cursor 账户的额度</span
+      >
     </header>
     <ResetGroupButton @reset="emit('reset')" />
-    <div v-for="(provider, index) in props.draft.agent.providers" :key="provider.id" class="provider">
+    <div
+      v-for="(provider, index) in props.draft.agent.providers"
+      :key="provider.id"
+      class="provider"
+    >
       <div class="provider-head">
-        <input v-model="provider.name" class="provider-name" type="text" spellcheck="false" aria-label="服务商名称" />
+        <input
+          v-model="provider.name"
+          class="provider-name"
+          type="text"
+          spellcheck="false"
+          aria-label="服务商名称"
+        />
         <span v-if="isCursorProvider(provider)" class="provider-kind">Cursor Agent</span>
         <CloseIconButton label="删除服务商" @click="removeProvider(index)" />
       </div>
@@ -163,14 +202,26 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
         <div v-if="isCursorProvider(provider)" class="cursor-auth">
           <span>Cursor 账号</span>
           <div class="key-actions">
-            <button type="button" class="settings-action" :disabled="busy[provider.id]" @click="loginCursor(provider)">用 Cursor 账号登录</button>
-            <button type="button" class="settings-action" :disabled="busy[provider.id] || !status?.providers[provider.id]" @click="loadModels(provider)">
+            <button
+              type="button"
+              class="settings-action"
+              :disabled="busy[provider.id]"
+              @click="loginCursor(provider)"
+            >
+              用 Cursor 账号登录
+            </button>
+            <button
+              type="button"
+              class="settings-action"
+              :disabled="busy[provider.id] || !status?.providers[provider.id]"
+              @click="loadModels(provider)"
+            >
               读取模型
             </button>
           </div>
           <small>
-            登录会生成一个 90 天有效的密钥，只存在本机。也可以在 Cursor 控制台 Integrations 里生成 API Key 填到下面。
-            Cursor Agent 只能通过 Desk 的笔记工具读写，改动同样进审阅。
+            登录会生成一个 90 天有效的密钥，只存在本机。也可以在 Cursor 控制台 Integrations 里生成
+            API Key 填到下面。 Cursor Agent 只能通过 Desk 的笔记工具读写，改动同样进审阅。
           </small>
         </div>
         <label v-else>
@@ -191,16 +242,22 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
             type="password"
             autocomplete="off"
             spellcheck="false"
-            :placeholder="isCursorProvider(provider) ? '粘贴 Cursor API Key，或用上面的登录' : 'sk-…'"
+            :placeholder="
+              isCursorProvider(provider) ? '粘贴 Cursor API Key，或用上面的登录' : 'sk-…'
+            "
           />
           <small>
             {{ status?.providers[provider.id] ? '本机已保存密钥' : '还没有密钥' }}
-            {{ status && !status.encryptionAvailable ? ' · 系统凭据存储不可用，将以本机文件保存' : '' }}
+            {{
+              status && !status.encryptionAvailable ? ' · 系统凭据存储不可用，将以本机文件保存' : ''
+            }}
           </small>
         </label>
         <div class="key-actions">
           <button type="button" class="settings-action" @click="saveKey(provider)">保存密钥</button>
-          <button type="button" class="settings-action" @click="clearKey(provider)">清除密钥</button>
+          <button type="button" class="settings-action" @click="clearKey(provider)">
+            清除密钥
+          </button>
           <button
             v-if="!isCursorProvider(provider)"
             type="button"
@@ -235,7 +292,9 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
                 :list="listed[provider.id] ? `listed-models-${provider.id}` : undefined"
                 aria-label="模型名"
               />
-              <small v-if="unknownModel(provider, model.id)" class="unknown-hint">服务商没有这个模型</small>
+              <small v-if="unknownModel(provider, model.id)" class="unknown-hint"
+                >服务商没有这个模型</small
+              >
             </td>
             <td><input v-model="model.vision" type="checkbox" aria-label="能看图" /></td>
             <td><input v-model="model.reasoning" type="checkbox" aria-label="支持思考强度" /></td>
@@ -255,7 +314,9 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
         </tbody>
       </table>
       <datalist v-if="listed[provider.id]" :id="`listed-models-${provider.id}`">
-        <option v-for="item in listed[provider.id]" :key="item.id" :value="item.id">{{ item.displayName }}</option>
+        <option v-for="item in listed[provider.id]" :key="item.id" :value="item.id">
+          {{ item.displayName }}
+        </option>
       </datalist>
       <div class="model-actions">
         <select
@@ -274,7 +335,14 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
     </div>
     <div class="add-actions">
       <button type="button" class="settings-action" @click="addProvider">添加服务商</button>
-      <button type="button" class="settings-action" :disabled="hasCursorProvider()" @click="addCursorProvider">接入 Cursor</button>
+      <button
+        type="button"
+        class="settings-action"
+        :disabled="hasCursorProvider()"
+        @click="addCursorProvider"
+      >
+        接入 Cursor
+      </button>
     </div>
   </section>
 </template>

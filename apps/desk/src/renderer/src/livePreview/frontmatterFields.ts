@@ -15,7 +15,9 @@ export interface FrontmatterTextChange {
 }
 
 /** 文档开头成对 `---` / `...` 之间的行范围（不含围栏行本身）。没有则 null。 */
-function frontmatterBodyLines(source: string): { start: number; end: number; lines: string[] } | null {
+function frontmatterBodyLines(
+  source: string
+): { start: number; end: number; lines: string[] } | null {
   const lines = source.split('\n')
   if (lines.length < 2 || lines[0].trimEnd() !== '---') return null
   for (let index = 1; index < lines.length; index += 1) {

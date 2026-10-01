@@ -1767,9 +1767,7 @@ export type TocEntryRefDto =
   | { type: 'line'; tocLineIndex: number }
 
 /** 单条目录项，或批量删除时勾中的笔记。 */
-export type DeleteTargetDto =
-  | TocEntryRefDto
-  | { type: 'notes'; noteUuids: string[] }
+export type DeleteTargetDto = TocEntryRefDto | { type: 'notes'; noteUuids: string[] }
 
 export interface TocMoveRequest {
   knowledgeBaseId: string
@@ -2571,9 +2569,15 @@ export interface DeskApi {
   }
   agent: {
     keyStatus(): Promise<DeskResult<AgentKeyStatus>>
-    updateKey(request: { providerId: string; apiKey?: string; clear: boolean }): Promise<DeskResult<AgentKeyStatus>>
+    updateKey(request: {
+      providerId: string
+      apiKey?: string
+      clear: boolean
+    }): Promise<DeskResult<AgentKeyStatus>>
     /** 浏览器登录 Cursor 账号，生成的 Key 存成这个服务商的密钥。 */
-    cursorLogin(request: { providerId: string }): Promise<DeskResult<{ status: AgentKeyStatus; email: string }>>
+    cursorLogin(request: {
+      providerId: string
+    }): Promise<DeskResult<{ status: AgentKeyStatus; email: string }>>
     /**
      * 用这个服务商已保存的密钥读取可用模型：Cursor 走 SDK，其他走 `{baseUrl}/models`。
      * 传入设置草稿里的 kind / baseUrl，还没保存的改动也能用。

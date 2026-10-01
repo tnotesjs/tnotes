@@ -27,20 +27,23 @@ import {
   type NoteAssetsListingEntry
 } from './noteAssets'
 
-const props = defineProps<{
-  knowledgeBaseId: string
-  noteUuid: string
-  /** 笔记的知识库相对路径（`notes/…/0007. x.md`）。 */
-  noteRelPath: string
-  /** 笔记编号（四位前缀）。 */
-  noteIndex: string
-  /** 笔记 markdown：只读它解析引用，面板不回写。 */
-  source: string
-  /** 文档只读 → 禁用插入 / 修复 / 删除，只留查看与复制。 */
-  readOnly: boolean
-  /** 嵌在文档属性侧栏时隐藏自身关闭按钮。 */
-  showClose?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    knowledgeBaseId: string
+    noteUuid: string
+    /** 笔记的知识库相对路径（`notes/…/0007. x.md`）。 */
+    noteRelPath: string
+    /** 笔记编号（四位前缀）。 */
+    noteIndex: string
+    /** 笔记 markdown：只读它解析引用，面板不回写。 */
+    source: string
+    /** 文档只读 → 禁用插入 / 修复 / 删除，只留查看与复制。 */
+    readOnly: boolean
+    /** 嵌在文档属性侧栏时隐藏自身关闭按钮。布尔属性省略时会被当成 false，所以默认显式打开。 */
+    showClose?: boolean
+  }>(),
+  { showClose: true }
+)
 
 const emit = defineEmits<{
   (event: 'insert', relPath: string): void
@@ -384,7 +387,7 @@ onUnmounted(() => {
           {{ loading ? '刷新中…' : '刷新' }}
         </button>
         <button
-          v-if="showClose !== false"
+          v-if="showClose"
           type="button"
           class="head-button"
           data-note-assets-close

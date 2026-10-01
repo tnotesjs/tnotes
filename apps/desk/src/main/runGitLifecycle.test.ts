@@ -246,8 +246,8 @@ describe('runGit 生命周期（可控子进程）', () => {
     expect(chunks.join('')).toContain(`PARENT_${mark}`)
     expect(settled).toBe(true)
     expect(unregistered).toBe(true)
-    // 不早于强杀兜底（SIGTERM→3s→SIGKILL→输出收尾）
-    expect(elapsed).toBeGreaterThanOrEqual(3000)
+    // 不早于强杀兜底（SIGTERM→3s→SIGKILL→输出收尾）。定时器可能提前一两毫秒触发。
+    expect(elapsed).toBeGreaterThanOrEqual(2950)
 
     // ④ 无残留：孙进程的心跳必须已经停止
     const beatAtSettle = beatOf(mark)
@@ -276,7 +276,7 @@ describe('runGit 生命周期（可控子进程）', () => {
     expect(result.code).toBe(130)
     expect(result.stderr).toContain('已取消')
     // 同样不早于强杀兜底：孙进程忽略 SIGTERM，必须等 SIGKILL 才可能真正收尾
-    expect(Date.now() - abortedAt).toBeGreaterThanOrEqual(3000)
+    expect(Date.now() - abortedAt).toBeGreaterThanOrEqual(2950)
   }, 90000)
 
   it('主进程先关闭输出流但仍存活并忽略 SIGTERM：取消后不得提前结算', async () => {
@@ -317,7 +317,7 @@ describe('runGit 生命周期（可控子进程）', () => {
     const result = await running
     expect(result.code).toBe(130)
     expect(result.stderr).toContain('已取消')
-    expect(Date.now() - abortedAt).toBeGreaterThanOrEqual(3000)
+    expect(Date.now() - abortedAt).toBeGreaterThanOrEqual(2950)
     // 保留关闭输出流之前的内容
     expect(chunks.join('')).toContain(`BEFORE_CLOSE_${mark}`)
     // 无残留：心跳停止
@@ -368,7 +368,7 @@ describe('runGit 生命周期（可控子进程）', () => {
     expect(beatOf(mark)).toBeGreaterThan(beatAt800)
 
     const result = await running
-    expect(Date.now() - terminatedAt).toBeGreaterThanOrEqual(3000)
+    expect(Date.now() - terminatedAt).toBeGreaterThanOrEqual(2950)
     expect(result.code).toBe(130)
     expect(result.stderr).toContain('已取消')
     // 清理完成后才进终态，且无残留

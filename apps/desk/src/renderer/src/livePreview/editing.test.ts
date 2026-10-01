@@ -4,14 +4,14 @@ import { EditorView } from '@codemirror/view'
 import { codeFolding } from '@codemirror/language'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  continueMarkup,
-  headingBackspace,
-  tabCommand,
-  wrapSelection
-} from './commands'
+import { continueMarkup, headingBackspace, tabCommand, wrapSelection } from './commands'
 import { taskToggleChange } from './widgets'
-import { codeGroupTabs, keepCursorOutOfHiddenCodeGroup, livePreviewField, setFocused } from './decorations'
+import {
+  codeGroupTabs,
+  keepCursorOutOfHiddenCodeGroup,
+  livePreviewField,
+  setFocused
+} from './decorations'
 import { tnotesMarkdown } from './language'
 import { renumberOrderedLists } from './lists'
 import { codeBlockFullscreenClass } from './codeBlockChrome'
@@ -124,7 +124,7 @@ describe('live preview editing', () => {
   })
 
   it('renders a standalone NotesTable as a card instead of source text', () => {
-    const doc = '介绍。\n\n<NotesTable :ids="[\'0028\', \'0014\', \'0002\']" />\n\n后文\n'
+    const doc = "介绍。\n\n<NotesTable :ids=\"['0028', '0014', '0002']\" />\n\n后文\n"
     const view = mount(doc, 0)
     const text = view.contentDOM.textContent ?? ''
     expect(text).toContain('介绍')
@@ -140,7 +140,18 @@ describe('live preview editing', () => {
   })
 
   it('keeps an image inside a callout card', () => {
-    const doc = ['前文。', '', '::: warning 注意', '', '说明', '', '![图](https://example.com/wide.png)', '', ':::', ''].join('\n')
+    const doc = [
+      '前文。',
+      '',
+      '::: warning 注意',
+      '',
+      '说明',
+      '',
+      '![图](https://example.com/wide.png)',
+      '',
+      ':::',
+      ''
+    ].join('\n')
     const view = mount(doc, 0)
     const block = view.dom.querySelector('.tn-custom-block.warning')
     const image = block?.querySelector('img')
@@ -150,7 +161,16 @@ describe('live preview editing', () => {
   })
 
   it('applies an image width attr inside a callout card', () => {
-    const doc = ['前文。', '', '::: tip', '', '![](https://example.com/a.webp) {w=596px}', '', ':::', ''].join('\n')
+    const doc = [
+      '前文。',
+      '',
+      '::: tip',
+      '',
+      '![](https://example.com/a.webp) {w=596px}',
+      '',
+      ':::',
+      ''
+    ].join('\n')
     const view = mount(doc, 0)
     const block = view.dom.querySelector('.tn-custom-block.tip')
     const image = block?.querySelector('img')
@@ -168,7 +188,17 @@ describe('live preview editing', () => {
   })
 
   it('hides the other code-group panels and the closing fence while the cursor is inside', () => {
-    const doc = ['::: code-group', '```js [a.js]', 'aaa', '```', '```ts [b.ts]', 'bbb', '```', ':::', ''].join('\n')
+    const doc = [
+      '::: code-group',
+      '```js [a.js]',
+      'aaa',
+      '```',
+      '```ts [b.ts]',
+      'bbb',
+      '```',
+      ':::',
+      ''
+    ].join('\n')
     const view = mount(doc, doc.indexOf('aaa'))
     const text = view.contentDOM.textContent ?? ''
     expect(text).toContain('aaa')
@@ -186,7 +216,19 @@ describe('live preview editing', () => {
   })
 
   it('folds the whole code group from the tab bar and unfolds when a tab is picked', () => {
-    const doc = ['::: code-group', '```js [a.js]', 'aaa', '```', '```ts [b.ts]', 'bbb', '```', ':::', '', '后文', ''].join('\n')
+    const doc = [
+      '::: code-group',
+      '```js [a.js]',
+      'aaa',
+      '```',
+      '```ts [b.ts]',
+      'bbb',
+      '```',
+      ':::',
+      '',
+      '后文',
+      ''
+    ].join('\n')
     const parent = document.createElement('div')
     document.body.append(parent)
     const view = new EditorView({
@@ -194,11 +236,18 @@ describe('live preview editing', () => {
       state: EditorState.create({
         doc,
         selection: EditorSelection.cursor(doc.indexOf('后文')),
-        extensions: [tnotesMarkdown(), codeGroupTabs, codeBlockFullscreenClass, keepCursorOutOfHiddenCodeGroup, livePreviewField]
+        extensions: [
+          tnotesMarkdown(),
+          codeGroupTabs,
+          codeBlockFullscreenClass,
+          keepCursorOutOfHiddenCodeGroup,
+          livePreviewField
+        ]
       })
     })
     views.push(view)
-    const fold = () => view.dom.querySelector<HTMLButtonElement>('.cm-lp-code-tabs .cm-lp-code-fold')!
+    const fold = () =>
+      view.dom.querySelector<HTMLButtonElement>('.cm-lp-code-tabs .cm-lp-code-fold')!
     fold().dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
     expect(view.contentDOM.textContent).not.toContain('aaa')
     expect(fold().classList.contains('is-collapsed')).toBe(true)
@@ -212,13 +261,25 @@ describe('live preview editing', () => {
   })
 
   it('renames a code-group tab in place and writes the title into the fence', () => {
-    const doc = ['::: code-group', '```js [a.js]', 'aaa', '```', '```ts [b.ts]', 'bbb', '```', ':::', ''].join('\n')
+    const doc = [
+      '::: code-group',
+      '```js [a.js]',
+      'aaa',
+      '```',
+      '```ts [b.ts]',
+      'bbb',
+      '```',
+      ':::',
+      ''
+    ].join('\n')
     const view = mount(doc, doc.indexOf('aaa'))
     const tab = view.dom.querySelector<HTMLElement>('.cm-lp-code-tab.is-active')!
-    tab.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 1, clientY: 1 }))
-    const rename = [...document.querySelectorAll<HTMLButtonElement>('.cm-lp-code-tab-menu button')].find(
-      (button) => button.textContent === '重命名'
-    )!
+    tab.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 1, clientY: 1 })
+    )
+    const rename = [
+      ...document.querySelectorAll<HTMLButtonElement>('.cm-lp-code-tab-menu button')
+    ].find((button) => button.textContent === '重命名')!
     rename.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
     return new Promise<void>((resolve) => {
       setTimeout(() => {
@@ -234,7 +295,20 @@ describe('live preview editing', () => {
   })
 
   it('keeps a code group as decorated source when the cursor is outside, so focusing does not jump', () => {
-    const doc = ['前文', '', '::: code-group', '```js {2} [a.js]', 'aaa', 'aaa2', '```', '```ts [b.ts]', 'bbb', '```', ':::', ''].join('\n')
+    const doc = [
+      '前文',
+      '',
+      '::: code-group',
+      '```js {2} [a.js]',
+      'aaa',
+      'aaa2',
+      '```',
+      '```ts [b.ts]',
+      'bbb',
+      '```',
+      ':::',
+      ''
+    ].join('\n')
     const view = mount(doc, 0)
     const shape = (): string[] =>
       [...view.contentDOM.querySelectorAll('.cm-line')]
@@ -253,7 +327,20 @@ describe('live preview editing', () => {
   })
 
   it('hides blank lines between code-group panels without merging the tab bar into the header', () => {
-    const doc = ['::: code-group', '', '```js [a.js]', 'aaa', '```', '', '```ts [b.ts]', 'bbb', '```', '', ':::', ''].join('\n')
+    const doc = [
+      '::: code-group',
+      '',
+      '```js [a.js]',
+      'aaa',
+      '```',
+      '',
+      '```ts [b.ts]',
+      'bbb',
+      '```',
+      '',
+      ':::',
+      ''
+    ].join('\n')
     const view = mount(doc, doc.indexOf('aaa'))
     const lines = [...view.contentDOM.querySelectorAll('.cm-line')]
     const tabs = lines.find((line) => line.querySelector('.cm-lp-code-tabs'))
@@ -265,7 +352,19 @@ describe('live preview editing', () => {
   })
 
   it('keeps a cursor coming from outside the code group out of the hidden panel', () => {
-    const doc = ['前文', '', '::: code-group', '```js [a.js]', 'aaa', '```', '```ts [b.ts]', 'bbb', '```', ':::', ''].join('\n')
+    const doc = [
+      '前文',
+      '',
+      '::: code-group',
+      '```js [a.js]',
+      'aaa',
+      '```',
+      '```ts [b.ts]',
+      'bbb',
+      '```',
+      ':::',
+      ''
+    ].join('\n')
     const parent = document.createElement('div')
     document.body.append(parent)
     const view = new EditorView({
@@ -273,7 +372,12 @@ describe('live preview editing', () => {
       state: EditorState.create({
         doc,
         selection: EditorSelection.cursor(0),
-        extensions: [tnotesMarkdown(), codeGroupTabs, keepCursorOutOfHiddenCodeGroup, livePreviewField]
+        extensions: [
+          tnotesMarkdown(),
+          codeGroupTabs,
+          keepCursorOutOfHiddenCodeGroup,
+          livePreviewField
+        ]
       })
     })
     views.push(view)
@@ -287,7 +391,11 @@ describe('live preview editing', () => {
     const view = mount(doc, doc.length)
     const lines = [...view.contentDOM.querySelectorAll<HTMLElement>('.cm-line[data-code-line]')]
     expect(lines.map((line) => line.dataset.line)).toEqual(['1', '2', '3'])
-    expect(lines.map((line) => line.classList.contains('cm-lp-code-highlighted'))).toEqual([false, true, false])
+    expect(lines.map((line) => line.classList.contains('cm-lp-code-highlighted'))).toEqual([
+      false,
+      true,
+      false
+    ])
   })
 
   it('highlights fenced code inside a code group in source mode', async () => {
@@ -355,7 +463,9 @@ describe('live preview editing', () => {
       })
     })
     views.push(view)
-    const numbers = [...view.dom.querySelectorAll('.cm-lineNumbers .cm-gutterElement')].map((el) => el.textContent?.trim())
+    const numbers = [...view.dom.querySelectorAll('.cm-lineNumbers .cm-gutterElement')].map((el) =>
+      el.textContent?.trim()
+    )
     expect(numbers).toContain('1')
     const toggle = [...view.dom.querySelectorAll<HTMLElement>('.cm-lp-source-fold')].find(
       (el) => el.closest<HTMLElement>('.cm-gutterElement')?.style.visibility !== 'hidden'
@@ -388,14 +498,18 @@ describe('live preview editing', () => {
   it('leaves the cursor in an empty image alt and does not move a revealed image', () => {
     const emptyDoc = '前文\n\n![](a.png)\n'
     const empty = mount(emptyDoc, 0)
-    empty.dom.querySelector('.cm-lp-image')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    empty.dom
+      .querySelector('.cm-lp-image')!
+      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
     expect(empty.state.selection.main.empty).toBe(true)
     expect(empty.state.selection.main.head).toBe(emptyDoc.indexOf(']'))
 
     const doc = '![风景照](a.png)\n'
     const revealed = mount(doc, doc.indexOf('风景'))
     const before = revealed.state.selection.main.head
-    revealed.dom.querySelector('.cm-lp-image')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    revealed.dom
+      .querySelector('.cm-lp-image')!
+      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
     expect(revealed.state.selection.main.head).toBe(before)
     expect(revealed.state.selection.main.empty).toBe(true)
   })
@@ -410,7 +524,18 @@ describe('live preview editing', () => {
   })
 
   it('puts a wrap toggle immediately left of copy and nowraps code until it is clicked', () => {
-    const doc = ['```js', 'const value = 1', '```', '', '::: code-group', '```js [a.js]', 'aaa', '```', ':::', ''].join('\n')
+    const doc = [
+      '```js',
+      'const value = 1',
+      '```',
+      '',
+      '::: code-group',
+      '```js [a.js]',
+      'aaa',
+      '```',
+      ':::',
+      ''
+    ].join('\n')
     const parent = document.createElement('div')
     document.body.append(parent)
     const view = new EditorView({
@@ -418,30 +543,50 @@ describe('live preview editing', () => {
       state: EditorState.create({
         doc,
         selection: EditorSelection.cursor(doc.indexOf('const')),
-        extensions: [tnotesMarkdown(), codeGroupTabs, codeBlockFullscreenClass, livePreviewField, EditorView.lineWrapping]
+        extensions: [
+          tnotesMarkdown(),
+          codeGroupTabs,
+          codeBlockFullscreenClass,
+          livePreviewField,
+          EditorView.lineWrapping
+        ]
       })
     })
     views.push(view)
     const header = view.dom.querySelector('.cm-lp-code-header')!
     const headerWrap = header.querySelector('.cm-lp-code-wrap')!
     const headerCopy = header.querySelector('.cm-lp-code-copy')!
-    expect(headerWrap.compareDocumentPosition(headerCopy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(
+      headerWrap.compareDocumentPosition(headerCopy) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
     expect(headerWrap.getAttribute('aria-label')).toBe('换行显示')
-    const codeLine = [...view.contentDOM.querySelectorAll('.cm-line')].find((line) => line.textContent === 'const value = 1')
+    const codeLine = [...view.contentDOM.querySelectorAll('.cm-line')].find(
+      (line) => line.textContent === 'const value = 1'
+    )
     expect(codeLine?.className).toContain('cm-lp-code-nowrap')
     headerWrap.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
-    const wrappedLine = [...view.contentDOM.querySelectorAll('.cm-line')].find((line) => line.textContent === 'const value = 1')
+    const wrappedLine = [...view.contentDOM.querySelectorAll('.cm-line')].find(
+      (line) => line.textContent === 'const value = 1'
+    )
     expect(wrappedLine?.className).not.toContain('cm-lp-code-nowrap')
-    expect(view.dom.querySelector('.cm-lp-code-header .cm-lp-code-wrap')?.getAttribute('aria-label')).toBe('不换行')
+    expect(
+      view.dom.querySelector('.cm-lp-code-header .cm-lp-code-wrap')?.getAttribute('aria-label')
+    ).toBe('不换行')
 
     const tabs = view.dom.querySelector('.cm-lp-code-tabs')!
     const groupWrap = tabs.querySelector('.cm-lp-code-wrap')!
     const groupCopy = tabs.querySelector('.cm-lp-code-copy')!
-    expect(groupWrap.compareDocumentPosition(groupCopy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    const groupLine = [...view.contentDOM.querySelectorAll('.cm-line')].find((line) => line.textContent === 'aaa')
+    expect(
+      groupWrap.compareDocumentPosition(groupCopy) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    const groupLine = [...view.contentDOM.querySelectorAll('.cm-line')].find(
+      (line) => line.textContent === 'aaa'
+    )
     expect(groupLine?.className).toContain('cm-lp-code-nowrap')
     groupWrap.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
-    const groupWrapped = [...view.contentDOM.querySelectorAll('.cm-line')].find((line) => line.textContent === 'aaa')
+    const groupWrapped = [...view.contentDOM.querySelectorAll('.cm-line')].find(
+      (line) => line.textContent === 'aaa'
+    )
     expect(groupWrapped?.className).not.toContain('cm-lp-code-nowrap')
   })
 
@@ -476,8 +621,16 @@ describe('live preview editing', () => {
     }
     expect(slotDigits(block(9), '.cm-lp-code-header .cm-lp-code-fold-slot')).toBe('1')
     expect(slotDigits(block(10), '.cm-lp-code-header .cm-lp-code-fold-slot')).toBe('2')
-    expect(slotDigits(block(12, 'js:no-line-numbers'), '.cm-lp-code-header .cm-lp-code-fold-slot')).toBe('1')
-    const group = ['::: code-group', '```js [a.js]', ...Array.from({ length: 10 }, () => 'a'), '```', ':::'].join('\n')
+    expect(
+      slotDigits(block(12, 'js:no-line-numbers'), '.cm-lp-code-header .cm-lp-code-fold-slot')
+    ).toBe('1')
+    const group = [
+      '::: code-group',
+      '```js [a.js]',
+      ...Array.from({ length: 10 }, () => 'a'),
+      '```',
+      ':::'
+    ].join('\n')
     expect(slotDigits(group, '.cm-lp-code-tabs .cm-lp-code-fold-slot')).toBe('2')
   })
 })

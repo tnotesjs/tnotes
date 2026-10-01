@@ -12,7 +12,16 @@ import {
   type Text,
   type TransactionSpec
 } from '@codemirror/state'
-import { Decoration, EditorView, ViewPlugin, WidgetType, showPanel, type DecorationSet, type Panel, type ViewUpdate } from '@codemirror/view'
+import {
+  Decoration,
+  EditorView,
+  ViewPlugin,
+  WidgetType,
+  showPanel,
+  type DecorationSet,
+  type Panel,
+  type ViewUpdate
+} from '@codemirror/view'
 import { allLiveEditors, liveEditorsFor } from './editorRegistry'
 
 /**
@@ -106,9 +115,15 @@ const reviewField = StateField.define<Review[]>({
           ...review,
           inverse: review.inverse.map(tr.changes),
           inserted: review.inserted
-            .map((range) => ({ from: tr.changes.mapPos(range.from, 1), to: tr.changes.mapPos(range.to, -1) }))
+            .map((range) => ({
+              from: tr.changes.mapPos(range.from, 1),
+              to: tr.changes.mapPos(range.to, -1)
+            }))
             .filter((range) => range.to > range.from),
-          removed: review.removed.map((item) => ({ at: tr.changes.mapPos(item.at, -1), text: item.text }))
+          removed: review.removed.map((item) => ({
+            at: tr.changes.mapPos(item.at, -1),
+            text: item.text
+          }))
         }))
     }
     for (const effect of tr.effects) {
@@ -263,14 +278,27 @@ function headlessState(note: ReviewNote, content: string): EditorState {
  * 没有打开编辑器的笔记（包括其他知识库的）：在一份临时状态上应用 Agent 修改，
  * 把标记存进存档，返回修改后的全文。已有的标记全文对得上就一起保留。
  */
-export function applyAgentEditToContent(note: ReviewNote, content: string, changes: ChangeSpec, label: string): string {
-  const state = applyAgentChangeToState(applyArchivedReviews(headlessState(note, content)), changes, label)
+export function applyAgentEditToContent(
+  note: ReviewNote,
+  content: string,
+  changes: ChangeSpec,
+  label: string
+): string {
+  const state = applyAgentChangeToState(
+    applyArchivedReviews(headlessState(note, content)),
+    changes,
+    label
+  )
   archiveState(note, state)
   return state.doc.toString()
 }
 
 /** 保存后全文被整理过（例如生成的标题）：把存档里的位置映射到新全文上。 */
-export function syncArchiveContent(knowledgeBaseId: string, noteUuid: string, content: string): void {
+export function syncArchiveContent(
+  knowledgeBaseId: string,
+  noteUuid: string,
+  content: string
+): void {
   const entry = archivedEntry(knowledgeBaseId, noteUuid)
   if (!entry || entry.content === content) return
   const note = { knowledgeBaseId, noteUuid }
@@ -280,13 +308,20 @@ export function syncArchiveContent(knowledgeBaseId: string, noteUuid: string, co
   archiveState(note, state)
 }
 
-function minimalChange(current: string, next: string): { from: number; to: number; insert: string } {
+function minimalChange(
+  current: string,
+  next: string
+): { from: number; to: number; insert: string } {
   let start = 0
   const limit = Math.min(current.length, next.length)
   while (start < limit && current.charCodeAt(start) === next.charCodeAt(start)) start += 1
   let endCurrent = current.length
   let endNext = next.length
-  while (endCurrent > start && endNext > start && current.charCodeAt(endCurrent - 1) === next.charCodeAt(endNext - 1)) {
+  while (
+    endCurrent > start &&
+    endNext > start &&
+    current.charCodeAt(endCurrent - 1) === next.charCodeAt(endNext - 1)
+  ) {
     endCurrent -= 1
     endNext -= 1
   }
@@ -320,7 +355,10 @@ function countLines(text: string): number {
 }
 
 /** 待审阅改动的新增、删除行数（只算非空行）。 */
-export function reviewLineCounts(doc: string, reviews: ReadonlyArray<Pick<StoredReview, 'inserted' | 'removed'>>): { added: number; removed: number } {
+export function reviewLineCounts(
+  doc: string,
+  reviews: ReadonlyArray<Pick<StoredReview, 'inserted' | 'removed'>>
+): { added: number; removed: number } {
   let added = 0
   let removed = 0
   for (const review of reviews) {
@@ -366,11 +404,14 @@ const reviewDecorations = EditorView.decorations.compute([reviewField], (state):
   const ranges: Range<Decoration>[] = []
   for (const review of state.field(reviewField)) {
     for (const range of review.inserted) {
-      if (range.to > range.from) ranges.push(Decoration.mark({ class: 'cm-agent-inserted' }).range(range.from, range.to))
+      if (range.to > range.from)
+        ranges.push(Decoration.mark({ class: 'cm-agent-inserted' }).range(range.from, range.to))
     }
     for (const item of review.removed) {
       if (item.text) {
-        ranges.push(Decoration.widget({ widget: new RemovedTextWidget(item.text), side: -1 }).range(item.at))
+        ranges.push(
+          Decoration.widget({ widget: new RemovedTextWidget(item.text), side: -1 }).range(item.at)
+        )
       }
     }
   }
@@ -456,12 +497,20 @@ export function agentReviewExtension(): Extension {
   return [reviewField, reviewDecorations, reviewPanelFacet, reviewNotifier]
 }
 
-export function applyAgentChangeToState(state: EditorState, changes: ChangeSpec, label: string): EditorState {
+export function applyAgentChangeToState(
+  state: EditorState,
+  changes: ChangeSpec,
+  label: string
+): EditorState {
   const spec = agentChangeSpec(state, changes, label)
   return spec ? state.update(spec).state : state
 }
 
-function agentChangeSpec(state: EditorState, changes: ChangeSpec, label: string): TransactionSpec | null {
+function agentChangeSpec(
+  state: EditorState,
+  changes: ChangeSpec,
+  label: string
+): TransactionSpec | null {
   const before: Text = state.doc
   const set = state.changes(changes)
   if (set.empty) return null
@@ -497,7 +546,9 @@ export function pendingAgentReviews(view: EditorView): number {
 
 /** 同一篇笔记可能在分屏里开了多份：返回真正带标记的那一个。 */
 export function reviewViewFor(knowledgeBaseId: string, noteUuid: string): EditorView | null {
-  return liveEditorsFor(knowledgeBaseId, noteUuid).find((view) => pendingAgentReviews(view) > 0) ?? null
+  return (
+    liveEditorsFor(knowledgeBaseId, noteUuid).find((view) => pendingAgentReviews(view) > 0) ?? null
+  )
 }
 
 export interface LiveReviewEntry extends ReviewNote {

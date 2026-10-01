@@ -127,10 +127,7 @@ try {
       const format = await formatBar.first().boundingBox()
       assert.ok(format.width > 0)
     }
-    assert.equal(
-      await page.locator('[data-testid="view-toggle"]').getAttribute('aria-label'),
-      mode
-    )
+    assert.equal(await page.locator('[data-testid="view-toggle"]').getAttribute('aria-label'), mode)
     await page.screenshot({ path: join(shots, `${mode}.png`) })
   }
 

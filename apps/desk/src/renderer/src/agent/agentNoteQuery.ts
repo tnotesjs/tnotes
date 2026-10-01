@@ -9,7 +9,10 @@ export interface NoteRef {
   path: string
 }
 
-function walk(nodes: DeskTocNode[], group: string[] = []): Array<NoteRef & { node: Extract<DeskTocNode, { type: 'note' }> }> {
+function walk(
+  nodes: DeskTocNode[],
+  group: string[] = []
+): Array<NoteRef & { node: Extract<DeskTocNode, { type: 'note' }> }> {
   const rows: Array<NoteRef & { node: Extract<DeskTocNode, { type: 'note' }> }> = []
   for (const node of nodes) {
     if (node.type === 'note') {
@@ -54,7 +57,11 @@ function tokenScore(note: { index: string; title: string }, token: string): numb
  * @ 点名用的模糊搜索：编号前缀 > 标题包含 > 按顺序出现的字符。
  * 多个关键字用空格分开，必须都命中；分数相同保持目录顺序。
  */
-export function rankNotes<T extends { index: string; title: string }>(notes: readonly T[], query: string, limit = 8): T[] {
+export function rankNotes<T extends { index: string; title: string }>(
+  notes: readonly T[],
+  query: string,
+  limit = 8
+): T[] {
   const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   if (tokens.length === 0) return notes.slice(0, limit)
   const scored: Array<{ note: T; score: number; order: number }> = []
@@ -92,14 +99,21 @@ export function resolveKnowledgeBase<T extends KnowledgeBaseRef>(
   const kb =
     list.find((item) => item.id === target) ??
     list.find((item) =>
-      [item.displayName, item.name, item.configName ?? ''].some((value) => value && value.toLowerCase() === lower)
+      [item.displayName, item.name, item.configName ?? ''].some(
+        (value) => value && value.toLowerCase() === lower
+      )
     )
   if (kb) return { kb }
-  return { error: `找不到知识库「${target}」。可用的有：${list.map((item) => item.displayName).join('、')}` }
+  return {
+    error: `找不到知识库「${target}」。可用的有：${list.map((item) => item.displayName).join('、')}`
+  }
 }
 
 /** uuid、编号、相对路径、文件夹名或完整标题都能对上。 */
-export function findNote(nodes: DeskTocNode[], query: string): Extract<DeskTocNode, { type: 'note' }> | null {
+export function findNote(
+  nodes: DeskTocNode[],
+  query: string
+): Extract<DeskTocNode, { type: 'note' }> | null {
   const needle = query.trim()
   if (!needle) return null
   const notes = walk(nodes)
@@ -138,7 +152,10 @@ export function readLineSlice(
   return { text: slice.join('\n'), fromLine: start, toLine: start - 1 + slice.length, total }
 }
 
-export function lineChangeCounts(oldText: string, newText: string): { removed: number; added: number } {
+export function lineChangeCounts(
+  oldText: string,
+  newText: string
+): { removed: number; added: number } {
   const count = (text: string): number => text.split('\n').filter((line) => line.length > 0).length
   return { removed: count(oldText), added: count(newText) }
 }
@@ -156,7 +173,10 @@ export interface SelectionTarget {
  * 胶囊记下的选区在当前全文里的位置：
  * 偏移处的原文没变就用偏移；变了就找离原位置最近的同一段原文；都不行就选中原来那几行。
  */
-export function locateSelection(content: string, target: SelectionTarget): { from: number; to: number } | null {
+export function locateSelection(
+  content: string,
+  target: SelectionTarget
+): { from: number; to: number } | null {
   const text = target.text ?? ''
   const length = Math.max(text.length, (target.to ?? 0) - (target.from ?? 0))
   const origin = target.from ?? 0
@@ -174,7 +194,10 @@ export function locateSelection(content: string, target: SelectionTarget): { fro
   if (!target.startLine) return null
   const lines = content.split('\n')
   if (target.startLine > lines.length) return null
-  const endLine = Math.min(lines.length, Math.max(target.startLine, target.endLine ?? target.startLine))
+  const endLine = Math.min(
+    lines.length,
+    Math.max(target.startLine, target.endLine ?? target.startLine)
+  )
   let from = 0
   for (let index = 0; index < target.startLine - 1; index += 1) from += lines[index].length + 1
   let to = from
@@ -193,7 +216,10 @@ function bareLine(line: string): string {
  * Agent 写进去的文字现在在哪：整段还在就选中整段；
  * 保存时被整理过（标题加了编号、列表符号变了）就按行找，选中第一处到最后一处对得上的行。
  */
-export function locateWritten(content: string, written: string): { from: number; to: number } | null {
+export function locateWritten(
+  content: string,
+  written: string
+): { from: number; to: number } | null {
   const text = written.trim()
   if (!text) return null
   const exact = content.indexOf(text)
@@ -215,7 +241,10 @@ export function locateWritten(content: string, written: string): { from: number;
   let cursor = 0
   for (const target of wanted) {
     for (let index = cursor; index < lines.length; index += 1) {
-      if (bareLine(lines[index]) === target || (target.length >= 8 && lines[index].includes(target))) {
+      if (
+        bareLine(lines[index]) === target ||
+        (target.length >= 8 && lines[index].includes(target))
+      ) {
         if (first < 0) first = index
         last = index
         cursor = index + 1
@@ -242,7 +271,10 @@ export function pageNoteRefs(
 ): NotePage {
   const query = (options.query ?? '').trim().toLowerCase()
   const filtered = query
-    ? notes.filter((note) => note.index.toLowerCase().includes(query) || note.title.toLowerCase().includes(query))
+    ? notes.filter(
+        (note) =>
+          note.index.toLowerCase().includes(query) || note.title.toLowerCase().includes(query)
+      )
     : notes
   const total = filtered.length
   const offset = Math.min(total, Math.max(0, Math.floor(options.offset ?? 0) || 0))

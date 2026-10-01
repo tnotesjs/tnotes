@@ -15,12 +15,20 @@ const PATHS: Record<string, string[]> = {
   search: ['M7 11.5a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9z', 'M10.3 10.3 13.5 13.5'],
   list: ['M5.5 4h8', 'M5.5 8h8', 'M5.5 12h8', 'M2.5 4h.01', 'M2.5 8h.01', 'M2.5 12h.01'],
   pencil: ['M10.5 2.8 13.2 5.5 6 12.7l-3.2.5.5-3.2z'],
-  at: ['M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z', 'M10.5 8v1a2 2 0 0 0 4 0V8a6.5 6.5 0 1 0-2.6 5.2'],
+  at: [
+    'M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z',
+    'M10.5 8v1a2 2 0 0 0 4 0V8a6.5 6.5 0 1 0-2.6 5.2'
+  ],
   close: ['M4.5 4.5l7 7', 'M11.5 4.5l-7 7'],
   copy: ['M5.5 5.5h7v7h-7z', 'M3.5 10.5v-7h7'],
-  infinity: ['M5.2 5.6C3.2 4 1.5 5.2 1.5 8s1.7 4 3.7 2.4L8 8l2.8-2.4C12.8 4 14.5 5.2 14.5 8s-1.7 4-3.7 2.4L8 8z'],
+  infinity: [
+    'M5.2 5.6C3.2 4 1.5 5.2 1.5 8s1.7 4 3.7 2.4L8 8l2.8-2.4C12.8 4 14.5 5.2 14.5 8s-1.7 4-3.7 2.4L8 8z'
+  ],
   chat: ['M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z'],
-  brain: ['M6 3a2 2 0 0 0-2 2 2 2 0 0 0-1 3.5A2 2 0 0 0 5 12h1V3z', 'M10 3a2 2 0 0 1 2 2 2 2 0 0 1 1 3.5A2 2 0 0 1 11 12h-1V3z'],
+  brain: [
+    'M6 3a2 2 0 0 0-2 2 2 2 0 0 0-1 3.5A2 2 0 0 0 5 12h1V3z',
+    'M10 3a2 2 0 0 1 2 2 2 2 0 0 1 1 3.5A2 2 0 0 1 11 12h-1V3z'
+  ],
   model: ['M8 1.8 13.5 5v6L8 14.2 2.5 11V5z', 'M2.5 5 8 8l5.5-3', 'M8 8v6.2']
 }
 
@@ -28,16 +36,22 @@ const paths = computed(() => PATHS[props.name] ?? [])
 </script>
 
 <template>
+  <svg v-if="name === 'stop'" class="agent-icon" viewBox="0 0 16 16" aria-hidden="true">
+    <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" />
+  </svg>
   <svg
-    v-if="name === 'stop'"
-    class="agent-icon"
+    v-else-if="name === 'spinner'"
+    class="agent-icon spin"
     viewBox="0 0 16 16"
     aria-hidden="true"
   >
-    <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" />
-  </svg>
-  <svg v-else-if="name === 'spinner'" class="agent-icon spin" viewBox="0 0 16 16" aria-hidden="true">
-    <path d="M8 2.5a5.5 5.5 0 1 1-5.5 5.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+    <path
+      d="M8 2.5a5.5 5.5 0 1 1-5.5 5.5"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+    />
   </svg>
   <svg v-else class="agent-icon" viewBox="0 0 16 16" aria-hidden="true">
     <path

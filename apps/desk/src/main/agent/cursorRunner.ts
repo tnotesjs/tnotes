@@ -19,8 +19,10 @@ export function loadCursorSdk(): Promise<CursorSdk> {
   return import('@cursor/sdk')
 }
 
-export interface CursorTurnInput
-  extends Omit<AgentChatInput, 'baseUrl' | 'fetchImpl' | 'onRequest' | 'reasoningEffort'> {
+export interface CursorTurnInput extends Omit<
+  AgentChatInput,
+  'baseUrl' | 'fetchImpl' | 'onRequest' | 'reasoningEffort'
+> {
   sandboxDir: string
   loadSdk?: () => Promise<CursorSdk>
 }
@@ -35,8 +37,13 @@ function deskTools(input: CursorTurnInput, onEdit: () => void): Record<string, S
       const writes = WRITE_NAMES.has(definition.name)
       const tool: SDKCustomTool = {
         description: definition.description,
-        inputSchema: JSON.parse(JSON.stringify(definition.parameters)) as Record<string, SDKJsonValue>,
-        annotations: writes ? { readOnlyHint: false, destructiveHint: false } : { readOnlyHint: true },
+        inputSchema: JSON.parse(JSON.stringify(definition.parameters)) as Record<
+          string,
+          SDKJsonValue
+        >,
+        annotations: writes
+          ? { readOnlyHint: false, destructiveHint: false }
+          : { readOnlyHint: true },
         execute: async (args, context) => {
           const result = await input.executeTool({
             id: context.toolCallId || randomUUID(),
@@ -71,7 +78,8 @@ export function cursorPrompt(input: CursorTurnInput): string {
   ]
   if (history.length) {
     lines.push('', '之前的对话：')
-    for (const message of history) lines.push(`${message.role === 'user' ? '用户' : '助手'}：${message.content}`)
+    for (const message of history)
+      lines.push(`${message.role === 'user' ? '用户' : '助手'}：${message.content}`)
   }
   lines.push('', '用户这一轮说：', last?.content ?? '')
   return lines.join('\n')

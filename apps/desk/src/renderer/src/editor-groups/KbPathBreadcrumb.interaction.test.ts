@@ -211,7 +211,7 @@ describe('KbPathBreadcrumb', () => {
     await wrapper.get('.kb-path-row').trigger('click')
     await flushPromises()
     expect(openTextFile).not.toHaveBeenCalled()
-    expect(workspace.status).toContain('资源面板')
+    expect(workspace.status).toContain('引用它的笔记')
     wrapper.unmount()
   })
 

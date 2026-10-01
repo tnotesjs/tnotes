@@ -123,7 +123,10 @@ describe('TocNodeList', () => {
     const wrapper = mountList()
     const transfer = dataTransferStub()
     await wrapper.findAll('.toc-row')[0].trigger('dragstart', { dataTransfer: transfer })
-    expect(wrapper.emitted('dragNote')?.[0]?.[0]).toMatchObject({ type: 'note', uuid: sourceNote.uuid })
+    expect(wrapper.emitted('dragNote')?.[0]?.[0]).toMatchObject({
+      type: 'note',
+      uuid: sourceNote.uuid
+    })
     await wrapper.findAll('.toc-row')[0].trigger('dragend')
     expect(wrapper.emitted('dragNote')?.at(-1)).toEqual([null])
     wrapper.unmount()
@@ -511,7 +514,9 @@ describe('TocNodeList', () => {
     await flushPromises()
     expect(wrapper.find('[data-note-uuid="note-a"]').exists()).toBe(true)
     expect(wrapper.find('[data-note-uuid="note-c"]').exists()).toBe(false)
-    const stored = JSON.parse(sessionStorage.getItem('desk-toc-collapsed:kb-fold') ?? '[]') as string[]
+    const stored = JSON.parse(
+      sessionStorage.getItem('desk-toc-collapsed:kb-fold') ?? '[]'
+    ) as string[]
     expect(stored).toContain('group-other')
     expect(stored).not.toContain('group-current')
 
@@ -537,7 +542,9 @@ describe('TocNodeList', () => {
     })
     await flushPromises()
     expect(wrapper.find('[data-note-uuid="note-a"]').exists()).toBe(true)
-    const stored = JSON.parse(sessionStorage.getItem('desk-toc-collapsed:kb-fold') ?? '[]') as string[]
+    const stored = JSON.parse(
+      sessionStorage.getItem('desk-toc-collapsed:kb-fold') ?? '[]'
+    ) as string[]
     expect(stored).not.toContain('group-current')
     wrapper.unmount()
     sessionStorage.clear()
@@ -587,7 +594,9 @@ describe('TocNodeList', () => {
     expect(wrapper.find('[data-note-uuid="note-c"]').exists()).toBe(false)
     const stored = JSON.parse(sessionStorage.getItem('desk-toc-collapsed:kb-b') ?? '[]') as string[]
     expect(stored).toEqual(['group-b2'])
-    expect(JSON.parse(sessionStorage.getItem('desk-toc-collapsed:kb-a') ?? '[]')).toContain('group-other')
+    expect(JSON.parse(sessionStorage.getItem('desk-toc-collapsed:kb-a') ?? '[]')).toContain(
+      'group-other'
+    )
     wrapper.unmount()
     sessionStorage.clear()
   })

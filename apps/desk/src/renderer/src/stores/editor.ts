@@ -129,9 +129,9 @@ function sanitizeLayout(
                     invalid: Boolean(tab.invalid),
                     fenceOrdinal: Number.isInteger(tab.fenceOrdinal) ? tab.fenceOrdinal : 0
                   }
-              : tab.type === 'note-history'
-                ? { commit: /^[0-9a-f]{40}$/.test(tab.commit) ? tab.commit : '' }
-                : {})
+                : tab.type === 'note-history'
+                  ? { commit: /^[0-9a-f]{40}$/.test(tab.commit) ? tab.commit : '' }
+                  : {})
       }))
     return {
       ...node,
@@ -641,7 +641,12 @@ export const useEditorStore = defineStore('editor', () => {
     if (storedChanged) knowledgeBaseEditors.value = { ...knowledgeBaseEditors.value }
   }
 
-  function renameNote(knowledgeBaseId: string, noteUuid: string, title: string, noteIndex?: string | null): void {
+  function renameNote(
+    knowledgeBaseId: string,
+    noteUuid: string,
+    title: string,
+    noteIndex?: string | null
+  ): void {
     const retitle = (current: string): string => {
       const mark = ' · '
       const splitAt = current.lastIndexOf(mark)

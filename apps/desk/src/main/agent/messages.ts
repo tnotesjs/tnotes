@@ -17,7 +17,10 @@ export function withImages(
     const ids = message.images ?? []
     if (ids.length === 0) return { role: message.role, content: message.content }
     if (index !== last) {
-      return { role: message.role, content: `${message.content}\n${ids.map(() => '[图片]').join(' ')}` }
+      return {
+        role: message.role,
+        content: `${message.content}\n${ids.map(() => '[图片]').join(' ')}`
+      }
     }
     const imageUrls = ids.map(loadImage).filter((url): url is string => Boolean(url))
     return { role: message.role, content: message.content, imageUrls }

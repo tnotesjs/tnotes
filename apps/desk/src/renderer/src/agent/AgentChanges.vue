@@ -11,10 +11,13 @@ const expanded = ref(false)
 const busy = ref(false)
 
 const total = computed(() =>
-  agent.pendingNotes.reduce((sum, item) => ({ added: sum.added + item.added, removed: sum.removed + item.removed }), {
-    added: 0,
-    removed: 0
-  })
+  agent.pendingNotes.reduce(
+    (sum, item) => ({ added: sum.added + item.added, removed: sum.removed + item.removed }),
+    {
+      added: 0,
+      removed: 0
+    }
+  )
 )
 
 async function run(task: () => Promise<void>): Promise<void> {
@@ -29,7 +32,11 @@ async function run(task: () => Promise<void>): Promise<void> {
 </script>
 
 <template>
-  <section v-if="agent.pendingNotes.length || agent.staleNotes.length" class="changes" aria-label="Agent 改动">
+  <section
+    v-if="agent.pendingNotes.length || agent.staleNotes.length"
+    class="changes"
+    aria-label="Agent 改动"
+  >
     <div v-if="agent.pendingNotes.length" class="summary">
       <button type="button" class="toggle" :aria-expanded="expanded" @click="expanded = !expanded">
         <AgentIcon :name="expanded ? 'chevron' : 'chevronRight'" />
@@ -37,14 +44,29 @@ async function run(task: () => Promise<void>): Promise<void> {
         <span class="added">+{{ total.added }}</span>
         <span class="removed">−{{ total.removed }}</span>
       </button>
-      <button type="button" class="action" :disabled="busy" @click="run(() => agent.reject())">全部撤销</button>
-      <button type="button" class="action primary" :disabled="busy" @click="run(() => agent.accept())">全部保留</button>
+      <button type="button" class="action" :disabled="busy" @click="run(() => agent.reject())">
+        全部撤销
+      </button>
+      <button
+        type="button"
+        class="action primary"
+        :disabled="busy"
+        @click="run(() => agent.accept())"
+      >
+        全部保留
+      </button>
     </div>
     <ul v-if="expanded && agent.pendingNotes.length" class="files">
       <li v-for="item in agent.pendingNotes" :key="`${item.knowledgeBaseId}:${item.uuid}`">
-        <button type="button" class="file" @click="agent.revealPending({ knowledgeBaseId: item.knowledgeBaseId, uuid: item.uuid })">
+        <button
+          type="button"
+          class="file"
+          @click="agent.revealPending({ knowledgeBaseId: item.knowledgeBaseId, uuid: item.uuid })"
+        >
           <AgentIcon name="file" />
-          <span v-if="item.knowledgeBaseId !== workspace.knowledgeBase?.id" class="kb">{{ item.knowledgeBaseName }}</span>
+          <span v-if="item.knowledgeBaseId !== workspace.knowledgeBase?.id" class="kb">{{
+            item.knowledgeBaseName
+          }}</span>
           <span class="name">{{ item.index ? `${item.index} ` : '' }}{{ item.title }}</span>
           <span class="added">+{{ item.added }}</span>
           <span class="removed">−{{ item.removed }}</span>
@@ -53,23 +75,33 @@ async function run(task: () => Promise<void>): Promise<void> {
           <button
             type="button"
             :disabled="busy"
-            @click="run(() => agent.reject({ knowledgeBaseId: item.knowledgeBaseId, uuid: item.uuid }))"
+            @click="
+              run(() => agent.reject({ knowledgeBaseId: item.knowledgeBaseId, uuid: item.uuid }))
+            "
           >
             撤销
           </button>
           <button
             type="button"
             :disabled="busy"
-            @click="run(() => agent.accept({ knowledgeBaseId: item.knowledgeBaseId, uuid: item.uuid }))"
+            @click="
+              run(() => agent.accept({ knowledgeBaseId: item.knowledgeBaseId, uuid: item.uuid }))
+            "
           >
             保留
           </button>
         </span>
       </li>
     </ul>
-    <p v-for="item in agent.staleNotes" :key="`stale-${item.knowledgeBaseId}:${item.uuid}`" class="stale">
+    <p
+      v-for="item in agent.staleNotes"
+      :key="`stale-${item.knowledgeBaseId}:${item.uuid}`"
+      class="stale"
+    >
       「{{ item.title }}」这篇笔记的 Agent 标记已失效
-      <button type="button" @click="agent.dismissStale(item.knowledgeBaseId, item.uuid)">知道了</button>
+      <button type="button" @click="agent.dismissStale(item.knowledgeBaseId, item.uuid)">
+        知道了
+      </button>
     </p>
   </section>
 </template>

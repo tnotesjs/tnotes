@@ -36,11 +36,7 @@ describe('知识库右键置顶', () => {
     })
     expect(mocks.template[0]?.label).toBe('取消置顶')
     const click = mocks.template[0]?.click
-    click?.(
-      {} as Electron.MenuItem,
-      {} as Electron.BrowserWindow,
-      {} as Electron.KeyboardEvent
-    )
+    click?.({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as Electron.KeyboardEvent)
     expect(toggle).toHaveBeenCalledOnce()
   })
 

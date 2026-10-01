@@ -50,7 +50,9 @@ describe('readLineSlice', () => {
   })
 
   it('stops at the character cap and reports the real last line', () => {
-    const content = Array.from({ length: 10 }, (_, index) => `${index + 1}`.padEnd(10, 'x')).join('\n')
+    const content = Array.from({ length: 10 }, (_, index) => `${index + 1}`.padEnd(10, 'x')).join(
+      '\n'
+    )
     const slice = readLineSlice(content, 1, 400, 35)
     expect(slice.toLine).toBe(3)
     expect(slice.text.split('\n')).toHaveLength(3)
@@ -62,7 +64,9 @@ describe('frontmatter edits', () => {
   it('rejects a range that touches the id line', () => {
     const content = '---\nid: abc\n---\n正文\n'
     expect(overlapsProtectedFrontmatter(content, 0, 4)).toBe(true)
-    expect(overlapsProtectedFrontmatter(content, content.indexOf('正文'), content.length)).toBe(false)
+    expect(overlapsProtectedFrontmatter(content, content.indexOf('正文'), content.length)).toBe(
+      false
+    )
   })
 })
 
@@ -115,13 +119,22 @@ describe('locateSelection', () => {
 
   it('uses the stored offsets while the text is still there', () => {
     const from = content.indexOf('第二段')
-    expect(locateSelection(content, { from, to: from + 3, text: '第二段' })).toEqual({ from, to: from + 3 })
+    expect(locateSelection(content, { from, to: from + 3, text: '第二段' })).toEqual({
+      from,
+      to: from + 3
+    })
   })
 
   it('finds the text again after lines were inserted above it', () => {
     const moved = `新插入一行\n新插入二行\n${content}`
     const oldFrom = content.indexOf('第二段')
-    const found = locateSelection(moved, { from: oldFrom, to: oldFrom + 3, startLine: 4, endLine: 4, text: '第二段' })
+    const found = locateSelection(moved, {
+      from: oldFrom,
+      to: oldFrom + 3,
+      startLine: 4,
+      endLine: 4,
+      text: '第二段'
+    })
     expect(found).toEqual({ from: moved.indexOf('第二段'), to: moved.indexOf('第二段') + 3 })
   })
 
@@ -131,7 +144,15 @@ describe('locateSelection', () => {
   })
 
   it('falls back to selecting the whole original lines when the text is gone', () => {
-    expect(locateSelection(content, { from: 99, to: 120, startLine: 3, endLine: 4, text: '已经被改掉的原文' })).toEqual({
+    expect(
+      locateSelection(content, {
+        from: 99,
+        to: 120,
+        startLine: 3,
+        endLine: 4,
+        text: '已经被改掉的原文'
+      })
+    ).toEqual({
       from: content.indexOf('第一段'),
       to: content.indexOf('第二段') + 3
     })
@@ -147,9 +168,12 @@ describe('locateWritten', () => {
 
   it('still finds the lines after the save numbered the heading', () => {
     const written = '## 导读：核心大纲\n\n- **背景**：合并为 Alexa for Shopping\n- 五层工作模型\n'
-    const content = '---\nid: x\n---\n\n# 1. 导读：核心大纲\n\n- **背景**：合并为 Alexa for Shopping\n- 五层工作模型\n\n# 2. 正文'
+    const content =
+      '---\nid: x\n---\n\n# 1. 导读：核心大纲\n\n- **背景**：合并为 Alexa for Shopping\n- 五层工作模型\n\n# 2. 正文'
     const range = locateWritten(content, written)
-    expect(content.slice(range!.from, range!.to)).toBe('# 1. 导读：核心大纲\n\n- **背景**：合并为 Alexa for Shopping\n- 五层工作模型')
+    expect(content.slice(range!.from, range!.to)).toBe(
+      '# 1. 导读：核心大纲\n\n- **背景**：合并为 Alexa for Shopping\n- 五层工作模型'
+    )
   })
 
   it('returns null when nothing of it is left', () => {

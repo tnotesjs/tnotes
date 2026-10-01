@@ -39,5 +39,7 @@ export async function listOpenAiModels(
     .map((row) => (row && typeof row === 'object' ? (row as { id?: unknown }).id : null))
     .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
   if (ids.length === 0) throw new Error('模型列表接口没有返回模型')
-  return [...new Set(ids)].sort((left, right) => left.localeCompare(right)).map((id) => ({ id, displayName: id }))
+  return [...new Set(ids)]
+    .sort((left, right) => left.localeCompare(right))
+    .map((id) => ({ id, displayName: id }))
 }

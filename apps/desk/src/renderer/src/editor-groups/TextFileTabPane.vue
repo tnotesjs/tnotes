@@ -5,7 +5,11 @@
  * 用 CodeMirror 查看，不走笔记的实时预览。读失败时显示主进程给出的原因。
  */
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { defaultHighlightStyle, LanguageDescription, syntaxHighlighting } from '@codemirror/language'
+import {
+  defaultHighlightStyle,
+  LanguageDescription,
+  syntaxHighlighting
+} from '@codemirror/language'
 import { languages } from '@codemirror/language-data'
 import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView, lineNumbers } from '@codemirror/view'

@@ -206,7 +206,7 @@ describe('decideKbPathOpen', () => {
     })
     expect(decision.action).toBe('blocked')
     if (decision.action !== 'blocked') throw new Error('expected blocked')
-    expect(decision.reason).toContain('资源面板')
+    expect(decision.reason).toContain('引用它的笔记')
     expect(isExcalidrawPath('assets/0001-x.excalidraw')).toBe(true)
     expect(isExcalidrawPath('assets/0001-x.svg')).toBe(false)
   })
