@@ -12,10 +12,20 @@ import {
   type Range,
   type TransactionSpec
 } from '@codemirror/state'
-import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet } from '@codemirror/view'
+import {
+  Decoration,
+  EditorView,
+  ViewPlugin,
+  WidgetType,
+  type DecorationSet
+} from '@codemirror/view'
 
 import { writeClipboardText } from '../clipboardText'
-import { applyFenceLanguage, applyFenceTitle, parseFenceTitleFromMeta } from '../editor/markdown/fenceInfo'
+import {
+  applyFenceLanguage,
+  applyFenceTitle,
+  parseFenceTitleFromMeta
+} from '../editor/markdown/fenceInfo'
 import { matchDeskLanguage } from '../editor/markdown/codeMirrorLanguages'
 import { CHEVRON_DOWN_ICON, COLLAPSE_ICON, COPY_ICON, EXPAND_ICON } from '../markdown/copyIcons'
 import {
@@ -31,6 +41,8 @@ import { CodeHScrollWidget, codeBlockScrollSync } from './codeBlockScroll'
 import { CardWidget, isKnownComponent, setCodeGroupTab, type CardKind } from './cards'
 import { headingFoldKey, headingSections, HeadingFoldToggle, isHeadingFolded } from './headingFold'
 import { livePreviewEnabled } from './host'
+import { listWrapIndent } from './listWrap'
+import { hrefForLink, linkDefinitions } from './referenceLinks'
 import { readImage } from './images'
 import {
   BulletWidget,
@@ -89,10 +101,12 @@ function codeParserFor(lang: string): Parser | null {
   }
   if (!codeParsersLoading.has(key)) {
     codeParsersLoading.add(key)
-    void desc.load()
+    void desc
+      .load()
       .then((support) => {
         codeParsers.set(key, support.language.parser)
-        for (const view of codeHighlightViews) view.dispatch({ effects: bumpCodeHighlight.of(null) })
+        for (const view of codeHighlightViews)
+          view.dispatch({ effects: bumpCodeHighlight.of(null) })
       })
       .catch(() => {
         codeParsers.set(key, null)
@@ -185,7 +199,12 @@ const pointerTracker = ViewPlugin.fromClass(
         if (event.button !== 0 || event.detail > 1) return
         // 按在正文文字上才冻结；点组件（图片、卡片）由组件自己处理
         const target = event.target as HTMLElement | null
-        if (target?.closest('.cm-lp-card, .cm-lp-image, .cm-lp-math, .cm-lp-frontmatter, button, input')) return
+        if (
+          target?.closest(
+            '.cm-lp-card, .cm-lp-image, .cm-lp-math, .cm-lp-frontmatter, button, input'
+          )
+        )
+          return
         this.start()
       }
     }
@@ -251,15 +270,27 @@ function codeGroupPanels(state: EditorState, bodyFrom: number, bodyTo: number): 
   for (;;) {
     const match = FENCE_LINE.exec(line.text)
     if (open) {
-      if (match && match[1][0] === open.marker[0] && match[1].length >= open.marker.length && !match[2].trim()) {
+      if (
+        match &&
+        match[1][0] === open.marker[0] &&
+        match[1].length >= open.marker.length &&
+        !match[2].trim()
+      ) {
         panels.push({ from: open.from, to: line.to, label: open.label })
         open = null
       }
     } else if (match) {
       const info = match[2].trim()
       const lang = info.split(/\s+/)[0] ?? ''
-      const title = parseFenceTitleFromMeta(info.slice(lang.length).trim()) || /\[([^\]]+)\]/.exec(info)?.[1] || ''
-      open = { from: line.from, marker: match[1], label: title || lang || `代码 ${panels.length + 1}` }
+      const title =
+        parseFenceTitleFromMeta(info.slice(lang.length).trim()) ||
+        /\[([^\]]+)\]/.exec(info)?.[1] ||
+        ''
+      open = {
+        from: line.from,
+        marker: match[1],
+        label: title || lang || `代码 ${panels.length + 1}`
+      }
     }
     if (line.to >= bodyTo || line.number >= doc.lines) break
     line = doc.line(line.number + 1)
@@ -278,7 +309,9 @@ function fenceLang(opening: string): string {
 function fenceTitle(opening: string): string {
   const info = opening.replace(/^[ \t]*(?:`{3,}|~{3,})/, '').trim()
   const lang = fenceLang(opening)
-  return parseFenceTitleFromMeta(info.slice(lang.length).trim()) || /\[([^\]]+)\]/.exec(info)?.[1] || ''
+  return (
+    parseFenceTitleFromMeta(info.slice(lang.length).trim()) || /\[([^\]]+)\]/.exec(info)?.[1] || ''
+  )
 }
 
 function codeGroupGaps(
@@ -292,13 +325,17 @@ function codeGroupGaps(
     if (to - from > 1) gaps.push({ from: from + 1, to: to - 1 })
   }
   if (panels[0]) push(openLineTo, panels[0].from)
-  for (let index = 0; index < panels.length - 1; index += 1) push(panels[index].to, panels[index + 1].from)
+  for (let index = 0; index < panels.length - 1; index += 1)
+    push(panels[index].to, panels[index + 1].from)
   const last = panels[panels.length - 1]
   if (last) push(last.to, closeLineFrom)
   return gaps
 }
 
-function groupAt(state: EditorState, pos: number): { openFrom: number; bodyFrom: number; bodyTo: number; containerTo: number } | null {
+function groupAt(
+  state: EditorState,
+  pos: number
+): { openFrom: number; bodyFrom: number; bodyTo: number; containerTo: number } | null {
   let container: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1)
   while (container && container.name !== 'Container') container = container.parent
   const body = container?.getChild('ContainerBody')
@@ -311,7 +348,10 @@ function groupAt(state: EditorState, pos: number): { openFrom: number; bodyFrom:
   }
 }
 
-function panelsNow(state: EditorState, pos: number): { openFrom: number; panels: FencePanel[] } | null {
+function panelsNow(
+  state: EditorState,
+  pos: number
+): { openFrom: number; panels: FencePanel[] } | null {
   const group = groupAt(state, pos)
   if (!group) return null
   return { openFrom: group.openFrom, panels: codeGroupPanels(state, group.bodyFrom, group.bodyTo) }
@@ -364,7 +404,8 @@ function removeCodeGroupPanel(view: EditorView, openFrom: number, index: number)
   let from = panel.from
   let to = panel.to
   if (index > 0 && doc.sliceString(from - 1, from) === '\n') from -= 1
-  else if (located.panels[index + 1] && located.panels[index + 1].from > to) to = located.panels[index + 1].from
+  else if (located.panels[index + 1] && located.panels[index + 1].from > to)
+    to = located.panels[index + 1].from
   const stay = index > 0 ? located.panels[index - 1] : located.panels[1]
   const codeLine = doc.lineAt(stay.from).number + 1
   let anchor = codeLine <= doc.lines ? doc.line(codeLine).from : stay.from
@@ -379,7 +420,12 @@ function removeCodeGroupPanel(view: EditorView, openFrom: number, index: number)
   view.focus()
 }
 
-function reorderCodeGroupPanel(view: EditorView, openFrom: number, fromIndex: number, toIndex: number): void {
+function reorderCodeGroupPanel(
+  view: EditorView,
+  openFrom: number,
+  fromIndex: number,
+  toIndex: number
+): void {
   const located = panelsNow(view.state, openFrom)
   if (!located || fromIndex === toIndex) return
   const panels = located.panels
@@ -472,7 +518,10 @@ function beginTabRename(view: EditorView, tab: HTMLElement, openFrom: number, in
     const next = line ? applyFenceTitle(line.text, input.value.trim()) : null
     if (input.isConnected) input.replaceWith(tab)
     if (commit && line && next !== null && next !== line.text) {
-      view.dispatch({ changes: { from: line.from, to: line.to, insert: next }, userEvent: 'input.code-tab-rename' })
+      view.dispatch({
+        changes: { from: line.from, to: line.to, insert: next },
+        userEvent: 'input.code-tab-rename'
+      })
     }
     view.focus()
   }
@@ -540,7 +589,11 @@ class CodeGroupTabsWidget extends WidgetType {
     bar.className = 'cm-lp-code-tabs'
     const openFrom = (): number => tabsOpenFrom(view, bar, this.containerFrom)
 
-    const fold = iconButton(this.collapsed ? '展开代码组' : '折叠代码组', CHEVRON_DOWN_ICON, 'cm-lp-code-fold')
+    const fold = iconButton(
+      this.collapsed ? '展开代码组' : '折叠代码组',
+      CHEVRON_DOWN_ICON,
+      'cm-lp-code-fold'
+    )
     if (this.collapsed) fold.classList.add('is-collapsed')
     fold.addEventListener('mousedown', (event) => {
       event.preventDefault()
@@ -566,7 +619,12 @@ class CodeGroupTabsWidget extends WidgetType {
         event.preventDefault()
         const from = openFrom()
         const now = Date.now()
-        if (lastTabPress && lastTabPress.openFrom === from && lastTabPress.index === index && now - lastTabPress.time < 450) {
+        if (
+          lastTabPress &&
+          lastTabPress.openFrom === from &&
+          lastTabPress.index === index &&
+          now - lastTabPress.time < 450
+        ) {
           lastTabPress = null
           beginTabRename(view, tab, from, index)
           return
@@ -588,7 +646,11 @@ class CodeGroupTabsWidget extends WidgetType {
           const target = landingIndex(x)
           buttons.forEach((button, tabIndex) => {
             const before = dragging && tabIndex === target && tabIndex !== index
-            const after = dragging && target === buttons.length && tabIndex === buttons.length - 1 && index !== buttons.length - 1
+            const after =
+              dragging &&
+              target === buttons.length &&
+              tabIndex === buttons.length - 1 &&
+              index !== buttons.length - 1
             button.classList.toggle('is-drop', before)
             button.classList.toggle('is-drop-after', after)
           })
@@ -736,7 +798,9 @@ export function hiddenCodeGroupBodies(
     enter(node) {
       if (node.name !== 'Container') return
       const info = node.node.getChild('ContainerInfo')
-      const name = info ? state.doc.sliceString(info.from, info.to).trim().split(/\s+/)[0]?.toLowerCase() : ''
+      const name = info
+        ? state.doc.sliceString(info.from, info.to).trim().split(/\s+/)[0]?.toLowerCase()
+        : ''
       if (name !== 'code-group') return false
       const body = node.node.getChild('ContainerBody')
       if (!body) return false
@@ -804,10 +868,14 @@ export const keepCursorOutOfHiddenCodeGroup = EditorStateValue.transactionFilter
     if (main.from < containerFrom || main.to > containerTo) return []
     return [{ from: tr.changes.mapPos(body.from, 1), to: tr.changes.mapPos(body.to, -1) }]
   })
-  const clamped =
-    main.empty
-      ? clampCursorAcrossHidden(main.head, tr.changes.mapPos(tr.startState.selection.main.head), mapped, tr.newDoc.length)
-      : clampRangeAroundCollapsed(main.from, main.to, mapped)
+  const clamped = main.empty
+    ? clampCursorAcrossHidden(
+        main.head,
+        tr.changes.mapPos(tr.startState.selection.main.head),
+        mapped,
+        tr.newDoc.length
+      )
+    : clampRangeAroundCollapsed(main.from, main.to, mapped)
   if (!clamped) return tr
   const selection =
     clamped.from === clamped.to
@@ -834,7 +902,9 @@ function sourceCodeHighlights(state: EditorState): DecorationSet {
         const start = doc.lineAt(panel.from)
         const end = doc.lineAt(Math.max(panel.from, panel.to))
         if (end.number <= start.number) continue
-        const lang = fenceLang(start.text).replace(/[{:].*$/, '').toLowerCase()
+        const lang = fenceLang(start.text)
+          .replace(/[{:].*$/, '')
+          .toLowerCase()
         const codeFrom = Math.min(doc.length, start.to + 1)
         const codeTo = end.from > codeFrom ? end.from - 1 : start.to
         const code = codeTo > codeFrom ? doc.sliceString(codeFrom, codeTo).replace(/\n$/, '') : ''
@@ -847,11 +917,13 @@ function sourceCodeHighlights(state: EditorState): DecorationSet {
 }
 
 function build(state: EditorState): LivePreviewState {
-  if (!state.facet(livePreviewEnabled)) return { decorations: sourceCodeHighlights(state), blocks: [] }
+  if (!state.facet(livePreviewEnabled))
+    return { decorations: sourceCodeHighlights(state), blocks: [] }
   const doc = state.doc
   const ranges: Range<Decoration>[] = []
   const blocks: HiddenBlock[] = []
-  const selection = state.field(interactionField, false)?.focused === false ? [] : state.selection.ranges
+  const selection =
+    state.field(interactionField, false)?.focused === false ? [] : state.selection.ranges
   const touches = (from: number, to: number): boolean =>
     selection.some((range) => range.from <= to && range.to >= from)
   const lineTouched = (pos: number): boolean => {
@@ -884,6 +956,7 @@ function build(state: EditorState): LivePreviewState {
     }
   }
   const kbId = state.facet(cardKnowledgeBase)
+  const definitions = linkDefinitions(state)
   const card = (node: SyntaxNode, kind: CardKind, revealOffset: number): void => {
     const start = doc.lineAt(node.from)
     const source = doc.sliceString(start.from, node.to)
@@ -956,22 +1029,52 @@ function build(state: EditorState): LivePreviewState {
         }
         case 'ListMark': {
           const list = node.parent?.parent
-          if (list?.name === 'BulletList') {
+          // 标记连同后面的一个空格放进固定宽度的标记位，正文才能在同一列对齐。
+          const markEnd = doc.sliceString(to, to + 1) === ' ' ? to + 1 : to
+          const taskMarker = node.parent?.getChild('Task')?.getChild('TaskMarker')
+          if (taskMarker && doc.lineAt(taskMarker.from).number === doc.lineAt(from).number) {
+            // 任务项只显示复选框，复选框占标记位，不画圆点或编号。
+            const taskEnd =
+              doc.sliceString(taskMarker.to, taskMarker.to + 1) === ' '
+                ? taskMarker.to + 1
+                : taskMarker.to
+            if (touches(from, taskMarker.to)) {
+              ranges.push(Decoration.mark({ class: 'cm-lp-list-marker' }).range(from, taskEnd))
+            } else {
+              const checked = /x/i.test(doc.sliceString(taskMarker.from + 1, taskMarker.from + 2))
+              ranges.push(
+                Decoration.replace({ widget: new CheckboxWidget(checked, true) }).range(
+                  from,
+                  taskEnd
+                )
+              )
+            }
+          } else if (list?.name === 'BulletList') {
             if (!touches(from, to)) {
-              ranges.push(Decoration.replace({ widget: new BulletWidget(listDepth(node)) }).range(from, to))
+              ranges.push(
+                Decoration.replace({ widget: new BulletWidget(listDepth(node)) }).range(
+                  from,
+                  markEnd
+                )
+              )
+            } else {
+              ranges.push(Decoration.mark({ class: 'cm-lp-list-marker' }).range(from, markEnd))
             }
           } else {
-            ranges.push(Decoration.mark({ class: 'cm-lp-ol-mark' }).range(from, to))
+            ranges.push(
+              Decoration.mark({ class: 'cm-lp-ol-mark cm-lp-list-marker' }).range(from, markEnd)
+            )
           }
           return
         }
         case 'TaskMarker': {
+          // 复选框随列表标记一起画（见 ListMark），这里只给已完成的正文加删除线。
           if (touches(from, to)) return
           const checked = /x/i.test(doc.sliceString(from + 1, from + 2))
-          ranges.push(Decoration.replace({ widget: new CheckboxWidget(checked) }).range(from, to))
           if (checked) {
             const line = doc.lineAt(to)
-            if (line.to > to) ranges.push(Decoration.mark({ class: 'cm-lp-task-done' }).range(to, line.to))
+            if (line.to > to)
+              ranges.push(Decoration.mark({ class: 'cm-lp-task-done' }).range(to, line.to))
           }
           return
         }
@@ -998,14 +1101,16 @@ function build(state: EditorState): LivePreviewState {
         }
         case 'Link': {
           const marks = node.getChildren('LinkMark')
-          const url = node.getChild('URL')
-          const href = url ? doc.sliceString(url.from, url.to) : ''
+          const href = hrefForLink(state, node, definitions)
           const closeBracket = marks.find((mark) => doc.sliceString(mark.from, mark.to) === ']')
           const textFrom = from + 1
           const textTo = closeBracket ? closeBracket.from : to
           if (textTo > textFrom) {
             ranges.push(
-              Decoration.mark({ class: 'cm-lp-link', attributes: { 'data-href': href } }).range(textFrom, textTo)
+              Decoration.mark({ class: 'cm-lp-link', attributes: { 'data-href': href } }).range(
+                textFrom,
+                textTo
+              )
             )
           }
           if (!touches(from, to)) {
@@ -1034,10 +1139,10 @@ function build(state: EditorState): LivePreviewState {
           const parent = node.parent?.name
           if (parent === 'Link' || parent === 'Image' || parent === 'Autolink') return
           ranges.push(
-            Decoration.mark({ class: 'cm-lp-link', attributes: { 'data-href': doc.sliceString(from, to) } }).range(
-              from,
-              to
-            )
+            Decoration.mark({
+              class: 'cm-lp-link',
+              attributes: { 'data-href': doc.sliceString(from, to) }
+            }).range(from, to)
           )
           return
         }
@@ -1099,7 +1204,8 @@ function build(state: EditorState): LivePreviewState {
             linesClass(from, to, 'cm-lp-codeblock')
             return false
           }
-          const closed = node.getChildren('CodeMark').length > 1 && closeLine.number > openLine.number
+          const closed =
+            node.getChildren('CodeMark').length > 1 && closeLine.number > openLine.number
           const chrome = codeChromeAt(state, openLine.from)
           const nowrap = chrome?.wrapped ? '' : ' cm-lp-code-nowrap'
           const scrollKey = String(openLine.from)
@@ -1114,21 +1220,34 @@ function build(state: EditorState): LivePreviewState {
             ranges.push(
               Decoration.line({
                 class: className,
-                attributes: isOpen || chrome?.wrapped ? undefined : { 'data-code-scroll': scrollKey }
+                attributes:
+                  isOpen || chrome?.wrapped ? undefined : { 'data-code-scroll': scrollKey }
               }).range(doc.line(number).from)
             )
           }
           if (!chrome?.collapsed && !chrome?.wrapped && closeLine.number > openLine.number) {
-            const scrollAt = closed ? closeLine.from : closeLine.number < doc.lines ? doc.line(closeLine.number + 1).from : null
+            const scrollAt = closed
+              ? closeLine.from
+              : closeLine.number < doc.lines
+                ? doc.line(closeLine.number + 1).from
+                : null
             if (scrollAt != null) {
               ranges.push(
-                Decoration.widget({ widget: new CodeHScrollWidget(openLine.from), block: true, side: -1 }).range(scrollAt)
+                Decoration.widget({
+                  widget: new CodeHScrollWidget(openLine.from),
+                  block: true,
+                  side: -1
+                }).range(scrollAt)
               )
             }
           }
           if (!chrome?.collapsed) {
             ranges.push(
-              ...codeLineDecorations(doc, openLine.number, closed ? closeLine.number - 1 : closeLine.number)
+              ...codeLineDecorations(
+                doc,
+                openLine.number,
+                closed ? closeLine.number - 1 : closeLine.number
+              )
             )
           }
           // 选区跨出围栏时露出源码，藏住的 ``` 才不会被悄悄选中。选区只在代码正文里时仍用标题栏。
@@ -1147,7 +1266,9 @@ function build(state: EditorState): LivePreviewState {
           const fullscreen = Boolean(chrome?.fullscreen)
           if (fullscreen) {
             for (let number = openLine.number; number <= closeLine.number; number += 1) {
-              ranges.push(Decoration.line({ class: 'cm-lp-codeblock-fs' }).range(doc.line(number).from))
+              ranges.push(
+                Decoration.line({ class: 'cm-lp-codeblock-fs' }).range(doc.line(number).from)
+              )
             }
           }
           const lastBodyLine = closed ? closeLine.number - 1 : closeLine.number
@@ -1168,7 +1289,9 @@ function build(state: EditorState): LivePreviewState {
           const closeMarks = node.getChildren('CodeMark')
           const closing = closeMarks.length > 1 ? closeMarks[closeMarks.length - 1] : null
           if (closing && closeLine.number > openLine.number && !chrome?.collapsed) {
-            ranges.push(Decoration.replace({ widget: new EmptyWidget() }).range(closing.from, closing.to))
+            ranges.push(
+              Decoration.replace({ widget: new EmptyWidget() }).range(closing.from, closing.to)
+            )
           }
           if (chrome?.collapsed && closeLine.number > openLine.number) {
             const bodyFrom = doc.line(openLine.number + 1).from
@@ -1204,7 +1327,8 @@ function build(state: EditorState): LivePreviewState {
             active = Math.min(Math.max(0, active), Math.max(0, panels.length - 1))
             // 折叠和全屏按整组记，键是 `::: code-group` 那一行
             const groupChrome = codeChromeAt(state, openLine.from)
-            const groupCollapsed = Boolean(groupChrome?.collapsed) && closeLine.number > openLine.number
+            const groupCollapsed =
+              Boolean(groupChrome?.collapsed) && closeLine.number > openLine.number
             const groupFullscreen = Boolean(groupChrome?.fullscreen)
             const groupWrapped = Boolean(groupChrome?.wrapped)
             const activeLang = panels[active] ? fenceLang(doc.lineAt(panels[active].from).text) : ''
@@ -1213,8 +1337,13 @@ function build(state: EditorState): LivePreviewState {
             if (activePanel) {
               const start = doc.lineAt(activePanel.from)
               const end = doc.lineAt(activePanel.to)
-              const endIsFence = end.number > start.number && /^[ \t]*(?:`{3,}|~{3,})[ \t]*$/.test(end.text)
-              lineDigits = fenceLineDigits(doc, start.number, endIsFence ? end.number - 1 : end.number)
+              const endIsFence =
+                end.number > start.number && /^[ \t]*(?:`{3,}|~{3,})[ \t]*$/.test(end.text)
+              lineDigits = fenceLineDigits(
+                doc,
+                start.number,
+                endIsFence ? end.number - 1 : end.number
+              )
             }
             const openClasses = ['cm-lp-code-group-open']
             if (groupCollapsed) openClasses.push('cm-lp-code-group-collapsed')
@@ -1236,7 +1365,10 @@ function build(state: EditorState): LivePreviewState {
             )
             if (groupCollapsed) {
               ranges.push(
-                Decoration.replace({ block: true }).range(doc.line(openLine.number + 1).from, closeLine.to)
+                Decoration.replace({ block: true }).range(
+                  doc.line(openLine.number + 1).from,
+                  closeLine.to
+                )
               )
               return false
             }
@@ -1250,10 +1382,13 @@ function build(state: EditorState): LivePreviewState {
                 ranges.push(Decoration.replace({ block: true }).range(start.from, end.to))
                 return
               }
-              const lang = fenceLang(start.text).replace(/[{:].*$/, '').toLowerCase()
+              const lang = fenceLang(start.text)
+                .replace(/[{:].*$/, '')
+                .toLowerCase()
               const codeFrom = Math.min(doc.length, start.to + 1)
               const codeTo = end.from > codeFrom ? end.from - 1 : start.to
-              const code = codeTo > codeFrom ? doc.sliceString(codeFrom, codeTo).replace(/\n$/, '') : ''
+              const code =
+                codeTo > codeFrom ? doc.sliceString(codeFrom, codeTo).replace(/\n$/, '') : ''
               // 标签栏已经承担标题、语言、复制和全屏，开头围栏整行藏起来
               ranges.push(Decoration.replace({ block: true }).range(start.from, start.to))
               if (end.number > start.number + 1) {
@@ -1261,7 +1396,9 @@ function build(state: EditorState): LivePreviewState {
                   ranges.push(
                     Decoration.line({
                       class: groupWrapped ? 'cm-lp-codeblock' : 'cm-lp-codeblock cm-lp-code-nowrap',
-                      attributes: groupWrapped ? undefined : { 'data-code-scroll': String(start.from) }
+                      attributes: groupWrapped
+                        ? undefined
+                        : { 'data-code-scroll': String(start.from) }
                     }).range(doc.line(number).from)
                   )
                 }
@@ -1275,32 +1412,53 @@ function build(state: EditorState): LivePreviewState {
                   )
                 }
               }
-              if (code.length > 0) highlightCode(ranges, codeFrom, codeFrom + code.length, lang, code)
-              const endIsFence = end.number > start.number && /^[ \t]*(?:`{3,}|~{3,})[ \t]*$/.test(end.text)
-              ranges.push(...codeLineDecorations(doc, start.number, endIsFence ? end.number - 1 : end.number))
+              if (code.length > 0)
+                highlightCode(ranges, codeFrom, codeFrom + code.length, lang, code)
+              const endIsFence =
+                end.number > start.number && /^[ \t]*(?:`{3,}|~{3,})[ \t]*$/.test(end.text)
+              ranges.push(
+                ...codeLineDecorations(doc, start.number, endIsFence ? end.number - 1 : end.number)
+              )
               if (end.number > start.number) {
                 const marks = /^[ \t]*`{3,}|^[ \t]*~{3,}/.exec(end.text)
                 if (marks) {
                   ranges.push(
-                    Decoration.replace({ widget: new EmptyWidget() }).range(end.from, end.from + marks[0].length)
+                    Decoration.replace({ widget: new EmptyWidget() }).range(
+                      end.from,
+                      end.from + marks[0].length
+                    )
                   )
                 }
               }
               if (groupFullscreen) {
                 for (let number = start.number + 1; number <= end.number; number += 1) {
-                  ranges.push(Decoration.line({ class: 'cm-lp-codeblock-fs' }).range(doc.line(number).from))
+                  ranges.push(
+                    Decoration.line({ class: 'cm-lp-codeblock-fs' }).range(doc.line(number).from)
+                  )
                 }
               }
             })
             if (closeLine.number > openLine.number && closeLine.length > 0) {
-              ranges.push(Decoration.replace({ widget: new EmptyWidget() }).range(closeLine.from, closeLine.to))
+              ranges.push(
+                Decoration.replace({ widget: new EmptyWidget() }).range(
+                  closeLine.from,
+                  closeLine.to
+                )
+              )
             }
             return false
           }
-          lineClass(openLine.from, `cm-lp-container-mark cm-lp-container-open cm-lp-callout-${containerName}`)
-          if (body) linesClass(body.from, body.to, `cm-lp-container-body cm-lp-callout-${containerName}`)
+          lineClass(
+            openLine.from,
+            `cm-lp-container-mark cm-lp-container-open cm-lp-callout-${containerName}`
+          )
+          if (body)
+            linesClass(body.from, body.to, `cm-lp-container-body cm-lp-callout-${containerName}`)
           if (closeLine.number > openLine.number) {
-            lineClass(closeLine.from, `cm-lp-container-mark cm-lp-container-close cm-lp-callout-${containerName}`)
+            lineClass(
+              closeLine.from,
+              `cm-lp-container-mark cm-lp-container-close cm-lp-callout-${containerName}`
+            )
           }
           return false
         }
@@ -1330,7 +1488,8 @@ function build(state: EditorState): LivePreviewState {
         case 'HTMLBlock': {
           const source = doc.sliceString(from, to)
           if (BREAK_TAG.test(source.trim())) {
-            if (!lineTouched(from)) ranges.push(Decoration.replace({ widget: new BreakWidget(true) }).range(from, to))
+            if (!lineTouched(from))
+              ranges.push(Decoration.replace({ widget: new BreakWidget(true) }).range(from, to))
             return false
           }
           if (touches(from, to)) {
@@ -1366,9 +1525,12 @@ function build(state: EditorState): LivePreviewState {
 const livePreviewStateField = StateField.define<LivePreviewState>({
   create: (state) => build(state),
   update(value, tr) {
-    const modeChanged = tr.startState.facet(livePreviewEnabled) !== tr.state.facet(livePreviewEnabled)
-    const interactionChanged = tr.startState.field(interactionField) !== tr.state.field(interactionField)
-    const frozen = tr.state.field(interactionField).pointerSelecting && !tr.docChanged && !interactionChanged
+    const modeChanged =
+      tr.startState.facet(livePreviewEnabled) !== tr.state.facet(livePreviewEnabled)
+    const interactionChanged =
+      tr.startState.field(interactionField) !== tr.state.field(interactionField)
+    const frozen =
+      tr.state.field(interactionField).pointerSelecting && !tr.docChanged && !interactionChanged
     if (frozen) return value
     if (
       tr.docChanged ||
@@ -1378,7 +1540,8 @@ const livePreviewStateField = StateField.define<LivePreviewState>({
       syntaxTree(tr.state) !== syntaxTree(tr.startState) ||
       headingFoldKey(tr.startState) !== headingFoldKey(tr.state) ||
       tr.startState.field(codeBlockChrome, false) !== tr.state.field(codeBlockChrome, false) ||
-      tr.startState.field(codeHighlightEpoch, false) !== tr.state.field(codeHighlightEpoch, false) ||
+      tr.startState.field(codeHighlightEpoch, false) !==
+        tr.state.field(codeHighlightEpoch, false) ||
       tr.effects.some((effect) => effect.is(setCodeGroupTab))
     ) {
       return build(tr.state)
@@ -1394,18 +1557,21 @@ export const livePreviewField: Extension = [
   codeHighlightEpoch,
   codeHighlightLoader,
   livePreviewStateField,
+  listWrapIndent,
   pointerTracker,
   codeBlockScrollSync,
   // 标题输入框在编辑器内部。焦点从正文移到输入框时仍算在编辑，否则分组会退回卡片并把输入框拆掉。
   EditorView.domEventHandlers({
     focusin(_event, view) {
-      if (!view.state.field(interactionField).focused) view.dispatch({ effects: setFocused.of(true) })
+      if (!view.state.field(interactionField).focused)
+        view.dispatch({ effects: setFocused.of(true) })
       return false
     },
     focusout(event, view) {
       const next = event.relatedTarget
       if (next instanceof Node && view.dom.contains(next)) return false
-      if (view.state.field(interactionField).focused) view.dispatch({ effects: setFocused.of(false) })
+      if (view.state.field(interactionField).focused)
+        view.dispatch({ effects: setFocused.of(false) })
       return false
     }
   })

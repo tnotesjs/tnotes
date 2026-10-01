@@ -15,7 +15,7 @@ import {
   syntaxTree
 } from '@codemirror/language'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
-import { Compartment, EditorSelection, EditorState } from '@codemirror/state'
+import { Compartment, EditorSelection, EditorState, type Extension } from '@codemirror/state'
 import {
   EditorView,
   drawSelection,
@@ -62,6 +62,7 @@ import {
   type HeadingFoldCommand
 } from './headingFold'
 import { livePreviewEnabled, livePreviewHost } from './host'
+import { listFoldService } from './listFold'
 import { sourceChrome } from './sourceChrome'
 import { tnotesMarkdown } from './language'
 import { collectHeadings, type OutlineHeading } from './outline'
@@ -117,7 +118,7 @@ const contextCompartment = new Compartment()
 let lastHeadingLevel: number | null | undefined
 let outlineTimer: ReturnType<typeof setTimeout> | null = null
 
-function modeExtensions(mode: NoteViewMode) {
+function modeExtensions(mode: NoteViewMode): Extension[] {
   const visual = mode !== 'source'
   return [
     livePreviewEnabled.of(visual),
@@ -126,7 +127,7 @@ function modeExtensions(mode: NoteViewMode) {
   ]
 }
 
-function readOnlyExtensions(readOnly: boolean) {
+function readOnlyExtensions(readOnly: boolean): Extension[] {
   return [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]
 }
 
@@ -166,7 +167,7 @@ function openMindmap(fenceSource: string): void {
   editorStore.openMindmap(knowledgeBase, props.noteUuid, fenceSource, { title, fenceOrdinal })
 }
 
-function contextExtensions() {
+function contextExtensions(): Extension[] {
   return [
     livePreviewHost.of({
       resolveImage: (src) => resolveMarkdownImageUrl(src, props.knowledgeBaseId, props.noteUuid),
@@ -301,6 +302,7 @@ function createState(doc: string): EditorState {
       syntaxHighlighting(classHighlighter),
       codeGroupTabs,
       headingFoldService,
+      listFoldService,
       codeBlockFullscreenClass,
       keepCursorOutOfHiddenCodeGroup,
       codeLineNumberClick,

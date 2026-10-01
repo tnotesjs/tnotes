@@ -52,6 +52,17 @@ export function taskToggleChange(
   return { from, to: from + 1, insert: match[1] === ' ' ? 'x' : ' ' }
 }
 
+/** 复选框连同列表标记一起替换时，组件起点就是标记起点，任务标记只会在它后面。 */
+function taskToggleAfterMarker(
+  text: string,
+  pos: number
+): { from: number; to: number; insert: string } | null {
+  const match = /^\S+[ \t]+\[( |x|X)\]/.exec(text)
+  if (!match) return null
+  const from = pos + match[0].length - 2
+  return { from, to: from + 1, insert: match[1] === ' ' ? 'x' : ' ' }
+}
+
 /** 点击组件后把光标放进它的源码里（露出源码）。 */
 export function revealAt(view: EditorView, pos: number): void {
   view.dispatch({ selection: { anchor: pos }, scrollIntoView: false, userEvent: 'select.pointer' })
@@ -82,19 +93,25 @@ export class BulletWidget extends WidgetType {
 
   toDOM(): HTMLElement {
     const span = document.createElement('span')
-    span.className = 'cm-lp-bullet'
-    span.textContent = ['•', '◦', '▪'][this.depth % 3]
+    span.className = 'cm-lp-bullet cm-lp-list-marker'
+    // 实心圆 → 空心圆 → 实心方块，按层级循环（对齐语雀）
+    span.dataset.shape = ['disc', 'circle', 'square'][this.depth % 3]
+    span.setAttribute('aria-hidden', 'true')
     return span
   }
 }
 
 export class CheckboxWidget extends WidgetType {
-  constructor(private readonly checked: boolean) {
+  /** marker：替换整个「- [ ] 」，复选框放进列表标记位 */
+  constructor(
+    private readonly checked: boolean,
+    private readonly marker = false
+  ) {
     super()
   }
 
   eq(other: CheckboxWidget): boolean {
-    return other.checked === this.checked
+    return other.checked === this.checked && other.marker === this.marker
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -102,15 +119,22 @@ export class CheckboxWidget extends WidgetType {
     box.type = 'checkbox'
     box.className = 'cm-lp-task'
     box.checked = this.checked
+    const root = this.marker ? document.createElement('span') : box
+    if (this.marker) {
+      root.className = 'cm-lp-list-marker cm-lp-task-marker'
+      root.append(box)
+    }
     box.addEventListener('mousedown', (event) => {
       event.preventDefault()
-      const pos = widgetPos(view, box)
+      const pos = widgetPos(view, root)
       if (pos == null || view.state.readOnly) return
-      const change = taskToggleChange(view.state.doc.toString(), pos)
+      const change = this.marker
+        ? taskToggleAfterMarker(view.state.doc.sliceString(pos, pos + 16), pos)
+        : taskToggleChange(view.state.doc.toString(), pos)
       if (!change) return
       view.dispatch({ changes: change, userEvent: 'input.toggle-task' })
     })
-    return box
+    return root
   }
 
   ignoreEvent(): boolean {
@@ -149,7 +173,8 @@ let restoreCodeField: 'title' | 'lang' | null = null
 function fenceTitleRange(lineFrom: number, opening: string): { from: number; to: number } {
   const end = opening.lastIndexOf(']')
   const start = opening.lastIndexOf('[')
-  if (start < 0 || end < start) return { from: lineFrom + opening.length, to: lineFrom + opening.length }
+  if (start < 0 || end < start)
+    return { from: lineFrom + opening.length, to: lineFrom + opening.length }
   return { from: lineFrom + start + 1, to: lineFrom + end }
 }
 
@@ -197,7 +222,11 @@ export class CodeFenceHeaderWidget extends WidgetType {
     const header = document.createElement('span')
     header.className = 'cm-lp-code-header'
     if (this.showFold) {
-      const fold = iconButton(this.collapsed ? '展开代码' : '折叠代码', CHEVRON_DOWN_ICON, 'cm-lp-code-fold')
+      const fold = iconButton(
+        this.collapsed ? '展开代码' : '折叠代码',
+        CHEVRON_DOWN_ICON,
+        'cm-lp-code-fold'
+      )
       if (this.collapsed) fold.classList.add('is-collapsed')
       fold.addEventListener('mousedown', (event) => {
         event.preventDefault()
@@ -270,7 +299,11 @@ export class CodeFenceHeaderWidget extends WidgetType {
       void writeClipboardText(this.code).then((ok) => flashCopied(copy, ok))
     })
 
-    const fullscreen = iconButton(this.fullscreen ? '退出全屏' : '全屏代码', this.fullscreen ? COLLAPSE_ICON : EXPAND_ICON, 'cm-lp-code-expand')
+    const fullscreen = iconButton(
+      this.fullscreen ? '退出全屏' : '全屏代码',
+      this.fullscreen ? COLLAPSE_ICON : EXPAND_ICON,
+      'cm-lp-code-expand'
+    )
     fullscreen.addEventListener('mousedown', (event) => {
       event.preventDefault()
       event.stopPropagation()
@@ -581,7 +614,10 @@ export class ImageWidget extends WidgetType {
       const zoom = startWidth / Math.max(1, frame.offsetWidth)
       let width = startWidth
       const move = (moveEvent: MouseEvent): void => {
-        width = Math.min(maxWidth, Math.max(MIN_IMAGE_WIDTH, startWidth + moveEvent.clientX - startX))
+        width = Math.min(
+          maxWidth,
+          Math.max(MIN_IMAGE_WIDTH, startWidth + moveEvent.clientX - startX)
+        )
         frame.style.width = `${Math.round(width / zoom)}px`
       }
       const up = (): void => {
@@ -609,7 +645,11 @@ export class ImageWidget extends WidgetType {
     imageCanvasTeardown.delete(dom)
   }
 
-  private applyAttrs(view: EditorView, dom: HTMLElement, next: { width?: string; align?: ImageAlign }): void {
+  private applyAttrs(
+    view: EditorView,
+    dom: HTMLElement,
+    next: { width?: string; align?: ImageAlign }
+  ): void {
     if (view.state.readOnly) return
     const pos = widgetPos(view, dom)
     if (pos == null) return
@@ -656,7 +696,8 @@ export class FrontmatterWidget extends WidgetType {
     box.append(title)
     for (const entry of entries.slice(0, 6)) {
       const row = document.createElement('span')
-      row.className = entry.key === 'id' ? 'cm-lp-frontmatter-row is-locked' : 'cm-lp-frontmatter-row'
+      row.className =
+        entry.key === 'id' ? 'cm-lp-frontmatter-row is-locked' : 'cm-lp-frontmatter-row'
       const key = document.createElement('span')
       key.className = 'cm-lp-frontmatter-key'
       key.textContent = entry.key

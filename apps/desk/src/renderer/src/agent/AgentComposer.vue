@@ -41,7 +41,12 @@ const candidates = computed<Candidate[]>(() => {
   if (mentionStart.value < 0 || !kb) return []
   const tab = editor.activeTab
   const currentUuid = tab?.type === 'note' && tab.knowledgeBaseId === kb.id ? tab.noteUuid : ''
-  const toCandidate = (note: { uuid: string; title: string; index: string; path: string }): Candidate => ({
+  const toCandidate = (note: {
+    uuid: string
+    title: string
+    index: string
+    path: string
+  }): Candidate => ({
     knowledgeBaseId: kb.id,
     knowledgeBaseName: kb.displayName,
     noteUuid: note.uuid,
@@ -75,7 +80,9 @@ const modelGroups = computed(() => {
 })
 
 const modelLabel = computed(() => agent.currentModel?.model.id ?? '未配置模型')
-const effortLabel = computed(() => EFFORTS.find((item) => item.value === agent.reasoningEffort)?.label ?? '')
+const effortLabel = computed(
+  () => EFFORTS.find((item) => item.value === agent.reasoningEffort)?.label ?? ''
+)
 const canSend = computed(() => Boolean(agent.draft.trim()) || agent.images.length > 0)
 
 function resize(): void {
@@ -144,10 +151,15 @@ function onKeydown(event: KeyboardEvent): void {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       const step = event.key === 'ArrowDown' ? 1 : -1
-      activeIndex.value = (activeIndex.value + step + candidates.value.length) % candidates.value.length
+      activeIndex.value =
+        (activeIndex.value + step + candidates.value.length) % candidates.value.length
       return
     }
-    if ((event.key === 'Enter' || event.key === 'Tab') && !event.isComposing && event.keyCode !== 229) {
+    if (
+      (event.key === 'Enter' || event.key === 'Tab') &&
+      !event.isComposing &&
+      event.keyCode !== 229
+    ) {
       event.preventDefault()
       pick(candidates.value[activeIndex.value])
       return
@@ -187,7 +199,9 @@ async function addFiles(files: Iterable<File>): Promise<void> {
 }
 
 function onPaste(event: ClipboardEvent): void {
-  const files = [...(event.clipboardData?.files ?? [])].filter((file) => file.type.startsWith('image/'))
+  const files = [...(event.clipboardData?.files ?? [])].filter((file) =>
+    file.type.startsWith('image/')
+  )
   if (files.length === 0) return
   event.preventDefault()
   void addFiles(files)
@@ -195,7 +209,9 @@ function onPaste(event: ClipboardEvent): void {
 
 function onDrop(event: DragEvent): void {
   dragging.value = false
-  const files = [...(event.dataTransfer?.files ?? [])].filter((file) => file.type.startsWith('image/'))
+  const files = [...(event.dataTransfer?.files ?? [])].filter((file) =>
+    file.type.startsWith('image/')
+  )
   if (files.length === 0) return
   event.preventDefault()
   void addFiles(files)
@@ -225,7 +241,9 @@ document.addEventListener('mousedown', closeMenus)
 onBeforeUnmount(() => document.removeEventListener('mousedown', closeMenus))
 
 function mentionLabel(item: MentionItem): string {
-  return item.knowledgeBaseId === currentKbId.value ? item.title : `${item.knowledgeBaseName} · ${item.title}`
+  return item.knowledgeBaseId === currentKbId.value
+    ? item.title
+    : `${item.knowledgeBaseName} · ${item.title}`
 }
 
 function selectionTitle(text: string): string {
@@ -244,31 +262,61 @@ function selectionTitle(text: string): string {
   >
     <div class="box">
       <div class="context">
-        <button type="button" class="pill add" aria-label="添加笔记" data-tooltip="添加笔记（@）" @click="openMention">
+        <button
+          type="button"
+          class="pill add"
+          aria-label="添加笔记"
+          data-tooltip="添加笔记（@）"
+          @click="openMention"
+        >
           <AgentIcon name="at" />
         </button>
-        <span v-for="item in agent.mentions" :key="`${item.knowledgeBaseId}:${item.noteUuid}`" class="pill">
+        <span
+          v-for="item in agent.mentions"
+          :key="`${item.knowledgeBaseId}:${item.noteUuid}`"
+          class="pill"
+        >
           <button type="button" class="pill-main" @click="agent.revealRef(item)">
             <AgentIcon name="file" />
             <span>{{ mentionLabel(item) }}</span>
           </button>
-          <button type="button" class="pill-remove" aria-label="移除" @click="agent.removeMention(item)">
+          <button
+            type="button"
+            class="pill-remove"
+            aria-label="移除"
+            @click="agent.removeMention(item)"
+          >
             <AgentIcon name="close" />
           </button>
         </span>
-        <span v-for="item in agent.selections" :key="item.id" class="pill" :title="selectionTitle(item.text)">
+        <span
+          v-for="item in agent.selections"
+          :key="item.id"
+          class="pill"
+          :title="selectionTitle(item.text)"
+        >
           <button type="button" class="pill-main" @click="agent.revealRef(item)">
             <AgentIcon name="file" />
             <span>{{ selectionLabelParts(item, currentKbId).name }}</span>
             <em class="lines">{{ selectionLabelParts(item, currentKbId).lines }}</em>
           </button>
-          <button type="button" class="pill-remove" aria-label="移除" @click="agent.removeSelection(item.id)">
+          <button
+            type="button"
+            class="pill-remove"
+            aria-label="移除"
+            @click="agent.removeSelection(item.id)"
+          >
             <AgentIcon name="close" />
           </button>
         </span>
         <span v-for="image in agent.images" :key="image.id" class="thumb">
           <img :src="image.url" alt="待发送的图片" />
-          <button type="button" class="thumb-remove" aria-label="移除图片" @click="agent.removeImage(image.id)">
+          <button
+            type="button"
+            class="thumb-remove"
+            aria-label="移除图片"
+            @click="agent.removeImage(image.id)"
+          >
             <AgentIcon name="close" />
           </button>
         </span>
@@ -298,7 +346,9 @@ function selectionTitle(text: string): string {
         placeholder="让 Agent 修改笔记，@ 添加笔记"
         @input="detectMention"
         @click="detectMention"
-        @keyup="(event) => (event.key === 'ArrowLeft' || event.key === 'ArrowRight') && detectMention()"
+        @keyup="
+          (event) => (event.key === 'ArrowLeft' || event.key === 'ArrowRight') && detectMention()
+        "
         @keydown="onKeydown"
         @paste="onPaste"
         @blur="mentionStart = -1"
@@ -306,30 +356,58 @@ function selectionTitle(text: string): string {
       <div class="toolbar">
         <div class="left">
           <div class="menu-anchor">
-            <button type="button" class="chip" :aria-expanded="menu === 'mode'" @click="toggleMenu('mode')">
+            <button
+              type="button"
+              class="chip"
+              :aria-expanded="menu === 'mode'"
+              @click="toggleMenu('mode')"
+            >
               <AgentIcon :name="agent.mode === 'agent' ? 'infinity' : 'chat'" />
               <span>{{ agent.mode === 'agent' ? 'Agent' : 'Ask' }}</span>
               <AgentIcon name="chevron" />
             </button>
             <div v-if="menu === 'mode'" class="menu">
-              <button type="button" :class="{ on: agent.mode === 'agent' }" @click="agent.mode = 'agent'; menu = null">
+              <button
+                type="button"
+                :class="{ on: agent.mode === 'agent' }"
+                @click="
+                  agent.mode = 'agent'
+                  menu = null
+                "
+              >
                 <AgentIcon name="infinity" />
                 <span class="menu-text"><strong>Agent</strong><small>可以读写笔记</small></span>
               </button>
-              <button type="button" :class="{ on: agent.mode === 'ask' }" @click="agent.mode = 'ask'; menu = null">
+              <button
+                type="button"
+                :class="{ on: agent.mode === 'ask' }"
+                @click="
+                  agent.mode = 'ask'
+                  menu = null
+                "
+              >
                 <AgentIcon name="chat" />
                 <span class="menu-text"><strong>Ask</strong><small>只读，不会修改笔记</small></span>
               </button>
             </div>
           </div>
           <div class="menu-anchor">
-            <button type="button" class="chip" :aria-expanded="menu === 'model'" @click="toggleMenu('model')">
+            <button
+              type="button"
+              class="chip"
+              :aria-expanded="menu === 'model'"
+              @click="toggleMenu('model')"
+            >
               <span class="model-name">{{ modelLabel }}</span>
-              <span v-if="agent.currentModel?.model.reasoning" class="effort">{{ effortLabel }}</span>
+              <span v-if="agent.currentModel?.model.reasoning" class="effort">{{
+                effortLabel
+              }}</span>
               <AgentIcon name="chevron" />
             </button>
             <div v-if="menu === 'model'" class="menu model-menu">
-              <p v-if="modelGroups.length === 0" class="menu-empty">还没有模型。打开设置 → 内置 Agent 添加。</p>
+              <p v-if="modelGroups.length === 0" class="menu-empty">
+                还没有模型。打开设置 → 内置 Agent 添加。
+              </p>
               <template v-for="group in modelGroups" :key="group.name">
                 <p class="menu-group">{{ group.name }}</p>
                 <button
@@ -337,11 +415,21 @@ function selectionTitle(text: string): string {
                   :key="item.ref"
                   type="button"
                   :class="{ on: item.ref === agent.currentModelRef }"
-                  @click="agent.setModel(item.ref); menu = null"
+                  @click="
+                    agent.setModel(item.ref)
+                    menu = null
+                  "
                 >
                   <span class="menu-text">
                     <strong>{{ item.model.id }}</strong>
-                    <small>{{ [item.model.vision ? '能看图' : '', item.model.reasoning ? '可调思考强度' : ''].filter(Boolean).join(' · ') }}</small>
+                    <small>{{
+                      [
+                        item.model.vision ? '能看图' : '',
+                        item.model.reasoning ? '可调思考强度' : ''
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')
+                    }}</small>
                   </span>
                 </button>
               </template>
@@ -363,10 +451,23 @@ function selectionTitle(text: string): string {
           </div>
         </div>
         <div class="right">
-          <button type="button" class="icon" aria-label="添加图片" data-tooltip="添加图片" @click="fileInput?.click()">
+          <button
+            type="button"
+            class="icon"
+            aria-label="添加图片"
+            data-tooltip="添加图片"
+            @click="fileInput?.click()"
+          >
             <AgentIcon name="image" />
           </button>
-          <input ref="fileInput" type="file" accept="image/*" multiple hidden @change="onFileChange" />
+          <input
+            ref="fileInput"
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            @change="onFileChange"
+          />
           <button
             v-if="agent.pending"
             type="button"
@@ -377,7 +478,14 @@ function selectionTitle(text: string): string {
           >
             <AgentIcon name="stop" />
           </button>
-          <button v-else type="submit" class="send" aria-label="发送" data-tooltip="发送（Enter）" :disabled="!canSend">
+          <button
+            v-else
+            type="submit"
+            class="send"
+            aria-label="发送"
+            data-tooltip="发送（Enter）"
+            :disabled="!canSend"
+          >
             <AgentIcon name="send" />
           </button>
         </div>
@@ -407,6 +515,7 @@ function selectionTitle(text: string): string {
 .context {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
   padding: 6px 8px 0;
 }

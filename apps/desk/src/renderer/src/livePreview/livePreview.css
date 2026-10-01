@@ -363,16 +363,118 @@
 /* ---------- 引用、列表、任务 ---------- */
 
 .live-editor .cm-lp-visual .cm-lp-quote {
+  --lp-list-base: 14px;
   border-left: 3px solid var(--tn-c-divider-strong);
-  padding-left: 14px;
+  padding-left: var(--lp-list-base);
   color: var(--tn-c-text-2);
 }
 
-.live-editor .cm-lp-bullet {
+/* 源码视图的列表：续行从行首缩进处开始（--lp-indent 是列数，--lp-space-w 是一个空格宽），
+   父级标记列上画参考线，和 VSCode 打开 .md 一样。 */
+.live-editor .cm-editor {
+  --lp-guide-color: var(--tn-c-divider);
+}
+.live-editor .cm-line.cm-lp-list-indent {
+  padding-left: calc(var(--lp-indent) * var(--lp-space-w, 0.6em));
+  text-indent: calc(-1 * var(--lp-indent) * var(--lp-space-w, 0.6em));
+}
+
+/* 可视化视图的列表，尺寸对齐语雀：每级缩进 2em，标记位 1.67em（圆点中心在 0.73em），
+   续行对齐正文。源码里写了几个空格不影响这里的缩进。 */
+.live-editor .cm-lp-visual .cm-line.cm-lp-li {
+  --lp-step: 2em;
+  --lp-marker: 1.67em;
+  --lp-bullet-center: 0.73em;
+  padding-left: calc(
+    var(--lp-list-base, 0px) + var(--lp-depth, 0) * var(--lp-step) + var(--lp-marker)
+  );
+  text-indent: calc(-1 * var(--lp-marker));
+}
+.live-editor .cm-lp-visual .cm-line.cm-lp-li-cont {
+  text-indent: 0;
+}
+/* text-indent 会被行内块（圆点、复选框、公式、行内代码）继承，子元素上要清掉。 */
+.live-editor .cm-line.cm-lp-list-indent *,
+.live-editor .cm-lp-visual .cm-line.cm-lp-li * {
+  text-indent: 0;
+}
+
+.live-editor .cm-lp-visual .cm-lp-list-marker {
   display: inline-block;
-  min-width: 1.1em;
+  min-width: var(--lp-marker, 1.67em);
+  box-sizing: border-box;
+}
+
+.live-editor .cm-lp-bullet {
+  position: relative;
+  height: 1lh;
+  vertical-align: top;
+  color: var(--tn-c-text);
+}
+.live-editor .cm-lp-bullet::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  left: var(--lp-bullet-center, 0.73em);
+}
+
+/* 任务项：复选框占圆点的位置（中心和圆点中心同一列），不再画圆点。 */
+.live-editor .cm-lp-task-marker .cm-lp-task {
+  margin: 0 0 0 calc(var(--lp-bullet-center, 0.73em) - 8px);
+}
+.live-editor .cm-lp-bullet[data-shape='disc']::before {
+  width: 0.36em;
+  height: 0.36em;
+  border-radius: 50%;
+  background: currentColor;
+}
+.live-editor .cm-lp-bullet[data-shape='circle']::before {
+  width: 0.42em;
+  height: 0.42em;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+.live-editor .cm-lp-bullet[data-shape='square']::before {
+  width: 0.3em;
+  height: 0.3em;
+  background: currentColor;
+}
+
+/* 折叠三角：停在标记左侧，展开时悬停这一行才出现，折叠后一直显示。 */
+.live-editor .cm-lp-list-toggle {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1lh;
+  margin-left: -1.05em;
+  border-radius: 4px;
   color: var(--tn-c-text-2);
-  font-weight: 700;
+  cursor: pointer;
+  opacity: 0;
+}
+.live-editor .cm-lp-list-toggle svg {
+  width: 0.62em;
+  height: 0.62em;
+  transform: rotate(90deg);
+}
+/* 列表项折起后只留三角，不显示「…」占位（对齐语雀）。 */
+.live-editor .cm-lp-visual .cm-line.cm-lp-li .cm-foldPlaceholder {
+  display: none;
+}
+.live-editor .cm-lp-list-toggle[data-folded='true'] svg {
+  transform: none;
+}
+.live-editor .cm-lp-list-toggle:hover {
+  color: var(--tn-c-text);
+  background: var(--tn-c-hover);
+}
+.live-editor .cm-line.cm-lp-li:hover .cm-lp-list-toggle,
+.live-editor .cm-lp-list-toggle[data-folded='true'] {
+  opacity: 1;
 }
 
 .live-editor .cm-lp-ol-mark {
@@ -1160,8 +1262,9 @@
 .live-editor .cm-lp-visual .cm-lp-container-body,
 .live-editor .cm-lp-visual .cm-lp-container-open,
 .live-editor .cm-lp-visual .cm-lp-container-close {
+  --lp-list-base: 14px;
   border-left: 4px solid var(--tn-c-divider-strong);
-  padding-left: 14px;
+  padding-left: var(--lp-list-base);
   background: var(--tn-c-bg-soft);
 }
 
