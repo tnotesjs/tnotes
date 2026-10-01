@@ -233,6 +233,16 @@ function toggleMenu(name: 'mode' | 'model'): void {
   menu.value = menu.value === name ? null : name
 }
 
+function chooseMode(mode: 'agent' | 'ask'): void {
+  agent.mode = mode
+  menu.value = null
+}
+
+function chooseModel(ref: string): void {
+  agent.setModel(ref)
+  menu.value = null
+}
+
 function closeMenus(event: MouseEvent): void {
   if (!(event.target as HTMLElement | null)?.closest('.menu-anchor')) menu.value = null
 }
@@ -370,10 +380,7 @@ function selectionTitle(text: string): string {
               <button
                 type="button"
                 :class="{ on: agent.mode === 'agent' }"
-                @click="
-                  agent.mode = 'agent'
-                  menu = null
-                "
+                @click="chooseMode('agent')"
               >
                 <AgentIcon name="infinity" />
                 <span class="menu-text"><strong>Agent</strong><small>可以读写笔记</small></span>
@@ -381,10 +388,7 @@ function selectionTitle(text: string): string {
               <button
                 type="button"
                 :class="{ on: agent.mode === 'ask' }"
-                @click="
-                  agent.mode = 'ask'
-                  menu = null
-                "
+                @click="chooseMode('ask')"
               >
                 <AgentIcon name="chat" />
                 <span class="menu-text"><strong>Ask</strong><small>只读，不会修改笔记</small></span>
@@ -415,10 +419,7 @@ function selectionTitle(text: string): string {
                   :key="item.ref"
                   type="button"
                   :class="{ on: item.ref === agent.currentModelRef }"
-                  @click="
-                    agent.setModel(item.ref)
-                    menu = null
-                  "
+                  @click="chooseModel(item.ref)"
                 >
                   <span class="menu-text">
                     <strong>{{ item.model.id }}</strong>
