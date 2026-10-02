@@ -63,6 +63,12 @@ import {
 } from './headingFold'
 import { livePreviewEnabled, livePreviewHost } from './host'
 import { listFoldService } from './listFold'
+import {
+  beginImageUpload,
+  cancelImageUpload,
+  finishImageUpload,
+  imageUploadExtension
+} from './imageUpload'
 import { sourceChrome } from './sourceChrome'
 import { tnotesMarkdown } from './language'
 import { collectHeadings, type OutlineHeading } from './outline'
@@ -300,6 +306,7 @@ function createState(doc: string): EditorState {
       indentUnit.of('    '),
       EditorState.tabSize.of(4),
       syntaxHighlighting(classHighlighter),
+      imageUploadExtension,
       codeGroupTabs,
       headingFoldService,
       listFoldService,
@@ -526,6 +533,13 @@ defineExpose({
   revealReference,
   revealLine,
   insertTextAt: (text: string, position?: number) => withView((v) => insertText(v, text, position)),
+  beginImageUpload: (position: number, label: string) =>
+    view ? beginImageUpload(view, position, label) : -1,
+  finishImageUpload: (id: number, markdown: string) =>
+    view ? finishImageUpload(view, id, markdown) : false,
+  cancelImageUpload: (id: number) => {
+    if (view) cancelImageUpload(view, id)
+  },
   wrapSelection: (prefix: string, suffix: string, placeholderText?: string) =>
     withView((v) => wrapSelectionCommand(v, prefix, suffix, placeholderText)),
   prefixSelection: (prefix: string) => withView((v) => prefixSelectionCommand(v, prefix)),

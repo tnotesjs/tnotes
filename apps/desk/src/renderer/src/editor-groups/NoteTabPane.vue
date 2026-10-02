@@ -56,6 +56,9 @@ import type { HeadingFoldCommand } from '../livePreview/headingFold'
 
 interface MarkdownEditorHandle {
   insertTextAt(text: string, position?: number): void
+  beginImageUpload?(position: number, label: string): number
+  finishImageUpload?(id: number, markdown: string): boolean
+  cancelImageUpload?(id: number): void
   /** 跳到指定行（1-based）并聚焦。 */
   revealLine?(line: number): boolean
   revealReference?(rawPath: string): boolean
@@ -645,14 +648,21 @@ function locateAssetReference(rawPath: string): void {
 
 async function pasteImage(file: File, insertAt: number): Promise<void> {
   const targetEditor = markdownEditor.value
+  const label =
+    workspace.settings?.imageUpload.defaultTarget === 'github' ? '正在上传到图床' : '正在保存图片'
+  const uploadId = targetEditor?.beginImageUpload?.(insertAt, label)
   try {
     const attachment = await workspace.uploadImage(
       props.tab.knowledgeBaseId,
       props.tab.noteUuid,
       file
     )
-    targetEditor?.insertTextAt(await pastedImageMarkdown(file, attachment.markdownPath), insertAt)
+    const markdown = await pastedImageMarkdown(file, attachment.markdownPath)
+    const placed =
+      uploadId != null && uploadId >= 0 && targetEditor?.finishImageUpload?.(uploadId, markdown)
+    if (!placed) targetEditor?.insertTextAt(markdown, insertAt)
   } catch (cause) {
+    if (uploadId != null && uploadId >= 0) targetEditor?.cancelImageUpload?.(uploadId)
     workspace.error = cause instanceof Error ? cause.message : String(cause)
   }
 }

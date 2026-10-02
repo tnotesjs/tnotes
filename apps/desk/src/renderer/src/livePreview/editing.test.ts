@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
 import { EditorSelection, EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { codeFolding } from '@codemirror/language'
+import { codeFolding, syntaxHighlighting } from '@codemirror/language'
+import { classHighlighter } from '@lezer/highlight'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { continueMarkup, headingBackspace, tabCommand, wrapSelection } from './commands'
@@ -632,5 +634,37 @@ describe('live preview editing', () => {
       ':::'
     ].join('\n')
     expect(slotDigits(group, '.cm-lp-code-tabs .cm-lp-code-fold-slot')).toBe('2')
+  })
+
+  it('keeps heading inline code in the brand color instead of the heading color', () => {
+    const parent = document.createElement('div')
+    parent.className = 'live-editor'
+    document.body.append(parent)
+    const doc = '# 详细解释 `s.1`\n\n正文 `n`\n'
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc,
+        extensions: [
+          tnotesMarkdown(),
+          syntaxHighlighting(classHighlighter),
+          livePreviewEnabled.of(true),
+          EditorView.editorAttributes.of({ class: 'cm-lp-visual' }),
+          livePreviewField
+        ]
+      })
+    })
+    view.dispatch({ effects: setFocused.of(true) })
+    views.push(view)
+    const codes = [...view.dom.querySelectorAll<HTMLElement>('.cm-lp-inline-code')]
+    const headingCode = codes.find((el) => el.textContent === 's.1')
+    const bodyCode = codes.find((el) => el.textContent === 'n')
+    expect(headingCode?.querySelector('.tok-heading')?.textContent).toBe('s.1')
+    expect(bodyCode?.querySelector('.tok-heading')).toBeNull()
+    expect(headingCode?.querySelector('.tok-heading')).toBeTruthy()
+    const css = readFileSync('src/renderer/src/livePreview/livePreview.css', 'utf8')
+    expect(css).toContain('.cm-lp-inline-code .tok-heading')
+    expect(css).toMatch(/\.cm-lp-inline-code \.tok-heading \{[^}]*color: inherit/)
+    expect(css).toMatch(/\.cm-lp-inline-code \.tok-heading \{[^}]*font-weight: inherit/)
   })
 })

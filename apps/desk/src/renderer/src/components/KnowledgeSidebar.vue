@@ -19,7 +19,10 @@ const editor = useEditorStore()
 const agent = useAgentStore()
 const query = ref('')
 const menuBusy = ref(false)
-const compact = computed(() => editor.knowledgeSidebarWidth <= KNOWLEDGE_SIDEBAR_COMPACT)
+const compact = computed(
+  () =>
+    editor.knowledgeSidebarCollapsed || editor.knowledgeSidebarWidth <= KNOWLEDGE_SIDEBAR_COMPACT
+)
 
 function showIdeMenu(knowledgeBaseId: string): void {
   void window.desk.ide.showKnowledgeBaseMenu(knowledgeBaseId)
@@ -44,23 +47,9 @@ const pinnedKnowledgeBases = computed(() => {
 
 const knowledgePinsCollapsed = computed(() => editor.pinnedKnowledgeBasesCollapsed)
 
-type KnowledgeRow =
-  { kind: 'heading' } | { kind: 'item'; item: (typeof filteredKnowledgeBases.value)[number] }
-
-const knowledgeRows = computed((): KnowledgeRow[] => {
-  const pinned = pinnedKnowledgeBases.value
-  const pinnedIds = new Set(pinned.map((item) => item.id))
-  const rows: KnowledgeRow[] = []
-  if (pinned.length > 0) {
-    rows.push({ kind: 'heading' })
-    if (!knowledgePinsCollapsed.value) {
-      for (const item of pinned) rows.push({ kind: 'item', item })
-    }
-  }
-  for (const item of filteredKnowledgeBases.value) {
-    if (!pinnedIds.has(item.id)) rows.push({ kind: 'item', item })
-  }
-  return rows
+const unpinnedKnowledgeBases = computed(() => {
+  const pinnedIds = new Set(pinnedKnowledgeBases.value.map((item) => item.id))
+  return filteredKnowledgeBases.value.filter((item) => !pinnedIds.has(item.id))
 })
 
 watch(
@@ -157,63 +146,93 @@ async function openHeaderMenu(): Promise<void> {
       </div>
     </div>
 
-    <div v-if="filteredKnowledgeBases.length" class="knowledge-list">
-      <template
-        v-for="row in knowledgeRows"
-        :key="row.kind === 'item' ? row.item.id : 'pin-heading'"
+    <template v-if="filteredKnowledgeBases.length">
+      <div
+        v-if="pinnedKnowledgeBases.length"
+        class="pin-section"
+        :class="{ 'is-fill': unpinnedKnowledgeBases.length === 0 }"
       >
-        <button
-          v-if="row.kind === 'heading'"
-          type="button"
-          class="pin-heading"
-          data-pin-group="knowledge"
-          :aria-expanded="!knowledgePinsCollapsed"
-          :aria-label="knowledgePinsCollapsed ? '展开置顶' : '折叠置顶'"
-          @click="editor.togglePinnedKnowledgeBasesCollapsed()"
-        >
-          <svg
-            class="chevron"
-            :class="{ collapsed: knowledgePinsCollapsed }"
-            viewBox="0 0 16 16"
-            aria-hidden="true"
+        <div class="pin-section-head">
+          <button
+            type="button"
+            class="pin-heading"
+            data-pin-group="knowledge"
+            :aria-expanded="!knowledgePinsCollapsed"
+            :aria-label="knowledgePinsCollapsed ? '展开置顶' : '折叠置顶'"
+            @click="editor.togglePinnedKnowledgeBasesCollapsed()"
           >
-            <path
-              d="M4 6l4 4 4-4"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+            <svg
+              class="chevron"
+              :class="{ collapsed: knowledgePinsCollapsed }"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+            >
+              <path
+                d="M4 6l4 4 4-4"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <template v-if="!compact">
+              <strong>置顶</strong>
+              <em>{{ pinnedKnowledgeBases.length }}</em>
+            </template>
+          </button>
+        </div>
+        <div v-if="!knowledgePinsCollapsed" class="pin-section-body">
+          <button
+            v-for="item in pinnedKnowledgeBases"
+            :key="item.id"
+            type="button"
+            class="knowledge-item"
+            :class="{ active: store.selectedKnowledgeBaseId === item.id }"
+            @click="store.selectKnowledgeBase(item.id)"
+            @contextmenu.prevent="showIdeMenu(item.id)"
+          >
+            <span class="knowledge-icon">
+              <KnowledgeBaseIcon :icon="item.icon" :fallback="item.displayName" />
+            </span>
+            <span
+              v-if="agent.pendingByKb[item.id]"
+              class="agent-dot"
+              :title="`${agent.pendingByKb[item.id]} 篇笔记有 Agent 改动待确认`"
+              :aria-label="`${agent.pendingByKb[item.id]} 篇笔记有 Agent 改动待确认`"
             />
-          </svg>
-          <template v-if="!compact">
-            <strong>置顶</strong>
-            <em>{{ pinnedKnowledgeBases.length }}</em>
-          </template>
-        </button>
+            <span v-if="!compact" class="knowledge-copy">
+              <strong>{{ item.displayName }}</strong>
+            </span>
+          </button>
+        </div>
+        <div v-if="unpinnedKnowledgeBases.length" class="pin-divider" role="separator" />
+      </div>
+      <div v-if="unpinnedKnowledgeBases.length" class="knowledge-list">
         <button
-          v-else
+          v-for="item in unpinnedKnowledgeBases"
+          :key="item.id"
           type="button"
           class="knowledge-item"
-          :class="{ active: store.selectedKnowledgeBaseId === row.item.id }"
-          @click="store.selectKnowledgeBase(row.item.id)"
-          @contextmenu.prevent="showIdeMenu(row.item.id)"
+          :class="{ active: store.selectedKnowledgeBaseId === item.id }"
+          @click="store.selectKnowledgeBase(item.id)"
+          @contextmenu.prevent="showIdeMenu(item.id)"
         >
           <span class="knowledge-icon">
-            <KnowledgeBaseIcon :icon="row.item.icon" :fallback="row.item.displayName" />
+            <KnowledgeBaseIcon :icon="item.icon" :fallback="item.displayName" />
           </span>
           <span
-            v-if="agent.pendingByKb[row.item.id]"
+            v-if="agent.pendingByKb[item.id]"
             class="agent-dot"
-            :title="`${agent.pendingByKb[row.item.id]} 篇笔记有 Agent 改动待确认`"
-            :aria-label="`${agent.pendingByKb[row.item.id]} 篇笔记有 Agent 改动待确认`"
+            :title="`${agent.pendingByKb[item.id]} 篇笔记有 Agent 改动待确认`"
+            :aria-label="`${agent.pendingByKb[item.id]} 篇笔记有 Agent 改动待确认`"
           />
           <span v-if="!compact" class="knowledge-copy">
-            <strong>{{ row.item.displayName }}</strong>
+            <strong>{{ item.displayName }}</strong>
           </span>
         </button>
-      </template>
-    </div>
+      </div>
+    </template>
     <div v-else class="column-empty">
       <strong>{{ emptyMessage.title }}</strong>
       <span>{{ emptyMessage.detail }}</span>
@@ -231,15 +250,18 @@ async function openHeaderMenu(): Promise<void> {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
 }
 
 .knowledge-top {
   flex: none;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
+  overflow: hidden;
   padding: 7px 9px;
   border-bottom: 1px solid var(--border);
 }
@@ -248,6 +270,7 @@ async function openHeaderMenu(): Promise<void> {
   height: auto;
   flex: 1;
   min-width: 0;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -311,6 +334,32 @@ async function openHeaderMenu(): Promise<void> {
   min-height: 0;
   overflow: auto;
   padding: 7px;
+}
+
+/* 置顶组在滚动列表外面，滚下面的知识库时它停在搜索栏下。条目多到超过侧栏一半时，只在组内滚动。 */
+.pin-section {
+  flex: none;
+  max-height: 50%;
+  overflow: auto;
+  background: var(--sidebar-bg);
+}
+
+.pin-section.is-fill {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+.pin-section-head {
+  padding: 7px 7px 0;
+}
+
+.pin-section-body {
+  padding: 0 7px;
+}
+
+.pin-section.is-fill .pin-section-body {
+  padding-bottom: 7px;
 }
 
 .agent-dot {
@@ -388,14 +437,13 @@ async function openHeaderMenu(): Promise<void> {
 }
 
 .pin-heading {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   width: 100%;
   height: 24px;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 4px;
+  overflow: hidden;
   margin: 0 0 2px;
   padding: 0 4px;
   border: 0;
@@ -408,8 +456,20 @@ async function openHeaderMenu(): Promise<void> {
   text-transform: uppercase;
 }
 
+.pin-divider {
+  height: 1px;
+  margin-top: 6px;
+  background: var(--border);
+  position: sticky;
+  bottom: 0;
+}
+
 .pin-heading strong {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 700;
   text-align: left;
 }

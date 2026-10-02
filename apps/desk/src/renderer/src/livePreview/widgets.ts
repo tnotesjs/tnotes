@@ -441,6 +441,141 @@ export class MathWidget extends WidgetType {
 
 const MIN_IMAGE_WIDTH = 48
 
+/** 本地图片通常马上就好，晚一点再露出占位，避免闪一下。 */
+export const IMAGE_STATUS_DELAY_MS = 150
+
+export function shortenImageAddress(src: string): string {
+  const trimmed = src.trim()
+  if (!trimmed || trimmed.startsWith('data:')) return ''
+  let host = ''
+  let path = trimmed
+  try {
+    const url = new URL(trimmed)
+    host = url.host
+    path = url.pathname
+  } catch {
+    path = trimmed.split(/[?#]/, 1)[0] ?? trimmed
+  }
+  const file = path.split('/').filter(Boolean).pop() ?? ''
+  const text = host ? (file ? `${host}/${file}` : host) : file || path
+  return text.length > 48 ? `${text.slice(0, 47)}…` : text
+}
+
+export function imageStatusCopy(
+  phase: 'loading' | 'error',
+  alt: string,
+  src: string
+): { label: string; detail: string } {
+  const label = phase === 'loading' ? '图片加载中' : '图片无法加载'
+  const address = shortenImageAddress(src)
+  const name = alt.trim()
+  if (phase === 'loading') return { label, detail: name || address }
+  if (name && address) return { label, detail: `${name} · ${address}` }
+  return { label, detail: name || address }
+}
+
+/** 图片还没出来或加载失败时，在原位置留一块占位。返回的 refresh 在 src 变化后重新判断。 */
+export function bindImageLoadState(
+  img: HTMLImageElement,
+  frame: HTMLElement,
+  read: () => { alt: string; src: string }
+): { refresh: () => void; destroy: () => void } {
+  const status = document.createElement('span')
+  status.className = 'cm-lp-image-status'
+  status.hidden = true
+  const label = document.createElement('span')
+  label.className = 'cm-lp-image-status-label'
+  const detail = document.createElement('span')
+  detail.className = 'cm-lp-image-status-detail'
+  status.append(label, detail)
+  frame.append(status)
+
+  let timer = 0
+  let phase: 'loading' | 'ready' | 'error' = 'loading'
+
+  const caption = (): HTMLElement | null => {
+    const node = frame.parentElement?.querySelector('.cm-lp-image-caption')
+    return node instanceof HTMLElement ? node : null
+  }
+
+  const paint = (): void => {
+    const waiting = phase === 'loading' && !status.hidden
+    frame.classList.toggle('is-pending', waiting)
+    frame.classList.toggle('is-error', phase === 'error')
+    const note = caption()
+    if (note) note.hidden = phase !== 'ready'
+    if (phase === 'ready') {
+      status.hidden = true
+      return
+    }
+    const copy = imageStatusCopy(phase === 'error' ? 'error' : 'loading', read().alt, read().src)
+    label.textContent = copy.label
+    detail.textContent = copy.detail
+    detail.hidden = !copy.detail
+  }
+
+  const clearTimer = (): void => {
+    if (timer) window.clearTimeout(timer)
+    timer = 0
+  }
+
+  const settleReady = (): void => {
+    clearTimer()
+    phase = 'ready'
+    status.hidden = true
+    paint()
+  }
+
+  const settleError = (): void => {
+    clearTimer()
+    phase = 'error'
+    status.hidden = false
+    paint()
+  }
+
+  const arm = (): void => {
+    clearTimer()
+    const src = img.getAttribute('src') ?? ''
+    if (!src) {
+      phase = 'ready'
+      status.hidden = true
+      frame.classList.remove('is-pending', 'is-error')
+      const note = caption()
+      if (note) note.hidden = false
+      return
+    }
+    if (img.complete) {
+      if (phase !== 'error') settleReady()
+      return
+    }
+    phase = 'loading'
+    status.hidden = true
+    frame.classList.remove('is-pending', 'is-error')
+    timer = window.setTimeout(() => {
+      timer = 0
+      if (phase !== 'loading') return
+      status.hidden = false
+      paint()
+    }, IMAGE_STATUS_DELAY_MS)
+  }
+
+  const onLoad = (): void => settleReady()
+  const onError = (): void => settleError()
+  img.addEventListener('load', onLoad)
+  img.addEventListener('error', onError)
+  arm()
+
+  return {
+    refresh: arm,
+    destroy() {
+      clearTimer()
+      img.removeEventListener('load', onLoad)
+      img.removeEventListener('error', onError)
+      status.remove()
+    }
+  }
+}
+
 const imageCanvasTeardown = new WeakMap<HTMLElement, () => void>()
 
 function canvasSvgRelPath(noteRelPath: string, src: string): string {
@@ -479,7 +614,6 @@ export class ImageWidget extends WidgetType {
     const frame = document.createElement('span')
     frame.className = 'cm-lp-image-frame'
     const img = document.createElement('img')
-    img.src = host.resolveImage(this.src)
     img.alt = this.alt
     img.draggable = false
     if (this.width) frame.style.width = this.width
@@ -553,6 +687,7 @@ export class ImageWidget extends WidgetType {
     let canvasOpen = false
     let sourceRelPath: string | null = null
 
+    let refreshImageStatus = (): void => undefined
     const applyImageSrc = (): void => {
       const presentationUrl = host.resolveImage(this.src)
       const live = canvasPreview
@@ -563,6 +698,7 @@ export class ImageWidget extends WidgetType {
       const next = live || withRevision
       if (next) img.src = next
       else img.removeAttribute('src')
+      refreshImageStatus()
     }
 
     const attachCanvas = (source: string): void => {
@@ -586,6 +722,17 @@ export class ImageWidget extends WidgetType {
       applyImageSrc()
     }
 
+    const imageStatus = bindImageLoadState(img, frame, () => ({
+      alt: this.alt,
+      src: img.getAttribute('src') ?? ''
+    }))
+    refreshImageStatus = () => imageStatus.refresh()
+    imageCanvasTeardown.set(figure, () => {
+      imageStatus.destroy()
+      for (const off of teardowns.splice(0)) off()
+      void canvasOpen
+    })
+
     const svgRelPath = canvasSvgRelPath(host.noteRelPath, this.src)
     if (svgRelPath && host.knowledgeBaseId) {
       const cached = cachedCanvasSource(host.knowledgeBaseId, svgRelPath)
@@ -598,11 +745,7 @@ export class ImageWidget extends WidgetType {
         })
       }
     }
-
-    imageCanvasTeardown.set(figure, () => {
-      for (const off of teardowns.splice(0)) off()
-      void canvasOpen
-    })
+    if (!img.getAttribute('src')) applyImageSrc()
 
     handle.addEventListener('mousedown', (event) => {
       event.preventDefault()
