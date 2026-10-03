@@ -1,7 +1,7 @@
 <template>
   <div
     class="tn-site"
-    :class="{ 'sidebar-hidden': sidebarHidden }"
+    :class="{ 'sidebar-hidden': sidebarHidden, 'is-wide': articleWide }"
     :style="{ '--sidebar-width': `${sidebarWidth}px` }"
   >
     <header class="tn-site-header" :inert="mobileOpen || searchOpen">
@@ -59,12 +59,14 @@
       </button>
       <main :inert="mobileOpen" class="tn-site-main">
         <ArticleTools
-          v-if="data.source !== undefined && data.relativePath.startsWith('notes/')"
+          v-if="showArticleTools"
           :repo-url="noteRepoUrl"
-          :source="data.source"
+          :source="data.source ?? ''"
           :folded="headingsFolded"
           :can-fold="hasArticleHeadings"
+          :wide="articleWide"
           @toggle-fold="headingControls?.toggleAll()"
+          @toggle-width="toggleArticleWidth"
         />
         <div class="tn-site-article" ref="article" v-html="articleHtml"></div>
         <Discussions v-if="data.noteId" :id="data.noteId" />
@@ -178,11 +180,24 @@ async function jumpToHeading(id: string) {
     target.scrollIntoView({ block: 'start' })
   }
 }
+/** 笔记和库根 README 共用顶栏；404 这类生成页没有原文可复制。 */
+function isArticlePage(relativePath: string): boolean {
+  return relativePath.startsWith('notes/') || relativePath === 'README.md'
+}
+
+const showArticleTools = computed(
+  () => props.data.source !== undefined && isArticlePage(props.data.relativePath)
+)
 const noteRepoUrl = computed(() => {
   const repository = site.repositoryUrl?.replace(/\/+$/, '')
-  if (!repository || !props.data.relativePath.startsWith('notes/')) return ''
+  if (!repository || !isArticlePage(props.data.relativePath)) return ''
   return `${repository}/blob/main/${props.data.relativePath.split('/').map(encodeURIComponent).join('/')}`
 })
+
+const articleWide = ref(false)
+function toggleArticleWidth() {
+  articleWide.value = !articleWide.value
+}
 
 type SearchResult = Pick<PageData, 'route' | 'title' | 'text'>
 
@@ -291,11 +306,15 @@ useModalFocus(
     mobileOpen.value = false
   }
 )
-watch([sidebarWidth, sidebarHidden], () => {
+watch([sidebarWidth, sidebarHidden, articleWide], () => {
   try {
     localStorage.setItem(
       preferenceKey,
-      JSON.stringify({ width: sidebarWidth.value, hidden: sidebarHidden.value })
+      JSON.stringify({
+        width: sidebarWidth.value,
+        hidden: sidebarHidden.value,
+        articleWide: articleWide.value
+      })
     )
   } catch {
     /* optional preference */
@@ -360,6 +379,7 @@ onMounted(() => {
     if (prefs) {
       sidebarWidth.value = clampSidebarWidth(prefs.width)
       sidebarHidden.value = prefs.hidden === true
+      articleWide.value = prefs.articleWide === true
     }
     const theme = localStorage.getItem('tnotes-theme')
     if (theme) document.documentElement.classList.toggle('dark', theme === 'dark')

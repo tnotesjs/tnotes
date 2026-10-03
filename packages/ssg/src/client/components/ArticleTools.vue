@@ -14,6 +14,16 @@
       <button
         type="button"
         class="tn-article-tool"
+        :title="wide ? '超宽显示' : '标准页宽'"
+        :aria-label="wide ? '超宽显示' : '标准页宽'"
+        :aria-pressed="wide"
+        @click="$emit('toggle-width')"
+      >
+        <SiteIcon :name="wide ? 'pageWidthWide' : 'pageWidth'" />
+      </button>
+      <button
+        type="button"
+        class="tn-article-tool"
         title="复制笔记原文"
         aria-label="复制笔记原文"
         @click="copyNote"
@@ -39,8 +49,14 @@
 import { ref, onBeforeUnmount } from 'vue'
 import SiteIcon from './SiteIcon.vue'
 import { copyText } from '../clipboard'
-const props = defineProps<{ repoUrl: string; source: string; folded: boolean; canFold: boolean }>()
-defineEmits<{ 'toggle-fold': [] }>()
+const props = defineProps<{
+  repoUrl: string
+  source: string
+  folded: boolean
+  canFold: boolean
+  wide: boolean
+}>()
+defineEmits<{ 'toggle-fold': []; 'toggle-width': [] }>()
 const message = ref('')
 let timer: ReturnType<typeof setTimeout> | undefined
 async function copyNote() {

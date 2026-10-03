@@ -132,6 +132,7 @@ describe('static site build', () => {
     expect(html).toContain(
       'https://github.com/tnotesjs/TNotes.fixture/blob/main/notes/0001.%20%E9%A6%96%E9%A1%B5%E7%AC%94%E8%AE%B0.md'
     )
+    expect(html).toContain('aria-label="标准页宽"')
     expect(html).toContain('aria-label="复制笔记原文"')
     expect(html).toContain('aria-label="折叠所有标题"')
     const payload = html.match(/<script[^>]*id="tn-page-data"[^>]*>([\s\S]*?)<\/script>/)![1]!

@@ -297,6 +297,9 @@ html.tn-sb-restore .tn-site-sidebar {
   white-space: nowrap;
   border: 0;
 }
+.tn-site.is-wide .tn-site-main {
+  width: 100%;
+}
 .tn-site-main {
   min-width: 0;
   width: min(100%, 980px);
