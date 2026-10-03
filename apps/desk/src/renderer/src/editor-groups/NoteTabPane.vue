@@ -5,11 +5,8 @@ import UiTooltip from '../components/UiTooltip.vue'
 import NoteDoneToggle from '../components/NoteDoneToggle.vue'
 import OutlineIcon from '../components/OutlineIcon.vue'
 import PageWidthIcon from '../components/PageWidthIcon.vue'
-import HeadingMenu from './HeadingMenu.vue'
-import FormatIcon from './FormatIcon.vue'
-import FormatOverflowBar from './FormatOverflowBar.vue'
-import BlockInsertMenu from './BlockInsertMenu.vue'
 import KbPathBreadcrumb from './KbPathBreadcrumb.vue'
+import NoteFormatToolbar from './NoteFormatToolbar.vue'
 import NoteAssetsPanel from './NoteAssetsPanel.vue'
 import LivePreviewEditor from '../livePreview/LivePreviewEditor.vue'
 import {
@@ -43,7 +40,6 @@ import { validateTextAnchor } from '../selection/pinnedAnchorCheck'
 import { insertableImageMarkdown } from './noteAssets'
 import { pastedImageMarkdown } from '../editor/markdown/pasteImageWidth'
 import { insertExcalidrawCanvas } from '../editor/excalidraw/insertCanvas'
-import { TN_NOTES_SLASH_ITEMS } from '../markdown/slashMenu'
 import { HEADING_NUMBER_DEFAULT_MAX_DEPTH } from '../../../shared/headingNumbering'
 
 import type {
@@ -162,27 +158,6 @@ const titleDraft = ref('')
 const renaming = ref(false)
 const headingLevel = ref<number | null>(null)
 const formatDisabled = computed(() => !session.value?.document || session.value.document.readOnly)
-/**
- * 顺序即工具栏顺序。标题三项（级别下拉 / 编号重排 / 移除编号）放在最前：
- * 它们是**块级**结构操作，与后面的行内格式分开；同时 FormatOverflowBar 是从**尾部**
- * 开始收进「…」的，放最前也保证窄面板下它们始终在。
- */
-const formatActions = [
-  'insert',
-  'heading',
-  'heading-number',
-  'heading-number-remove',
-  'bold',
-  'italic',
-  'strikethrough',
-  'inline-code',
-  'quote',
-  'unordered-list',
-  'ordered-list',
-  'checkbox',
-  'link',
-  'divider'
-] as const
 
 watch(key, () => {
   editingTitle.value = false
@@ -541,12 +516,6 @@ onMounted(() => {
  * 视图开关的提示：只有一个图标，显示的是当前视图。
  * 点一下切到另一个视图，图标跟着换成那一侧。
  */
-const viewToggleHint = computed(() =>
-  props.tab.viewMode === 'source'
-    ? '切换到可视化编辑（⌘K V）· 当前：源码视图'
-    : '切换到源码视图（⌘K V）· 当前：可视化编辑'
-)
-
 /** 整体开关：当前是可视化就切源码，当前是源码就切可视化 */
 function toggleMode(): void {
   setMode(props.tab.viewMode === 'source' ? 'visual' : 'source')
@@ -564,28 +533,6 @@ function updateContent(content: string): void {
 
 function activate(): void {
   editor.activate(props.groupId, props.tab.id)
-}
-
-function insertTemplate(text: string): void {
-  markdownEditor.value?.insertTextAt(text)
-}
-
-function insertBlock(id: string): void {
-  if (id === 'canvas') {
-    void insertCanvas()
-    return
-  }
-  if (id === 'table') {
-    markdownEditor.value?.insertTable()
-    return
-  }
-  if (id === 'code') {
-    insertTemplate('\n```ts\n\n```\n')
-    return
-  }
-  const found = TN_NOTES_SLASH_ITEMS.find((item) => item.id === id)
-  if (!found) return
-  insertTemplate(found.insert.startsWith('\n') ? found.insert : `\n${found.insert}`)
 }
 
 async function insertCanvas(): Promise<void> {
@@ -724,165 +671,16 @@ function openLink(url: string): void {
         <span v-if="session.document.readOnly" class="read-only">只读</span>
       </div>
 
-      <div class="format-cluster">
-        <UiTooltip :label="viewToggleHint">
-          <button
-            type="button"
-            class="view-toggle"
-            data-testid="view-toggle"
-            :aria-label="tab.viewMode === 'source' ? '源码视图' : '可视化编辑'"
-            @click="toggleMode()"
-          >
-            <svg v-if="tab.viewMode !== 'source'" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m4 20 4.2-1 10.6-10.6a2.1 2.1 0 0 0-3-3L5.2 16 4 20Z" />
-              <path d="m14.5 6.7 2.8 2.8" />
-            </svg>
-            <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m8.5 7-5 5 5 5M15.5 7l5 5-5 5M13.5 4l-3 16" />
-            </svg>
-          </button>
-        </UiTooltip>
-        <FormatOverflowBar :items="formatActions" :disabled="formatDisabled">
-          <template #item="{ item }">
-            <BlockInsertMenu
-              v-if="item === 'insert'"
-              :disabled="formatDisabled"
-              :active="active"
-              @select="insertBlock"
-            />
-            <UiTooltip v-else-if="item === 'bold'" label="粗体" shortcut="⌘ B">
-              <button
-                type="button"
-                aria-label="粗体"
-                :disabled="formatDisabled"
-                @click="markdownEditor?.wrapSelection('**', '**')"
-              >
-                <FormatIcon name="bold" />
-              </button>
-            </UiTooltip>
-            <UiTooltip v-else-if="item === 'italic'" label="斜体" shortcut="⌘ I">
-              <button
-                type="button"
-                aria-label="斜体"
-                :disabled="formatDisabled"
-                @click="markdownEditor?.wrapSelection('*', '*')"
-              >
-                <FormatIcon name="italic" />
-              </button>
-            </UiTooltip>
-            <UiTooltip v-else-if="item === 'strikethrough'" label="删除线" shortcut="⇧ ⌘ X">
-              <button
-                type="button"
-                aria-label="删除线"
-                :disabled="formatDisabled"
-                @mousedown.prevent
-                @click="markdownEditor?.wrapSelection('~~', '~~')"
-              >
-                <FormatIcon name="strikethrough" />
-              </button>
-            </UiTooltip>
-            <UiTooltip v-else-if="item === 'inline-code'" label="行内代码" shortcut="⌘ E">
-              <button
-                type="button"
-                aria-label="行内代码"
-                :disabled="formatDisabled"
-                @mousedown.prevent
-                @click="markdownEditor?.wrapSelection('`', '`')"
-              >
-                <FormatIcon name="inline-code" />
-              </button>
-            </UiTooltip>
-            <HeadingMenu
-              v-else-if="item === 'heading'"
-              :level="headingLevel"
-              :disabled="formatDisabled"
-              :active="active"
-              :platform="workspace.runtimePlatform"
-              @select="markdownEditor?.setLinePrefix($event === 0 ? '' : `${'#'.repeat($event)} `)"
-            />
-            <UiTooltip v-else-if="item === 'heading-number'" label="标题编号（重排）">
-              <button
-                type="button"
-                aria-label="标题编号（重排）"
-                :disabled="formatDisabled"
-                @click="markdownEditor?.addHeadingNumbers(headingNumberMaxDepth)"
-              >
-                <FormatIcon name="heading-number" />
-              </button>
-            </UiTooltip>
-            <UiTooltip v-else-if="item === 'heading-number-remove'" label="移除标题编号">
-              <button
-                type="button"
-                aria-label="移除标题编号"
-                :disabled="formatDisabled"
-                @click="markdownEditor?.removeHeadingNumbers()"
-              >
-                <FormatIcon name="heading-number-remove" />
-              </button>
-            </UiTooltip>
-            <UiTooltip v-else-if="item === 'quote'" label="引用" shortcut="⇧ ⌘ U">
-              <button
-                type="button"
-                aria-label="引用"
-                :disabled="formatDisabled"
-                @click="markdownEditor?.setLinePrefix('> ')"
-              >
-                <FormatIcon name="quote" />
-              </button>
-            </UiTooltip>
-            <UiTooltip v-else-if="item === 'unordered-list'" label="无序列表" shortcut="⇧ ⌘ 8">
-              <button
-                type="button"
-                aria-label="无序列表"
-                :disabled="formatDisabled"
-                @click="markdownEditor?.setLinePrefix('- ')"
-              >
-                <FormatIcon name="unordered-list" />
-              </button>
-            </UiTooltip>
-            <UiTooltip v-else-if="item === 'ordered-list'" label="有序列表">
-              <button
-                type="button"
-                aria-label="有序列表"
-                :disabled="formatDisabled"
-                @click="markdownEditor?.setLinePrefix('1. ')"
-              >
-                <FormatIcon name="ordered-list" />
-              </button>
-            </UiTooltip>
-            <UiTooltip v-else-if="item === 'checkbox'" label="复选框">
-              <button
-                type="button"
-                aria-label="复选框"
-                :disabled="formatDisabled"
-                @click="markdownEditor?.setLinePrefix('- [ ] ')"
-              >
-                <FormatIcon name="checkbox" />
-              </button>
-            </UiTooltip>
-            <UiTooltip v-else-if="item === 'link'" label="链接">
-              <button
-                type="button"
-                aria-label="链接"
-                :disabled="formatDisabled"
-                @click="markdownEditor?.wrapSelection('[', '](https://)', '链接')"
-              >
-                <FormatIcon name="link" />
-              </button>
-            </UiTooltip>
-            <UiTooltip v-else-if="item === 'divider'" label="分割线">
-              <button
-                type="button"
-                aria-label="分割线"
-                :disabled="formatDisabled"
-                @click="insertTemplate('\n---\n')"
-              >
-                <FormatIcon name="divider" />
-              </button>
-            </UiTooltip>
-          </template>
-        </FormatOverflowBar>
-      </div>
+      <NoteFormatToolbar
+        :editor="markdownEditor"
+        :view-mode="tab.viewMode"
+        :disabled="formatDisabled"
+        :active="active"
+        :heading-level="headingLevel"
+        :heading-number-max-depth="headingNumberMaxDepth"
+        @toggle-mode="toggleMode"
+        @insert-canvas="insertCanvas"
+      />
       <div class="layout-toggles">
         <UiTooltip :label="pageWidthLabel">
           <button
@@ -1087,43 +885,6 @@ function openLink(url: string): void {
   font-size: 10px;
 }
 
-.format-cluster {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  min-width: 0;
-}
-
-.view-toggle {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  flex: none;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 0;
-}
-
-.view-toggle:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-
-.view-toggle svg {
-  width: 15px;
-  height: 15px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .note-index,
 .read-only {
   flex: none;
@@ -1175,33 +936,12 @@ function openLink(url: string): void {
 }
 
 .layout-toggles button,
-.conflict-banner button,
-:deep(.format-overflow button) {
+.conflict-banner button {
   border: 0;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
   font-size: 10px;
-}
-
-:deep(.format-overflow .ui-tooltip-host) {
-  flex: none;
-}
-
-:deep(.format-overflow button) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 32px;
-  height: 32px;
-  border-radius: 4px;
-  font-family: var(--font-mono);
-  font-size: 14px;
-}
-
-:deep(.format-overflow button:hover:not(:disabled)) {
-  background: var(--hover);
-  color: var(--text);
 }
 
 .layout-toggles button {

@@ -67,9 +67,14 @@ describe('reference links', () => {
     expect(hrefs(view)).toEqual([{ text: '描述', href: 'https://angle.example/g' }])
   })
 
-  it('leaves a missing reference without a url and does not steal an inline link', () => {
+  it('shows a reference without a definition as plain text and does not steal an inline link', () => {
     const missing = mount('[没有][missing]\n')
-    expect(hrefs(missing)).toEqual([{ text: '没有', href: '' }])
+    expect(hrefs(missing)).toEqual([])
+    expect(missing.contentDOM.textContent).toContain('[没有][missing]')
+
+    const bracket = mount('渲染异常：[1]\n')
+    expect(hrefs(bracket)).toEqual([])
+    expect(bracket.contentDOM.textContent).toContain('渲染异常：[1]')
 
     const inline = mount('[描述](https://inline.example/a)\n\n[描述]: https://nope.example\n')
     expect(hrefs(inline)).toEqual([{ text: '描述', href: 'https://inline.example/a' }])

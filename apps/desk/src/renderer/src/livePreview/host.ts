@@ -1,6 +1,6 @@
 import { Facet } from '@codemirror/state'
 
-/** 编辑器宿主（Vue 组件）提供给显示层的能力：解析资源地址、打开链接、打开画板/导图。 */
+/** 编辑器宿主（Vue 组件）提供给显示层的能力：解析资源地址、打开链接、打开画板、保存导图里粘贴的图片。 */
 export interface LivePreviewHost {
   resolveImage(src: string): string
   openLink(href: string): void
@@ -10,7 +10,8 @@ export interface LivePreviewHost {
   noteRelPath: string
   isReadOnly(): boolean
   openCanvas(sourceRelPath: string): void
-  openMindmap(fenceSource: string): void
+  /** 把图片存进笔记资源，返回写进 Markdown 的相对路径 */
+  writeAsset(blob: Blob): Promise<{ relativePath: string; alt?: string }>
 }
 
 export const livePreviewHost = Facet.define<LivePreviewHost, LivePreviewHost>({
@@ -23,7 +24,7 @@ export const livePreviewHost = Facet.define<LivePreviewHost, LivePreviewHost>({
       noteRelPath: '',
       isReadOnly: () => false,
       openCanvas: () => undefined,
-      openMindmap: () => undefined
+      writeAsset: () => Promise.reject(new Error('没有可写入的笔记'))
     }
 })
 

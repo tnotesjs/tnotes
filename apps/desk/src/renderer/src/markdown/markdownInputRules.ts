@@ -74,6 +74,7 @@ export const MARKDOWN_INLINE_SHORTCUTS: MarkdownInlineShortcut[] = [
   { label: '斜体', syntax: '*文本* 或 _文本_', trigger: 'Space' },
   { label: '粗体', syntax: '**文本** 或 __文本__', trigger: 'Space' },
   { label: '删除线', syntax: '~~文本~~', trigger: 'Space' },
+  { label: '高亮', syntax: '==文本==', trigger: 'Space' },
   { label: '行内代码', syntax: '`代码`', trigger: 'Space' },
   { label: '行内公式', syntax: '$公式$', trigger: 'Space' }
 ]

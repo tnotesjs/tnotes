@@ -1,3 +1,4 @@
+import { syntaxTree } from '@codemirror/language'
 import { StateEffect } from '@codemirror/state'
 import { EditorView, WidgetType } from '@codemirror/view'
 import DOMPurify from 'dompurify'
@@ -21,13 +22,14 @@ import {
   mountMermaidPreview,
   mountMindmapPreview,
   mountNotesTablePreview,
-  mountWordListPreview
+  mountWordListPreview,
+  type MindmapPreviewProps
 } from '../editor/markdown/componentPreview'
 import { parseFencedCode } from '../editor/markdown/diagramRenderer'
-import { mindmapPreviewMarkdown } from '../editor/markdown/mindmapFence'
-import { parseFootprintsSource } from '@tnotesjs/ui'
+import { mindmapPreviewMarkdown, rebuildMindmapFence } from '../editor/markdown/mindmapFence'
+import { clampMindmapHeight, parseFootprintsSource } from '@tnotesjs/ui'
 import { installMarkdownMath } from '../agent/agentMarkdown'
-import { livePreviewHost } from './host'
+import { livePreviewHost, type LivePreviewHost } from './host'
 import { revealAt } from './widgets'
 
 export type CardKind = 'container' | 'mermaid' | 'mindmap' | 'component' | 'html' | 'table'
@@ -55,6 +57,8 @@ const INTERACTIVE =
 
 interface Mounted {
   destroy(): void
+  /** 思维导图自己写回围栏后换成新源码，保留同一个画布（选中、缩放、正在编辑的节点都不丢） */
+  updateSource?(source: string): void
 }
 
 const mounted = new WeakMap<HTMLElement, Mounted>()
@@ -173,9 +177,11 @@ export class CardWidget extends WidgetType {
     const host = view.state.facet(livePreviewHost)
     const card = document.createElement('div')
     card.className = `cm-lp-card cm-lp-card-${this.kind}`
-    const body = this.renderBody(card, host)
+    const body = this.renderBody(card, host, view)
     if (body) card.append(body)
     card.addEventListener('mousedown', (event) => {
+      // 思维导图在卡片里直接编辑，点它不进源码；要看源码用导图自己的「源码」视图。
+      if (this.kind === 'mindmap') return
       const target = event.target as HTMLElement | null
       if (target?.closest(INTERACTIVE)) return
       event.preventDefault()
@@ -203,11 +209,8 @@ export class CardWidget extends WidgetType {
 
   private renderBody(
     card: HTMLElement,
-    host: {
-      resolveImage: (src: string) => string
-      isReadOnly: () => boolean
-      openMindmap: (fenceSource: string) => void
-    }
+    host: LivePreviewHost,
+    view: EditorView
   ): HTMLElement | null {
     const resolveImage = host.resolveImage.bind(host)
     switch (this.kind) {
@@ -238,38 +241,8 @@ export class CardWidget extends WidgetType {
         mounted.set(card, { destroy: () => handle.unmount() })
         return hostEl
       }
-      case 'mindmap': {
-        const wrap = document.createElement('div')
-        wrap.className = 'cm-lp-mindmap-wrap'
-        const chrome = document.createElement('div')
-        chrome.className = 'cm-lp-mindmap-chrome'
-        const edit = document.createElement('button')
-        edit.type = 'button'
-        edit.className = 'cm-lp-mindmap-edit'
-        edit.textContent = '编辑'
-        edit.title = '在标签页里编辑思维导图'
-        edit.hidden = host.isReadOnly()
-        edit.addEventListener('mousedown', (event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          if (host.isReadOnly()) return
-          host.openMindmap(this.source)
-        })
-        chrome.append(edit)
-        const hostEl = document.createElement('div')
-        hostEl.className = 'cm-lp-diagram cm-lp-mindmap'
-        const preview = mindmapPreviewMarkdown(this.source)
-        const handle = mountMindmapPreview(hostEl, {
-          source: preview.markdown,
-          initialExpandLevel: preview.initialExpandLevel,
-          editable: false,
-          expandLevelControl: false,
-          resolveImageSrc: resolveImage
-        })
-        wrap.append(chrome, hostEl)
-        mounted.set(card, { destroy: () => handle.unmount() })
-        return wrap
-      }
+      case 'mindmap':
+        return renderMindmapCard(card, this.source, host, view)
       case 'component': {
         const hostEl = document.createElement('div')
         hostEl.className = 'cm-lp-component'
@@ -284,6 +257,13 @@ export class CardWidget extends WidgetType {
     }
   }
 
+  updateDOM(dom: HTMLElement): boolean {
+    const entry = mounted.get(dom)
+    if (this.kind !== 'mindmap' || !entry?.updateSource) return false
+    entry.updateSource(this.source)
+    return true
+  }
+
   destroy(dom: HTMLElement): void {
     mounted.get(dom)?.destroy()
     mounted.delete(dom)
@@ -292,4 +272,122 @@ export class CardWidget extends WidgetType {
   ignoreEvent(event: Event): boolean {
     return event.type !== 'dragstart'
   }
+}
+
+/** 卡片所在的这段 ```mindmap 围栏在文档里的当前位置（卡片从行首起，到闭合围栏为止）。 */
+function mindmapFenceAt(view: EditorView, card: HTMLElement): { from: number; to: number } | null {
+  let pos: number
+  try {
+    pos = view.posAtDOM(card)
+  } catch {
+    return null
+  }
+  const { doc } = view.state
+  let found: { from: number; to: number } | null = null
+  syntaxTree(view.state).iterate({
+    from: pos,
+    to: Math.min(doc.length, pos + 1),
+    enter(node) {
+      if (found) return false
+      if (node.name !== 'FencedCode') return
+      found = { from: doc.lineAt(node.from).from, to: node.to }
+      return false
+    }
+  })
+  return found
+}
+
+function renderMindmapCard(
+  card: HTMLElement,
+  initialSource: string,
+  host: LivePreviewHost,
+  view: EditorView
+): HTMLElement {
+  let source = initialSource
+  const readOnly = host.isReadOnly()
+  const wrap = document.createElement('div')
+  wrap.className = 'cm-lp-mindmap-wrap'
+  const hostEl = document.createElement('div')
+  hostEl.className = 'cm-lp-diagram cm-lp-mindmap'
+
+  const writeFence = (build: (fence: string) => string): void => {
+    if (host.isReadOnly()) return
+    const range = mindmapFenceAt(view, card)
+    if (!range) return
+    const current = view.state.doc.sliceString(range.from, range.to)
+    const next = build(current).replace(/\n$/, '')
+    if (next === current) return
+    source = next
+    view.dispatch({
+      changes: { from: range.from, to: range.to, insert: next },
+      userEvent: 'input.mindmap'
+    })
+  }
+
+  const propsFor = (fence: string, height?: number): MindmapPreviewProps => {
+    const preview = mindmapPreviewMarkdown(fence)
+    return {
+      source: preview.markdown,
+      initialExpandLevel: preview.initialExpandLevel,
+      height: height ?? preview.height,
+      editable: !readOnly,
+      expandLevelControl: true,
+      resolveImageSrc: host.resolveImage.bind(host),
+      writeAsset: readOnly ? undefined : (blob: Blob) => host.writeAsset(blob),
+      onMarkdownChange: (markdown: string) =>
+        writeFence((fence) => rebuildMindmapFence(fence, { markdown })),
+      onExpandLevelChange: (level: number) =>
+        writeFence((fence) => rebuildMindmapFence(fence, { initialExpandLevel: level }))
+    }
+  }
+
+  const handle = mountMindmapPreview(hostEl, propsFor(source))
+  wrap.append(hostEl)
+
+  if (!readOnly) {
+    const grip = document.createElement('div')
+    grip.className = 'cm-lp-mindmap-resize'
+    grip.title = '拖动调整高度'
+    grip.setAttribute('aria-hidden', 'true')
+    grip.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      const pane = hostEl.querySelector<HTMLElement>('.mindmap-pane')
+      const startHeight = pane?.offsetHeight || 440
+      // 编辑区可能带 CSS 缩放：拖动距离按屏幕像素算，换回布局像素
+      const scale = pane ? pane.getBoundingClientRect().height / Math.max(1, startHeight) : 1
+      const startY = event.clientY
+      let height = startHeight
+      grip.setPointerCapture(event.pointerId)
+      card.classList.add('is-resizing')
+      const onMove = (move: PointerEvent): void => {
+        height = clampMindmapHeight(startHeight + (move.clientY - startY) / (scale || 1))
+        handle.update(propsFor(source, height))
+        view.requestMeasure()
+      }
+      const onUp = (): void => {
+        grip.removeEventListener('pointermove', onMove)
+        grip.removeEventListener('pointerup', onUp)
+        grip.removeEventListener('pointercancel', onUp)
+        card.classList.remove('is-resizing')
+        if (height !== startHeight) {
+          writeFence((fence) => rebuildMindmapFence(fence, { height }))
+        }
+      }
+      grip.addEventListener('pointermove', onMove)
+      grip.addEventListener('pointerup', onUp)
+      grip.addEventListener('pointercancel', onUp)
+    })
+    wrap.append(grip)
+  }
+
+  mounted.set(card, {
+    destroy: () => handle.unmount(),
+    updateSource: (next) => {
+      source = next
+      handle.update(propsFor(next))
+    }
+  })
+  return wrap
 }

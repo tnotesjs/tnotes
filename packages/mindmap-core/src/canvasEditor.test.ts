@@ -311,6 +311,53 @@ describe('脑图编辑态行内格式快捷键', () => {
   })
 })
 
+describe('脑图编辑态文字选区与工具栏', () => {
+  it('上报编辑框内文字选区，工具栏只对选中的几个字切换格式', () => {
+    const onEditStateChange = vi.fn()
+    const { editor, input, node } = mountEditor('# T\n\n- 节点内容\n', { onEditStateChange })
+    input.setSelectionRange(2, 4)
+    document.dispatchEvent(new Event('selectionchange'))
+    const last = onEditStateChange.mock.calls.at(-1)?.[0]
+    expect(last).toMatchObject({ nodeId: node.id, image: false, selection: { start: 2, end: 4 } })
+
+    expect(editor.formatEditing('bold')).toBe(true)
+    expect(node.content.raw).toBe('节点**内容**')
+    expect([input.selectionStart, input.selectionEnd]).toEqual([2, 4])
+
+    editor.commitEditing()
+    expect(onEditStateChange.mock.calls.at(-1)?.[0]).toBeNull()
+    editor.destroy()
+  })
+
+  it('图片节点的说明是纯文本：不上报选区，也不接受格式', () => {
+    const onEditStateChange = vi.fn()
+    const { editor, input, node } = mountEditor('# T\n\n- ![图注](a.png)\n', {
+      onEditStateChange
+    })
+    input.setSelectionRange(0, 1)
+    document.dispatchEvent(new Event('selectionchange'))
+    expect(onEditStateChange.mock.calls.at(-1)?.[0]).toMatchObject({ image: true, selection: null })
+    expect(editor.formatEditing('bold')).toBe(false)
+    expect(node.content.raw).toBe('![图注](a.png)')
+    editor.destroy()
+  })
+
+  it('Cmd+K 交给宿主的链接浮层，而不是 window.prompt', () => {
+    const onRequestLink = vi.fn()
+    const prompt = vi.fn(() => null)
+    vi.stubGlobal('prompt', prompt)
+    const { editor, input, node } = mountEditor('# T\n\n- 节点内容\n', { onRequestLink })
+    input.setSelectionRange(0, 2)
+    shortcut(input, 'k')
+    expect(prompt).not.toHaveBeenCalled()
+    expect(onRequestLink).toHaveBeenCalledWith(
+      expect.objectContaining({ nodeId: node.id, start: 0, end: 2, url: '' })
+    )
+    vi.unstubAllGlobals()
+    editor.destroy()
+  })
+})
+
 describe('脑图导航、框选与离散多选', () => {
   it('拖动期间只显示预览，松手后才提交树结构移动', () => {
     const { editor, host, input, session } = mountEditor('# T\n\n- a\n- b\n')

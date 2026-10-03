@@ -27,7 +27,7 @@ export type BlockBoundarySide = 'before' | 'after'
 
 export const blockBoundaryCaretKey = new PluginKey('desk-block-boundary-caret')
 
-/** 自带光标的类名（CSS 在 milkdownMarkdownEditor.scoped.css）。 */
+/** 自带光标的类名。 */
 export const BOUNDARY_CARET_CLASS = 'desk-block-boundary-caret'
 export const BOUNDARY_CARET_LAYER_CLASS = 'desk-block-boundary-caret-layer'
 

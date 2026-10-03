@@ -60,11 +60,6 @@
       "types": "./src/entries/excalidraw-editor.ts",
       "import": "./src/entries/excalidraw-editor.ts",
       "default": "./src/entries/excalidraw-editor.ts"
-    },
-    "./mindmap-editor": {
-      "types": "./src/entries/mindmap-editor.ts",
-      "import": "./src/entries/mindmap-editor.ts",
-      "default": "./src/entries/mindmap-editor.ts"
     }
   },
   "files": [

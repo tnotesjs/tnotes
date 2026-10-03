@@ -189,13 +189,11 @@ const math: MarkdownConfig = {
         const rest = text.slice(2).trimEnd()
         if (rest.endsWith('$$') && rest.length >= 2) {
           const end = cx.lineStart + line.pos + 2 + rest.length
+          const children = [cx.elt('MathMark', start, start + 2)]
+          if (end - 2 > start + 2) children.push(cx.elt('MathContent', start + 2, end - 2))
+          children.push(cx.elt('MathMark', end - 2, end))
           cx.nextLine()
-          cx.addElement(
-            cx.elt('BlockMath', start, end, [
-              cx.elt('MathMark', start, start + 2),
-              cx.elt('MathMark', end - 2, end)
-            ])
-          )
+          cx.addElement(cx.elt('BlockMath', start, end, children))
           return true
         }
         if (rest.trim()) return false
@@ -257,6 +255,45 @@ const math: MarkdownConfig = {
   ]
 }
 
+const EQUALS = 61
+const HIGHLIGHT_PUNCTUATION = /[\p{P}\p{S}]/u
+const highlightDelimiter = { resolve: 'Highlight', mark: 'HighlightMark' }
+
+/**
+ * `==高亮==`：和导图节点、SSG（markdown-it-mark）用同一种写法。
+ * 左右定界规则照 GFM 删除线：`a == b` 这种两侧有空白的不算。
+ */
+const highlight: MarkdownConfig = {
+  defineNodes: [
+    { name: 'Highlight' },
+    { name: 'HighlightMark', style: tags.processingInstruction }
+  ],
+  parseInline: [
+    {
+      name: 'Highlight',
+      after: 'Emphasis',
+      parse(cx: InlineContext, next: number, pos: number): number {
+        if (next !== EQUALS || cx.char(pos + 1) !== EQUALS || cx.char(pos + 2) === EQUALS) {
+          return -1
+        }
+        const before = cx.slice(pos - 1, pos)
+        const after = cx.slice(pos + 2, pos + 3)
+        const spaceBefore = /\s|^$/.test(before)
+        const spaceAfter = /\s|^$/.test(after)
+        const punctBefore = HIGHLIGHT_PUNCTUATION.test(before)
+        const punctAfter = HIGHLIGHT_PUNCTUATION.test(after)
+        return cx.addDelimiter(
+          highlightDelimiter,
+          pos,
+          pos + 2,
+          !spaceAfter && (!punctAfter || spaceBefore || punctBefore),
+          !spaceBefore && (!punctBefore || spaceAfter || punctAfter)
+        )
+      }
+    }
+  ]
+}
+
 /** TNotes 笔记用的 Markdown 语言：GFM + 容器 + frontmatter + 公式，代码块按语言嵌套高亮。 */
 export function tnotesMarkdown(): Extension {
   return [
@@ -269,6 +306,7 @@ export function tnotesMarkdown(): Extension {
         containers,
         componentBlock,
         math,
+        highlight,
         { remove: ['Superscript', 'Subscript'] }
       ],
       addKeymap: false

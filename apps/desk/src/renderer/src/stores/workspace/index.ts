@@ -578,7 +578,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     ) {
       return
     }
-    if (tab.type === 'note' || tab.type === 'mindmap') {
+    if (tab.type === 'note') {
       await ensureDocument(tab.knowledgeBaseId, tab.noteUuid)
     }
     if (tab.type === 'text-file') return

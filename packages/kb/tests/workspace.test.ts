@@ -325,6 +325,21 @@ describe('assets', () => {
     expect(otherNote.reused).toBe(false)
     expect(otherNote.relPath).not.toBe(first.relPath)
   })
+
+  it('treats README- assets as owned by README for reuse and gc', async () => {
+    const ws = createWorkspace({ rootPath: root })
+    const data = new Uint8Array(PNG_1X1)
+    const first = await ws.assets.add({ fileName: 'README-paste.png', data })
+    const again = await ws.assets.add({ fileName: 'README-again.png', data })
+    const noteCopy = await ws.assets.add({ fileName: '0002-paste.png', data })
+    expect(again.reused).toBe(true)
+    expect(again.relPath).toBe(first.relPath)
+    expect(noteCopy.reused).toBe(false)
+
+    await write('README.md', `# 首页\n\n![x](./${first.relPath})\n`)
+    const dry = await ws.assets.gc()
+    expect(dry.unreferenced).toEqual([noteCopy.relPath])
+  })
 })
 
 describe('config', () => {

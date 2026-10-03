@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="480" height="240" viewBox="0 0 480 240">
-  <rect width="480" height="240" rx="24" fill="#20242b"/>
-  <circle cx="96" cy="120" r="48" fill="#4f8ef7"/>
-  <path d="M78 120h36M96 102v36" stroke="white" stroke-width="10" stroke-linecap="round"/>
-  <text x="168" y="112" fill="#f4f6fa" font-family="system-ui" font-size="30" font-weight="700">TNotes Mindmap</text>
-  <text x="168" y="150" fill="#9aa4b2" font-family="system-ui" font-size="18">VSCode local asset</text>
-</svg>

@@ -99,22 +99,6 @@ const excalidrawTabSchema = z.object({
   invalid: z.boolean().optional()
 })
 
-const mindmapTabSchema = z.object({
-  id: z.string().min(1),
-  type: z.literal('mindmap'),
-  knowledgeBaseId: z.string().min(1),
-  knowledgeBaseName: z.string(),
-  noteUuid: z.string().min(1),
-  fenceOrdinal: z.number().int().min(0).default(0),
-  fenceSource: z.string().min(1).max(2_000_000),
-  title: z.string(),
-  icon: iconSchema,
-  pinned: z.boolean().optional(),
-  openedAt: z.number().finite().optional(),
-  dirty: z.boolean().optional(),
-  invalid: z.boolean().optional()
-})
-
 const noteHistoryTabSchema = z.object({
   id: z.string().min(1),
   type: z.literal('note-history'),
@@ -136,7 +120,6 @@ const editorTabSchema = z.discriminatedUnion('type', [
   kbSettingsTabSchema,
   kbAssetsTabSchema,
   excalidrawTabSchema,
-  mindmapTabSchema,
   textFileTabSchema,
   noteHistoryTabSchema
 ])
@@ -484,6 +467,17 @@ export const kbFilesListSchema = z.object({
 export const kbFilesReadSchema = z.object({
   knowledgeBaseId: z.string().min(1),
   relPath: kbRelPathSchema.min(1, '必须指定文件路径')
+})
+
+export const kbReadmeReadSchema = z.object({
+  knowledgeBaseId: z.string().min(1),
+  create: z.boolean().optional()
+})
+
+export const kbReadmeWriteSchema = z.object({
+  knowledgeBaseId: z.string().min(1),
+  content: z.string().max(2_000_000),
+  baseRevision: z.string()
 })
 
 /** 派生 SVG：只收源画布路径 + 内容，目标路径由主进程推导 */

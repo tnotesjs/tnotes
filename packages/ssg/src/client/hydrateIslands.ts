@@ -221,9 +221,11 @@ async function hydrateMindmaps(root: ParentNode, base: string): Promise<void> {
   for (const el of nodes) {
     el.dataset.tnReady = '1'
     const expand = el.dataset.expand
+    const height = el.dataset.height
     createApp(Mindmap, {
       content: el.dataset.content ?? '',
       initialExpandLevel: expand === undefined ? undefined : Number(expand),
+      height: height === undefined ? undefined : Number(height),
       // Readers get the same 「层」 control the editor has. The level is a view
       // concern — `applyInitialExpandLevel` drives the session — so a read-only
       // canvas can offer it without writing anything back to the note.

@@ -82,6 +82,8 @@ const props = withDefaults(
     editable?: boolean
     /** Show expand-level control on the chrome (Desk). */
     expandLevelControl?: boolean
+    /** Pane height in px; omit for the default 440px canvas. */
+    height?: number
     /** Explicit dark mode; omit to auto-detect html.dark / data-theme=dark. */
     isDark?: boolean
     /**
@@ -101,6 +103,7 @@ const props = withDefaults(
     initialExpandLevel: 3,
     editable: false,
     expandLevelControl: false,
+    height: undefined,
     isDark: undefined,
     resolveImageSrc: undefined,
     writeAsset: undefined
@@ -161,6 +164,9 @@ function decodeContent(value: string): string {
   }
 }
 
+const paneStyle = computed(() =>
+  props.height ? { '--mindmap-pane-height': `${props.height}px` } : undefined
+)
 const rawContent = computed(() => props.source || decodeContent(props.content || ''))
 const normalizedContent = computed(() => normalizeMindmapMarkdown(rawContent.value))
 
@@ -508,9 +514,14 @@ function zoomToFit(): void {
   viewer?.zoomToFit()
 }
 
-function activateCanvas(): void {
+/** 画布上的浮层自己管焦点；被抢走会让节点编辑提前提交，工具栏点了也不生效 */
+const CANVAS_OVERLAY_SELECTOR =
+  '.selection-toolbar, .mm-edit-input, .link-popover, .canvas-context-menu'
+
+function activateCanvas(event: PointerEvent): void {
   isCanvasActive.value = true
   if (!props.editable) return
+  if (event.target instanceof Element && event.target.closest(CANVAS_OVERLAY_SELECTOR)) return
   const editorEl = canvasHost.value?.querySelector<HTMLElement>('.mm-editor')
   editorEl?.focus({ preventScroll: true })
 }
@@ -729,6 +740,7 @@ onBeforeUnmount(() => {
   <section
     ref="previewRoot"
     class="mindmap-preview"
+    :style="paneStyle"
     :class="{
       'is-dark': dark,
       'is-fullscreen': isFullscreen,
@@ -1039,7 +1051,7 @@ onBeforeUnmount(() => {
 .mindmap-canvas-host {
   position: relative;
   width: 100%;
-  height: 440px;
+  height: var(--mindmap-pane-height, 440px);
   overflow: hidden;
   /*
    * No background of its own: the canvas is cleared to transparent, and the
@@ -1051,7 +1063,7 @@ onBeforeUnmount(() => {
   touch-action: none;
   user-select: none;
 
-  /* CanvasEditor overlay + chrome tokens (aligned with mindmap-web). */
+  /* CanvasEditor overlay + chrome tokens. */
   --mm-canvas-bg: var(--tn-c-bg);
   --mm-panel-bg: var(--tn-c-bg-soft, var(--tn-c-bg));
   --mm-text: var(--tn-c-text);
@@ -1091,7 +1103,7 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 
-/* Marquee box — required for box-select feedback (aligned with mindmap-web). */
+/* Marquee box — required for box-select feedback. */
 .mindmap-canvas-host:deep(.mm-selection-box) {
   position: absolute;
   z-index: 8;
@@ -1169,8 +1181,7 @@ onBeforeUnmount(() => {
 .mindmap-canvas-host:deep(.mm-edit-input .inline-run.highlight:not(.code)) {
   padding: 0 1px;
   border-radius: 2px;
-  background: #fff36a;
-  color: #242424;
+  background: var(--tn-c-mark-bg, rgba(255, 221, 0, 0.45));
 }
 .mindmap-canvas-host:deep(.mm-edit-input .inline-run.code) {
   padding: 0 4px;
@@ -1213,13 +1224,13 @@ onBeforeUnmount(() => {
 }
 
 .mindmap-outline {
-  max-height: 560px;
+  max-height: var(--mindmap-pane-height, 560px);
   padding: 18px 22px 22px;
   overflow: auto;
 }
 
 .mindmap-outline.is-editable {
-  height: 440px;
+  height: var(--mindmap-pane-height, 440px);
   max-height: none;
   padding: 0;
   overflow: hidden;
@@ -1228,7 +1239,7 @@ onBeforeUnmount(() => {
 }
 
 .mindmap-source-wrap.is-editable {
-  height: 440px;
+  height: var(--mindmap-pane-height, 440px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1332,8 +1343,7 @@ onBeforeUnmount(() => {
 .mindmap-outline :deep(.is-highlight) {
   padding: 0 2px;
   border-radius: 2px;
-  background: #ffe56b;
-  color: #252525;
+  background: var(--tn-c-mark-bg, rgba(255, 221, 0, 0.45));
 }
 .mindmap-outline :deep(.is-code) {
   padding: 1px 5px;
@@ -1349,7 +1359,7 @@ onBeforeUnmount(() => {
 }
 
 .mindmap-source {
-  max-height: 560px;
+  max-height: var(--mindmap-pane-height, 560px);
   margin: 0;
   padding: 18px 22px;
   overflow: auto;
@@ -1431,7 +1441,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 768px) {
   .mindmap-canvas-host {
-    height: 360px;
+    height: var(--mindmap-pane-height, 360px);
   }
   .mindmap-preview-actions {
     top: 6px;

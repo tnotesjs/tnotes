@@ -2,7 +2,8 @@
  * src/pages.ts
  *
  * kb-driven page discovery: notes/*.md become routes, TOC.md becomes the
- * sidebar, and the home page is the configured (or first) TOC note.
+ * sidebar, and the home page is the configured note, else the kb's README.md
+ * (pinned as the sidebar's first row), else the first TOC note.
  */
 
 import fs from 'node:fs'
@@ -28,6 +29,9 @@ export interface CollectedSite {
   sidebar: SidebarItem[]
   snapshot: KbSnapshot
 }
+
+/** Sidebar row for the README home page; always first, above the TOC. */
+export const README_SIDEBAR_TEXT = 'README'
 
 export function noteRoute(index: string): string {
   return canonicalNoteRoute(index)
@@ -91,12 +95,23 @@ export async function collectSite(config: ResolvedSsgConfig): Promise<CollectedS
     })
   }
 
-  // Home page: configured note, else the first TOC note, else a placeholder.
-  const homeIndex =
-    (config.home && noteByIndex.has(config.home) ? config.home : undefined) ??
-    firstTocNoteIndex(snapshot.toc)
+  // Home page: configured note, else README.md, else the first TOC note, else a placeholder.
+  const sidebar = toSidebarItems(snapshot.toc, noteByIndex)
+  const configuredHome = config.home && noteByIndex.has(config.home) ? config.home : undefined
+  const readmeFile = path.join(config.root, 'README.md')
+  const readme = configuredHome ? '' : readNonEmpty(readmeFile)
+  const homeIndex = configuredHome ?? firstTocNoteIndex(snapshot.toc)
   const homePage = pages.find((page) => page.noteIndex === homeIndex)
-  if (homePage) {
+  if (readme) {
+    pages.unshift({
+      file: readmeFile,
+      route: '/',
+      source: readme,
+      titleHint: config.title,
+      noteIndex: ''
+    })
+    sidebar.unshift({ text: README_SIDEBAR_TEXT, link: '/' })
+  } else if (homePage) {
     pages.unshift({ ...homePage, route: '/' })
   } else {
     pages.unshift({
@@ -110,7 +125,16 @@ export async function collectSite(config: ResolvedSsgConfig): Promise<CollectedS
 
   return {
     pages,
-    sidebar: toSidebarItems(snapshot.toc, noteByIndex),
+    sidebar,
     snapshot
+  }
+}
+
+function readNonEmpty(file: string): string {
+  try {
+    const source = fs.readFileSync(file, 'utf8')
+    return source.trim() ? source : ''
+  } catch {
+    return ''
   }
 }

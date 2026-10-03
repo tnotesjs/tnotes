@@ -61,14 +61,13 @@ describe('工作区 IPC 合同', () => {
     })
   })
 
-  it('所有标签页类型都能弹出标签菜单（含画布、导图与历史）', async () => {
+  it('所有标签页类型都能弹出标签菜单（含画布与历史）', async () => {
     for (const tabType of [
       'note',
       'web',
       'kb-settings',
       'kb-assets',
       'excalidraw',
-      'mindmap',
       'note-history',
       'text-file'
     ] as const) {
@@ -79,7 +78,7 @@ describe('工作区 IPC 合同', () => {
       })
       expect(result.ok, `${tabType} 应通过校验`).toBe(true)
     }
-    expect(mocks.showContextMenu).toHaveBeenCalledTimes(8)
+    expect(mocks.showContextMenu).toHaveBeenCalledTimes(7)
   })
 
   it('未知标签页类型被拒绝', async () => {

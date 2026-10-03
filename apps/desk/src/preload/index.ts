@@ -20,6 +20,7 @@ import type {
   AttachmentWriteLocalResult,
   ExcalidrawDerivedRefDto,
   KbFilesListResultDto,
+  KbReadmeDto,
   KbTextFileDto,
   ExcalidrawDocumentDto,
   ExcalidrawDocumentRefDto,
@@ -213,6 +214,10 @@ const api: DeskApi = {
   kbFiles: {
     list: (request) => invoke<KbFilesListResultDto>(IPC_CHANNELS.kbFilesList, request),
     read: (request) => invoke<KbTextFileDto>(IPC_CHANNELS.kbFilesRead, request)
+  },
+  kbReadme: {
+    read: (request) => invoke<KbReadmeDto>(IPC_CHANNELS.kbReadmeRead, request),
+    write: (request) => invoke<KbReadmeDto>(IPC_CHANNELS.kbReadmeWrite, request)
   },
   excalidraw: {
     create: (request) => invoke<ExcalidrawDocumentRefDto>(IPC_CHANNELS.excalidrawCreate, request),

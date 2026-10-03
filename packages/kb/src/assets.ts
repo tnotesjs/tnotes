@@ -17,7 +17,7 @@ import {
 } from './constants'
 import { writeFileAtomic } from './atomic'
 import { findReusableAsset } from './asset-scan/dedupe'
-import { ownerNoteIndexFromName } from './asset-scan/owner'
+import { assetOwnerFromName } from './asset-scan/owner'
 
 import type { AssetEntry, KbIcon } from './types'
 
@@ -85,7 +85,7 @@ export async function addAsset(
   data: Uint8Array
 ): Promise<{ relPath: string; markdownPath: string; reused: boolean }> {
   const baseName = path.basename(fileName)
-  const ownerNoteIndex = ownerNoteIndexFromName(baseName)
+  const ownerNoteIndex = assetOwnerFromName(baseName)
   if (ownerNoteIndex) {
     const listed = await listAssets(rootPath)
     const reused = await findReusableAsset({
@@ -166,9 +166,15 @@ export async function replaceKbIcon(
   }
 }
 
-/** Collect asset references from all note bodies. */
+/** Collect asset references from all note bodies and the root README.md. */
 export async function collectAssetReferences(rootPath: string): Promise<Set<string>> {
   const refs = new Set<string>()
+  try {
+    const readme = await fs.readFile(path.join(rootPath, 'README.md'), 'utf8')
+    for (const match of readme.matchAll(ASSET_REF_REGEX)) refs.add(`${ASSETS_DIR}/${match[1]}`)
+  } catch {
+    // 没有 README
+  }
   let noteFiles: string[] = []
   try {
     noteFiles = await fs.readdir(path.join(rootPath, NOTES_DIR))

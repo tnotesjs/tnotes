@@ -37,6 +37,7 @@ import {
   nextGraphemeOffset,
   previousGraphemeOffset,
   richSelectionOffsets,
+  richSelectionRect,
   setRichSelection
 } from './dom/richInlineDom'
 
@@ -115,6 +116,37 @@ export interface CanvasEditorEvents {
   onPasteSelection?: (event?: ClipboardEvent) => void
   /** 画布 paste 事件中的纯文本（非图片）插入请求。 */
   onPasteText?: (text: string, anchorId: string) => void
+  /** 内联编辑状态变化（开始/结束编辑、编辑框内文字选区变化）。null 表示没有在编辑。 */
+  onEditStateChange?: (state: CanvasEditState | null) => void
+  /**
+   * 编辑态 Cmd/Ctrl+K 或工具栏「链接」：由宿主弹出链接编辑浮层。
+   * 未提供时回退到 `window.prompt`（Electron 不支持 prompt，嵌入宿主都应提供）。
+   */
+  onRequestLink?: (request: CanvasLinkRequest) => void
+}
+
+/** 编辑框内的文字选区；偏移是可见文字偏移（与大纲视图一致）。 */
+export interface CanvasEditSelection {
+  start: number
+  end: number
+  /** 选区上沿中点的视口坐标，用于放置文字格式工具栏 */
+  position: { left: number; top: number }
+}
+
+export interface CanvasEditState {
+  nodeId: string
+  /** 图片节点编辑的是图片说明：纯文本，不提供行内格式 */
+  image: boolean
+  /** 折叠光标时为 null */
+  selection: CanvasEditSelection | null
+}
+
+export interface CanvasLinkRequest {
+  nodeId: string
+  start: number
+  end: number
+  url: string
+  position: { left: number; top: number }
 }
 
 export interface CanvasEditorOptions {
@@ -585,6 +617,8 @@ export class CanvasEditor {
 
     input.focus()
     input.setSelectionRange(input.value.length, input.value.length)
+    document.addEventListener('selectionchange', this.onEditingSelectionChange)
+    this.emitEditState()
 
     input.addEventListener('keydown', (e) => {
       e.stopPropagation()
@@ -743,6 +777,7 @@ export class CanvasEditor {
     const raw = this.editingDraftRaw.trim()
     input.remove()
     addButton?.remove()
+    this.endEditState()
     // 幕布：允许空节点常驻；Esc/失焦不自动删除
     this.editingDraftRaw = ''
     this.editingInitialDisplayText = ''
@@ -844,6 +879,17 @@ export class CanvasEditor {
     const end = state.start === state.end ? state.node.content.text.length : state.end
     if (start === end) return
     const current = this.selectedLinkUrl(state.node, start, end)
+    if (this.events.onRequestLink) {
+      const rect = richSelectionRect(state.input)
+      this.events.onRequestLink({
+        nodeId: state.node.id,
+        start,
+        end,
+        url: current,
+        position: { left: rect.left + rect.width / 2, top: rect.bottom + 8 }
+      })
+      return
+    }
     let next: string | null
     this.suspendEditingBlur = true
     try {
@@ -875,8 +921,68 @@ export class CanvasEditor {
     this.editingComposing = false
     input.remove()
     addButton?.remove()
+    this.endEditState()
     this.relayout()
     this.container.focus()
+  }
+
+  private onEditingSelectionChange = (): void => {
+    this.emitEditState()
+  }
+
+  private endEditState(): void {
+    document.removeEventListener('selectionchange', this.onEditingSelectionChange)
+    this.events.onEditStateChange?.(null)
+  }
+
+  private editingSelection(): CanvasEditSelection | null {
+    const input = this.editingInput
+    if (!input || this.editingComposing) return null
+    const offsets = richSelectionOffsets(input)
+    if (!offsets || offsets.start === offsets.end) return null
+    const rect = richSelectionRect(input)
+    return {
+      start: offsets.start,
+      end: offsets.end,
+      position: { left: rect.left + rect.width / 2, top: rect.top - 8 }
+    }
+  }
+
+  private emitEditState(): void {
+    const node = this.editingNode
+    if (!this.editingInput || !node) return
+    const image = !!node.content.image
+    this.events.onEditStateChange?.({
+      nodeId: node.id,
+      image,
+      selection: image ? null : this.editingSelection()
+    })
+  }
+
+  /** 正在内联编辑时，对编辑框内的选区（无选区则整段）切换行内格式。 */
+  formatEditing(format: InlineFormat): boolean {
+    if (!this.editingInput || this.editingNode?.content.image) return false
+    this.toggleEditingInlineFormat(format)
+    return true
+  }
+
+  /** 正在内联编辑时，清除编辑框内选区（无选区则整段）的行内格式。 */
+  clearEditingFormats(): boolean {
+    if (!this.editingInput || this.editingNode?.content.image) return false
+    this.clearEditingInlineFormats()
+    return true
+  }
+
+  /** 正在内联编辑时请求编辑选区链接（交给 `onRequestLink`）。 */
+  linkEditing(): boolean {
+    if (!this.editingInput || this.editingNode?.content.image) return false
+    this.editEditingLink()
+    return true
+  }
+
+  /** 提交当前内联编辑（若有）。 */
+  commitEditing(): void {
+    this.commitEdit()
   }
 
   // ---------- 键盘 ----------

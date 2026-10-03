@@ -123,6 +123,13 @@ describe('Markdown compatibility helpers', () => {
     ).toEqual(['./0002.%20指南.md'])
   })
 
+  it('renders ==text== as a highlight mark', async () => {
+    const compiler = await createMarkdownCompiler(compilerConfig)
+    const { html } = compiler.compile('前 ==重点== 后，a == b\n', 'n.md', '/n', 'n')
+    expect(html).toContain('<mark>重点</mark>')
+    expect(html).toContain('a == b')
+  })
+
   it('renders standalone image width, caption, and alignment', async () => {
     const compiler = await createMarkdownCompiler(compilerConfig)
     const { html } = compiler.compile(
@@ -214,6 +221,16 @@ describe('Markdown compatibility helpers', () => {
     // Asserted on the SSR output in site.test.ts; here just pin the host markup
     // the client island reads.
     expect(html).toContain(':expandLevelControl="true"')
+  })
+
+  it('passes the fence height to the mindmap island', async () => {
+    const compiler = await createMarkdownCompiler(compilerConfig)
+    const source = ['```mindmap [根] 2 h=520', '- 子', '```'].join('\n')
+    await compiler.prepare([source])
+    const { html } = compiler.compile(source, 'n.md', '/n', 'n')
+    expect(html).toContain('data-height="520"')
+    expect(html).toContain(':height="520"')
+    expect(html).toContain('data-expand="2"')
   })
 
   it('hides all but the first code-group panel in SSR HTML', async () => {

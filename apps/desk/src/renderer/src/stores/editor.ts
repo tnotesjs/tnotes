@@ -39,7 +39,6 @@ import type {
   KbSettingsEditorTab,
   KbAssetsEditorTab,
   ExcalidrawEditorTab,
-  MindmapEditorTab,
   NoteHistoryEditorTab,
   TextFileEditorTab,
   NoteEditorTab,
@@ -75,6 +74,8 @@ function sanitizeLayout(
   if (node.type === 'group') {
     const tabs = node.tabs
       .filter((tab) => {
+        // 旧会话里的独立思维导图标签已下线（导图改在笔记卡片里编辑）
+        if ((tab as { type: string }).type === 'mindmap') return false
         if (tab.type === 'web') {
           try {
             const url = new URL(tab.url)
@@ -87,14 +88,12 @@ function sanitizeLayout(
           tab.type === 'kb-settings' ||
           tab.type === 'kb-assets' ||
           tab.type === 'excalidraw' ||
-          tab.type === 'mindmap' ||
           tab.type === 'text-file' ||
           tab.type === 'note-history'
         ) {
           return (
             knowledgeBaseIds.has(tab.knowledgeBaseId) &&
-            (!scopedKnowledgeBaseId || tab.knowledgeBaseId === scopedKnowledgeBaseId) &&
-            (tab.type !== 'mindmap' || !validNoteUuids || validNoteUuids.has(tab.noteUuid))
+            (!scopedKnowledgeBaseId || tab.knowledgeBaseId === scopedKnowledgeBaseId)
           )
         }
         return (
@@ -124,14 +123,9 @@ function sanitizeLayout(
             ? { dirty: Boolean(tab.dirty) }
             : tab.type === 'excalidraw'
               ? { dirty: Boolean(tab.dirty), invalid: Boolean(tab.invalid) }
-              : tab.type === 'mindmap'
-                ? {
-                    invalid: Boolean(tab.invalid),
-                    fenceOrdinal: Number.isInteger(tab.fenceOrdinal) ? tab.fenceOrdinal : 0
-                  }
-                : tab.type === 'note-history'
-                  ? { commit: /^[0-9a-f]{40}$/.test(tab.commit) ? tab.commit : '' }
-                  : {})
+              : tab.type === 'note-history'
+                ? { commit: /^[0-9a-f]{40}$/.test(tab.commit) ? tab.commit : '' }
+                : {})
       }))
     return {
       ...node,
@@ -665,13 +659,6 @@ export const useEditorStore = defineStore('editor', () => {
             tab.title = title
             changed = true
           } else if (
-            tab.type === 'mindmap' &&
-            tab.knowledgeBaseId === knowledgeBaseId &&
-            tab.noteUuid === noteUuid
-          ) {
-            tab.title = retitle(tab.title)
-            changed = true
-          } else if (
             tab.type === 'excalidraw' &&
             tab.knowledgeBaseId === knowledgeBaseId &&
             noteIndex &&
@@ -1039,63 +1026,6 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   /**
-   * 打开思维导图编辑标签。同一笔记的同一段围栏（序号）只保留一个标签。
-   * 写回会改 fenceSource，不再用原文认标签。
-   */
-  function openMindmap(
-    knowledgeBase: KnowledgeBaseDescriptor,
-    noteUuid: string,
-    fenceSource: string,
-    meta: { title?: string; fenceOrdinal?: number } = {}
-  ): string {
-    if (activeKnowledgeBaseId.value !== knowledgeBase.id) switchKnowledgeBase(knowledgeBase.id)
-    const fenceOrdinal = meta.fenceOrdinal ?? 0
-    for (const group of groups.value) {
-      const existing = group.tabs.find(
-        (tab) =>
-          tab.type === 'mindmap' &&
-          tab.knowledgeBaseId === knowledgeBase.id &&
-          tab.noteUuid === noteUuid &&
-          tab.fenceOrdinal === fenceOrdinal
-      )
-      if (existing) {
-        if (meta.title) existing.title = meta.title
-        activate(group.id, existing.id)
-        return existing.id
-      }
-    }
-    ensureRoomForTab()
-    const tab: MindmapEditorTab = {
-      id: `mindmap:${knowledgeBase.id}:${noteUuid}:${fenceOrdinal}`,
-      type: 'mindmap',
-      knowledgeBaseId: knowledgeBase.id,
-      knowledgeBaseName: knowledgeBase.displayName,
-      noteUuid,
-      fenceOrdinal,
-      fenceSource,
-      title: meta.title ?? '思维导图',
-      icon: knowledgeBase.icon,
-      pinned: false,
-      openedAt: Date.now()
-    }
-    layout.value = insertTab(layout.value, activeGroupId.value, tab)
-    return tab.id
-  }
-
-  function updateMindmapTabMeta(
-    tabId: string,
-    meta: { fenceSource?: string; title?: string; invalid?: boolean }
-  ): void {
-    const located = findTab(layout.value, tabId)
-    if (located?.tab.type !== 'mindmap') return
-    const tab = located.tab
-    if (meta.fenceSource !== undefined) tab.fenceSource = meta.fenceSource
-    if (meta.title !== undefined) tab.title = meta.title
-    if (meta.invalid !== undefined) tab.invalid = meta.invalid
-    layout.value = { ...layout.value }
-  }
-
-  /**
    * 打开知识库里的普通文本文件（只读）。
    *
    * 同一 KB + 同一路径只有一个标签：从笔记目录和面包屑打开同一份文件必须复用同一页，
@@ -1337,10 +1267,6 @@ export const useEditorStore = defineStore('editor', () => {
     const attached: Array<{ groupId: string; tabId: string }> = []
     for (const group of groups.value) {
       for (const tab of group.tabs) {
-        const mindmap =
-          tab.type === 'mindmap' &&
-          tab.knowledgeBaseId === knowledgeBaseId &&
-          tab.noteUuid === noteUuid
         const canvas =
           tab.type === 'excalidraw' &&
           tab.knowledgeBaseId === knowledgeBaseId &&
@@ -1350,7 +1276,7 @@ export const useEditorStore = defineStore('editor', () => {
           tab.type === 'note' &&
           tab.knowledgeBaseId === knowledgeBaseId &&
           tab.noteUuid === noteUuid
-        if (mindmap || canvas || note) attached.push({ groupId: group.id, tabId: tab.id })
+        if (canvas || note) attached.push({ groupId: group.id, tabId: tab.id })
       }
     }
     for (const target of attached) {
@@ -1543,8 +1469,6 @@ export const useEditorStore = defineStore('editor', () => {
     openKbSettings,
     openKbAssets,
     openExcalidraw,
-    openMindmap,
-    updateMindmapTabMeta,
     openNoteHistory,
     selectHistoryCommit,
     excalidrawTabIdFor,

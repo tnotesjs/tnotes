@@ -74,6 +74,8 @@ export const IPC_CHANNELS = {
   kbBuild: 'kb:build',
   kbFilesList: 'kb-files:list',
   kbFilesRead: 'kb-files:read',
+  kbReadmeRead: 'kb-readme:read',
+  kbReadmeWrite: 'kb-readme:write',
   gitList: 'git:list',
   gitRefresh: 'git:refresh',
   gitFocus: 'git:focus',
@@ -519,14 +521,7 @@ export type ContextMenuRequest =
   | {
       kind: 'tab'
       tabType:
-        | 'note'
-        | 'web'
-        | 'kb-settings'
-        | 'kb-assets'
-        | 'excalidraw'
-        | 'mindmap'
-        | 'note-history'
-        | 'text-file'
+        'note' | 'web' | 'kb-settings' | 'kb-assets' | 'excalidraw' | 'note-history' | 'text-file'
       pinned: boolean
       /** 同一组里是否还有可关闭的其它标签。缺省视为可以。 */
       othersClosable?: boolean
@@ -930,30 +925,6 @@ export interface ExcalidrawEditorTab {
 }
 
 /**
- * 思维导图编辑标签：编辑的是笔记里某段 ```mindmap 围栏。
- * 改动写回笔记正文；`fenceSource` 是打开时记下的整段围栏，写回后会更新成最新内容。
- */
-export interface MindmapEditorTab {
-  id: string
-  type: 'mindmap'
-  knowledgeBaseId: string
-  knowledgeBaseName: string
-  noteUuid: string
-  /** 这篇笔记里第几段 mindmap 围栏（从 0 起）。写回不改它，用来复用同一个标签。 */
-  fenceOrdinal: number
-  /** 当前认定的整段围栏原文（写回成功后更新） */
-  fenceSource: string
-  title: string
-  icon: KnowledgeBaseIconDto | null
-  pinned?: boolean
-  openedAt?: number
-  /** 导图本身不单独标脏；脏状态落在归属笔记上。保留字段以免布局 union 访问 dirty 时报错。 */
-  dirty?: boolean
-  /** 围栏在笔记里找不到或出现多份时置 true，之后不再写入 */
-  invalid?: boolean
-}
-
-/**
  * 笔记历史标签页（计划 H3 会补齐列表/分页/恢复门禁）。
  * 同一 KB + 同一编号只保留一个历史标签页，切换 commit 只更新该页内的选中版本。
  */
@@ -1056,7 +1027,6 @@ export type EditorTab =
   | KbSettingsEditorTab
   | KbAssetsEditorTab
   | ExcalidrawEditorTab
-  | MindmapEditorTab
   | TextFileEditorTab
   | NoteHistoryEditorTab
 
@@ -1910,6 +1880,31 @@ export interface KbTextFileDto {
   writableReason: string
 }
 
+/**
+ * 根目录 README.md 在渲染层借用笔记编辑器时用的保留 noteUuid。只在编辑器宿主和资源写入里出现，
+ * 不进 TOC、会话恢复、重命名这些按笔记处理的路径。
+ */
+export const README_NOTE_UUID = '__readme__'
+
+/** 知识库根目录 README.md 的内容与版本（原始字节 hash）。 */
+export interface KbReadmeDto {
+  exists: boolean
+  content: string
+  revision: string
+}
+
+export interface KbReadmeReadRequest {
+  knowledgeBaseId: string
+  /** 文件不存在时先建一份空的 */
+  create?: boolean
+}
+
+export interface KbReadmeWriteRequest {
+  knowledgeBaseId: string
+  content: string
+  baseRevision: string
+}
+
 export interface DeletePreviewDto {
   knowledgeBaseId: string
   entry: DeleteTargetDto
@@ -2368,6 +2363,10 @@ export interface DeskApi {
   kbFiles: {
     list(request: KbFilesListRequest): Promise<DeskResult<KbFilesListResultDto>>
     read(request: KbFilesReadRequest): Promise<DeskResult<KbTextFileDto>>
+  }
+  kbReadme: {
+    read(request: KbReadmeReadRequest): Promise<DeskResult<KbReadmeDto>>
+    write(request: KbReadmeWriteRequest): Promise<DeskResult<KbReadmeDto>>
   }
   excalidraw: {
     create(request: ExcalidrawCreateRequest): Promise<DeskResult<ExcalidrawDocumentRefDto>>

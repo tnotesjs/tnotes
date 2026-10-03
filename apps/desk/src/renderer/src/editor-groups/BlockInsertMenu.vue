@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 
 import { TN_NOTES_SLASH_ITEMS } from '../markdown/slashMenu'
 
 const props = defineProps<{
   disabled: boolean
   active: boolean
+  /** 宿主不支持的块（README 没有笔记索引，画布无处归属） */
+  exclude?: readonly string[]
 }>()
 
 const emit = defineEmits<{ select: [id: string] }>()
@@ -28,12 +30,16 @@ const menuIds = [
   'notes-table',
   'footprints'
 ] as const
-const items = menuIds.map((id) => {
-  if (id === 'canvas') return { id, label: '画布' }
-  if (id === 'table') return { id, label: '表格' }
-  const found = TN_NOTES_SLASH_ITEMS.find((item) => item.id === id)
-  return { id, label: found?.label ?? id }
-})
+const items = computed(() =>
+  menuIds
+    .filter((id) => !props.exclude?.includes(id))
+    .map((id) => {
+      if (id === 'canvas') return { id, label: '画布' }
+      if (id === 'table') return { id, label: '表格' }
+      const found = TN_NOTES_SLASH_ITEMS.find((item) => item.id === id)
+      return { id, label: found?.label ?? id }
+    })
+)
 
 const menuId = useId()
 const trigger = ref<HTMLButtonElement | null>(null)
@@ -92,8 +98,9 @@ function onKeydown(event: KeyboardEvent): void {
       event.key === 'Home'
         ? 0
         : event.key === 'End'
-          ? items.length - 1
-          : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+          ? items.value.length - 1
+          : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.value.length) %
+            items.value.length
     focusAt(index)
   }
 }

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createWorkspace } from '@tnotesjs/kb'
 
+import { README_NOTE_UUID } from '../../shared/contracts'
 import {
   backfillMissingNoteIds,
   handleWatchedPath,
@@ -120,6 +121,16 @@ describe('终端写入磁盘笔记（外部变更）', () => {
     const external = events.find((event) => event.name === 'noteExternalChanged')
     expect(external).toBeDefined()
     expect(external?.knowledgeBaseId).toBe(handle.id)
+  })
+
+  it('终端改库根 README.md → 按 README 保留 uuid 发出 noteExternalChanged', async () => {
+    const handle = await makeHandleWithoutNoteId()
+    const { state, events } = makeEventState()
+
+    handleWatchedPath(state, handle, path.join(handle.rootPath, 'README.md'))
+
+    const external = events.find((event) => event.name === 'noteExternalChanged')
+    expect(external?.noteUuid).toBe(README_NOTE_UUID)
   })
 
   it('Desk 自己刚写过的路径被忽略（内部写入不当作外部变更）', async () => {

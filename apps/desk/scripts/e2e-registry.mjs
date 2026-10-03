@@ -13,7 +13,6 @@
 //   note   一句话说明验什么（--list 时人读）
 //
 // 体检结论（2026-09-12，4 路并行审计 + 实测）：
-//   · `e2e-mindmap` 没有任何断言（启动→截图→dump 像素），是人工观察工具 → tier=manual
 //   · `e2e-excalidraw-e0` 验的是 packages/ui/e0-spike 试验台而非产品，产品交接由
 //     excalidraw-tab 覆盖 → tier=manual
 //   · `e2e-open-random-notes` 的断言点已被单测 + 其它套件的启动/打开流程覆盖，
@@ -663,20 +662,6 @@ export const SUITES = [
     locks: ['focus'],
     smoke: true,
     note: '死光标回归：可编辑区铺满、空白点击收回焦点、失焦不留虚拟光标（1800×1100 大窗口）'
-  },
-  {
-    name: 'e2e-mindmap.mjs',
-    area: 'mindmap',
-    tier: 'manual',
-    globs: [
-      'apps/desk/src/renderer/src/markdown/deskRawBlockView/**',
-      'apps/desk/src/renderer/src/editor/markdown/diagramRenderer.ts',
-      'apps/desk/src/renderer/src/editor/markdown/componentPreview.ts',
-      'packages/ui/src/components/Mindmap/**'
-    ],
-    serial: true,
-    smoke: false,
-    note: '人工观察工具：无任何断言，只启动→截图→dump 像素（固定 profile /tmp）'
   },
   {
     name: 'e2e-note-header.mjs',

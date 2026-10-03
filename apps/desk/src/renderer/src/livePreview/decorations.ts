@@ -1089,6 +1089,16 @@ function build(state: EditorState): LivePreviewState {
           }
           return
         }
+        case 'Highlight': {
+          const marks = node.getChildren('HighlightMark')
+          const open = marks[0]
+          const close = marks[marks.length - 1]
+          if (open && close && close.from > open.to) {
+            ranges.push(Decoration.mark({ class: 'cm-lp-highlight' }).range(open.to, close.from))
+          }
+          if (!touches(from, to)) for (const mark of marks) hide(mark.from, mark.to)
+          return
+        }
         case 'InlineCode': {
           const marks = node.getChildren('CodeMark')
           const open = marks[0]
@@ -1102,6 +1112,12 @@ function build(state: EditorState): LivePreviewState {
         case 'Link': {
           const marks = node.getChildren('LinkMark')
           const href = hrefForLink(state, node, definitions)
+          // `[1]`、`[文字][id]` 找不到同名定义时按 CommonMark 不是链接，原样显示。
+          const inline = marks.some((mark) => doc.sliceString(mark.from, mark.to) === '(')
+          if (!href && !inline && !node.getChild('URL')) {
+            ranges.push(Decoration.mark({ class: 'cm-lp-plain-ref' }).range(from, to))
+            return
+          }
           const closeBracket = marks.find((mark) => doc.sliceString(mark.from, mark.to) === ']')
           const textFrom = from + 1
           const textTo = closeBracket ? closeBracket.from : to

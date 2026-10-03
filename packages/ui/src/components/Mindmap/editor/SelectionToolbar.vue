@@ -16,8 +16,18 @@ const props = withDefaults(
      */
     placement?: 'fixed' | 'canvas-bottom'
     activeFormats?: Partial<Record<InlineFormat, boolean>>
+    /** 宿主没有插入图片入口时隐藏（脑图编辑框） */
+    canInsertImage?: boolean
+    /** 选中的全是图片节点时为 false：图片说明是纯文本，不出格式按钮 */
+    formattable?: boolean
   }>(),
-  { placement: 'fixed', position: undefined, activeFormats: undefined }
+  {
+    placement: 'fixed',
+    position: undefined,
+    activeFormats: undefined,
+    canInsertImage: true,
+    formattable: true
+  }
 )
 
 const emit = defineEmits<{
@@ -90,21 +100,24 @@ onBeforeUnmount(() => window.removeEventListener('resize', measureToolbar))
     role="toolbar"
     :aria-label="mode === 'text' ? '文字格式工具栏' : '多主题工具栏'"
     @pointerdown.prevent
+    @mousedown.prevent
   >
-    <button
-      v-for="item in formats"
-      :key="item.id"
-      type="button"
-      class="format-button"
-      :class="[{ active: activeFormats?.[item.id] }, `is-${item.id}`]"
-      :data-tooltip="item.label"
-      :aria-label="item.label"
-      @click="emit('format', item.id)"
-    >
-      <AppIcon v-if="item.id === 'highlight'" name="highlight" :size="21" />
-      <template v-else>{{ item.text }}</template>
-    </button>
-    <span class="toolbar-divider" />
+    <template v-if="formattable">
+      <button
+        v-for="item in formats"
+        :key="item.id"
+        type="button"
+        class="format-button"
+        :class="[{ active: activeFormats?.[item.id] }, `is-${item.id}`]"
+        :data-tooltip="item.label"
+        :aria-label="item.label"
+        @click="emit('format', item.id)"
+      >
+        <AppIcon v-if="item.id === 'highlight'" name="highlight" :size="21" />
+        <template v-else>{{ item.text }}</template>
+      </button>
+      <span class="toolbar-divider" />
+    </template>
     <button
       type="button"
       class="tool-button"
@@ -116,6 +129,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', measureToolbar))
     </button>
     <template v-if="mode === 'text'">
       <button
+        v-if="canInsertImage"
         type="button"
         class="tool-button"
         :data-tooltip="`添加图片 (${altShortcut('Enter')})`"
@@ -135,12 +149,12 @@ onBeforeUnmount(() => window.removeEventListener('resize', measureToolbar))
       </button>
       <button
         type="button"
-        class="tool-button code-button"
+        class="tool-button"
         :data-tooltip="`行内代码 (${primaryShortcut('E')})`"
         aria-label="行内代码"
         @click="emit('format', 'code')"
       >
-        &lt;/&gt;
+        <AppIcon name="code" :size="20" />
       </button>
     </template>
     <button
@@ -155,6 +169,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', measureToolbar))
     </button>
     <span class="toolbar-divider" />
     <button
+      v-if="formattable"
       type="button"
       class="tool-button"
       :data-tooltip="`清除样式 (${primaryShortcut('\\')})`"
@@ -217,7 +232,13 @@ onBeforeUnmount(() => window.removeEventListener('resize', measureToolbar))
 .tool-button::after {
   position: absolute;
   z-index: 2;
+  /* 宿主可能有全局 [data-tooltip]::after（例如 Desk 往下弹），这里把方向和显隐都定死 */
+  top: auto;
   bottom: calc(100% + 9px);
+  min-width: 0;
+  border: 0;
+  visibility: visible;
+  transition: none;
   left: 50%;
   width: max-content;
   max-width: min(260px, calc(100vw - 16px));
@@ -265,11 +286,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', measureToolbar))
 }
 .format-button.is-highlight {
   color: #d3c900;
-}
-.tool-button.code-button {
-  font-family: ui-monospace, monospace;
-  font-size: 15px;
-  font-weight: 700;
 }
 .tool-button.danger {
   color: #e14f5b;

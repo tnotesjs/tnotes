@@ -8,6 +8,7 @@ import {
   createExcalidrawDocument,
   createKnowledgeBase as createKbOnDisk,
   findExcalidrawSourceFor,
+  hashBytes,
   listKbDirectory,
   readKbTextFile,
   isKnowledgeBaseRoot,
@@ -48,6 +49,7 @@ import type { SearchIndexDocument } from './searchModel'
 import type {
   DeletePreviewDto,
   KbFilesListResultDto,
+  KbReadmeDto,
   KbTextFileDto,
   ExcalidrawDerivedRefDto,
   ExcalidrawDocumentDto,
@@ -84,6 +86,9 @@ import type {
 } from '../shared/contracts'
 
 export type { GitRepositoryDescriptor } from './workspace/types'
+
+/** 知识库根目录的 README，给 GitHub 这类平台当仓库首页 */
+const KB_README = 'README.md'
 
 export class WorkspaceManager {
   private readonly events = new EventEmitter<WorkspaceManagerEvents>()
@@ -313,6 +318,53 @@ export class WorkspaceManager {
       writable: false,
       writableReason: '当前只支持查看，编辑能力在后续版本开放'
     }
+  }
+
+  /** 库根 README.md：不存在时 `create` 为真就先建一份空文件。 */
+  async readKbReadme(knowledgeBaseId: string, create: boolean): Promise<KbReadmeDto> {
+    const handle = this.getHandle(knowledgeBaseId)
+    const absolute = path.join(handle.rootPath, KB_README)
+    let buffer: Buffer
+    try {
+      buffer = await fs.readFile(absolute)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      if (!create) return { exists: false, content: '', revision: '' }
+      this.assertWritable(knowledgeBaseId)
+      this.markInternal(handle, [KB_README])
+      await fs.writeFile(absolute, '', { flag: 'wx' }).catch((writeError) => {
+        if ((writeError as NodeJS.ErrnoException).code !== 'EEXIST') throw writeError
+      })
+      this.emitChanged()
+      buffer = await fs.readFile(absolute)
+    }
+    const hasBom =
+      buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf
+    return {
+      exists: true,
+      content: (hasBom ? buffer.subarray(3) : buffer).toString('utf8'),
+      revision: hashBytes(buffer)
+    }
+  }
+
+  /** 写回库根 README.md；磁盘内容已经不是 `baseRevision` 时拒绝，避免盖掉别处的修改。 */
+  async writeKbReadme(
+    knowledgeBaseId: string,
+    content: string,
+    baseRevision: string
+  ): Promise<KbReadmeDto> {
+    this.assertWritable(knowledgeBaseId)
+    const handle = this.getHandle(knowledgeBaseId)
+    const absolute = path.join(handle.rootPath, KB_README)
+    const current = await fs.readFile(absolute).catch(() => null)
+    if (current && hashBytes(current) !== baseRevision) {
+      throw new Error('README.md 已在别处被修改，请重新打开后再编辑')
+    }
+    const buffer = Buffer.from(content, 'utf8')
+    this.markInternal(handle, [KB_README])
+    await fs.writeFile(absolute, buffer)
+    this.emitChanged()
+    return { exists: true, content, revision: hashBytes(buffer) }
   }
 
   /** 「这张 .svg 能不能编辑」：同名 `.excalidraw` 在不在（探测，不抛错） */

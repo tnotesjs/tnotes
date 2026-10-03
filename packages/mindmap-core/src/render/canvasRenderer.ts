@@ -98,6 +98,8 @@ interface CanvasTheme {
   accent: string
   selectionBg: string
   matchBg: string
+  /** 与正文 `==高亮==`（`--tn-c-mark-bg`）同色：半透明底，文字保持原色 */
+  markBg: string
   dim: string
 }
 
@@ -121,6 +123,7 @@ const LIGHT: CanvasTheme = {
   accent: '#4f8ef7',
   selectionBg: 'rgba(79, 142, 247, 0.10)',
   matchBg: 'rgba(255, 213, 79, 0.35)',
+  markBg: 'rgba(255, 221, 0, 0.45)',
   dim: '#8a919e'
 }
 
@@ -138,6 +141,7 @@ const DARK: CanvasTheme = {
   accent: '#6b9eff',
   selectionBg: 'rgba(107, 158, 255, 0.12)',
   matchBg: 'rgba(255, 213, 79, 0.3)',
+  markBg: 'rgba(250, 204, 21, 0.32)',
   dim: '#7a828f'
 }
 
@@ -659,23 +663,21 @@ export class CanvasRenderer {
     if (marks.code || marks.highlight) {
       ctx.beginPath()
       ctx.roundRect(x - 1, y - fontSize / 2 - 2, width + 2, fontSize + 4, marks.code ? 4 : 2)
-      ctx.fillStyle = marks.code ? 'rgba(127, 132, 143, .24)' : 'rgba(255, 235, 64, .82)'
+      ctx.fillStyle = marks.code ? 'rgba(127, 132, 143, .24)' : this.theme.markBg
       ctx.fill()
     }
 
     ctx.fillStyle = marks.code
       ? '#f08a6e'
-      : marks.highlight
-        ? '#252525'
-        : isDone
-          ? this.theme.dim
-          : isLink
-            ? this.theme.accent
-            : tier === 'root'
-              ? this.theme.rootText
-              : tier === 'primary'
-                ? this.theme.primaryText
-                : this.theme.text
+      : isDone
+        ? this.theme.dim
+        : isLink
+          ? this.theme.accent
+          : tier === 'root'
+            ? this.theme.rootText
+            : tier === 'primary'
+              ? this.theme.primaryText
+              : this.theme.text
     ctx.fillText(text, x, y)
 
     const underline = marks.underline || isLink

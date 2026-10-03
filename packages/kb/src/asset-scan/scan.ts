@@ -25,7 +25,7 @@ import { assetFileKind } from './paths'
 import { FOLLOW_SOURCE_EXT } from './specifiers'
 import { extractVueSfc } from './vue'
 import { hashAssetFiles, withAssetHashes } from './dedupe'
-import { ownerNoteIndexFromName } from './owner'
+import { assetOwnerFromName } from './owner'
 
 import type {
   AssetBrokenLink,
@@ -536,7 +536,7 @@ export async function scanAssets(
       references: related.filter(determined),
       protection,
       renameAllowed,
-      ownerNoteIndex: ownerNoteIndexFromName(asset.name)
+      ownerNoteIndex: assetOwnerFromName(asset.name)
     }
   })
 

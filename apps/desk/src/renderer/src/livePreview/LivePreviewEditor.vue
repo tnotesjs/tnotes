@@ -31,8 +31,6 @@ import { resolveMarkdownImageUrl } from '../markdown/markdownAssetUrl'
 import { renumberHeadings, stripHeadingNumbers } from '../editor/markdown/headingNumbering'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
-import { mindmapPreviewMarkdown } from '../editor/markdown/mindmapFence'
-import { mindmapFenceOrdinal } from '../editor/markdown/mindmapFenceLocate'
 import {
   arrowDownIntoBlock,
   arrowUpIntoBlock,
@@ -73,6 +71,7 @@ import { sourceChrome } from './sourceChrome'
 import { tnotesMarkdown } from './language'
 import { collectHeadings, type OutlineHeading } from './outline'
 import { captureSelection } from './selectionCapture'
+import { glyphSelectionLayer } from './selectionLayer'
 import { agentReviewExtension, agentReviewNote, adoptArchivedReviews } from './agentReview'
 import { externalSync, frontmatterIdGuard } from './frontmatterIdGuard'
 import { registerLiveEditor, unregisterLiveEditor } from './editorRegistry'
@@ -156,21 +155,13 @@ function openCanvas(sourceRelPath: string): void {
   editorStore.openExcalidraw(knowledgeBase, sourceRelPath, { title })
 }
 
-function openMindmap(fenceSource: string): void {
-  const knowledgeBase =
-    workspaceStore.overview.allKnowledgeBases.find((item) => item.id === props.knowledgeBaseId) ??
-    null
-  if (!knowledgeBase) {
-    workspaceStore.error = '无法打开思维导图编辑'
-    return
-  }
-  const preview = mindmapPreviewMarkdown(fenceSource)
-  const titleMatch = preview.markdown.match(/^\s{0,3}#(?!#)\s+(.+?)\s*$/m)
-  const topic = (titleMatch?.[1] ?? preview.parts.options.title ?? '思维导图').trim() || '思维导图'
-  const title = noteTitle() ? `${topic} · ${noteTitle()}` : topic
-  const doc = view?.state.doc.toString() ?? props.content
-  const fenceOrdinal = mindmapFenceOrdinal(doc, fenceSource) ?? undefined
-  editorStore.openMindmap(knowledgeBase, props.noteUuid, fenceSource, { title, fenceOrdinal })
+async function writeAsset(blob: Blob): Promise<{ relativePath: string; alt?: string }> {
+  const type = blob.type || 'image/png'
+  const ext = type === 'image/jpeg' ? 'jpg' : (type.split('/')[1] ?? 'png').replace('+xml', '')
+  const file =
+    blob instanceof File ? blob : new File([blob], `paste-${Date.now()}.${ext}`, { type })
+  const uploaded = await workspaceStore.uploadImage(props.knowledgeBaseId, props.noteUuid, file)
+  return { relativePath: uploaded.markdownPath, alt: file.name }
 }
 
 function contextExtensions(): Extension[] {
@@ -183,7 +174,7 @@ function contextExtensions(): Extension[] {
       noteRelPath: props.noteRelPath,
       isReadOnly: () => props.readOnly,
       openCanvas,
-      openMindmap
+      writeAsset
     }),
     cardKnowledgeBase.of(props.knowledgeBaseId),
     agentReviewNote.of({ knowledgeBaseId: props.knowledgeBaseId, noteUuid: props.noteUuid })
@@ -300,6 +291,7 @@ function createState(doc: string): EditorState {
       tnotesMarkdown(),
       history(),
       drawSelection(),
+      glyphSelectionLayer,
       dropCursor(),
       rectangularSelection(),
       EditorView.lineWrapping,
@@ -343,6 +335,7 @@ function createState(doc: string): EditorState {
         { key: 'Mod-i', run: (v) => (wrapSelectionCommand(v, '*', '*'), true) },
         { key: 'Mod-e', run: (v) => (wrapSelectionCommand(v, '`', '`', '代码'), true) },
         { key: 'Mod-Shift-x', run: (v) => (wrapSelectionCommand(v, '~~', '~~'), true) },
+        { key: 'Mod-Shift-h', run: (v) => (wrapSelectionCommand(v, '==', '=='), true) },
         { key: 'Mod-k', run: (v) => (wrapSelectionCommand(v, '[', '](https://)', '链接'), true) },
         { key: 'Mod-Shift-7', run: (v) => (setLinePrefixCommand(v, '1. '), true) },
         { key: 'Mod-Shift-8', run: (v) => (setLinePrefixCommand(v, '- '), true) },

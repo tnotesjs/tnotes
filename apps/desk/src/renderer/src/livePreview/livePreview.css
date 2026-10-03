@@ -41,10 +41,20 @@
   border-left-width: 2px;
 }
 
-.live-editor .cm-selectionBackground,
-.live-editor .cm-focused .cm-selectionBackground,
-.live-editor .cm-content ::selection {
-  background: var(--tn-c-highlight) !important;
+/* 选区背景由 glyphSelectionLayer 画（只盖住选中的字），drawSelection 的整行背景和原生选区都不再上色。
+   只管笔记编辑器自己的行：卡片（导图大纲、节点编辑框、嵌套编辑器）里的选区照常显示。 */
+.live-editor__canvas > .cm-editor > .cm-scroller > .cm-selectionLayer .cm-selectionBackground,
+.live-editor__canvas > .cm-editor > .cm-scroller > .cm-content > .cm-line::selection,
+.live-editor__canvas > .cm-editor > .cm-scroller > .cm-content > .cm-line ::selection {
+  background: transparent !important;
+}
+
+.live-editor .cm-lp-selection-layer {
+  pointer-events: none;
+}
+
+.live-editor .cm-lp-selection {
+  background: var(--tn-c-highlight);
 }
 
 .live-editor .cm-placeholder {
@@ -481,6 +491,12 @@
   color: var(--tn-c-text-2);
 }
 
+/* 编号在标记位里靠右排，一位数的中心落在圆点那一列（对齐语雀），多位数往左长。 */
+.live-editor .cm-lp-visual .cm-lp-ol-mark {
+  padding-right: var(--lp-ol-gap, 0.5em);
+  text-align: right;
+}
+
 .live-editor .cm-lp-task {
   appearance: none;
   position: relative;
@@ -518,6 +534,11 @@
 }
 
 /* ---------- 行内 ---------- */
+
+.live-editor .cm-lp-visual .cm-lp-highlight {
+  background: var(--tn-c-mark-bg);
+  border-radius: 2px;
+}
 
 .live-editor .cm-lp-visual .cm-lp-inline-code {
   color: var(--tn-c-brand);
@@ -1301,6 +1322,13 @@
   color: inherit;
 }
 
+/* 没有定义的 `[1]` 不是链接：方括号和文字都按正文显示（高亮器仍会给它标 tok-link） */
+.live-editor .cm-lp-visual .cm-lp-plain-ref,
+.live-editor .cm-lp-visual .cm-lp-plain-ref :is(.tok-link, .tok-meta),
+.live-editor .cm-lp-visual :is(.tok-link, .tok-meta) > .cm-lp-plain-ref {
+  color: var(--editor-text);
+}
+
 .live-editor .cm-lp-visual .cm-lp-link-ref.is-active {
   opacity: 1;
   font-size: inherit;
@@ -1422,29 +1450,39 @@
 .live-editor .cm-lp-mindmap-wrap {
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
-/* 编辑入口放在画布上方，避开 Mindmap 右上角悬停工具条（.mindmap-preview-actions） */
-.live-editor .cm-lp-mindmap-chrome {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
+/* 底部拖拽把手：拖动改导图高度，松手写回围栏的 h=… */
+.live-editor .cm-lp-mindmap-resize {
+  position: relative;
+  height: 10px;
+  margin-top: -5px;
+  cursor: ns-resize;
+  touch-action: none;
 }
 
-.live-editor .cm-lp-mindmap-edit {
-  padding: 2px 8px;
-  border: 1px solid var(--tn-c-divider);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--tn-c-bg) 96%, transparent);
-  color: var(--tn-c-text);
-  font: 12px/1.3 var(--tn-font-sans);
-  cursor: pointer;
+.live-editor .cm-lp-mindmap-resize::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 3px;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--tn-c-divider-strong);
+  opacity: 0;
+  transform: translateX(-50%);
+  transition: opacity 0.12s;
 }
 
-.live-editor .cm-lp-mindmap-edit:hover {
-  background: var(--tn-c-hover);
-  color: var(--tn-c-brand);
+.live-editor .cm-lp-card-mindmap:hover .cm-lp-mindmap-resize::after,
+.live-editor .cm-lp-card-mindmap.is-resizing .cm-lp-mindmap-resize::after {
+  opacity: 1;
+}
+
+.live-editor .cm-lp-card-mindmap.is-resizing {
+  cursor: ns-resize;
+  user-select: none;
 }
 
 /* 卡片里不再要组件默认的上下外边距，否则外框和画布之间会空一大截 */

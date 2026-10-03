@@ -6,6 +6,7 @@ declare module '*.vue' {
 
 declare module 'markdown-it-container'
 declare module 'markdown-it-emoji'
+declare module 'markdown-it-mark'
 declare module 'markdown-it-task-lists'
 
 declare module 'virtual:tnotes-pages' {

@@ -54,7 +54,8 @@ body {
  * Chrome-less icons: every header control is a glyph on the header surface, not
  * a chip. The box only added weight to controls that are already unambiguous.
  */
-.tn-site-actions button {
+.tn-site-actions button,
+.tn-site-actions .tn-site-repo-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -67,8 +68,13 @@ body {
   font-size: 18px;
   cursor: pointer;
 }
-.tn-site-actions button:hover {
+.tn-site-actions button:hover,
+.tn-site-actions .tn-site-repo-link:hover {
   color: var(--tn-c-brand);
+}
+.tn-site-repo-link svg {
+  width: 18px;
+  height: 18px;
 }
 /*
  * Phones only. Hidden by CSS rather than by `v-if`: the server cannot know the

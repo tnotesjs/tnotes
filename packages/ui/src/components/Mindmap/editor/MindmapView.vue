@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { CanvasEditor, serializeSubtree } from '@tnotesjs/mindmap-core'
 import type {
   CanvasContextRequest,
+  CanvasEditState,
   CanvasLinkHover,
+  CanvasLinkRequest,
   InlineFormat,
   MindmapNode,
   MindmapSession
@@ -33,6 +35,27 @@ const emit = defineEmits<{
 const host = ref<HTMLElement>()
 let editor: CanvasEditor | null = null
 const selectedCount = ref(0)
+/** 选中的不全是图片节点；图片说明是纯文本，不出格式按钮 */
+const selectionFormattable = ref(true)
+/** 内联编辑态：编辑框里有文字选区时，弹出与大纲视图同一套文字格式工具栏 */
+const editState = ref<CanvasEditState | null>(null)
+const selectionLink = ref<CanvasLinkRequest | null>(null)
+const textSelection = computed(() => {
+  const state = editState.value
+  return state && !state.image ? state.selection : null
+})
+const textFormats = computed<Partial<Record<InlineFormat, boolean>>>(() => {
+  const state = editState.value
+  const selection = textSelection.value
+  if (!state || !selection) return {}
+  const formats: InlineFormat[] = ['bold', 'italic', 'underline', 'strike', 'highlight', 'code']
+  return Object.fromEntries(
+    formats.map((format) => [
+      format,
+      props.session.inlineFormatActive(state.nodeId, selection.start, selection.end, format)
+    ])
+  )
+})
 const linkEditor = ref<CanvasLinkHover | null>(null)
 const contextMenu = ref<CanvasContextRequest | null>(null)
 let linkCloseTimer: ReturnType<typeof setTimeout> | null = null
@@ -85,6 +108,41 @@ function selectedRoots(): MindmapNode[] {
 
 function applyNodeFormat(format: InlineFormat) {
   props.session.formatSelectedNodes(format)
+}
+
+function formatEditing(format: InlineFormat) {
+  editor?.formatEditing(format)
+}
+
+function clearEditingFormats() {
+  editor?.clearEditingFormats()
+}
+
+function linkEditing() {
+  editor?.linkEditing()
+}
+
+function toggleEditingTask() {
+  editor?.commitEditing()
+  props.session.toggleTaskSelectedNodes()
+}
+
+function removeEditingNode() {
+  editor?.commitEditing()
+  props.session.removeSelectedNodes()
+}
+
+function saveSelectionLink(url: string) {
+  const request = selectionLink.value
+  selectionLink.value = null
+  if (!request) return
+  props.session.setNodeInlineLink(request.nodeId, request.start, request.end, url.trim() || null)
+}
+
+function removeSelectionLink() {
+  const request = selectionLink.value
+  selectionLink.value = null
+  if (request) props.session.setNodeInlineLink(request.nodeId, request.start, request.end, null)
 }
 
 function selectedMarkdown() {
@@ -167,6 +225,14 @@ onMounted(() => {
     onSelectionPositionChange: (_position, count) => {
       // Canvas toolbar is absolutely anchored; only the selection count gates visibility.
       selectedCount.value = count
+      selectionFormattable.value = !props.session.selectedNodes.every((node) => node.content.image)
+    },
+    onEditStateChange: (state) => {
+      editState.value = state
+    },
+    onRequestLink: (request) => {
+      linkEditor.value = null
+      selectionLink.value = request
     },
     onLinkHover: onCanvasLinkHover,
     onContextMenu: (request) => {
@@ -204,9 +270,22 @@ onBeforeUnmount(() => {
   <div class="mindmap-view-root">
     <div ref="host" class="mindmap-view-host" />
     <SelectionToolbar
-      v-if="selectedCount > 0"
+      v-if="textSelection && !selectionLink"
+      mode="text"
+      :position="textSelection.position"
+      :active-formats="textFormats"
+      :can-insert-image="false"
+      @format="formatEditing"
+      @task="toggleEditingTask"
+      @link="linkEditing"
+      @clear="clearEditingFormats"
+      @delete="removeEditingNode"
+    />
+    <SelectionToolbar
+      v-else-if="selectedCount > 0 && !editState"
       mode="nodes"
       placement="canvas-bottom"
+      :formattable="selectionFormattable"
       @format="applyNodeFormat"
       @task="props.session.toggleTaskSelectedNodes()"
       @copy="copySelected"
@@ -223,6 +302,16 @@ onBeforeUnmount(() => {
       @keep="keepLinkPopover"
       @leave="closeLinkPopoverSoon"
       @close="linkEditor = null"
+    />
+    <LinkPopover
+      v-if="selectionLink"
+      :url="selectionLink.url"
+      :position="selectionLink.position"
+      :teleport-to="teleportTo"
+      start-editing
+      @save="saveSelectionLink"
+      @remove="removeSelectionLink"
+      @close="selectionLink = null"
     />
     <CanvasContextMenu
       v-if="contextMenu"

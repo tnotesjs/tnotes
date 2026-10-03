@@ -1,6 +1,15 @@
 export interface MindmapFenceOptions {
   title?: string
   initialExpandLevel?: number
+  /** Pane height in px (`h=480` in the fence info). */
+  height?: number
+}
+
+export const MINDMAP_MIN_HEIGHT = 200
+export const MINDMAP_MAX_HEIGHT = 1600
+
+export function clampMindmapHeight(value: number): number {
+  return Math.round(Math.min(MINDMAP_MAX_HEIGHT, Math.max(MINDMAP_MIN_HEIGHT, value)))
 }
 
 function cleanHeadingText(value: string): string {
@@ -10,7 +19,7 @@ function cleanHeadingText(value: string): string {
     .trim()
 }
 
-/** Parse the canonical `mindmap [title] 2` fence metadata. */
+/** Parse the canonical `mindmap [title] 2 h=480` fence metadata. */
 export function parseMindmapFence(openLine: string): MindmapFenceOptions | null {
   const fenceBody = openLine.trim().replace(/^`+\s*/, '')
   const nameMatch = fenceBody.match(/^mindmap(?=\s|\[|$)/)
@@ -25,9 +34,15 @@ export function parseMindmapFence(openLine: string): MindmapFenceOptions | null 
       `${rest.slice(0, titleMatch.index)} ${rest.slice((titleMatch.index ?? 0) + titleMatch[0].length)}`.trim()
   }
 
-  if (rest && !/^\d+$/.test(rest)) return null
-  if (rest) {
-    options.initialExpandLevel = Math.max(1, Number(rest))
+  for (const token of rest.split(/\s+/).filter(Boolean)) {
+    const height = token.match(/^h=(\d+)$/)
+    if (height) {
+      options.height = clampMindmapHeight(Number(height[1]))
+    } else if (/^\d+$/.test(token) && options.initialExpandLevel === undefined) {
+      options.initialExpandLevel = Math.max(1, Number(token))
+    } else {
+      return null
+    }
   }
   return options
 }

@@ -40,4 +40,18 @@ describe('rebuildMindmapFence', () => {
     })
     expect(next).toBe('```mindmap\n# TNotes\n\n- a\n- b\n```\n')
   })
+
+  it('reads, keeps and updates the pane height', () => {
+    const original = '```mindmap [计划] 2 h=520\n- a\n```\n'
+    expect(mindmapPreviewMarkdown(original).height).toBe(520)
+    expect(rebuildMindmapFence(original, { markdown: '# 计划\n\n- a\n- b\n' })).toBe(
+      '```mindmap [计划] 2 h=520\n- a\n- b\n```\n'
+    )
+    expect(rebuildMindmapFence(original, { height: 9999 }).split('\n')[0]).toBe(
+      '```mindmap [计划] 2 h=1600'
+    )
+    expect(rebuildMindmapFence('```mindmap\n- a\n```', { height: 300 }).split('\n')[0]).toBe(
+      '```mindmap h=300'
+    )
+  })
 })

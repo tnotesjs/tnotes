@@ -56,7 +56,9 @@ function setup(readOnly = false) {
       renderStubDefaultSlot: true,
       stubs: {
         // 完成开关要断言真实 DOM（位置 + 圆点），不能用自动 stub
-        NoteDoneToggle: false
+        NoteDoneToggle: false,
+        // 格式工具栏是抽出来的子组件，断言仍按真实 DOM
+        NoteFormatToolbar: false
       }
     }
   })

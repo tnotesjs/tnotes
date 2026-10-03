@@ -7,7 +7,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 
 import { hashBytes, hashFile } from './hash'
-import { compatibleAssetTypes, isContentReusableAsset, ownerNoteIndexFromName } from './owner'
+import { compatibleAssetTypes, isContentReusableAsset, assetOwnerFromName } from './owner'
 
 import type { AssetDuplicateGroup, AssetRecord, AssetScanReport } from './types'
 
@@ -102,7 +102,7 @@ export function duplicateGroupsFromHashes(
     if (relPaths.length < 2) continue
     const byOwner = new Map<string | null, string[]>()
     for (const relPath of relPaths) {
-      const owner = ownerNoteIndexFromName(path.posix.basename(relPath))
+      const owner = assetOwnerFromName(path.posix.basename(relPath))
       const list = byOwner.get(owner) ?? []
       list.push(relPath)
       byOwner.set(owner, list)
@@ -165,7 +165,7 @@ export async function findReusableAsset(input: {
   const size = input.data.byteLength
   for (const asset of input.assets) {
     if (asset.size !== size) continue
-    if (ownerNoteIndexFromName(asset.name) !== input.ownerNoteIndex) continue
+    if (assetOwnerFromName(asset.name) !== input.ownerNoteIndex) continue
     if (!compatibleAssetTypes(asset.name, input.fileName)) continue
     const existing = hashBytes(
       new Uint8Array(await fs.readFile(path.join(input.rootPath, asset.relPath)))

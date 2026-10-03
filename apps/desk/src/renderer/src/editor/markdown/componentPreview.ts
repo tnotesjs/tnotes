@@ -187,6 +187,7 @@ export function mountMermaidPreview(
 export interface MindmapPreviewProps {
   source: string
   initialExpandLevel?: number
+  height?: number
   editable?: boolean
   expandLevelControl?: boolean
   onMarkdownChange?: (markdown: string) => void
@@ -207,6 +208,7 @@ export function mountMindmapPreview(
   const state = reactive({
     source: props.source ?? '',
     initialExpandLevel: props.initialExpandLevel ?? 3,
+    height: props.height,
     editable: Boolean(props.editable),
     expandLevelControl: Boolean(props.expandLevelControl),
     onMarkdownChange: props.onMarkdownChange,
@@ -221,6 +223,7 @@ export function mountMindmapPreview(
         h(Mindmap, {
           source: state.source,
           initialExpandLevel: state.initialExpandLevel,
+          height: state.height,
           editable: state.editable,
           expandLevelControl: state.expandLevelControl,
           resolveImageSrc: state.resolveImageSrc,
@@ -236,6 +239,7 @@ export function mountMindmapPreview(
     update: (next) => {
       state.source = next.source ?? ''
       state.initialExpandLevel = next.initialExpandLevel ?? 3
+      state.height = next.height
       state.editable = Boolean(next.editable)
       state.expandLevelControl = Boolean(next.expandLevelControl)
       if (next.onMarkdownChange) state.onMarkdownChange = next.onMarkdownChange

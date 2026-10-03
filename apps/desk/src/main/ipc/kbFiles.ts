@@ -1,6 +1,11 @@
 import { workspaceManager } from '../workspaceManager'
 import { IPC_CHANNELS } from '../../shared/contracts'
-import { kbFilesListSchema, kbFilesReadSchema } from './schemas'
+import {
+  kbFilesListSchema,
+  kbFilesReadSchema,
+  kbReadmeReadSchema,
+  kbReadmeWriteSchema
+} from './schemas'
 import { handle, type GetWindow } from './shared'
 
 /**
@@ -15,6 +20,13 @@ export function registerKbFiles(getWindow: GetWindow): () => void {
   )
   handle(IPC_CHANNELS.kbFilesRead, getWindow, kbFilesReadSchema, (input) =>
     workspaceManager.readKbTextFile(input.knowledgeBaseId, input.relPath)
+  )
+  // README 是唯一开放写入的普通文件：路径固定在库根，渲染端传不进别的路径。
+  handle(IPC_CHANNELS.kbReadmeRead, getWindow, kbReadmeReadSchema, (input) =>
+    workspaceManager.readKbReadme(input.knowledgeBaseId, Boolean(input.create))
+  )
+  handle(IPC_CHANNELS.kbReadmeWrite, getWindow, kbReadmeWriteSchema, (input) =>
+    workspaceManager.writeKbReadme(input.knowledgeBaseId, input.content, input.baseRevision)
   )
   return () => undefined
 }

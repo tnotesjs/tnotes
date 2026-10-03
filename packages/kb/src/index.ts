@@ -79,6 +79,8 @@ export {
   findReusableAsset,
   hashAssetFiles,
   hashBytes,
+  assetOwnerFromName,
+  README_ASSET_OWNER,
   ownerNoteIndexFromName
 } from './asset-scan'
 export type {

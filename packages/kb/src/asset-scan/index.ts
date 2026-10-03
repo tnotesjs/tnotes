@@ -49,4 +49,10 @@ export {
   hashBytes,
   withAssetHashes
 } from './dedupe'
-export { ownerNoteIndexFromName, compatibleAssetTypes, isContentReusableAsset } from './owner'
+export {
+  assetOwnerFromName,
+  README_ASSET_OWNER,
+  ownerNoteIndexFromName,
+  compatibleAssetTypes,
+  isContentReusableAsset
+} from './owner'

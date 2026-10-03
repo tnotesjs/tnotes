@@ -5,15 +5,19 @@
     :style="{ '--sidebar-width': `${sidebarWidth}px` }"
   >
     <header class="tn-site-header" :inert="mobileOpen || searchOpen">
-      <a
-        class="tn-site-brand"
-        :href="site.repositoryUrl ?? site.base"
-        :target="site.repositoryUrl ? '_blank' : undefined"
-        :rel="site.repositoryUrl ? 'noopener noreferrer' : undefined"
-        :title="site.repositoryUrl ? '在 GitHub 上打开这个知识库' : undefined"
-        >{{ site.title }}</a
-      >
+      <a class="tn-site-brand" :href="site.base" title="回到首页">{{ site.title }}</a>
       <div class="tn-site-actions">
+        <a
+          v-if="site.repositoryUrl"
+          class="tn-site-repo-link"
+          :href="site.repositoryUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="在 GitHub 上打开这个知识库"
+          title="在 GitHub 上打开这个知识库"
+        >
+          <SiteIcon name="github" />
+        </a>
         <button type="button" aria-label="搜索" @click="searchOpen = true">⌕</button>
         <button type="button" aria-label="切换主题" @click="toggleTheme">◐</button>
         <button

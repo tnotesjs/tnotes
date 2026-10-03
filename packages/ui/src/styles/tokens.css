@@ -22,6 +22,8 @@
   --tn-c-warning-soft: rgba(234, 179, 8, 0.14);
   --tn-c-danger-soft: rgba(244, 63, 94, 0.14);
   --tn-c-default-soft: #e8e8e9;
+  /* ==高亮== 的底色：正文、Desk 编辑器、SSG 共用 */
+  --tn-c-mark-bg: rgba(255, 221, 0, 0.45);
   /* 任务列表复选框（对齐语雀）：16px 方框、圆角 4px、选中填充品牌绿 + 白色对勾。 */
   --tn-c-task-check: #00b96b;
   --tn-c-task-check-border: #d9d9d9;
@@ -69,6 +71,7 @@
   --tn-c-warning-soft: rgba(234, 179, 8, 0.16);
   --tn-c-danger-soft: rgba(244, 63, 94, 0.14);
   --tn-c-default-soft: #2e2e32;
+  --tn-c-mark-bg: rgba(250, 204, 21, 0.32);
   --tn-c-task-check-border: #4a4d54;
   --tn-c-task-check-bg: transparent;
   --tn-shadow-2: 0 4px 12px rgb(0 0 0 / 0.35);

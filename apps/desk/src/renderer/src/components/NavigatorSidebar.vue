@@ -290,6 +290,22 @@ const otherFileChanges = computed(() =>
 const displayNoteFileChanges = computed(() => mergeRenameChanges(noteFileChanges.value))
 const displayConfigFileChanges = computed(() => mergeRenameChanges(configFileChanges.value))
 const displayOtherFileChanges = computed(() => mergeRenameChanges(otherFileChanges.value))
+const readmeActive = computed(() => {
+  const tab = editor.activeTab
+  return (
+    tab?.type === 'text-file' &&
+    tab.relPath === 'README.md' &&
+    tab.knowledgeBaseId === store.selectedKnowledgeBaseId
+  )
+})
+
+/** 打开库根 README.md；文件不存在时由 README 页在读取时建一份空文件。 */
+function openReadme(): void {
+  const knowledgeBase = store.selectedKnowledgeBase
+  if (!knowledgeBase) return
+  editor.openTextFile(knowledgeBase, 'README.md')
+}
+
 const selectedTocNoteUuid = computed(() => {
   const tab = editor.activeTab
   return tab?.type === 'note' && tab.knowledgeBaseId === store.selectedKnowledgeBaseId
@@ -470,6 +486,24 @@ async function openHeaderMenu(): Promise<void> {
     </div>
 
     <template v-if="store.knowledgeBase">
+      <button
+        type="button"
+        class="readme-entry"
+        :class="{ active: readmeActive }"
+        aria-label="打开知识库根目录的 README.md"
+        @click="openReadme"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path
+            d="M4 2.5h5.5L12 5v8.5H4z M9.5 2.5V5H12 M6 8h4 M6 10.5h4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.2"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <strong>README</strong>
+      </button>
       <div
         class="navigator-body"
         :class="{
@@ -842,7 +876,6 @@ async function openHeaderMenu(): Promise<void> {
                   class="toc-batch-toggle"
                   :disabled="store.loading"
                   aria-label="手动刷新目录"
-                  data-tooltip="手动刷新目录"
                   @click="store.reloadKnowledgeBase"
                 >
                   <svg class="toc-batch-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -1053,6 +1086,44 @@ async function openHeaderMenu(): Promise<void> {
   border-color: var(--accent);
 }
 
+.readme-entry {
+  flex: none;
+  height: 27px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 7px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  text-align: left;
+}
+
+.readme-entry svg {
+  flex: none;
+  width: 18px;
+  height: 14px;
+}
+
+.readme-entry strong {
+  font-weight: 700;
+}
+
+.readme-entry:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.readme-entry.active {
+  background: var(--selected);
+  color: var(--accent-strong);
+}
+
 .navigator-body {
   flex: 1;
   min-height: 0;
@@ -1096,6 +1167,11 @@ async function openHeaderMenu(): Promise<void> {
   /* 吸顶时必须不透明：否则下方滚动的目录项会透出来 */
   background: var(--panel);
   box-shadow: 0 1px 0 var(--border);
+}
+
+/* 变更栏按钮的提示往下弹，会探进后面的置顶栏和目录栏；同为 z-index 3 时后者在上，提示就被盖住。 */
+.navigator-body .git-heading {
+  z-index: 4;
 }
 
 /* 置顶栏吸在变更栏下方；有置顶时目录再往下让一行 */

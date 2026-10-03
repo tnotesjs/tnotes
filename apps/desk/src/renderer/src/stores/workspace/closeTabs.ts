@@ -136,12 +136,6 @@ export function createTabClosing(ctx: CloseTabsContext) {
     for (const group of ctx.editor.groups) {
       for (const other of group.tabs) {
         if (
-          other.type === 'mindmap' &&
-          other.knowledgeBaseId === tab.knowledgeBaseId &&
-          other.noteUuid === tab.noteUuid
-        ) {
-          ids.push(other.id)
-        } else if (
           other.type === 'excalidraw' &&
           other.knowledgeBaseId === tab.knowledgeBaseId &&
           index &&

@@ -41,7 +41,6 @@ export function registerWorkspace(getWindow: GetWindow): () => void {
           'kb-settings',
           'kb-assets',
           'excalidraw',
-          'mindmap',
           'note-history',
           'text-file'
         ]),

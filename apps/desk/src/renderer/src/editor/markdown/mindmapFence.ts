@@ -1,4 +1,9 @@
-import { normalizeMindmapMarkdown, parseMindmapFence, type MindmapFenceOptions } from '@tnotesjs/ui'
+import {
+  clampMindmapHeight,
+  normalizeMindmapMarkdown,
+  parseMindmapFence,
+  type MindmapFenceOptions
+} from '@tnotesjs/ui'
 
 export interface MindmapFenceParts {
   openLine: string
@@ -29,6 +34,7 @@ export function parseMindmapFenceSource(source: string): MindmapFenceParts {
 export function mindmapPreviewMarkdown(source: string): {
   markdown: string
   initialExpandLevel: number
+  height: number | undefined
   parts: MindmapFenceParts
 } {
   const parts = parseMindmapFenceSource(source)
@@ -38,12 +44,13 @@ export function mindmapPreviewMarkdown(source: string): {
   return {
     markdown,
     initialExpandLevel: parts.options.initialExpandLevel ?? 3,
+    height: parts.options.height,
     parts
   }
 }
 
 /**
- * Rebuild a mindmap fence after canvas / expand-level edits.
+ * Rebuild a mindmap fence after canvas / expand-level / height edits.
  * Preserves fence-title vs body-H1 style from the original source.
  */
 export function rebuildMindmapFence(
@@ -51,6 +58,7 @@ export function rebuildMindmapFence(
   next: {
     markdown?: string
     initialExpandLevel?: number
+    height?: number
     title?: string
   } = {}
 ): string {
@@ -77,11 +85,13 @@ export function rebuildMindmapFence(
 
   const title = next.title ?? (parts.hasFenceTitle ? rootTitle : parts.options.title)
   const level = next.initialExpandLevel ?? parts.options.initialExpandLevel
+  const height = next.height ?? parts.options.height
   const useFenceTitle = parts.hasFenceTitle || Boolean(next.title)
 
   let info = 'mindmap'
   if (useFenceTitle && title) info += ` [${title}]`
   if (level !== undefined) info += ` ${Math.max(1, Math.trunc(level))}`
+  if (height !== undefined) info += ` h=${clampMindmapHeight(height)}`
 
   let body: string
   if (useFenceTitle) {

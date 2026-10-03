@@ -20,6 +20,7 @@ import MarkdownIt from 'markdown-it'
 import anchor from 'markdown-it-anchor'
 import markdownItContainer from 'markdown-it-container'
 import { full as emoji } from 'markdown-it-emoji'
+import markdownItMark from 'markdown-it-mark'
 import markdownItMathjax from 'markdown-it-mathjax3'
 import markdownItTaskLists from 'markdown-it-task-lists'
 
@@ -387,6 +388,7 @@ function configureMindmapFence(md: MarkdownIt) {
       fenceOptions.initialExpandLevel === undefined
         ? ''
         : `:initialExpandLevel="${fenceOptions.initialExpandLevel}"`,
+      fenceOptions.height === undefined ? '' : `:height="${fenceOptions.height}"`,
       // Rendered at build time as well, so the 「层」 control is in the first
       // paint instead of appearing once the island hydrates (and so the
       // hydration markup matches what the client mounts).
@@ -399,7 +401,8 @@ function configureMindmapFence(md: MarkdownIt) {
       `data-content="${escapeHtml(encoded)}"`,
       fenceOptions.initialExpandLevel === undefined
         ? ''
-        : `data-expand="${fenceOptions.initialExpandLevel}"`
+        : `data-expand="${fenceOptions.initialExpandLevel}"`,
+      fenceOptions.height === undefined ? '' : `data-height="${fenceOptions.height}"`
     ]
       .filter(Boolean)
       .join(' ')
@@ -661,6 +664,7 @@ export async function createMarkdownCompiler(
   md.use(sfcPlugin)
   md.use(anchor, { slugify })
   md.use(emoji)
+  md.use(markdownItMark)
   md.use(markdownItTaskLists, { enabled: true, label: true })
   if (config.markdown.math) md.use(markdownItMathjax)
   configureContainers(md)

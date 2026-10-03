@@ -361,7 +361,7 @@ function selectionPosition(input: RichInlineEditorElement): { left: number; top:
 function syncTextSelection(nodeId: string, input: RichInlineEditorElement) {
   const start = input.selectionStart ?? 0
   const end = input.selectionEnd ?? 0
-  if (start === end) {
+  if (start === end || props.session.document.find(nodeId)?.content.image) {
     if (textSelection.value?.nodeId === nodeId) textSelection.value = null
     return
   }
@@ -713,6 +713,8 @@ function applyInputFormatShortcut(
   input: RichInlineEditorElement,
   format: InlineFormat
 ) {
+  // 图片节点的文字是图片说明：纯文本，不接受行内格式
+  if (node.content.image) return
   const caretStart = input.selectionStart ?? 0
   const caretEnd = input.selectionEnd ?? 0
   if (input.value.length === 0) return
@@ -741,6 +743,8 @@ function applyInputFormatShortcut(
 }
 
 function applyInputClearFormats(node: MindmapNode, input: RichInlineEditorElement) {
+  // 图片节点的文字是图片说明：纯文本，不接受行内格式
+  if (node.content.image) return
   const caretStart = input.selectionStart ?? 0
   const caretEnd = input.selectionEnd ?? 0
   if (input.value.length === 0) return

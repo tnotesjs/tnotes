@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { createWorkspace } from '@tnotesjs/kb'
 
+import { README_NOTE_UUID } from '../../shared/contracts'
 import { toNoteDocument } from './dto'
 import {
   readNote,
@@ -210,6 +211,23 @@ describe('desk noteIo over @tnotesjs/kb', () => {
     )
     expect(result.markdownPath).toMatch(
       /^\.\.\/assets\/0001-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.png$/
+    )
+  })
+
+  it('names README pastes README-… and links them from the kb root', async () => {
+    const handle = await makeHandle()
+    const result = await writeLocalAttachment(
+      handle,
+      {
+        knowledgeBaseId: handle.id,
+        noteUuid: README_NOTE_UUID,
+        fileName: 'clip.png',
+        data: new Uint8Array([4, 5, 6])
+      },
+      noopEffects
+    )
+    expect(result.markdownPath).toMatch(
+      /^\.\/assets\/README-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.png$/
     )
   })
 

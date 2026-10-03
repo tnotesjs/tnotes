@@ -8,9 +8,12 @@ export type { PreparedDocumentChange, SessionEvents, SessionOptions } from './se
 export { CanvasEditor, createCanvasMeasurer } from './canvasEditor'
 export type {
   CanvasContextRequest,
+  CanvasEditSelection,
+  CanvasEditState,
   CanvasEditorEvents,
   CanvasEditorOptions,
-  CanvasLinkHover
+  CanvasLinkHover,
+  CanvasLinkRequest
 } from './canvasEditor'
 export { CanvasViewer } from './canvasViewer'
 export type { CanvasViewerOptions } from './canvasViewer'

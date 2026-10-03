@@ -75,6 +75,15 @@ describe('tnotesMarkdown', () => {
     expect(names(doc, 'InlineMath')).toEqual(['$x^2$'])
   })
 
+  it('keeps the formula of a single-line block math', () => {
+    const doc = '$$\\frac{a}{b} \\geq c$$\n\n$$\n\\frac{a}{b} \\geq c\n$$\n'
+    expect(topLevel(doc).map((node) => node.name)).toEqual(['BlockMath', 'BlockMath'])
+    expect(names(doc, 'MathContent').map((text) => text.trim())).toEqual([
+      '\\frac{a}{b} \\geq c',
+      '\\frac{a}{b} \\geq c'
+    ])
+  })
+
   it('parses a standalone Vue component as its own block', () => {
     const doc = ['介绍。', '', `<NotesTable :ids="['0028', '0014', '0002']" />`, '', '后文'].join(
       '\n'
@@ -114,5 +123,12 @@ describe('tnotesMarkdown', () => {
     expect(topLevel(doc).map((node) => node.name)).toEqual(['Table', 'BulletList', 'Paragraph'])
     expect(names(doc, 'TaskMarker')).toEqual(['[ ]'])
     expect(names(doc, 'Strikethrough')).toEqual(['~~删~~'])
+  })
+
+  it('parses ==highlight== like GFM strikethrough', () => {
+    expect(names('前 ==重点== 后\n', 'Highlight')).toEqual(['==重点=='])
+    expect(names('**==粗体里的高亮==**\n', 'Highlight')).toEqual(['==粗体里的高亮=='])
+    expect(names('a == b == c\n', 'Highlight')).toEqual([])
+    expect(names('x === y\n', 'Highlight')).toEqual([])
   })
 })

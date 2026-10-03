@@ -416,8 +416,7 @@ onBeforeUnmount(emitCommit)
 .rich-inline-editor :deep(.inline-run.highlight:not(.code)) {
   padding: 0 1px;
   border-radius: 2px;
-  background: #fff36a;
-  color: #242424;
+  background: var(--tn-c-mark-bg, rgba(255, 221, 0, 0.45));
 }
 .rich-inline-editor :deep(.inline-run.code) {
   padding: 2px 6px;

@@ -5,7 +5,7 @@ import KnowledgeBaseIcon from '../components/KnowledgeBaseIcon.vue'
 import UiTooltip from '../components/UiTooltip.vue'
 import KbSettingsPane from './KbSettingsPane.vue'
 import ExcalidrawTabPane from './ExcalidrawTabPane.vue'
-import MindmapTabPane from './MindmapTabPane.vue'
+import ReadmeTabPane from './ReadmeTabPane.vue'
 import TextFileTabPane from './TextFileTabPane.vue'
 import HistoryTabPane from './HistoryTabPane.vue'
 import KbAssetsPane from './KbAssetsPane.vue'
@@ -370,8 +370,8 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
           :group-id="group.id"
           :active="tab.id === group.activeTabId"
         />
-        <MindmapTabPane
-          v-else-if="tab.type === 'mindmap'"
+        <ReadmeTabPane
+          v-else-if="tab.type === 'text-file' && tab.relPath === 'README.md'"
           :tab="tab"
           :group-id="group.id"
           :active="tab.id === group.activeTabId"

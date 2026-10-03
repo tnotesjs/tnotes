@@ -6,6 +6,7 @@ import path from 'node:path'
 import { createWorkspace, isKnowledgeBaseRoot, type AssetStorePaths } from '@tnotesjs/kb'
 
 import { deskLog } from '../log'
+import { README_NOTE_UUID } from '../../shared/contracts'
 
 import { knowledgeBaseAssetStore } from './assetStore'
 
@@ -269,6 +270,12 @@ export function handleWatchedPath(
   }
   state.internalWriteUntil.delete(normalizedPath)
 
+  if (normalizedPath === path.join(handle.rootPath, 'README.md')) {
+    state.events.emit('noteExternalChanged', {
+      knowledgeBaseId: handle.id,
+      noteUuid: README_NOTE_UUID
+    })
+  }
   for (const note of handle.snapshot.notes) {
     if (path.normalize(path.join(handle.rootPath, note.relPath)) === normalizedPath) {
       state.events.emit('noteExternalChanged', {
