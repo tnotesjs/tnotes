@@ -103,6 +103,14 @@ describe('renderContainerFromSource', () => {
     expect(el.textContent ?? '').toContain('{not-an-attr}')
   })
 
+  it('shows an empty state when a swiper has no images', () => {
+    const el = renderContainerFromSource('::: swiper\n\n123\n\n:::')
+    expect(el.classList.contains('is-empty')).toBe(true)
+    expect(el.querySelector('.tn-swiper-empty')?.textContent).toBe('empty swiper')
+    expect(el.querySelector('.swiper-slide')).toBeNull()
+    expect(el.textContent).not.toContain('123')
+  })
+
   it('resolves relative images through the provided resolver', () => {
     const el = renderContainerFromSource('::: swiper\n\n![1](./assets/1.png)\n\n:::', (src) => {
       return src === './assets/1.png' ? 'tnotes-asset://asset?path=1' : src
@@ -128,6 +136,51 @@ describe('renderContainerFromSource', () => {
     expect((el.querySelector('.tn-swiper-tabs') as HTMLElement).style.padding).toBe(
       '0px 0.8rem 0px 3rem'
     )
+  })
+
+  it('sizes a swiper image and aligns it only when align is written', () => {
+    const sized = renderContainerFromSource(
+      '::: swiper\n\n![](./a.webp) {w=640px}\n\n:::',
+      (src) => src
+    )
+    expect(sized.querySelector('img')?.style.width).toBe('640px')
+    expect(sized.querySelector('.swiper-slide')?.classList.contains('is-align-left')).toBe(false)
+    expect(sized.querySelector('.tn-swiper-image-toolbar')).toBeNull()
+    expect(sized.textContent).not.toContain('{w=640px}')
+
+    const aligned = renderContainerFromSource(
+      '::: swiper\n\n![右](./b.png) {align=right}\n\n:::',
+      (src) => src
+    )
+    expect(aligned.querySelector('.swiper-slide')?.classList.contains('is-align-right')).toBe(true)
+  })
+
+  it('edits swiper width and alignment from the hover controls', () => {
+    const commits: Array<{ index: number; align?: string | null; width?: string }> = []
+    const el = renderContainerFromSource(
+      '::: swiper\n\n![](./a.webp) {w=640px}\n\n:::',
+      (src) => src,
+      undefined,
+      {
+        readOnly: false,
+        commit: (index, next) => commits.push({ index, ...next })
+      }
+    )
+    const buttons = [...el.querySelectorAll('.tn-swiper-image-toolbar button')]
+    expect(buttons.find((button) => button.textContent === '中')?.classList.contains('is-active')).toBe(
+      true
+    )
+    buttons.find((button) => button.textContent === '左')?.dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true })
+    )
+    buttons.find((button) => button.textContent === '原始大小')?.dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true })
+    )
+    expect(commits).toEqual([
+      { index: 0, align: 'left' },
+      { index: 0, width: '' }
+    ])
+    expect(el.querySelector('.tn-swiper-frame')?.getAttribute('style')).toContain('640px')
   })
 
   it('omits swiper tab nav for a single slide', () => {

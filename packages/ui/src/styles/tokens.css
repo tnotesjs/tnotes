@@ -12,6 +12,8 @@
   --tn-c-bg-input: #f6f6f7;
   --tn-c-divider: #e2e2e3;
   --tn-c-divider-strong: #c2c2c4;
+  /* 正文图片和 Swiper 外框。浅色里分割线就能和白底分开。 */
+  --tn-c-media-edge: var(--tn-c-divider);
   --tn-c-hover: rgba(142, 150, 170, 0.14);
   --tn-c-highlight: rgba(100, 108, 255, 0.16);
   --tn-c-brand-soft: var(--tn-c-highlight);
@@ -63,6 +65,8 @@
   --tn-c-bg-input: #161618;
   --tn-c-divider: #2e2e32;
   --tn-c-divider-strong: #3c3f44;
+  /* 暗色分割线贴近编辑区，掺文字色后白底图和深色图都能看见边。 */
+  --tn-c-media-edge: color-mix(in srgb, var(--tn-c-text-2) 42%, var(--tn-c-bg));
   --tn-c-hover: rgba(101, 117, 133, 0.16);
   --tn-c-success: #3dd68c;
   --tn-c-warning: #f9b44e;

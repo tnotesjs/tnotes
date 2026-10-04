@@ -47,6 +47,13 @@ export function wrapSlideIndex(index: number, length: number, delta: -1 | 1): nu
   return (index + delta + length) % length
 }
 
+export const SWIPER_EMPTY_TEXT = 'empty swiper'
+
+/** 没有图片幻灯片时的壳。Desk 与站点用同一段结构。 */
+export function emptySwiperMarkup(): string {
+  return `<div class="tn-swiper is-empty"><div class="swiper-container"><p class="tn-swiper-empty">${SWIPER_EMPTY_TEXT}</p></div></div>`
+}
+
 const READY = 'tnSwiperReady'
 
 /**
@@ -76,6 +83,7 @@ export function hydrateTnSwipers(root: ParentNode = document): number {
 }
 
 function hydrateOne(host: HTMLElement): boolean {
+  if (host.classList.contains('is-empty')) return true
   const tabs = host.querySelector<HTMLElement>('.tn-swiper-tabs')
   const wrapper = host.querySelector<HTMLElement>('.swiper-wrapper')
   if (!wrapper) return false

@@ -51,6 +51,17 @@ describe('hydrateTnSwipers', () => {
     root.remove()
   })
 
+  it('leaves an empty swiper placeholder in place', () => {
+    const root = document.createElement('div')
+    root.innerHTML =
+      '<div class="tn-swiper is-empty"><div class="swiper-container"><p class="tn-swiper-empty">empty swiper</p></div></div>'
+    document.body.append(root)
+    expect(hydrateTnSwipers(root)).toBe(1)
+    expect(root.querySelector('.tn-swiper-empty')?.textContent).toBe('empty swiper')
+    expect(hydrateTnSwipers(root)).toBe(0)
+    root.remove()
+  })
+
   it('omits the tab bar for a single slide', () => {
     const root = swiperShell(['solo'])
     hydrateTnSwipers(root)

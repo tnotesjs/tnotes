@@ -289,3 +289,55 @@ describe('Markdown compatibility helpers', () => {
     expect(html).not.toMatch(/\{\{/)
   })
 })
+
+describe('swiper empty state', () => {
+  it('replaces a swiper with no images and keeps one that has an image', async () => {
+    const compiler = await createMarkdownCompiler(compilerConfig)
+    const { html } = compiler.compile(
+      [
+        '::: swiper',
+        '',
+        '123',
+        '',
+        ':::',
+        '',
+        '::: swiper',
+        '',
+        '![封面](./a.png)',
+        '',
+        ':::'
+      ].join('\n'),
+      'n.md',
+      '/n',
+      'n'
+    )
+    expect(html).toContain('class="tn-swiper is-empty"')
+    expect(html).toContain('empty swiper')
+    expect(html).not.toContain('123')
+    expect(html).toContain('class="swiper-slide"')
+    expect(html).toContain('alt="封面"')
+  })
+
+  it('keeps a sized image as a slide and centers it unless align is written', async () => {
+    const compiler = await createMarkdownCompiler(compilerConfig)
+    const { html } = compiler.compile(
+      [
+        '::: swiper',
+        '',
+        '![](./a.webp) {w=640px}',
+        '',
+        '![右](./b.png) {align=right}',
+        '',
+        ':::'
+      ].join('\n'),
+      'n.md',
+      '/n',
+      'n'
+    )
+    expect(html).toContain('style="width:640px"')
+    expect(html).not.toContain('{w=640px}')
+    expect(html).toContain('class="swiper-slide"')
+    expect(html).toContain('class="swiper-slide is-align-right"')
+    expect(html).not.toContain('is-align-left')
+  })
+})

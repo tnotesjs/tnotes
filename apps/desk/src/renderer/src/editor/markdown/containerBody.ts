@@ -4,10 +4,17 @@ import linkAttributes from 'markdown-it-link-attributes'
 import { installMarkdownMath } from '../../agent/agentMarkdown'
 import DOMPurify from 'dompurify'
 import CodeGroup from '@tnotesjs/ui/code-group'
-import { parseImageAttrs } from '@tnotesjs/ui/image-markdown'
+import { parseImageAttrs, type ImageAlign } from '@tnotesjs/ui/image-markdown'
 import { createApp, h, type App } from 'vue'
 
-import { hydrateTnSwipers, parseSwiperSlides, swiperSlideTabTitle } from './swiperSlides'
+import {
+  hydrateTnSwipers,
+  parseSwiperSlides,
+  SWIPER_EMPTY_TEXT,
+  swiperSlideTabTitle,
+  type SwiperSlideChange,
+  type SwiperSlideEntry
+} from './swiperSlides'
 
 export interface ParsedContainer {
   name: string
@@ -254,27 +261,137 @@ function buildCodeGroup(bodyMarkdown: string): HTMLElement {
   return assembleCodeGroup(collectFences(bodyMarkdown))
 }
 
-function buildSwiper(bodyMarkdown: string, resolveImage: ResolveImage): HTMLElement {
+/** Desk 可视化里改某张幻灯片的宽度或对齐。站点渲染不传。 */
+export interface SwiperSlideEditor {
+  readOnly: boolean
+  commit(index: number, next: SwiperSlideChange): void
+}
+
+const MIN_SLIDE_WIDTH = 48
+
+function slideAlignClass(entry: SwiperSlideEntry): string {
+  return entry.align === 'left' || entry.align === 'right' ? `is-align-${entry.align}` : ''
+}
+
+function buildEditableSlide(
+  img: HTMLImageElement,
+  slide: SwiperSlideEntry,
+  index: number,
+  editor: SwiperSlideEditor,
+  bounds: HTMLElement
+): HTMLElement {
+  const frame = document.createElement('span')
+  frame.className = 'tn-swiper-frame'
+  if (slide.width) {
+    frame.style.width = slide.width
+    img.style.width = '100%'
+    img.style.maxWidth = '100%'
+    img.style.height = 'auto'
+  }
+  frame.append(img)
+
+  const handle = document.createElement('span')
+  handle.className = 'tn-swiper-resize'
+  handle.title = '拖动调整宽度'
+  handle.addEventListener('mousedown', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const startX = event.clientX
+    const startWidth = frame.getBoundingClientRect().width
+    const zoom = startWidth / Math.max(1, frame.offsetWidth)
+    const maxWidth = Math.max(MIN_SLIDE_WIDTH, bounds.getBoundingClientRect().width)
+    let width = startWidth
+    const move = (moveEvent: MouseEvent): void => {
+      width = Math.min(maxWidth, Math.max(MIN_SLIDE_WIDTH, startWidth + moveEvent.clientX - startX))
+      frame.style.width = `${Math.round(width / zoom)}px`
+    }
+    const up = (): void => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      editor.commit(index, { width: `${Math.round(width / zoom)}px` })
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  })
+
+  const toolbar = document.createElement('span')
+  toolbar.className = 'tn-swiper-image-toolbar'
+  const shown: ImageAlign = slide.align ?? 'center'
+  const aligns: Array<[ImageAlign, string]> = [
+    ['left', '左'],
+    ['center', '中'],
+    ['right', '右']
+  ]
+  for (const [align, label] of aligns) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.textContent = label
+    button.title = `${label}对齐`
+    if (align === shown) button.classList.add('is-active')
+    button.addEventListener('mousedown', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      editor.commit(index, { align: align === 'center' ? null : align })
+    })
+    toolbar.append(button)
+  }
+  const reset = document.createElement('button')
+  reset.type = 'button'
+  reset.textContent = '原始大小'
+  reset.addEventListener('mousedown', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    editor.commit(index, { width: '' })
+  })
+  toolbar.append(reset)
+  frame.append(handle, toolbar)
+  return frame
+}
+
+function buildSwiper(
+  bodyMarkdown: string,
+  resolveImage: ResolveImage,
+  editor?: SwiperSlideEditor
+): HTMLElement {
   const slides = parseSwiperSlides(bodyMarkdown)
   const root = document.createElement('div')
   root.className = 'tn-swiper'
+  if (slides.length === 0) {
+    root.classList.add('is-empty')
+    const container = document.createElement('div')
+    container.className = 'swiper-container'
+    const empty = document.createElement('p')
+    empty.className = 'tn-swiper-empty'
+    empty.textContent = SWIPER_EMPTY_TEXT
+    container.append(empty)
+    root.append(container)
+    return root
+  }
   const tabs = document.createElement('div')
   tabs.className = 'tn-swiper-tabs'
   const container = document.createElement('div')
   container.className = 'swiper-container'
   const wrapper = document.createElement('div')
   wrapper.className = 'swiper-wrapper'
+  const editable = Boolean(editor && !editor.readOnly)
 
-  for (const slide of slides) {
+  slides.forEach((slide, index) => {
     const slideEl = document.createElement('div')
     slideEl.className = 'swiper-slide'
+    const alignClass = slideAlignClass(slide)
+    if (alignClass) slideEl.classList.add(alignClass)
     slideEl.dataset.title = swiperSlideTabTitle(slide)
     const img = document.createElement('img')
     img.src = resolveImage(slide.src) || slide.src
     img.alt = slide.alt
-    slideEl.append(img)
+    if (!editable) {
+      if (slide.width) img.style.width = slide.width
+      slideEl.append(img)
+    } else {
+      slideEl.append(buildEditableSlide(img, slide, index, editor!, container))
+    }
     wrapper.append(slideEl)
-  }
+  })
 
   container.append(wrapper)
   root.append(tabs, container)
@@ -335,11 +452,12 @@ export function renderContainerFromSource(
   source: string,
   resolveImage: ResolveImage = defaultResolveImage,
   /** 围栏外的链接定义。容器正文单独渲染，看不到笔记末尾的 `[1]: url`。 */
-  definitions?: ReadonlyMap<string, string>
+  definitions?: ReadonlyMap<string, string>,
+  swiperEditor?: SwiperSlideEditor
 ): HTMLElement {
   const { name, title, body, hasBody } = parseContainerSource(source)
   if (name === 'code-group') return buildCodeGroup(body)
-  if (name === 'swiper') return buildSwiper(body, resolveImage)
+  if (name === 'swiper') return buildSwiper(body, resolveImage, swiperEditor)
   if (name === 'footprints') {
     // Desk mounts the shared Vue Footprints; return a lightweight host shell here.
     const host = document.createElement('div')

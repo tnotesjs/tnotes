@@ -14,6 +14,7 @@ import { highlightCodeSync, prepareCodeHighlighter } from '@tnotesjs/ui/code'
 import { parseImageAttrs, type ImageAlign } from '@tnotesjs/ui/image-markdown'
 import { parseFootprintsDatetime, parseFootprintsSource } from '@tnotesjs/ui/footprints-parse'
 import { normalizeMindmapMarkdown, parseMindmapFence } from '@tnotesjs/ui/mindmap-parse'
+import { emptySwiperMarkup } from '@tnotesjs/ui/swiper'
 import GithubSlugger from 'github-slugger'
 import matter from 'gray-matter'
 import MarkdownIt from 'markdown-it'
@@ -159,13 +160,50 @@ function configureContainers(md: MarkdownIt) {
   })
 }
 
+const SWIPER_OPEN = '<!--tn-swiper-open-->'
+const SWIPER_EMPTY = '<!--tn-swiper-empty-->'
+
+/** 没有图片幻灯片的轮播换成空状态，去掉围栏里的非图片文字。 */
+export function fillEmptySwipers(html: string): string {
+  const pattern = new RegExp(`${SWIPER_OPEN}(?:(?!${SWIPER_OPEN})[\\s\\S])*?${SWIPER_EMPTY}`, 'g')
+  let next = html
+  let prev = ''
+  while (next !== prev) {
+    prev = next
+    next = next.replace(pattern, () => emptySwiperMarkup())
+  }
+  return next.replaceAll(SWIPER_OPEN, '')
+}
+
+/** 幻灯片上的宽度和对齐。没写 `align=` 时不返回对齐，展示层默认居中。 */
+function swiperImageAttrs(
+  image: { attrGet?: (name: string) => string | null },
+  next?: { type?: string; content?: string }
+): { width: string; align?: ImageAlign } {
+  const markedWidth = image.attrGet?.('data-tn-w') || ''
+  const markedAlign = image.attrGet?.('data-tn-align') || ''
+  if (markedWidth || markedAlign) {
+    return {
+      width: markedWidth,
+      align: markedAlign === 'left' || markedAlign === 'center' || markedAlign === 'right' ? markedAlign : undefined
+    }
+  }
+  const raw = next?.type === 'text' ? next.content || '' : ''
+  const parsed = parseImageAttrs(raw)
+  if (!raw.includes('{') || parsed.rest !== '') return { width: '' }
+  const explicit = /(?:^|[\s,{])(?:align|a)\s*=/i.test(raw)
+  return { width: parsed.width, align: explicit ? parsed.align : undefined }
+}
+
 /** Swiper container: image-only paragraphs become slides. */
 function configureSwiperContainer(md: MarkdownIt, base: string) {
   let uid = 0
   interface RuleStackItem {
     image: any
+    text: any
     paragraphOpen: any
     paragraphClose: any
+    slides: number
   }
   let stack: RuleStackItem[] = []
 
@@ -180,26 +218,37 @@ function configureSwiperContainer(md: MarkdownIt, base: string) {
       if (tokens[index].nesting === 1) {
         stack.push({
           image: md.renderer.rules.image,
+          text: md.renderer.rules.text,
           paragraphOpen: md.renderer.rules.paragraph_open,
-          paragraphClose: md.renderer.rules.paragraph_close
+          paragraphClose: md.renderer.rules.paragraph_close,
+          slides: 0
         })
         md.renderer.rules.paragraph_open = () => ''
         md.renderer.rules.paragraph_close = () => ''
+        md.renderer.rules.text = () => ''
         md.renderer.rules.image = (tokens: any[], i: number) => {
+          const current = stack[stack.length - 1]
+          if (current) current.slides += 1
           const token = tokens[i]
           const src = rewriteAssetSrc(token.attrGet('src') || '', base)
           const alt = token.content || ''
           const title = alt && alt.trim() ? alt : 'img'
-          return `<div class="swiper-slide" data-title="${escapeHtml(title)}"><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"></div>`
+          const attrs = swiperImageAttrs(token, tokens[i + 1])
+          const alignClass =
+            attrs.align === 'left' || attrs.align === 'right' ? ` is-align-${attrs.align}` : ''
+          const style = attrs.width ? ` style="width:${escapeHtml(attrs.width)}"` : ''
+          return `<div class="swiper-slide${alignClass}" data-title="${escapeHtml(title)}"><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"${style}></div>`
         }
         const id = `tn-swiper-${++uid}`
-        return `\n<div class="tn-swiper" data-swiper-id="${id}">\n  <div class="tn-swiper-tabs"></div>\n  <div class="swiper-container">\n    <div class="swiper-wrapper">\n`
+        return `${SWIPER_OPEN}\n<div class="tn-swiper" data-swiper-id="${id}">\n  <div class="tn-swiper-tabs"></div>\n  <div class="swiper-container">\n    <div class="swiper-wrapper">\n`
       }
       const previous = stack.pop()
       md.renderer.rules.image = previous?.image
+      md.renderer.rules.text = previous?.text
       md.renderer.rules.paragraph_open = previous?.paragraphOpen
       md.renderer.rules.paragraph_close = previous?.paragraphClose
-      return `\n    </div>\n  </div>\n</div>\n`
+      const close = `\n    </div>\n  </div>\n</div>\n`
+      return previous && previous.slides === 0 ? `${close}${SWIPER_EMPTY}` : close
     }
   })
 }
@@ -588,10 +637,12 @@ function markStandaloneImage(inline: {
   let width = ''
   let align: ImageAlign = 'left'
   if (meaningful.length === 2 && meaningful[1].type === 'text') {
-    const parsed = parseImageAttrs(meaningful[1].content)
+    const raw = meaningful[1].content
+    const parsed = parseImageAttrs(raw)
     if (parsed.rest) return false
     width = parsed.width
     align = parsed.align
+    if (/(?:^|[\s,{])(?:align|a)\s*=/i.test(raw)) image.attrSet?.('data-tn-align', parsed.align)
     meaningful[1].hidden = true
     meaningful[1].content = ''
   } else if (meaningful.length !== 1) {
@@ -683,7 +734,7 @@ export async function createMarkdownCompiler(
     },
     compile(raw: string, file: string, route: string, titleHint?: string): CompiledMarkdown {
       const env: MarkdownEnvironment = { source: raw }
-      const html = escapeVueMustaches(md.render(raw, env))
+      const html = escapeVueMustaches(fillEmptySwipers(md.render(raw, env)))
       const data = extractPageData(config, raw, file, route, titleHint)
       // Page modules are virtual (see vitePlugin), so relative specifiers in
       // hoisted SFC blocks must be anchored to the note file's directory.

@@ -8,6 +8,7 @@ import {
   destroyContainerPreview,
   renderContainerFromSource
 } from '../editor/markdown/containerBody'
+import { updateSwiperSlideAttrs, type SwiperSlideChange } from '../editor/markdown/swiperSlides'
 import {
   isBilibiliVideoSource,
   isNotesTableSource,
@@ -61,7 +62,7 @@ function markdownRenderer(): InstanceType<typeof MarkdownIt> {
 
 /** 卡片里这些元素有自己的交互，点它们不应该把光标移进源码。 */
 const INTERACTIVE =
-  'button, a, input, select, textarea, summary, video, iframe, [role="tab"], .tn-swiper-tabs, .swiper-button-prev, .swiper-button-next'
+  'button, a, input, select, textarea, summary, video, iframe, [role="tab"], .tn-swiper-tabs, .tn-swiper-resize, .tn-swiper-image-toolbar, .swiper-button-prev, .swiper-button-next'
 
 interface Mounted {
   destroy(): void
@@ -229,7 +230,15 @@ export class CardWidget extends WidgetType {
     const resolveImage = host.resolveImage.bind(host)
     switch (this.kind) {
       case 'container': {
-        const element = renderContainerFromSource(this.source, resolveImage, this.definitions)
+        const element = renderContainerFromSource(
+          this.source,
+          resolveImage,
+          this.definitions,
+          {
+            readOnly: host.isReadOnly(),
+            commit: (index, next) => commitSwiperSlide(view, card, index, next)
+          }
+        )
         if (element.dataset.footprints === '1') {
           const payload = parseFootprintsSource(this.source)
           const handle = mountFootprintsPreview(element, {
@@ -286,6 +295,34 @@ export class CardWidget extends WidgetType {
   ignoreEvent(event: Event): boolean {
     return event.type !== 'dragstart'
   }
+}
+
+function commitSwiperSlide(
+  view: EditorView,
+  card: HTMLElement,
+  index: number,
+  next: SwiperSlideChange
+): void {
+  const host = view.state.facet(livePreviewHost)
+  if (host.isReadOnly()) return
+  let pos: number
+  try {
+    pos = view.posAtDOM(card)
+  } catch {
+    return
+  }
+  let node = syntaxTree(view.state).resolveInner(pos, 1)
+  while (node && node.name !== 'Container') node = node.parent
+  if (!node) return
+  const from = view.state.doc.lineAt(node.from).from
+  const to = node.to
+  const current = view.state.doc.sliceString(from, to)
+  const updated = updateSwiperSlideAttrs(current, index, next)
+  if (updated === current) return
+  view.dispatch({
+    changes: { from, to, insert: updated },
+    userEvent: 'input.swiper'
+  })
 }
 
 /** 卡片所在的这段 ```mindmap 围栏在文档里的当前位置（卡片从行首起，到闭合围栏为止）。 */

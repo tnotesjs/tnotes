@@ -180,6 +180,14 @@
   width: 100%;
   height: auto;
 }
+
+/* 正文图片边界。Desk 可视化图和静态站图共用；Swiper 的边画在 .tn-swiper 上。 */
+:is(.tn-prose, .vp-doc) :where(figure.tn-image > img),
+.cm-lp-image-frame > img,
+:is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block img) {
+  border: 1px solid var(--tn-c-media-edge);
+  border-radius: 4px;
+}
 :is(.tn-prose, .vp-doc) :where(figure.tn-image > figcaption),
 :is(.tn-prose, .vp-doc) :where(figcaption) {
   display: block;
