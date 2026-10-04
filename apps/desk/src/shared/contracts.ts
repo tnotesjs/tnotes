@@ -699,6 +699,8 @@ export interface AppSettings {
     maxOpenCount: number
     wrap: boolean
     autoRevealInToc: boolean
+    /** 点「新建网页标签」时打开的地址。只接受 http/https，空值或非法值回默认。 */
+    defaultWebUrl: string
   }
   /**
    * 底部面板（终端会话 + 命令任务标签）的容量。
@@ -1092,6 +1094,27 @@ export interface WebLayoutRequest {
 export interface WebNavigateRequest {
   tabId: string
   url: string
+}
+
+/** 新网页标签没指定地址时使用。设置面板可改。 */
+export const DEFAULT_WEB_TAB_URL = 'https://github.com/tnotesjs'
+
+/**
+ * 把设置里的默认地址收成可打开的 http/https。
+ * 没写协议时补 https://；空着、解析失败或不是 http/https 时回到内置默认。
+ */
+export function normalizeDefaultWebUrl(value: unknown): string {
+  if (typeof value !== 'string') return DEFAULT_WEB_TAB_URL
+  const trimmed = value.trim()
+  if (!trimmed) return DEFAULT_WEB_TAB_URL
+  const candidate = /^[a-z][a-z\d+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`
+  try {
+    const url = new URL(candidate)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return DEFAULT_WEB_TAB_URL
+    return candidate
+  } catch {
+    return DEFAULT_WEB_TAB_URL
+  }
 }
 
 export interface WebTabState {

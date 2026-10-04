@@ -20,7 +20,13 @@ import {
   clampHeadingNumberMaxDepth,
   HEADING_NUMBER_DEFAULT_MAX_DEPTH
 } from '../shared/headingNumbering'
-import { DEFAULT_MCP_PORT, type AppSettings, type KnowledgeBaseSettings } from '../shared/contracts'
+import {
+  DEFAULT_MCP_PORT,
+  DEFAULT_WEB_TAB_URL,
+  normalizeDefaultWebUrl,
+  type AppSettings,
+  type KnowledgeBaseSettings
+} from '../shared/contracts'
 import { strengthFromLegacyOxipngLevel, strengthFromLegacyQuality } from './optimizeStrength'
 import { normalizeAgentSettings } from '../shared/agentModels'
 
@@ -64,9 +70,19 @@ const settingsSchema = z.object({
     .object({
       maxOpenCount: z.number().int().min(1).max(30).default(10),
       wrap: z.boolean().default(true),
-      autoRevealInToc: z.boolean().default(true)
+      autoRevealInToc: z.boolean().default(true),
+      defaultWebUrl: z
+        .string()
+        .trim()
+        .transform(normalizeDefaultWebUrl)
+        .default(DEFAULT_WEB_TAB_URL)
     })
-    .default({ maxOpenCount: 10, wrap: true, autoRevealInToc: true }),
+    .default({
+      maxOpenCount: 10,
+      wrap: true,
+      autoRevealInToc: true,
+      defaultWebUrl: DEFAULT_WEB_TAB_URL
+    }),
   // 底部面板（终端会话 + 命令任务标签）的上限：两类**合计**计数，上限单独存在这里。
   // 默认 10，合法区间 1-30（上界与 shared/bottomPanelTabs 的常量一致）；
   // 老配置文件没有这个分组，靠分组级 `.default({ maxTabs: 10 })` 补默认值。

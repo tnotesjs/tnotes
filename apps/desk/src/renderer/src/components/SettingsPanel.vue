@@ -14,7 +14,7 @@ import TabsSettings from './settings/TabsSettings.vue'
 import TocSettings from './settings/TocSettings.vue'
 import ToolsSettings from './settings/ToolsSettings.vue'
 
-import { DEFAULT_MCP_PORT, type AppSettings } from '../../../shared/contracts'
+import { DEFAULT_MCP_PORT, DEFAULT_WEB_TAB_URL, type AppSettings } from '../../../shared/contracts'
 import { APP_ZOOM_DEFAULT } from '../../../shared/appZoom'
 import { DEFAULT_AGENT_SETTINGS } from '../../../shared/agentModels'
 
@@ -94,7 +94,12 @@ const groupDefaults: Record<string, Partial<AppSettings>> = {
     updates: { autoCheck: true }
   },
   tabs: {
-    tabs: { maxOpenCount: 10, wrap: true, autoRevealInToc: true },
+    tabs: {
+      maxOpenCount: 10,
+      wrap: true,
+      autoRevealInToc: true,
+      defaultWebUrl: DEFAULT_WEB_TAB_URL
+    },
     bottomPanel: { maxTabs: 10 }
   },
   toc: {

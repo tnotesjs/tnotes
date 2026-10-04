@@ -13,6 +13,16 @@ const emit = defineEmits<{ reset: []; 'open-shortcuts': [] }>()
       <span>控制标签容量、布局和目录联动</span>
     </header>
     <ResetGroupButton @reset="emit('reset')" />
+    <label class="field web-url-field">
+      <span>新网页标签默认地址</span>
+      <input
+        v-model="draft.tabs.defaultWebUrl"
+        type="text"
+        spellcheck="false"
+        placeholder="https://github.com/tnotesjs"
+      />
+      <small>点标签栏的 + 时打开这个地址。留空或不是网页地址时，回到默认值。</small>
+    </label>
     <div class="field-grid cols-3">
       <label class="field">
         <span>最多打开标签数</span>
@@ -45,6 +55,10 @@ const emit = defineEmits<{ reset: []; 'open-shortcuts': [] }>()
 <style src="./settingsShared.css" scoped></style>
 
 <style scoped>
+.web-url-field {
+  margin-bottom: 12px;
+}
+
 .card-toggle {
   min-height: 56px;
   display: flex !important;

@@ -29,8 +29,10 @@ import {
   updateGroup
 } from '../editor-groups/layoutModel'
 
-import type {
-  AppSettings,
+import {
+  DEFAULT_WEB_TAB_URL,
+  normalizeDefaultWebUrl,
+  type AppSettings,
   EditorLayoutNode,
   EditorTab,
   KnowledgeBaseEditorSession,
@@ -51,8 +53,6 @@ import type {
   WorkspaceSession
 } from '../../../shared/contracts'
 import type { SplitPlacement } from '../editor-groups/layoutModel'
-
-const DEFAULT_WEB_URL = 'https://github.com/tnotesjs'
 
 function cloneTab(tab: EditorTab): EditorTab {
   return {
@@ -207,6 +207,7 @@ export const useEditorStore = defineStore('editor', () => {
   const pinnedNotesCollapsed = ref<Record<string, boolean>>({})
   const maxOpenTabCount = ref(10)
   const wrapTabs = ref(true)
+  const defaultWebUrl = ref(DEFAULT_WEB_TAB_URL)
   const defaultNotePageWidth = ref<NotePageWidth>('standard')
   const noteOutlineShown = ref(true)
   const activeKnowledgeBaseId = ref<string | null>(null)
@@ -255,6 +256,7 @@ export const useEditorStore = defineStore('editor', () => {
   function configure(settings: AppSettings): void {
     maxOpenTabCount.value = settings.tabs.maxOpenCount
     wrapTabs.value = settings.tabs.wrap
+    defaultWebUrl.value = normalizeDefaultWebUrl(settings.tabs.defaultWebUrl)
     const widthChanged = defaultNotePageWidth.value !== settings.defaultNotePageWidth
     defaultNotePageWidth.value = settings.defaultNotePageWidth
     // 改主题 / 自动保存等无关设置不应该重置每个标签的页宽覆盖
@@ -816,7 +818,7 @@ export const useEditorStore = defineStore('editor', () => {
     return tab.id
   }
 
-  function openWeb(url = DEFAULT_WEB_URL, targetGroupId?: string): string {
+  function openWeb(url = defaultWebUrl.value, targetGroupId?: string): string {
     const groupId = targetGroupId ?? activeGroupId.value
     const current = findGroup(layout.value, groupId)?.tabs.find(
       (tab) => tab.id === findGroup(layout.value, groupId)?.activeTabId

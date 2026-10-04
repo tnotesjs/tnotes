@@ -147,6 +147,48 @@ describe('配置文件字段级容错', () => {
   })
 })
 
+describe('新网页标签的默认地址', () => {
+  const path = () => join(environment.profile, '.tn-desk-config.json')
+  const tabs = {
+    maxOpenCount: 10,
+    wrap: true,
+    autoRevealInToc: true,
+    defaultWebUrl: 'https://github.com/tnotesjs'
+  }
+
+  it('缺省是 GitHub 组织页；老配置没这个字段时补上，且保留其它标签设置', () => {
+    expect(loadSettings().tabs.defaultWebUrl).toBe('https://github.com/tnotesjs')
+    writeFileSync(path(), JSON.stringify({ theme: 'dark', tabs: { maxOpenCount: 4, wrap: false } }))
+    const loaded = loadSettings()
+    expect(loaded.tabs.defaultWebUrl).toBe('https://github.com/tnotesjs')
+    expect(loaded.tabs.maxOpenCount).toBe(4)
+    expect(loaded.tabs.wrap).toBe(false)
+    expect(loaded.theme).toBe('dark')
+  })
+
+  it('可以改成其它网页地址，并在之后的保存里保留', () => {
+    const saved = saveSettings({
+      tabs: { ...tabs, defaultWebUrl: 'https://example.com/docs' }
+    })
+    expect(saved.tabs.defaultWebUrl).toBe('https://example.com/docs')
+    saveSettings({ theme: 'light' })
+    expect(loadSettings().tabs.defaultWebUrl).toBe('https://example.com/docs')
+  })
+
+  it('没写协议时补 https，空着或不是网页地址时回到默认', () => {
+    expect(
+      saveSettings({ tabs: { ...tabs, defaultWebUrl: 'github.com/tnotesjs/tnotes' } }).tabs
+        .defaultWebUrl
+    ).toBe('https://github.com/tnotesjs/tnotes')
+    expect(saveSettings({ tabs: { ...tabs, defaultWebUrl: '  ' } }).tabs.defaultWebUrl).toBe(
+      'https://github.com/tnotesjs'
+    )
+    expect(
+      saveSettings({ tabs: { ...tabs, defaultWebUrl: 'javascript:alert(1)' } }).tabs.defaultWebUrl
+    ).toBe('https://github.com/tnotesjs')
+  })
+})
+
 describe('已移除的笔记内目录三项', () => {
   const path = () => join(environment.profile, '.tn-desk-config.json')
 

@@ -315,7 +315,11 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
 
         <div class="tab-actions">
           <UiTooltip label="新建网页标签">
-            <button type="button" aria-label="新建网页标签" @click="openWeb">＋</button>
+            <button type="button" aria-label="新建网页标签" @click="openWeb">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 3.25v9.5M3.25 8h9.5" />
+              </svg>
+            </button>
           </UiTooltip>
         </div>
       </div>
@@ -406,19 +410,22 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
 
 .tabs-bar {
   flex: none;
-  overflow-x: hidden;
-  overflow-y: hidden;
-  border-bottom: 1px solid var(--border);
+  overflow: visible;
   background: var(--tabs-bg);
+  padding: 4px 6px 0;
 }
 
 .tabs-row {
-  min-height: 35px;
+  min-height: 34px;
   display: flex;
-  align-items: stretch;
+  align-items: flex-end;
+  gap: 2px;
 }
 
 .pinned-row {
+  align-items: center;
+  min-height: 36px;
+  padding-bottom: 4px;
   overflow-x: auto;
   overflow-y: hidden;
   border-bottom: 1px solid var(--border);
@@ -426,7 +433,8 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
 }
 
 .regular-row {
-  min-width: 100%;
+  min-width: 0;
+  width: 100%;
 }
 
 .regular-row.wrap {
@@ -439,19 +447,25 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
 }
 
 .tab {
-  height: 35px;
+  height: 28px;
+  margin-bottom: 4px;
   min-width: 100px;
   max-width: 230px;
+  flex: 0 1 auto;
   display: flex;
   align-items: center;
   gap: 6px;
   border: 0;
-  border-right: 1px solid var(--border);
+  border-radius: 8px;
   background: transparent;
   color: var(--muted);
-  padding: 0 8px;
+  padding: 0 10px;
   cursor: default;
   font-size: 10px;
+}
+
+.tab:hover:not(.selected) {
+  background: var(--hover);
 }
 
 .tab.preview .tab-title {
@@ -459,13 +473,25 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
 }
 
 .tab.pinned {
-  background: color-mix(in srgb, var(--raised) 38%, transparent);
+  height: 28px;
+  margin-bottom: 0;
+  background: transparent;
 }
 
 .tab.selected {
+  height: 32px;
+  margin-bottom: 0;
+  border-radius: 10px 10px 0 0;
   background: var(--editor-bg);
   color: var(--text);
-  box-shadow: inset 0 1px var(--accent);
+  box-shadow: none;
+  position: relative;
+  z-index: 1;
+}
+
+.tab.pinned.selected {
+  height: 28px;
+  border-radius: 8px;
 }
 
 .tab-title {
@@ -550,10 +576,15 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
 }
 
 .tab-actions {
-  margin-left: auto;
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  flex: none;
+  align-self: center;
+  margin: 0 0 3px 2px;
   display: flex;
   align-items: center;
-  padding: 0 4px;
+  padding-left: 2px;
   background: var(--tabs-bg);
 }
 
@@ -562,13 +593,25 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
 }
 
 .tab-actions button {
-  width: 25px;
-  height: 25px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
   border: 0;
-  border-radius: 5px;
+  border-radius: 50%;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+  padding: 0;
+}
+
+.tab-actions button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
 }
 
 .tab-actions button:hover:not(:disabled) {

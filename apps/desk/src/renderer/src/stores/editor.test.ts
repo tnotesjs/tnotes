@@ -22,7 +22,12 @@ const settings: AppSettings = {
   gitPath: null,
   nodePath: null,
   confirmBeforeCommit: false,
-  tabs: { maxOpenCount: 10, wrap: true, autoRevealInToc: true },
+  tabs: {
+    maxOpenCount: 10,
+    wrap: true,
+    autoRevealInToc: true,
+    defaultWebUrl: 'https://github.com/tnotesjs'
+  },
   bottomPanel: { maxTabs: 10 },
   toc: {
     showNoteIndex: true,
@@ -169,6 +174,32 @@ describe('editor store tab semantics', () => {
     editor.toggleNoteOutlineVisible(hiddenId)
     editor.configure({ ...settings, theme: 'dark', noteOutline: 'shown' })
     expect(editor.activeTab).toMatchObject({ id: hiddenId, outlineVisible: false })
+  })
+
+  it('opens a new web tab at the configured default address', () => {
+    const editor = useEditorStore()
+    editor.openWeb()
+    expect(editor.activeTab).toMatchObject({
+      type: 'web',
+      url: 'https://github.com/tnotesjs'
+    })
+
+    editor.configure({
+      ...settings,
+      tabs: { ...settings.tabs, defaultWebUrl: 'https://example.com/start' }
+    })
+    editor.openWeb()
+    expect(editor.activeTab).toMatchObject({ type: 'web', url: 'https://example.com/start' })
+
+    editor.configure({
+      ...settings,
+      tabs: { ...settings.tabs, defaultWebUrl: '   ' }
+    })
+    editor.openWeb()
+    expect(editor.activeTab).toMatchObject({ type: 'web', url: 'https://github.com/tnotesjs' })
+
+    editor.openWeb('https://example.com/explicit')
+    expect(editor.activeTab).toMatchObject({ type: 'web', url: 'https://example.com/explicit' })
   })
 
   it('keeps the last note scope while a web tab is active', () => {

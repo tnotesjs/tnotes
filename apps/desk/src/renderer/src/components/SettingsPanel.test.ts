@@ -30,7 +30,12 @@ const settings: AppSettings = {
   gitPath: null,
   nodePath: null,
   confirmBeforeCommit: false,
-  tabs: { maxOpenCount: 10, wrap: true, autoRevealInToc: true },
+  tabs: {
+    maxOpenCount: 10,
+    wrap: true,
+    autoRevealInToc: true,
+    defaultWebUrl: 'https://github.com/tnotesjs'
+  },
   bottomPanel: { maxTabs: 10 },
   toc: {
     showNoteIndex: true,

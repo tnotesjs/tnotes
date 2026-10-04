@@ -139,22 +139,44 @@ let unsubscribeTabShortcut: (() => void) | null = null
 let unsubscribeBeforeClose: (() => void) | null = null
 let unsubscribeUpdates: (() => void) | null = null
 
+/** 两块大胶囊离窗口边缘的空隙，和 VSCode 侧栏、编辑区之间的缝一样。 */
+const CAPSULE_INSET = 6
+
 const workspaceColumns = computed(() => {
   const knowledgeWidth = editor.knowledgeSidebarCollapsed ? 48 : editor.knowledgeSidebarWidth
   const navigatorWidth = editor.navigatorSidebarCollapsed ? 0 : editor.navigatorSidebarWidth
-  const navigatorGap = editor.navigatorSidebarCollapsed ? 0 : 6
+  const sideWidth = knowledgeWidth + navigatorWidth
+  const navigatorGap = editor.navigatorSidebarCollapsed ? 0 : CAPSULE_INSET
   const reversed = store.settings?.workspaceLayout === 'content-dir-kb'
   const base = reversed
-    ? `minmax(0, 1fr) ${navigatorGap}px ${navigatorWidth}px 6px ${knowledgeWidth}px`
-    : `${knowledgeWidth}px 6px ${navigatorWidth}px ${navigatorGap}px minmax(0, 1fr)`
-  return agentStore.open ? `${base} 6px ${agentStore.width}px` : base
+    ? `minmax(0, 1fr) ${navigatorGap}px ${sideWidth}px`
+    : `${sideWidth}px ${navigatorGap}px minmax(0, 1fr)`
+  return agentStore.open ? `${base} ${CAPSULE_INSET}px ${agentStore.width}px` : base
 })
 
 /** 目录栏朝编辑区的那条边。收起后这条边贴着知识库栏，手柄留在这里。 */
 const navigatorEdge = computed(() => {
   const knowledgeWidth = editor.knowledgeSidebarCollapsed ? 48 : editor.knowledgeSidebarWidth
   const navigatorWidth = editor.navigatorSidebarCollapsed ? 0 : editor.navigatorSidebarWidth
-  return `${knowledgeWidth + 6 + navigatorWidth}px`
+  return `${CAPSULE_INSET + knowledgeWidth + navigatorWidth}px`
+})
+
+const sideCapsuleStyle = computed(() => {
+  const knowledgeWidth = editor.knowledgeSidebarCollapsed ? 48 : editor.knowledgeSidebarWidth
+  if (editor.navigatorSidebarCollapsed) {
+    return { gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateAreas: '"kb"' }
+  }
+  const navigatorWidth = editor.navigatorSidebarWidth
+  const reversed = store.settings?.workspaceLayout === 'content-dir-kb'
+  return reversed
+    ? {
+        gridTemplateColumns: `${navigatorWidth}px 0px ${knowledgeWidth}px`,
+        gridTemplateAreas: '"nav seam kb"'
+      }
+    : {
+        gridTemplateColumns: `${knowledgeWidth}px 0px ${navigatorWidth}px`,
+        gridTemplateAreas: '"kb seam nav"'
+      }
 })
 
 const navigatorLayoutReversed = computed(() => store.settings?.workspaceLayout === 'content-dir-kb')
@@ -165,8 +187,10 @@ function toggleNavigatorSidebar(): void {
 
 const workspaceAreas = computed(() => {
   const base =
-    store.settings?.workspaceLayout === 'content-dir-kb' ? 'i5 i4 i3 i2 i1' : 'i1 i2 i3 i4 i5'
-  return agentStore.open ? `"${base} i6 i7"` : `"${base}"`
+    store.settings?.workspaceLayout === 'content-dir-kb'
+      ? 'editor gap side'
+      : 'side gap editor'
+  return agentStore.open ? `"${base} agent-gap agent"` : `"${base}"`
 })
 
 let resizeTarget: 'knowledge' | 'navigator' | 'agent' | null = null
@@ -989,33 +1013,36 @@ onUnmounted(() => {
         '--nav-edge': navigatorEdge
       }"
     >
-      <KnowledgeSidebar style="grid-area: i1" @create-knowledge-base="openCreateKbDialog" />
-      <div
-        class="resize-handle"
-        role="separator"
-        aria-orientation="vertical"
-        style="grid-area: i2"
-        @mousedown="startResize('knowledge', $event)"
-      />
-      <NavigatorSidebar
-        id="navigator-sidebar"
-        ref="navigatorSidebar"
-        style="grid-area: i3"
-        :class="{ 'is-panel-collapsed': editor.navigatorSidebarCollapsed }"
-        @create-note="createNoteNow"
-        @create-notes="openCreateNotesDialog"
-        @create-group="openGroupDialog"
-        @request-rename="openRenameDialog"
-        @request-reindex="openReindexDialog"
-        @request-delete="requestDelete"
-        @request-batch-delete="requestBatchDelete"
-      />
+      <div class="side-capsule" style="grid-area: side" :style="sideCapsuleStyle">
+        <KnowledgeSidebar style="grid-area: kb" @create-knowledge-base="openCreateKbDialog" />
+        <div
+          v-show="!editor.navigatorSidebarCollapsed"
+          class="resize-handle seam"
+          role="separator"
+          aria-orientation="vertical"
+          style="grid-area: seam"
+          @mousedown="startResize('knowledge', $event)"
+        />
+        <NavigatorSidebar
+          v-show="!editor.navigatorSidebarCollapsed"
+          id="navigator-sidebar"
+          ref="navigatorSidebar"
+          style="grid-area: nav"
+          @create-note="createNoteNow"
+          @create-notes="openCreateNotesDialog"
+          @create-group="openGroupDialog"
+          @request-rename="openRenameDialog"
+          @request-reindex="openReindexDialog"
+          @request-delete="requestDelete"
+          @request-batch-delete="requestBatchDelete"
+        />
+      </div>
       <div
         v-show="!editor.navigatorSidebarCollapsed"
         class="resize-handle navigator-resize"
         role="separator"
         aria-orientation="vertical"
-        style="grid-area: i4"
+        style="grid-area: gap"
         @mousedown="startResize('navigator', $event)"
       >
         <button
@@ -1041,16 +1068,20 @@ onUnmounted(() => {
           </svg>
         </button>
       </div>
-      <EditorPane style="grid-area: i5" />
+      <div class="editor-capsule" style="grid-area: editor">
+        <EditorPane />
+      </div>
       <div
         v-if="agentStore.open"
         class="resize-handle"
         role="separator"
         aria-orientation="vertical"
-        style="grid-area: i6"
+        style="grid-area: agent-gap"
         @mousedown="startResize('agent', $event)"
       />
-      <AgentPanel v-if="agentStore.open" ref="agentPanel" style="grid-area: i7" />
+      <div v-if="agentStore.open" class="agent-capsule" style="grid-area: agent">
+        <AgentPanel ref="agentPanel" />
+      </div>
       <button
         v-if="editor.navigatorSidebarCollapsed"
         type="button"
@@ -1587,7 +1618,58 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 218px 292px minmax(0, 1fr);
+  padding: 6px;
+  background: var(--app-bg);
+  grid-template-columns: 218px 6px minmax(0, 1fr);
+}
+
+.side-capsule {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.side-capsule :deep(.knowledge-sidebar),
+.side-capsule :deep(.navigator-sidebar) {
+  border-right: 0;
+  border-left: 0;
+  background: var(--panel);
+}
+
+.side-capsule .seam {
+  z-index: 2;
+  width: 10px;
+  margin-left: -5px;
+}
+
+.editor-capsule,
+.agent-capsule {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--editor-bg);
+}
+
+.agent-capsule {
+  background: var(--panel);
+}
+
+.agent-capsule :deep(.agent-dock) {
+  border-left: 0;
+}
+
+.editor-capsule > :deep(*),
+.agent-capsule > :deep(*) {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
 }
 
 .navigator-collapse-handle {
@@ -1691,6 +1773,10 @@ onUnmounted(() => {
   transform: translateX(-50%);
   background: transparent;
   transition: background 120ms ease;
+}
+
+.workspace-layout .side-capsule .seam::before {
+  background: var(--border);
 }
 
 .workspace-layout .resize-handle:hover::before,
