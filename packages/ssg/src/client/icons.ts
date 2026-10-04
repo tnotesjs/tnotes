@@ -18,6 +18,8 @@
  * - `foldAll`         core  vitepress/assets/icons/icon__fold.svg
  *                     Same path desk draws inline for its "折叠/展开全部" toggle
  *                     in NavigatorSidebar.vue.
+ * - `noteIndex`       The sidebar's show/hide control for the 4-digit note
+ *                     number. One glyph, toggled rather than swapped.
  * - `outline`         desk  src/renderer/src/components/OutlineIcon.vue
  *                     Desk's 正文目录 toggle. Phones open the drawer with it, so
  *                     the two apps read the same way.
@@ -58,6 +60,14 @@ export const SITE_ICONS = {
     viewBox: '0 0 24 24',
     mode: 'fill',
     paths: ['M2 4h20v2H2zm0 5.57L5.887 12L2 14.43zM7 11h15v2H7zm-5 7h20v2H2z']
+  },
+  noteIndex: {
+    viewBox: '0 0 32 32',
+    mode: 'fill',
+    paths: [
+      'M28 9h-6v2h6v4h-4v2h4v4h-6v2h6a2.003 2.003 0 0 0 2-2V11a2 2 0 0 0-2-2m-8 14h-8v-6a2 2 0 0 1 2-2h4v-4h-6V9h6a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-4v4h6Zm-17.5-.5v-1h3v-11h-3v-1h4v12h3v1z',
+      'M6 10v12zm1-1H2v2h3v10H2v2h8v-2H7z'
+    ]
   },
   focus: {
     viewBox: '0 0 24 24',

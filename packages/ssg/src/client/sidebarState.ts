@@ -130,6 +130,34 @@ export function centredScrollTop(target: ScrollTarget): number {
  */
 export const SIDEBAR_RESTORE_CLASS = 'tn-sb-restore'
 
+/** On `<html>` while the reader has chosen to hide 4-digit note numbers. */
+export const SIDEBAR_INDEX_CLASS = 'tn-hide-note-index'
+
+/** Display preference, not session chrome: it should survive a new tab. */
+export function sidebarIndexStorageKey(base: string): string {
+  return `tnotes-sidebar-note-index:${base}`
+}
+
+/** Indexes show unless the reader has explicitly turned them off. */
+export function readShowNoteIndex(base: string): boolean {
+  if (typeof window === 'undefined') return true
+  try {
+    return window.localStorage.getItem(sidebarIndexStorageKey(base)) !== '0'
+  } catch {
+    return true
+  }
+}
+
+export function writeShowNoteIndex(base: string, show: boolean): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(sidebarIndexStorageKey(base), show ? '1' : '0')
+  } catch {
+    /* private mode — the toggle still applies for this page */
+  }
+  document.documentElement.classList.toggle(SIDEBAR_INDEX_CLASS, !show)
+}
+
 /** How long the inline gate waits before giving up on the client bundle. */
 export const SIDEBAR_RESTORE_TIMEOUT_MS = 1000
 

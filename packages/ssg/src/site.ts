@@ -22,6 +22,8 @@ import { normalizeSearchTerm, tokenizeSearch } from './client/search'
 import {
   SIDEBAR_RESTORE_CLASS,
   SIDEBAR_RESTORE_TIMEOUT_MS,
+  SIDEBAR_INDEX_CLASS,
+  sidebarIndexStorageKey,
   sidebarStorageKey
 } from './client/sidebarState'
 import { createMarkdownCompiler, extractMarkdownLinks, extractPageData } from './markdown'
@@ -126,6 +128,12 @@ function iconLink(icon: ResolvedSsgConfig['icon'], base: string) {
  * The key comes from `sidebarStorageKey` so this inline script and the client
  * cannot drift apart.
  */
+/** Hide note numbers before paint when the reader turned them off. */
+function noteIndexGate(base: string) {
+  const key = JSON.stringify(sidebarIndexStorageKey(base))
+  return `<script>try{if(localStorage.getItem(${key})==='0')document.documentElement.classList.add('${SIDEBAR_INDEX_CLASS}')}catch(_){}</script>`
+}
+
 function sidebarRestoreGate(base: string) {
   const key = JSON.stringify(sidebarStorageKey(base))
   const name = SIDEBAR_RESTORE_CLASS
@@ -144,6 +152,7 @@ function pageDocument(config: ResolvedSsgConfig, route: string, page: PageData, 
     ${renderHead(config)}
     ${iconLink(config.icon, config.base)}
     <script>try{const t=localStorage.getItem('tnotes-theme');const d=t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',d)}catch{}</script>
+    ${noteIndexGate(config.base)}
     ${sidebarRestoreGate(config.base)}
   </head>
   <body>

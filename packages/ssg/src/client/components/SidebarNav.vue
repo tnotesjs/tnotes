@@ -27,6 +27,16 @@
         <button
           type="button"
           class="tn-sidebar-icon-button"
+          :aria-pressed="showIndex"
+          :aria-label="showIndex ? '隐藏笔记编号' : '显示笔记编号'"
+          :title="showIndex ? '隐藏笔记编号' : '显示笔记编号'"
+          @click="toggleNoteIndex"
+        >
+          <SiteIcon name="noteIndex" />
+        </button>
+        <button
+          type="button"
+          class="tn-sidebar-icon-button"
           :disabled="Boolean(filter.trim())"
           :aria-label="allCollapsed ? '全部展开' : '全部收起'"
           :title="allCollapsed ? '全部展开' : '全部收起'"
@@ -91,9 +101,12 @@ import SiteIcon from './SiteIcon.vue'
 import { SIDEBAR_COLLAPSE_KEY, type SidebarCollapseContext } from '../sidebarContext'
 import {
   centredScrollTop,
+  readShowNoteIndex,
   readSidebarState,
+  SIDEBAR_INDEX_CLASS,
   releaseSidebarRestoreGate,
   sidebarAncestorKeys,
+  writeShowNoteIndex,
   writeSidebarState
 } from '../sidebarState'
 import type { SidebarItem } from '../../types'
@@ -109,6 +122,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{ resize: [width: number] }>()
 const filter = ref('')
+/** Matches the server render: numbers are visible until stored preference says otherwise. */
+const showIndex = ref(true)
+
+function toggleNoteIndex() {
+  showIndex.value = !showIndex.value
+  writeShowNoteIndex(props.base, showIndex.value)
+}
 const filterInput = ref<HTMLInputElement>()
 const visibleKeys = computed(() => filterSidebarKeys(props.items, filter.value))
 let filterScroll = 0
@@ -332,6 +352,8 @@ function flush() {
 }
 
 onMounted(async () => {
+  showIndex.value = readShowNoteIndex(props.base)
+  document.documentElement.classList.toggle(SIDEBAR_INDEX_CLASS, !showIndex.value)
   const scroller = scrollRef.value
   if (scroller) {
     scroller.addEventListener('scroll', onScroll, { passive: true })

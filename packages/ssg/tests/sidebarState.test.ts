@@ -1,14 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  SIDEBAR_INDEX_CLASS,
   SIDEBAR_RESTORE_CLASS,
   centredScrollTop,
   emptySidebarState,
+  readShowNoteIndex,
   readSidebarState,
   releaseSidebarRestoreGate,
   sidebarAncestorKeys,
+  sidebarIndexStorageKey,
   sidebarNodeKey,
   sidebarStorageKey,
+  writeShowNoteIndex,
   writeSidebarState
 } from '../src/client/sidebarState'
 
@@ -29,13 +33,19 @@ function stubBrowser() {
     setItem: (key: string, value: string) => void stored.set(key, value),
     removeItem: (key: string) => void stored.delete(key)
   }
-  vi.stubGlobal('window', { sessionStorage })
+  vi.stubGlobal('window', { sessionStorage, localStorage: sessionStorage })
   vi.stubGlobal('document', {
     documentElement: {
       classList: {
         add: (name: string) => void classes.add(name),
         remove: (name: string) => void classes.delete(name),
-        contains: (name: string) => classes.has(name)
+        contains: (name: string) => classes.has(name),
+        toggle: (name: string, force?: boolean) => {
+          const on = force ?? !classes.has(name)
+          if (on) classes.add(name)
+          else classes.delete(name)
+          return on
+        }
       }
     }
   })
@@ -48,6 +58,17 @@ afterEach(() => {
 })
 
 describe('sidebar session state', () => {
+  it('hides note indexes only after the reader turns them off', () => {
+    expect(readShowNoteIndex('/TNotes.docs/')).toBe(true)
+    expect(classes.has(SIDEBAR_INDEX_CLASS)).toBe(false)
+    writeShowNoteIndex('/TNotes.docs/', false)
+    expect(readShowNoteIndex('/TNotes.docs/')).toBe(false)
+    expect(classes.has(SIDEBAR_INDEX_CLASS)).toBe(true)
+    expect(stored.get(sidebarIndexStorageKey('/TNotes.docs/'))).toBe('0')
+    writeShowNoteIndex('/TNotes.docs/', true)
+    expect(classes.has(SIDEBAR_INDEX_CLASS)).toBe(false)
+  })
+
   it('scopes the storage key to the site base', () => {
     // Every TNotes KB is published under one origin, so an unprefixed key would
     // let 32 knowledge bases share a single collapse set.

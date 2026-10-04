@@ -227,6 +227,9 @@ html.tn-sb-restore .tn-site-sidebar {
   line-height: 20px;
   font-variant-numeric: tabular-nums;
 }
+html.tn-hide-note-index .tn-site-sidebar-index {
+  display: none;
+}
 /* Two lines max; the full label stays reachable through the row's title. */
 .tn-site-sidebar-text {
   flex: 1;
@@ -481,7 +484,7 @@ html.tn-sb-restore .tn-site-sidebar {
   padding: 5px 8px;
   cursor: pointer;
   /*
-   * Labels must not shrink: the filter row now holds the field plus two buttons,
+   * Labels must not shrink: the filter row holds the field plus the icon buttons,
    * and a squeezed button would wrap "清空" onto two lines. Only the input gives.
    */
   flex: none;
