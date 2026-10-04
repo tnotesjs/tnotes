@@ -1185,11 +1185,13 @@ onBeforeUnmount(() => {
 }
 .mindmap-canvas-host:deep(.mm-edit-input .inline-run.code) {
   padding: 0 4px;
+  border: 1px solid var(--tn-c-inline-code-border);
   border-radius: 4px;
-  background: color-mix(in srgb, var(--mm-canvas-bg) 82%, var(--mm-text) 18%);
-  color: var(--tn-c-danger, #e85d5d);
+  background: var(--tn-c-inline-code-bg);
+  color: inherit;
   font-family: var(--tn-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.92em;
+  font-size: 1em;
+  font-weight: 400;
 }
 .mindmap-canvas-host:deep(.mm-edit-input .inline-run.link) {
   color: var(--mm-accent);
@@ -1346,11 +1348,14 @@ onBeforeUnmount(() => {
   background: var(--tn-c-mark-bg, rgba(255, 221, 0, 0.45));
 }
 .mindmap-outline :deep(.is-code) {
-  padding: 1px 5px;
+  padding: 0 4px;
+  border: 1px solid var(--tn-c-inline-code-border);
   border-radius: 4px;
-  background: var(--tn-c-bg-soft);
-  color: var(--tn-c-danger);
+  background: var(--tn-c-inline-code-bg);
+  color: inherit;
   font-family: var(--tn-font-mono);
+  font-size: 1em;
+  font-weight: 400;
 }
 .mindmap-outline :deep(.is-link) {
   color: var(--tn-c-brand);

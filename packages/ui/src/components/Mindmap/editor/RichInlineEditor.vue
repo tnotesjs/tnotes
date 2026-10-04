@@ -419,12 +419,14 @@ onBeforeUnmount(emitCommit)
   background: var(--tn-c-mark-bg, rgba(255, 221, 0, 0.45));
 }
 .rich-inline-editor :deep(.inline-run.code) {
-  padding: 2px 6px;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--mm-text) 18%, transparent);
-  color: #f08a6e;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.92em;
+  padding: 0 4px;
+  border: 1px solid var(--tn-c-inline-code-border, #e7e9e8);
+  border-radius: 4px;
+  background: var(--tn-c-inline-code-bg, rgba(0, 0, 0, 0.06));
+  color: inherit;
+  font-family: var(--tn-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 1em;
+  font-weight: 400;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }

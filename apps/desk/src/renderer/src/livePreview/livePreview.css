@@ -541,11 +541,15 @@
 }
 
 .live-editor .cm-lp-visual .cm-lp-inline-code {
-  color: var(--tn-c-brand);
-  background: var(--tn-c-default-soft);
+  color: inherit;
+  background: var(--tn-c-inline-code-bg);
+  border: 1px solid var(--tn-c-inline-code-border);
   border-radius: 4px;
-  font: 0.875em var(--tn-font-mono);
-  padding: 3px 6px;
+  margin: 1px 3px;
+  padding: 0 4px;
+  font-family: var(--tn-font-mono);
+  font-size: 1em;
+  font-weight: 400;
 }
 
 /* 标题语法类会包在胶囊里面，并把字色、字重设回标题。胶囊上的品牌色和正常字重要盖回去。 */
@@ -554,15 +558,19 @@
   font-weight: inherit;
 }
 
-.live-editor .cm-lp-visual .cm-lp-link {
-  color: var(--tn-c-brand);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--tn-c-brand) 40%, transparent);
-  text-underline-offset: 3px;
+.live-editor .cm-lp-visual .cm-lp-link,
+.live-editor .cm-lp-visual .tok-link,
+.live-editor .cm-lp-visual .tok-url {
+  color: var(--tn-c-link);
+  text-decoration: none;
+  font-weight: 400;
 }
 
-.live-editor .cm-lp-visual .cm-lp-link:hover {
-  text-decoration-color: var(--tn-c-brand);
+.live-editor .cm-lp-visual .cm-lp-link:hover,
+.live-editor .cm-lp-visual .cm-lp-link:hover .tok-link,
+.live-editor .cm-lp-visual .cm-lp-link:hover .tok-url {
+  color: var(--tn-c-link);
+  text-decoration: none;
 }
 
 .live-editor .cm-lp-break {
