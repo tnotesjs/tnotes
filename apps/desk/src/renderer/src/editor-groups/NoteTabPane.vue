@@ -9,6 +9,7 @@ import KbPathBreadcrumb from './KbPathBreadcrumb.vue'
 import NoteFormatToolbar from './NoteFormatToolbar.vue'
 import NoteAssetsPanel from './NoteAssetsPanel.vue'
 import LivePreviewEditor from '../livePreview/LivePreviewEditor.vue'
+import { documentHasHeadings } from '../livePreview/outline'
 import {
   frontmatterDescriptionChange,
   readFrontmatterFields
@@ -131,6 +132,26 @@ const outlineVisible = computed(() => {
   const tab = located?.tab.type === 'note' ? located.tab : props.tab
   return tab.outlineVisible !== false
 })
+
+const hasOutlineHeadings = ref(false)
+let outlineHeadingTimer: ReturnType<typeof setTimeout> | null = null
+
+watch(
+  () => session.value?.content ?? '',
+  (content, previous) => {
+    if (outlineHeadingTimer) clearTimeout(outlineHeadingTimer)
+    const apply = (): void => {
+      outlineHeadingTimer = null
+      hasOutlineHeadings.value = documentHasHeadings(content)
+    }
+    if (previous === undefined) {
+      apply()
+      return
+    }
+    outlineHeadingTimer = setTimeout(apply, 200)
+  },
+  { immediate: true }
+)
 
 const frontmatterFields = computed(() => readFrontmatterFields(session.value?.content ?? ''))
 const descriptionDraft = ref('')
@@ -449,6 +470,7 @@ watch(
 )
 
 onUnmounted(() => {
+  if (outlineHeadingTimer) clearTimeout(outlineHeadingTimer)
   if (props.active) registerHeadingFoldRunner(null)
   if (props.active) registerViewToggleRunner(null)
   unregisterPinRunner?.()
@@ -692,7 +714,7 @@ function openLink(url: string): void {
             <PageWidthIcon :mode="tab.pageWidth" />
           </button>
         </UiTooltip>
-        <UiTooltip :label="outlineVisible ? '隐藏目录' : '显示目录'">
+        <UiTooltip v-if="hasOutlineHeadings" :label="outlineVisible ? '隐藏目录' : '显示目录'">
           <button
             type="button"
             class="outline-toggle"
@@ -954,8 +976,8 @@ function openLink(url: string): void {
 }
 
 .layout-toggles svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -969,8 +991,9 @@ function openLink(url: string): void {
 }
 
 .outline-toggle svg {
-  fill: currentColor;
-  stroke: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
 }
 
 .conflict-banner {

@@ -15,15 +15,22 @@ defineProps<{ name: FormatIconName }>()
     focusable="false"
   >
     <path :d="`M0 0h${icons[name].size}v${icons[name].size}H0z`" fill="none" />
-    <path v-for="(path, index) in icons[name].paths" :key="index" :d="path" fill="currentColor" />
+    <path
+      v-for="(path, index) in icons[name].paths"
+      :key="index"
+      :d="path"
+      fill="currentColor"
+      fill-rule="evenodd"
+      clip-rule="evenodd"
+    />
   </svg>
 </template>
 
 <style scoped>
 .format-icon {
   display: block;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   stroke: none;
 }
 </style>

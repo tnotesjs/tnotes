@@ -161,6 +161,13 @@
   max-width: 100%;
   height: auto;
 }
+/* 笔记里的图片默认 4px 圆角。Desk 和静态站共用；按钮里的图标保持直角。 */
+:is(.tn-prose, .vp-doc, .live-editor) :where(img) {
+  border-radius: 4px;
+}
+:is(.tn-prose, .vp-doc, .live-editor) button img {
+  border-radius: 0;
+}
 :is(.tn-prose, .vp-doc) :where(figure.tn-image) {
   display: block;
   width: fit-content;

@@ -144,7 +144,7 @@ onBeforeUnmount(() => {
   max-width: 100%;
   max-height: calc(100vh - 140px);
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: 4px;
   background: var(--panel);
   cursor: pointer;
   box-shadow: 0 18px 48px rgb(0 0 0 / 45%);

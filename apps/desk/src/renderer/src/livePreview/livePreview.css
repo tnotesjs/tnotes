@@ -910,6 +910,64 @@
   padding-bottom: 4px;
 }
 
+/*
+ * 和静态站 .tn-code-block 同一块底：底色是 --tn-c-bg-soft，外框是 1px 分割线。
+ * 结尾围栏高度是 0，底边落在最后一行看得见的代码上；标题栏下沿是内容分隔线。
+ */
+.live-editor .cm-lp-visual .cm-lp-codeblock,
+.live-editor .cm-lp-visual .cm-line.cm-lp-code-group-open,
+.live-editor .cm-lp-code-hscroll {
+  box-shadow:
+    inset 1px 0 0 var(--tn-c-divider),
+    inset -1px 0 0 var(--tn-c-divider);
+}
+
+.live-editor .cm-lp-visual .cm-lp-codeblock-first,
+.live-editor .cm-lp-visual .cm-line:has(.cm-lp-code-header):not(.cm-lp-codeblock),
+.live-editor .cm-lp-visual .cm-line.cm-lp-code-group-open {
+  box-shadow:
+    inset 1px 0 0 var(--tn-c-divider),
+    inset -1px 0 0 var(--tn-c-divider),
+    inset 0 1px 0 var(--tn-c-divider);
+}
+
+.live-editor .cm-lp-visual .cm-line:has(.cm-lp-code-header),
+.live-editor .cm-lp-visual .cm-line.cm-lp-code-group-open:not(.cm-lp-code-group-collapsed) {
+  box-shadow:
+    inset 1px 0 0 var(--tn-c-divider),
+    inset -1px 0 0 var(--tn-c-divider),
+    inset 0 1px 0 var(--tn-c-divider),
+    inset 0 -1px 0 var(--tn-c-divider);
+}
+
+.live-editor .cm-lp-visual .cm-line.cm-lp-code-group-open.cm-lp-code-group-collapsed,
+.live-editor .cm-lp-visual .cm-line:has(.cm-lp-code-fold.is-collapsed) {
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  box-shadow:
+    inset 1px 0 0 var(--tn-c-divider),
+    inset -1px 0 0 var(--tn-c-divider),
+    inset 0 1px 0 var(--tn-c-divider),
+    inset 0 -1px 0 var(--tn-c-divider);
+}
+
+.live-editor .cm-lp-visual .cm-line.cm-lp-code-line:has(+ .cm-lp-code-hscroll.is-idle),
+.live-editor .cm-lp-visual .cm-line.cm-lp-code-line:has(+ .cm-line.cm-lp-codeblock-last) {
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  box-shadow:
+    inset 1px 0 0 var(--tn-c-divider),
+    inset -1px 0 0 var(--tn-c-divider),
+    inset 0 -1px 0 var(--tn-c-divider);
+}
+
+.live-editor .cm-lp-code-hscroll:not(.is-idle) {
+  box-shadow:
+    inset 1px 0 0 var(--tn-c-divider),
+    inset -1px 0 0 var(--tn-c-divider),
+    inset 0 -1px 0 var(--tn-c-divider);
+}
+
 /* 行号列宽由这一块最大行号的位数决定（data-digits），点这块区域切换行高亮。 */
 .live-editor .cm-lp-visual .cm-lp-code-line[data-digits],
 .live-editor .cm-lp-visual .cm-lp-code-fold-slot[data-digits] {
@@ -1472,6 +1530,7 @@
   font-family: var(--tn-font-sans);
   line-height: var(--tn-prose-line-height);
   white-space: normal;
+  transition: box-shadow 0.12s;
 }
 
 /* 轮播的上下外边距在卡片里面。不包住的话会塌到卡片外，点击标题行后半段会落到下一行。 */
@@ -1479,31 +1538,21 @@
   display: flow-root;
 }
 
-.live-editor .cm-lp-card::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: -3px;
-  bottom: 0;
-  left: -3px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  pointer-events: none;
-  transition: border-color 0.12s;
+.live-editor .cm-lp-card:hover {
+  box-shadow: var(--tn-shadow-2);
 }
 
-.live-editor .cm-lp-card:hover::after {
-  border-color: var(--tn-c-divider-strong);
+/* 投影贴在看得见的轮播边上。卡片还包着上下外边距，阴影若画在卡片上会把这段空白也罩进去。 */
+.live-editor .cm-lp-card:has(> .tn-swiper):hover {
+  box-shadow: none;
 }
 
-/* 导图本身已有画布边框，「编辑」也单独露出，不再套一层悬停外框 */
-.live-editor .cm-lp-card-mindmap::after {
-  content: none;
+.live-editor .cm-lp-card:has(> .tn-swiper) > .tn-swiper {
+  transition: box-shadow 0.12s;
 }
 
-/* 代码分组的代码块自己已有边框，悬停不再另描一圈 */
-.live-editor .cm-lp-card-container:has(.tn-code-group)::after {
-  content: none;
+.live-editor .cm-lp-card:has(> .tn-swiper):hover > .tn-swiper {
+  box-shadow: var(--tn-shadow-2);
 }
 
 .live-editor .cm-lp-card .tn-custom-block {

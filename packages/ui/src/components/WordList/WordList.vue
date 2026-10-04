@@ -549,6 +549,10 @@ onUnmounted(() => {
 
 <style scoped lang="scss">
 .tn-word-list {
+  padding: 12px 16px;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 8px;
+
   // Checkbox 样式
   input[type='checkbox'] {
     margin: 8px;

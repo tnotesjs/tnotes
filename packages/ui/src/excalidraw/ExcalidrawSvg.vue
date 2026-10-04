@@ -105,12 +105,13 @@ defineExpose({ state, errorReason })
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: 4px;
   background: var(--tn-excalidraw-bg, transparent);
 }
 .tn-excalidraw-view__image {
   max-width: 100%;
   max-height: 100%;
+  border-radius: 4px;
   object-fit: contain;
 }
 .tn-excalidraw-view__placeholder {

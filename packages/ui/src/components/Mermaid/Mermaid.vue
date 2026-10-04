@@ -502,8 +502,7 @@ watch(
 .tn-mermaid {
   position: relative;
   margin: 1rem 0;
-  /* Rest: no frame. Border appears with the action menu (hover / menu focus / copy feedback). */
-  border: 1px solid transparent;
+  border: 1px solid var(--tn-c-divider);
   border-radius: 8px;
   background: var(--tn-c-bg);
   overflow: hidden;

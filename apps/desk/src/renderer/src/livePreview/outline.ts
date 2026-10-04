@@ -1,6 +1,8 @@
 import { syntaxTree } from '@codemirror/language'
+import { EditorState } from '@codemirror/state'
 
-import type { EditorState } from '@codemirror/state'
+import { tnotesMarkdown } from './language'
+
 import type { NoteOutlineHeading } from '../markdown/noteOutline'
 
 export interface OutlineHeading extends NoteOutlineHeading {
@@ -39,4 +41,10 @@ export function collectHeadings(state: EditorState): OutlineHeading[] {
     }
   })
   return headings
+}
+
+/** 正文目录能列出标题时才为真。代码块和容器里的 `#` 不算。 */
+export function documentHasHeadings(content: string): boolean {
+  const state = EditorState.create({ doc: content, extensions: [tnotesMarkdown()] })
+  return collectHeadings(state).length > 0
 }

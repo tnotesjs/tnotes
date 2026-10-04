@@ -251,7 +251,7 @@ function thumbSrc(relPath: string): string {
   width: 40px;
   height: 40px;
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background-color: var(--panel);
   background-image:

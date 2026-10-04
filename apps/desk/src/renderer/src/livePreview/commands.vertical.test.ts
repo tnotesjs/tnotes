@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { horizontalStop, verticalStopLine } from './commands'
+import { horizontalStop, nearestRestableLine, verticalStopLine } from './commands'
 
 const allVisible = () => true
 
@@ -41,6 +41,24 @@ describe('verticalStopLine', () => {
     expect(horizontalStop([4], restable)).toBe('default')
     expect(horizontalStop([12, 11, 10, 9], restable)).toBe(9)
     expect(horizontalStop([12, 11], restable)).toBe('stay')
+  })
+
+  it('moves a hidden landing to the nearest visible line', () => {
+    const head = new Set([1, 2, 3])
+    const visible = (line: number) => !head.has(line)
+    expect(nearestRestableLine(1, 10, true, visible)).toEqual({ line: 4, fromAbove: true })
+    const tail = new Set([8, 9, 10])
+    expect(nearestRestableLine(10, 10, false, (line) => !tail.has(line))).toEqual({
+      line: 7,
+      fromAbove: false
+    })
+  })
+
+  it('stays when that direction has no visible line', () => {
+    const head = new Set([1, 2, 3])
+    expect(verticalStopLine(4, 1, false, 10, (line) => !head.has(line))).toBe('stay')
+    const tail = new Set([8, 9, 10])
+    expect(verticalStopLine(7, 10, true, 10, (line) => !tail.has(line))).toBe('stay')
   })
 
   it('skips a zero-height fence and does not follow a backward jump', () => {

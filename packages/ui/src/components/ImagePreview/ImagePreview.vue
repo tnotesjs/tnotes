@@ -225,6 +225,7 @@ onBeforeUnmount(() => {
 .tn-image-preview > img {
   max-width: 90vw;
   max-height: 90vh;
+  border-radius: 4px;
   user-select: none;
   cursor: grab;
   transition: transform 100ms ease-out;

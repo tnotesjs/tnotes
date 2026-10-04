@@ -288,8 +288,8 @@ function insertBlock(id: string): void {
 }
 
 .view-toggle svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;

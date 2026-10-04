@@ -362,6 +362,7 @@ html.tn-sb-restore .tn-site-sidebar {
 .tn-site-hero img {
   width: 96px;
   height: 96px;
+  border-radius: 4px;
   object-fit: contain;
 }
 .tn-site-hero h1 {

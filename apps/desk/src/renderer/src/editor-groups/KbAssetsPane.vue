@@ -1557,7 +1557,7 @@ onUnmounted(() => {
   max-width: 100%;
   max-height: 240px;
   margin-top: 8px;
-  border-radius: 8px;
+  border-radius: 4px;
   background: var(--input-bg);
 }
 

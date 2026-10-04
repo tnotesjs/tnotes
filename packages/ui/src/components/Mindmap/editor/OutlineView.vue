@@ -2345,7 +2345,7 @@ function onDragUp() {
   position: relative;
   max-width: 100%;
   line-height: 0;
-  border-radius: 6px;
+  border-radius: 4px;
   overflow: hidden;
   background: color-mix(in srgb, var(--mm-text-dim) 12%, transparent);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--mm-text-dim) 25%, transparent);

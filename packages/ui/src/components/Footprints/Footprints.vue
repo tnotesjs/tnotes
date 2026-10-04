@@ -186,6 +186,9 @@ watch(
 <style scoped lang="scss">
 .tn-footprints {
   margin: 1rem 0;
+  padding: 12px 16px;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 8px;
   color: var(--tn-c-text);
 }
 
@@ -312,6 +315,7 @@ watch(
 .tn-footprints__modal-img {
   max-width: min(92vw, 960px);
   max-height: 88vh;
+  border-radius: 4px;
   object-fit: contain;
 }
 

@@ -417,6 +417,7 @@ button.preview-frame {
 .preview-image {
   max-width: 100%;
   max-height: 240px;
+  border-radius: 4px;
   /* 统一比例完整显示，不默认裁切截图 / 图表。 */
   object-fit: contain;
 }
@@ -477,7 +478,7 @@ button.preview-frame {
   max-width: min(1200px, 92vw);
   max-height: 78vh;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: 4px;
   background-color: var(--panel);
   background-image:
     linear-gradient(

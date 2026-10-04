@@ -23,7 +23,7 @@ const tab: NoteEditorTab = {
   pinned: false
 }
 
-function setup(readOnly = false) {
+function setup(readOnly = false, content = '## 概述') {
   const workspace = useWorkspaceStore()
   const editor = useEditorStore()
   workspace.documents['kb-a:note-a'] = {
@@ -36,12 +36,12 @@ function setup(readOnly = false) {
       fileName: '0001. 概述.md',
       relPath: 'notes/0001. 概述.md',
       filePath: '/tmp/notes/0001. 概述.md',
-      content: '## 概述',
+      content,
       revision: 'v1',
       config: { done: false },
       readOnly
     },
-    content: '## 概述',
+    content,
     dirty: false,
     saving: false,
     externalConflict: false,
@@ -122,6 +122,18 @@ describe('note header', () => {
       expect(wrapper.find('.layout-toggles').exists()).toBe(true)
       expect(wrapper.find('.save-button').exists()).toBe(false)
     }
+    wrapper.unmount()
+  })
+
+  it('没有标题时隐藏目录按钮', () => {
+    const { wrapper } = setup(false, '只有正文，没有标题。\n\n```\n# 代码里的井号\n```\n')
+    expect(wrapper.find('.outline-toggle').exists()).toBe(false)
+    expect(
+      wrapper
+        .get('.layout-toggles')
+        .findAll('button')
+        .map((button) => button.attributes('aria-label'))
+    ).toEqual(['标准页宽', '文档属性'])
     wrapper.unmount()
   })
 

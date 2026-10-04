@@ -307,7 +307,7 @@ article.assistant {
   width: 96px;
   max-height: 96px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 4px;
   padding: 0;
   overflow: hidden;
   background: var(--raised, transparent);
@@ -334,7 +334,7 @@ article.assistant {
 .zoom img {
   max-width: 90vw;
   max-height: 90vh;
-  border-radius: 6px;
+  border-radius: 4px;
 }
 
 .thinking,

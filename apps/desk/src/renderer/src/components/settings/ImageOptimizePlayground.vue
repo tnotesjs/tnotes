@@ -462,7 +462,7 @@ onBeforeUnmount(() => {
   height: 132px;
   object-fit: contain;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 4px;
   background: var(--panel);
 }
 

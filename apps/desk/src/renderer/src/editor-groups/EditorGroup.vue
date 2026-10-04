@@ -317,26 +317,6 @@ async function runTabAction(action: ContextMenuAction, tab: EditorTab): Promise<
           <UiTooltip label="新建网页标签">
             <button type="button" aria-label="新建网页标签" @click="openWeb">＋</button>
           </UiTooltip>
-          <UiTooltip label="向右拆分">
-            <button
-              type="button"
-              aria-label="向右拆分当前标签"
-              :disabled="!activeTab"
-              @click="editor.splitActive('right')"
-            >
-              ◫
-            </button>
-          </UiTooltip>
-          <UiTooltip label="向下拆分">
-            <button
-              type="button"
-              aria-label="向下拆分当前标签"
-              :disabled="!activeTab"
-              @click="editor.splitActive('bottom')"
-            >
-              ⊟
-            </button>
-          </UiTooltip>
         </div>
       </div>
     </div>

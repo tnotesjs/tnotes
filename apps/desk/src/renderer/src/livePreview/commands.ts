@@ -14,6 +14,7 @@ import {
 } from '../markdown/sourceEdits'
 import { collapsedCodeBodies } from './codeBlockChrome'
 import { hiddenCodeGroupBodies } from './decorations'
+import { livePreviewEnabled } from './host'
 import { renumberOrderedLists } from './lists'
 
 export function applyTextEdit(view: EditorView, edit: TextEdit): void {
@@ -198,6 +199,7 @@ export const headingBackspace: Command = (view) => {
  * 方向键默认按屏幕行走，折行仍停在这一行里。
  * 像素落点如果跳过了看得见的行、走到看不见的行，或反向弹走，就改停到移动方向上的下一行可见行。
  * 高度为 0 的围栏、收起的代码、代码组隐藏页、折叠正文和属性头都整段跨过去。
+ * 那个方向上没有可见行时返回 stay：光标留在当前行。
  */
 export function verticalStopLine(
   current: number,
@@ -205,14 +207,14 @@ export function verticalStopLine(
   forward: boolean,
   lineCount: number,
   restable: (lineNo: number) => boolean
-): number | null {
+): number | null | 'stay' {
   if (landed === current) return null
   const step = forward ? 1 : -1
   const next = current + step
   if (next < 1 || next > lineCount) return null
   let lineNo = next
   while (lineNo >= 1 && lineNo <= lineCount && !restable(lineNo)) lineNo += step
-  if (lineNo < 1 || lineNo > lineCount) return forward ? lineCount : 1
+  if (lineNo < 1 || lineNo > lineCount) return 'stay'
   const wrongWay = forward ? landed < current : landed > current
   const skipped = forward ? landed > lineNo : landed < lineNo
   if (wrongWay || skipped || !restable(landed)) return lineNo
@@ -250,6 +252,7 @@ function arrowByScreenLine(forward: boolean): Command {
       (lineNo) => lineIsRestable(view, lineNo)
     )
     if (stop == null) return false
+    if (stop === 'stay') return true
     const target = doc.line(stop)
     const coords = view.coordsAtPos(line.from)
     const fromWidget = Boolean(coords && coords.bottom - coords.top >= 40)
@@ -265,6 +268,59 @@ function arrowByScreenLine(forward: boolean): Command {
 
 export const arrowDownIntoBlock = arrowByScreenLine(true)
 export const arrowUpIntoBlock = arrowByScreenLine(false)
+
+/**
+ * 当前行不可见时，先沿移动方向找下一行可见行，没有再反向找。
+ * `fromAbove` 为真表示是往下走到这一行的，光标应放在行首。
+ */
+export function nearestRestableLine(
+  current: number,
+  lineCount: number,
+  preferUp: boolean,
+  restable: (lineNo: number) => boolean
+): { line: number; fromAbove: boolean } | null {
+  const first = preferUp ? -1 : 1
+  for (const step of [first, -first]) {
+    for (let lineNo = current + step; lineNo >= 1 && lineNo <= lineCount; lineNo += step) {
+      if (restable(lineNo)) return { line: lineNo, fromAbove: step > 0 }
+    }
+  }
+  return null
+}
+
+/** 可视化里光标落在高度为 0 的行（前置信息、围栏）时，挪到最近的可见行。 */
+export const keepCursorOnVisibleLine = EditorView.updateListener.of((update) => {
+  if (!update.state.facet(livePreviewEnabled)) return
+  if (!update.selectionSet) return
+  if (
+    update.transactions.some(
+      (tr) => tr.annotation(Transaction.userEvent) === 'select.visible-clamp'
+    )
+  ) {
+    return
+  }
+  const doc = update.state.doc
+  const previous = update.startState.selection.main
+  const selection = update.state.selection.main
+  const clamp = (pos: number, from: number): number => {
+    const lineNo = doc.lineAt(pos).number
+    if (lineIsRestable(update.view, lineNo)) return pos
+    const found = nearestRestableLine(lineNo, doc.lines, pos < from, (line) =>
+      lineIsRestable(update.view, line)
+    )
+    if (!found) return pos
+    const line = doc.line(found.line)
+    return found.fromAbove ? line.from : line.to
+  }
+  const anchor = clamp(selection.anchor, previous.anchor)
+  const head = clamp(selection.head, previous.head)
+  if (anchor === selection.anchor && head === selection.head) return
+  update.view.dispatch({
+    selection: { anchor, head },
+    scrollIntoView: true,
+    userEvent: 'select.visible-clamp'
+  })
+})
 
 /**
  * ← → 默认走一个字符。落点若在看不见的行（结束围栏、隐藏页）上，就继续走到下一处看得见的位置。

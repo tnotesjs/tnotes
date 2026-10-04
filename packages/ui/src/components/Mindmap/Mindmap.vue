@@ -1326,7 +1326,7 @@ onBeforeUnmount(() => {
   max-width: min(100%, 560px);
   max-height: 360px;
   margin: 5px 0 12px 25px;
-  border-radius: 6px;
+  border-radius: 4px;
 }
 .mindmap-outline :deep(.is-bold) {
   font-weight: 700;

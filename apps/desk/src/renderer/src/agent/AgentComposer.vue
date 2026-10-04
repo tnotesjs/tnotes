@@ -575,7 +575,7 @@ function selectionTitle(text: string): string {
   position: relative;
   width: 40px;
   height: 40px;
-  border-radius: 6px;
+  border-radius: 4px;
   overflow: hidden;
   border: 1px solid var(--border);
 }

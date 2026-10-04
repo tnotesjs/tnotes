@@ -225,8 +225,8 @@ onBeforeUnmount(() => {
 }
 
 .block-insert-trigger svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   display: block;
 }
 

@@ -924,7 +924,7 @@ onUnmounted(() => {
   height: 40px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--editor-bg);
   cursor: zoom-in;
   overflow: hidden;
@@ -1072,6 +1072,7 @@ onUnmounted(() => {
 .zoom-image {
   max-width: 100%;
   max-height: 240px;
+  border-radius: 4px;
   /* 完整显示，不裁切截图 / 图表。 */
   object-fit: contain;
 }
