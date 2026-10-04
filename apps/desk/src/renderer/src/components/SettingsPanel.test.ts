@@ -35,11 +35,6 @@ const settings: AppSettings = {
     defaultWebUrl: 'https://github.com/tnotesjs'
   },
   bottomPanel: { maxTabs: 10 },
-  toc: {
-    showNoteIndex: true,
-    showNoteStatus: true,
-    changesCollapsedByDefault: true
-  },
   imageUpload: {
     defaultTarget: 'local',
     github: {
@@ -312,7 +307,7 @@ describe('SettingsPanel section scroll', () => {
 })
 
 describe('SettingsPanel 目录管理', () => {
-  it('不再提供 emoji 配置，只保留完成状态开关', async () => {
+  it('只保留新增笔记位置', async () => {
     const wrapper = mount(SettingsPanel)
     const tocNav = wrapper
       .findAll('button.nav-item')
@@ -321,9 +316,10 @@ describe('SettingsPanel 目录管理', () => {
     await tocNav!.trigger('click')
 
     const text = wrapper.text()
-    expect(text).not.toContain('已完成 emoji')
-    expect(text).not.toContain('未完成 emoji')
-    expect(text).toContain('显示完成状态标识')
+    expect(text).toContain('新增笔记位置')
+    expect(text).not.toContain('显示笔记编号')
+    expect(text).not.toContain('显示完成状态标识')
+    expect(text).not.toContain('变更区域默认折叠')
   })
 })
 

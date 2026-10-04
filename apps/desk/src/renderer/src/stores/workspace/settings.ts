@@ -4,7 +4,7 @@ import type { useEditorStore } from '../editor'
 
 import type { AppSettings } from '../../../../shared/contracts'
 import { clampAppZoom, APP_ZOOM_DEFAULT, APP_ZOOM_STEP } from '../../../../shared/appZoom'
-import { listsEqual, pinToFront, unpinId } from '../../../../shared/pinList'
+import { listsEqual, movePinId, pinToFront, unpinId } from '../../../../shared/pinList'
 
 import { resultValue } from './helpers'
 
@@ -96,6 +96,23 @@ export function createSettings(ctx: SettingsContext) {
     void updateSettings({ pinnedNoteUuids: map })
   }
 
+  /** 置顶项之间换位，不改目录树。 */
+  function reorderPinnedNote(
+    knowledgeBaseId: string,
+    sourceId: string,
+    targetId: string,
+    placement: 'before' | 'after'
+  ): void {
+    if (!ctx.settings.value) return
+    const map = { ...(ctx.settings.value.pinnedNoteUuids ?? {}) }
+    const current = map[knowledgeBaseId] ?? []
+    const next = movePinId(current, sourceId, targetId, placement)
+    if (listsEqual(current, next)) return
+    map[knowledgeBaseId] = next
+    ctx.settings.value = { ...ctx.settings.value, pinnedNoteUuids: map }
+    void updateSettings({ pinnedNoteUuids: map })
+  }
+
   return {
     updateSettings,
     applySettings,
@@ -104,7 +121,8 @@ export function createSettings(ctx: SettingsContext) {
     zoomFeedbackSequence,
     togglePinnedKnowledgeBase,
     togglePinnedNote,
-    pinNote
+    pinNote,
+    reorderPinnedNote
   }
 }
 

@@ -86,22 +86,27 @@ describe('配置文件字段级容错', () => {
 
     expect(settings.theme).toBe('light')
     expect(settings.autosave).toEqual({ enabled: true, delayMs: 1000 })
-    expect(settings.toc.showNoteIndex).toBe(true)
+    expect(settings).not.toHaveProperty('toc')
   })
 
-  it('丢弃历史 emoji 配置：不再有这两个字段，也不当作非法配置', () => {
+  it('忽略已移除的目录显示配置，也不当作非法配置', () => {
     writeFileSync(
       path(),
-      JSON.stringify({ theme: 'light', toc: { doneEmoji: '✅', undoneEmoji: '⏰' } })
+      JSON.stringify({
+        theme: 'light',
+        toc: {
+          showNoteIndex: false,
+          showNoteStatus: false,
+          changesCollapsedByDefault: false,
+          doneEmoji: '✅',
+          undoneEmoji: '⏰'
+        }
+      })
     )
     const settings = loadSettings()
 
     expect(settings.theme).toBe('light')
-    expect(settings.toc).toEqual({
-      showNoteIndex: true,
-      showNoteStatus: true,
-      changesCollapsedByDefault: true
-    })
+    expect(settings).not.toHaveProperty('toc')
     // 未知键由 schema 剥掉，不算「非法字段」，所以不会留下 .invalid.bak
     expect(existsSync(`${path()}.invalid.bak`)).toBe(false)
   })

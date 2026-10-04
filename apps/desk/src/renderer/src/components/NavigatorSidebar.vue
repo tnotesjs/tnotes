@@ -7,6 +7,7 @@ import { batchTargetIds, collectNoteIds, toggleBatchIds } from './batchDeleteSel
 import { classifyChangePath } from './changeCategory'
 import { mergeRenameChanges } from './mergeRenameChanges'
 import { noteFileName } from '../commands/noteFileName'
+import { showNoteIndex, toggleShowNoteIndex } from './tocNoteIndex'
 import { flatPinnedNotes, listsEqual, prunePinIds } from '../../../shared/pinList'
 import { isTocDrag, noteFromTocDrag } from '../../../shared/tocDrag'
 import { useEditorStore } from '../stores/editor'
@@ -27,7 +28,7 @@ const emit = defineEmits<{
 const store = useWorkspaceStore()
 const editor = useEditorStore()
 const query = ref('')
-const changesExpanded = ref(!(store.settings?.toc?.changesCollapsedByDefault ?? true))
+const changesExpanded = ref(false)
 const tocExpanded = ref(true)
 const noteFileExpanded = ref(true)
 const configFileExpanded = ref(true)
@@ -104,6 +105,41 @@ function confirmBatchDelete(): void {
   emit('requestBatchDelete', noteUuids)
 }
 
+const sectionMenu = ref<'git' | 'toc' | null>(null)
+const sectionMenuPos = ref({ top: 0, left: 0 })
+
+function toggleSectionMenu(kind: 'git' | 'toc', event: MouseEvent): void {
+  const button = event.currentTarget
+  if (!(button instanceof HTMLElement)) return
+  if (sectionMenu.value === kind) {
+    sectionMenu.value = null
+    return
+  }
+  const rect = button.getBoundingClientRect()
+  sectionMenuPos.value = { top: rect.bottom + 4, left: Math.max(8, rect.right - 168) }
+  sectionMenu.value = kind
+}
+
+function closeSectionMenu(): void {
+  sectionMenu.value = null
+}
+
+function onSectionMenuPointerDown(event: PointerEvent): void {
+  if (!sectionMenu.value) return
+  const target = event.target
+  if (target instanceof Element && target.closest('.section-menu, .heading-menu-button')) return
+  sectionMenu.value = null
+}
+
+function onWindowKeydown(event: KeyboardEvent): void {
+  if (sectionMenu.value && event.key === 'Escape') {
+    event.preventDefault()
+    sectionMenu.value = null
+    return
+  }
+  onBatchEscape(event)
+}
+
 function onBatchEscape(event: KeyboardEvent): void {
   if (!batchDeleting.value || event.key !== 'Escape') return
   if (document.querySelector('.dialog-backdrop')) return
@@ -148,7 +184,8 @@ function onNoteDragPointerUp(): void {
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', onBatchEscape)
+  window.addEventListener('keydown', onWindowKeydown)
+  window.addEventListener('pointerdown', onSectionMenuPointerDown, true)
   window.addEventListener('dragend', endNoteDrag, true)
   window.addEventListener('pointerup', onNoteDragPointerUp, true)
 })
@@ -163,7 +200,8 @@ watch([() => query.value, () => store.selectedKnowledgeBaseId], () => {
 
 onUnmounted(() => {
   if (searchTimer) clearTimeout(searchTimer)
-  window.removeEventListener('keydown', onBatchEscape)
+  window.removeEventListener('keydown', onWindowKeydown)
+  window.removeEventListener('pointerdown', onSectionMenuPointerDown, true)
   window.removeEventListener('dragend', endNoteDrag, true)
   window.removeEventListener('pointerup', onNoteDragPointerUp, true)
 })
@@ -179,19 +217,17 @@ const previewState = computed(() =>
 const gitState = computed(() =>
   store.selectedKnowledgeBaseId ? (store.gitStates[store.selectedKnowledgeBaseId] ?? null) : null
 )
-const tocShowIndex = computed(() => store.settings?.toc?.showNoteIndex !== false)
+const tocShowIndex = showNoteIndex
+
+function toggleNoteIndex(): void {
+  toggleShowNoteIndex()
+}
 
 const pinnedNotes = computed(() => {
   const knowledgeBase = store.knowledgeBase
   if (!knowledgeBase) return []
   const ids = store.settings?.pinnedNoteUuids?.[knowledgeBase.id] ?? []
   return flatPinnedNotes(knowledgeBase.toc, ids)
-})
-
-const pinnedNotesCollapsed = computed(() => {
-  const knowledgeBaseId = store.knowledgeBase?.id
-  if (!knowledgeBaseId) return false
-  return editor.pinnedNotesCollapsed[knowledgeBaseId] === true
 })
 
 const draggingNote = ref(false)
@@ -245,9 +281,6 @@ function onNavigatorDrop(event: DragEvent): void {
   const knowledgeBaseId = store.knowledgeBase?.id
   if (!note || !knowledgeBaseId || batchDeleting.value) return
   store.pinNote(knowledgeBaseId, note.uuid)
-  if (editor.pinnedNotesCollapsed[knowledgeBaseId]) {
-    editor.togglePinnedNotesCollapsed(knowledgeBaseId)
-  }
 }
 
 watch(
@@ -510,12 +543,44 @@ async function openHeaderMenu(): Promise<void> {
       <div
         class="navigator-body"
         :class="{
-          'is-searching': Boolean(query.trim()),
-          'has-pins': (pinnedNotes.length > 0 || draggingNote) && !query.trim()
+          'is-searching': Boolean(query.trim())
         }"
         @dragover.capture="onNavigatorDragOver"
         @drop.capture="onNavigatorDrop"
+        @scroll="closeSectionMenu"
       >
+        <section
+          v-show="!query.trim() && (pinnedNotes.length > 0 || draggingNote)"
+          class="pin-section"
+          data-pin-group="notes"
+        >
+          <div
+            v-if="draggingNote && pinnedNotes.length === 0"
+            class="pin-drop-slot"
+            :class="{ 'is-drop': pinDropHover }"
+          />
+          <TocNodeList
+            v-show="pinnedNotes.length > 0"
+            class="pin-notes"
+            :nodes="pinnedNotes"
+            :selected-note-uuid="selectedTocNoteUuid"
+            :allow-reorder="false"
+            :pin-reorder="pinnedNotes.length > 1"
+            :pin-drop-active="pinDropHover"
+            :batch-deleting="batchDeleting"
+            :batch-selected="batchSelected"
+            @select="store.selectNote"
+            @select-permanent="store.selectNote($event, undefined, true)"
+            @select-split="store.selectNote($event, 'right')"
+            @toggle-done="store.toggleDone"
+            @request-create="(node, placement) => emit('createNote', node, placement)"
+            @request-rename="emit('requestRename', $event)"
+            @request-reindex="emit('requestReindex', $event)"
+            @request-delete="emit('requestDelete', $event)"
+            @toggle-batch-note="toggleBatchNote"
+            @toggle-batch-group="toggleBatchGroup"
+          />
+        </section>
         <section class="changes-section">
           <div class="section-heading git-heading">
             <button
@@ -541,41 +606,25 @@ async function openHeaderMenu(): Promise<void> {
                 />
               </svg>
               <strong>变更</strong>
+              <em>{{ gitState?.changes.length ?? 0 }}</em>
               <span v-if="gitState?.behind" class="behind-state">↓{{ gitState.behind }}</span>
             </button>
-            <em>{{ gitState?.changes.length ?? 0 }}</em>
-            <div class="git-actions">
-              <UiTooltip label="刷新 Git 状态" align="end">
-                <button
-                  type="button"
-                  aria-label="刷新本地 Git 状态"
-                  :disabled="Boolean(gitState?.busy)"
-                  @click="store.refreshGit(store.selectedKnowledgeBaseId ?? undefined)"
-                >
-                  ↻
-                </button>
-              </UiTooltip>
-              <UiTooltip label="拉取远端更新" align="end">
-                <button
-                  type="button"
-                  aria-label="获取并拉取远端更新"
-                  :disabled="!gitState?.initialized || Boolean(gitState.busy)"
-                  @click="store.pullGit(store.selectedKnowledgeBaseId!)"
-                >
-                  ⇣
-                </button>
-              </UiTooltip>
-              <UiTooltip label="提交并推送" align="end">
-                <button
-                  type="button"
-                  aria-label="提交并推送当前变更"
-                  :disabled="!gitState?.initialized || Boolean(gitState.busy)"
-                  @click="store.requestGitPublish(store.selectedKnowledgeBaseId!)"
-                >
-                  ⇡
-                </button>
-              </UiTooltip>
-            </div>
+            <button
+              type="button"
+              class="menu-button heading-menu-button"
+              aria-label="变更操作"
+              aria-haspopup="menu"
+              :aria-expanded="sectionMenu === 'git'"
+              @click="toggleSectionMenu('git', $event)"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <g fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="4" cy="12" r="1" />
+                  <circle cx="12" cy="12" r="1" />
+                  <circle cx="20" cy="12" r="1" />
+                </g>
+              </svg>
+            </button>
           </div>
           <template v-if="changesExpanded">
             <template v-if="noteFileChanges.length">
@@ -780,58 +829,6 @@ async function openHeaderMenu(): Promise<void> {
         </section>
 
         <template v-else>
-          <section
-            v-show="pinnedNotes.length > 0 || draggingNote"
-            class="pin-section"
-            data-pin-group="notes"
-          >
-            <div class="section-heading pin-heading" :class="{ 'is-drop': pinDropHover }">
-              <button
-                type="button"
-                class="section-toggle"
-                :aria-expanded="!pinnedNotesCollapsed"
-                :aria-label="pinnedNotesCollapsed ? '展开置顶' : '折叠置顶'"
-                @click="editor.togglePinnedNotesCollapsed(store.knowledgeBase!.id)"
-              >
-                <svg
-                  class="chevron"
-                  :class="{ collapsed: pinnedNotesCollapsed }"
-                  viewBox="0 0 16 16"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M4 6l4 4 4-4"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.6"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-                <strong>置顶</strong>
-              </button>
-              <em v-if="pinnedNotes.length">{{ pinnedNotes.length }}</em>
-            </div>
-            <TocNodeList
-              v-show="pinnedNotes.length > 0 && !pinnedNotesCollapsed"
-              :nodes="pinnedNotes"
-              :selected-note-uuid="selectedTocNoteUuid"
-              :allow-reorder="false"
-              :pin-drop-active="pinDropHover"
-              :batch-deleting="batchDeleting"
-              :batch-selected="batchSelected"
-              @select="store.selectNote"
-              @select-permanent="store.selectNote($event, undefined, true)"
-              @select-split="store.selectNote($event, 'right')"
-              @toggle-done="store.toggleDone"
-              @request-create="(node, placement) => emit('createNote', node, placement)"
-              @request-rename="emit('requestRename', $event)"
-              @request-reindex="emit('requestReindex', $event)"
-              @request-delete="emit('requestDelete', $event)"
-              @toggle-batch-note="toggleBatchNote"
-              @toggle-batch-group="toggleBatchGroup"
-            />
-          </section>
           <section class="toc-section">
             <div class="section-heading toc-heading">
               <button
@@ -854,39 +851,27 @@ async function openHeaderMenu(): Promise<void> {
                     stroke-width="1.6"
                     stroke-linecap="round"
                     stroke-linejoin="round"
-                  />
-                </svg>
-                <strong>目录</strong>
-              </button>
-              <UiTooltip label="折叠/展开全部">
-                <button
-                  type="button"
-                  class="toc-batch-toggle"
-                  aria-label="折叠/展开全部"
-                  @click="toggleTocBatch"
-                >
-                  <svg class="toc-batch-icon" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      fill="currentColor"
-                      d="M2 4h20v2H2zm0 5.57L5.887 12L2 14.43zM7 11h15v2H7zm-5 7h20v2H2z"
-                    />
-                  </svg>
-                </button>
-              </UiTooltip>
-              <UiTooltip label="手动刷新目录">
-                <button
-                  type="button"
-                  class="toc-batch-toggle"
-                  :disabled="store.loading"
-                  aria-label="手动刷新目录"
-                  @click="store.reloadKnowledgeBase"
-                >
-                  <svg class="toc-batch-icon" viewBox="0 0 24 24" aria-hidden="true">
-                    <path fill="currentColor" d="M12 4a8 8 0 108 8h-2a6 6 0 11-6-6v3l5-4-5-4z" />
-                  </svg>
-                </button>
-              </UiTooltip>
+                />
+              </svg>
+              <strong>目录</strong>
               <em>{{ store.knowledgeBase.noteCount }}</em>
+              </button>
+              <button
+                type="button"
+                class="menu-button heading-menu-button"
+                aria-label="目录操作"
+                aria-haspopup="menu"
+                :aria-expanded="sectionMenu === 'toc'"
+                @click="toggleSectionMenu('toc', $event)"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <g fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="4" cy="12" r="1" />
+                    <circle cx="12" cy="12" r="1" />
+                    <circle cx="20" cy="12" r="1" />
+                  </g>
+                </svg>
+              </button>
             </div>
             <div v-show="tocExpanded" class="toc-list">
               <TocNodeList
@@ -933,6 +918,57 @@ async function openHeaderMenu(): Promise<void> {
     </template>
 
     <div v-else class="column-empty">从左侧选择一个知识库</div>
+    <Teleport to="body">
+      <div
+        v-if="sectionMenu"
+        class="section-menu"
+        role="menu"
+        :style="{ top: `${sectionMenuPos.top}px`, left: `${sectionMenuPos.left}px` }"
+      >
+        <template v-if="sectionMenu === 'git'">
+          <button
+            type="button"
+            role="menuitem"
+            :disabled="Boolean(gitState?.busy)"
+            @click="closeSectionMenu(); store.refreshGit(store.selectedKnowledgeBaseId ?? undefined)"
+          >
+            刷新 Git 状态
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            :disabled="!gitState?.initialized || Boolean(gitState?.busy)"
+            @click="closeSectionMenu(); store.pullGit(store.selectedKnowledgeBaseId!)"
+          >
+            拉取远端更新
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            :disabled="!gitState?.initialized || Boolean(gitState?.busy)"
+            @click="closeSectionMenu(); store.requestGitPublish(store.selectedKnowledgeBaseId!)"
+          >
+            提交并推送
+          </button>
+        </template>
+        <template v-else>
+          <button
+            type="button"
+            role="menuitem"
+            :disabled="store.loading"
+            @click="closeSectionMenu(); store.reloadKnowledgeBase()"
+          >
+            手动刷新目录
+          </button>
+          <button type="button" role="menuitem" @click="closeSectionMenu(); toggleNoteIndex()">
+            {{ tocShowIndex ? '隐藏笔记编号' : '显示笔记编号' }}
+          </button>
+          <button type="button" role="menuitem" @click="closeSectionMenu(); toggleTocBatch()">
+            折叠/展开全部
+          </button>
+        </template>
+      </div>
+    </Teleport>
   </aside>
 </template>
 
@@ -1055,6 +1091,14 @@ async function openHeaderMenu(): Promise<void> {
   opacity: 0.4;
 }
 
+.heading-menu-button {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border-radius: 4px;
+}
+
 .search-wrap {
   position: relative;
   height: 43px;
@@ -1170,7 +1214,6 @@ async function openHeaderMenu(): Promise<void> {
    多一层限定把优先级提上去，而不是去删基类的 transparent —— 那是给
    非吸顶标题（如详情栏那种静态标题）用的。 */
 .navigator-body .git-heading,
-.navigator-body .pin-heading,
 .navigator-body .toc-heading {
   position: sticky;
   top: 0;
@@ -1180,27 +1223,27 @@ async function openHeaderMenu(): Promise<void> {
   box-shadow: 0 1px 0 var(--border);
 }
 
-/* 变更栏按钮的提示往下弹，会探进后面的置顶栏和目录栏；同为 z-index 3 时后者在上，提示就被盖住。 */
+/* 变更的提示往下弹，要比目录栏高一层才不会被盖住。 */
 .navigator-body .git-heading {
   z-index: 4;
-}
-
-/* 置顶栏吸在变更栏下方；有置顶时目录再往下让一行 */
-.navigator-body .pin-heading {
-  top: 27px;
-}
-
-.navigator-body .pin-heading.is-drop {
-  color: var(--text);
-  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
 }
 
 .navigator-body .toc-heading {
   top: 27px;
 }
 
-.navigator-body.has-pins .toc-heading {
-  top: 54px;
+.pin-notes {
+  margin-top: 4px;
+}
+
+.pin-drop-slot {
+  height: 28px;
+  margin-top: 4px;
+  border-radius: 6px;
+}
+
+.pin-drop-slot.is-drop {
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
 }
 
 /* 搜索态没有「变更」栏，目录栏回到顶部 */
@@ -1234,6 +1277,11 @@ async function openHeaderMenu(): Promise<void> {
   font-weight: 700;
 }
 
+.git-heading .section-toggle strong,
+.toc-heading .section-toggle strong {
+  flex: none;
+}
+
 .section-heading em {
   min-width: 18px;
   border-radius: 9px;
@@ -1254,14 +1302,6 @@ async function openHeaderMenu(): Promise<void> {
 .git-heading {
   text-transform: none;
   letter-spacing: 0;
-}
-
-.git-actions button {
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
 }
 
 .section-toggle {
@@ -1289,37 +1329,6 @@ async function openHeaderMenu(): Promise<void> {
 
 .chevron.collapsed {
   transform: rotate(-90deg);
-}
-
-.toc-batch-toggle {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-family: inherit;
-}
-
-.toc-batch-toggle:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-
-.toc-batch-toggle:focus-visible {
-  outline: 2px solid var(--accent-strong);
-  outline-offset: 1px;
-}
-
-.toc-batch-icon {
-  width: 14px;
-  height: 14px;
 }
 
 .batch-delete-bar {
@@ -1368,28 +1377,6 @@ button.section-heading {
   cursor: pointer;
 }
 
-.git-actions {
-  display: flex;
-  gap: 1px;
-  margin-left: 3px;
-}
-
-.git-actions button {
-  width: 21px;
-  height: 21px;
-  padding: 0;
-  font-size: 11px;
-}
-
-.git-actions button:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
-}
-
-.git-actions button:disabled {
-  opacity: 0.35;
-}
-
 .behind-state {
   color: var(--warning);
   font-size: 9px;
@@ -1424,6 +1411,40 @@ button.section-heading {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.section-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 148px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--raised);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 28%);
+}
+
+.section-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.section-menu button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.section-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .change-group-toggle em {

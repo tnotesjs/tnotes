@@ -11,6 +11,21 @@ export function unpinId(ids: readonly string[], id: string): string[] {
   return ids.filter((item) => item !== id)
 }
 
+/** 只在已经置顶的条目之间换位。来源或目标不在列表里时顺序不变。 */
+export function movePinId(
+  ids: readonly string[],
+  sourceId: string,
+  targetId: string,
+  placement: 'before' | 'after'
+): string[] {
+  if (!sourceId || sourceId === targetId) return [...ids]
+  if (!ids.includes(sourceId) || !ids.includes(targetId)) return [...ids]
+  const next = ids.filter((id) => id !== sourceId)
+  const targetIndex = next.indexOf(targetId)
+  next.splice(placement === 'before' ? targetIndex : targetIndex + 1, 0, sourceId)
+  return next
+}
+
 /** 丢掉不存在的 id 和重复项，保留第一次出现的顺序。 */
 export function prunePinIds(ids: readonly string[], alive: ReadonlySet<string>): string[] {
   const seen = new Set<string>()

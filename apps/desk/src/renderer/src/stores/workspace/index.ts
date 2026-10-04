@@ -302,7 +302,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     zoomFeedbackSequence,
     togglePinnedKnowledgeBase,
     togglePinnedNote,
-    pinNote
+    pinNote,
+    reorderPinnedNote
   } = createSettings({
     editor,
     settings
@@ -744,6 +745,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     togglePinnedKnowledgeBase,
     togglePinnedNote,
     pinNote,
+    reorderPinnedNote,
     setAppZoom,
     adjustAppZoom,
     zoomFeedbackSequence,

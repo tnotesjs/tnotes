@@ -711,11 +711,6 @@ export interface AppSettings {
   bottomPanel: {
     maxTabs: number
   }
-  toc: {
-    showNoteIndex: boolean
-    showNoteStatus: boolean
-    changesCollapsedByDefault: boolean
-  }
   /**
    * 本机 MCP 选区上下文服务。
    *

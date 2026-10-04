@@ -90,9 +90,8 @@ const session = computed(() =>
  *
  * 状态直接读会话里的 `document.config.done` —— 主进程就是从 TOC 取的这一位，
  * 切换完成后 `toggleDone` 会把新的 `mutation.note` 同时写回会话与整棵树，两边天然同步，
- * 不必再遍历 TOC 找节点。显示与否跟目录树共用同一个设置，只读时置灰（与同排其它按钮一致）。
+ * 不必再遍历 TOC 找节点。只读时置灰（与同排其它按钮一致）。
  */
-const showNoteDone = computed(() => workspace.settings?.toc?.showNoteStatus !== false)
 const noteDone = computed(() => session.value?.document.config.done === true)
 const noteDoneDisabled = computed(() => Boolean(session.value?.document.readOnly))
 
@@ -587,7 +586,6 @@ function openLink(url: string): void {
     <div class="document-toolbar">
       <div class="document-path" :title="session.document.filePath">
         <NoteDoneToggle
-          v-if="showNoteDone"
           :done="noteDone"
           :disabled="noteDoneDisabled"
           @toggle="toggleNoteDone"

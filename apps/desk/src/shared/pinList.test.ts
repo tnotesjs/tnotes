@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { flatPinnedNotes, pinToFront, prunePinIds, unpinId } from './pinList'
+import { flatPinnedNotes, movePinId, pinToFront, prunePinIds, unpinId } from './pinList'
 
 import type { DeskTocNode } from './contracts'
 
@@ -33,6 +33,15 @@ describe('置顶顺序', () => {
     expect(pinToFront(['a', 'b'], 'c')).toEqual(['c', 'a', 'b'])
     expect(pinToFront(['a', 'b', 'c'], 'b')).toEqual(['b', 'a', 'c'])
     expect(unpinId(['b', 'a', 'c'], 'a')).toEqual(['b', 'c'])
+  })
+
+  it('拖拽只调整置顶项彼此的位置', () => {
+    expect(movePinId(['a', 'b', 'c'], 'c', 'a', 'before')).toEqual(['c', 'a', 'b'])
+    expect(movePinId(['a', 'b', 'c'], 'a', 'c', 'after')).toEqual(['b', 'c', 'a'])
+    expect(movePinId(['a', 'b', 'c'], 'a', 'b', 'before')).toEqual(['a', 'b', 'c'])
+    expect(movePinId(['a', 'b', 'c'], 'a', 'a', 'after')).toEqual(['a', 'b', 'c'])
+    expect(movePinId(['a', 'b'], 'missing', 'a', 'before')).toEqual(['a', 'b'])
+    expect(movePinId(['a', 'b'], 'a', 'missing', 'after')).toEqual(['a', 'b'])
   })
 
   it('打开列表时丢掉已经不存在的 id，不改顺序', () => {

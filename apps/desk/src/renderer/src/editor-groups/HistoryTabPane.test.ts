@@ -42,11 +42,6 @@ const settings: AppSettings = {
     defaultWebUrl: 'https://github.com/tnotesjs'
   },
   bottomPanel: { maxTabs: 10 },
-  toc: {
-    showNoteIndex: true,
-    showNoteStatus: true,
-    changesCollapsedByDefault: true
-  },
   imageUpload: {
     defaultTarget: 'local',
     github: { repository: '', branch: 'main', path: '/', cdnTemplate: '', tokenConfigured: false },

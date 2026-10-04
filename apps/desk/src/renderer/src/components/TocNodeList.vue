@@ -7,7 +7,10 @@ import { useWorkspaceStore } from '../stores/workspace'
 import { resultValue } from '../stores/workspace/helpers'
 import { batchCheckState, batchTargetIds, type BatchCheckState } from './batchDeleteSelection'
 import { TOC_DRAG_TYPE } from '../../../shared/tocDrag'
+
+const PIN_DRAG_TYPE = 'application/x-tnotes-pin'
 import NoteDoneToggle from './NoteDoneToggle.vue'
+import { showNoteIndex } from './tocNoteIndex'
 import type { ContextMenuAction, EditorTab, DeskTocNode } from '../../../shared/contracts'
 import type { InjectionKey, Ref } from 'vue'
 
@@ -23,6 +26,8 @@ const props = withDefaults(
     batchSelected?: ReadonlySet<string>
     /** 置顶分组里的行不参与目录拖拽排序。 */
     allowReorder?: boolean
+    /** 多项置顶之间可以换位，不改目录。 */
+    pinReorder?: boolean
     /** 指针正停在置顶组上，用来标出整组可放下。 */
     pinDropActive?: boolean
     /** 主目录记住收起状态。置顶列表不传，保持全展开。 */
@@ -30,7 +35,7 @@ const props = withDefaults(
     /** 搜索时忽略收起，让匹配到的子节点露出来。 */
     forceExpand?: boolean
   }>(),
-  { allowReorder: true }
+  { allowReorder: true, pinReorder: false }
 )
 
 const emit = defineEmits<{
@@ -165,8 +170,7 @@ function agentPending(noteUuid: string): boolean {
   const kb = store.knowledgeBase
   return Boolean(kb && agent.pendingNoteKeys.has(`${kb.id}:${noteUuid}`))
 }
-const tocShowIndex = computed(() => store.settings?.toc?.showNoteIndex !== false)
-const tocShowStatus = computed(() => store.settings?.toc?.showNoteStatus !== false)
+const tocShowIndex = showNoteIndex
 
 /**
  * 找出某篇笔记已打开的标签页**及其所在分组**。
@@ -281,28 +285,44 @@ function onDoneToggle(node: Extract<DeskTocNode, { type: 'note' }>): void {
   emit('toggleDone', node)
 }
 
+function setDragGhost(event: DragEvent, label: string): void {
+  if (!event.dataTransfer) return
+  const ghost = document.createElement('div')
+  ghost.className = 'toc-drag-ghost'
+  ghost.textContent = label
+  document.body.append(ghost)
+  event.dataTransfer.setDragImage(ghost, 18, 16)
+  requestAnimationFrame(() => ghost.remove())
+}
+
+function rowDraggable(node: DeskTocNode): boolean {
+  if (props.batchDeleting) return false
+  if (props.allowReorder) return true
+  return props.pinReorder && props.nodes.length > 1 && node.type === 'note'
+}
+
 function dragStart(event: DragEvent, node: DeskTocNode): void {
-  if (props.batchDeleting || !props.allowReorder) {
+  const target = event.target as HTMLElement
+  if (target.closest('.row-action, .pin-mark')) {
     event.preventDefault()
     return
   }
-  if (!event.dataTransfer) return
-  const target = event.target as HTMLElement
-  if (target.closest('.row-action')) {
+  if (!rowDraggable(node) || !event.dataTransfer) {
     event.preventDefault()
     return
   }
   draggingNodeId.value = node.nodeId
   event.dataTransfer.effectAllowed = 'move'
+  const label = node.type === 'note' ? `${node.noteIndex}  ${node.title}` : node.title
+  if (props.pinReorder && !props.allowReorder && node.type === 'note') {
+    event.dataTransfer.setData(PIN_DRAG_TYPE, node.uuid)
+    setDragGhost(event, label)
+    return
+  }
   event.dataTransfer.setData(TOC_DRAG_TYPE, JSON.stringify(node))
   event.dataTransfer.setData('text/plain', node.title)
   emit('dragNote', node)
-  const ghost = document.createElement('div')
-  ghost.className = 'toc-drag-ghost'
-  ghost.textContent = node.type === 'note' ? `${node.noteIndex}  ${node.title}` : node.title
-  document.body.append(ghost)
-  event.dataTransfer.setDragImage(ghost, 18, 16)
-  requestAnimationFrame(() => ghost.remove())
+  setDragGhost(event, label)
 }
 
 function dragPlacement(event: DragEvent): 'before' | 'after' | 'inside' {
@@ -330,7 +350,24 @@ function queueDragScroll(event: DragEvent): void {
   })
 }
 
+function pinPlacement(event: DragEvent): 'before' | 'after' {
+  const row = event.currentTarget as HTMLElement
+  const ratio = (event.clientY - row.getBoundingClientRect().top) / row.offsetHeight
+  return ratio < 0.5 ? 'before' : 'after'
+}
+
 function dragOver(event: DragEvent, node: DeskTocNode): void {
+  if (props.pinReorder && event.dataTransfer?.types.includes(PIN_DRAG_TYPE)) {
+    if (node.type !== 'note') return
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = 'move'
+    const placement = pinPlacement(event)
+    if (dropTarget.value?.nodeId !== node.nodeId || dropTarget.value.placement !== placement) {
+      dropTarget.value = { nodeId: node.nodeId, placement }
+    }
+    return
+  }
   if (!event.dataTransfer?.types.includes(TOC_DRAG_TYPE)) return
   // 置顶区的放下由外层处理。这里如果继续改滚动位置，拖到顶部时会同步重入 dragover，把界面卡死。
   if ((event.currentTarget as HTMLElement).closest('[data-pin-group="notes"]')) return
@@ -369,6 +406,19 @@ function dragEnd(): void {
 }
 
 function drop(event: DragEvent, target: DeskTocNode): void {
+  if (props.pinReorder && event.dataTransfer?.types.includes(PIN_DRAG_TYPE)) {
+    event.preventDefault()
+    event.stopPropagation()
+    const sourceId = event.dataTransfer.getData(PIN_DRAG_TYPE)
+    const placement = dropTarget.value?.placement === 'before' ? 'before' : 'after'
+    dropTarget.value = null
+    draggingNodeId.value = null
+    if (target.type === 'note' && sourceId && sourceId !== target.uuid) {
+      const knowledgeBaseId = store.knowledgeBase?.id
+      if (knowledgeBaseId) store.reorderPinnedNote(knowledgeBaseId, sourceId, target.uuid, placement)
+    }
+    return
+  }
   event.preventDefault()
   const raw = event.dataTransfer?.getData(TOC_DRAG_TYPE)
   const placement = dropTarget.value?.placement ?? dragPlacement(event)
@@ -544,7 +594,7 @@ defineExpose({ toggleAllCollapsed })
           [`drop-${dropTarget?.placement}`]: dropTarget?.nodeId === node.nodeId
         }"
         :data-note-uuid="node.type === 'note' ? node.uuid : undefined"
-        :draggable="batchDeleting || !allowReorder ? 'false' : 'true'"
+        :draggable="rowDraggable(node) ? 'true' : 'false'"
         @dragstart.stop="dragStart($event, node)"
         @dragend.stop="dragEnd"
         @dragover.stop="dragOver($event, node)"
@@ -570,6 +620,21 @@ defineExpose({ toggleAllCollapsed })
               stroke-width="1.5"
               stroke-linecap="round"
               stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+        <button
+          v-else-if="!allowReorder && node.type === 'note'"
+          type="button"
+          class="disclosure pin-mark"
+          aria-label="取消置顶"
+          data-tooltip="取消置顶"
+          @click.stop="store.togglePinnedNote(store.knowledgeBase!.id, node.uuid)"
+        >
+          <svg class="pin-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479c-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354m1.58 1.408l-.002-.001zm-.002-.001l.002.001A.5.5 0 0 1 6 2v5a.5.5 0 0 1-.276.447h-.002l-.012.007l-.054.03a5 5 0 0 0-.827.58c-.318.278-.585.596-.725.936h7.792c-.14-.34-.407-.658-.725-.936a5 5 0 0 0-.881-.61l-.012-.006h-.002A.5.5 0 0 1 10 7V2a.5.5 0 0 1 .295-.458a1.8 1.8 0 0 0 .351-.271c.08-.08.155-.17.214-.271H5.14q.091.15.214.271a1.8 1.8 0 0 0 .37.282"
             />
           </svg>
         </button>
@@ -608,11 +673,7 @@ defineExpose({ toggleAllCollapsed })
           </button>
         </template>
         <template v-else>
-          <NoteDoneToggle
-            v-if="tocShowStatus"
-            :done="node.completed"
-            @toggle="onDoneToggle(node)"
-          />
+          <NoteDoneToggle :done="node.completed" @toggle="onDoneToggle(node)" />
           <button
             type="button"
             class="node-label"
@@ -652,6 +713,7 @@ defineExpose({ toggleAllCollapsed })
         :batch-deleting="batchDeleting"
         :batch-selected="batchSelected"
         :allow-reorder="allowReorder"
+        :pin-reorder="pinReorder"
         :pin-drop-active="pinDropActive"
         @select="emit('select', $event)"
         @select-permanent="emit('selectPermanent', $event)"
@@ -843,6 +905,12 @@ defineExpose({ toggleAllCollapsed })
 
 .disclosure.spacer {
   display: inline-block;
+}
+
+.disclosure.pin-mark svg {
+  fill: currentColor;
+  stroke: none;
+  transform: none;
 }
 
 .node-label {

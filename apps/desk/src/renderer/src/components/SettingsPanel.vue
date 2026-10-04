@@ -109,12 +109,7 @@ const groupDefaults: Record<string, Partial<AppSettings>> = {
     bottomPanel: { maxTabs: 10 }
   },
   toc: {
-    createNotePosition: 'top',
-    toc: {
-      showNoteIndex: true,
-      showNoteStatus: true,
-      changesCollapsedByDefault: true
-    }
+    createNotePosition: 'top'
   },
   tools: {
     ide: 'vscode',

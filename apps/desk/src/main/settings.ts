@@ -96,17 +96,6 @@ const settingsSchema = z.object({
         .default(BOTTOM_PANEL_TABS_DEFAULT_MAX)
     })
     .default({ maxTabs: BOTTOM_PANEL_TABS_DEFAULT_MAX }),
-  toc: z
-    .object({
-      showNoteIndex: z.boolean().default(true),
-      showNoteStatus: z.boolean().default(true),
-      changesCollapsedByDefault: z.boolean().default(true)
-    })
-    .default({
-      showNoteIndex: true,
-      showNoteStatus: true,
-      changesCollapsedByDefault: true
-    }),
   // 本机 MCP 服务：默认关闭；端口固定（占用即报错，不自动改端口）
   mcp: z
     .object({
