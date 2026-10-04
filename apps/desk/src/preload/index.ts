@@ -100,6 +100,7 @@ import type {
   TabCloseChoice,
   ContextMenuAction,
   KnowledgeSidebarMenuAction,
+  KnowledgeSidebarMenuChoice,
   KnowledgeSidebarMenuRequest,
   NavigatorSidebarMenuAction,
   NavigatorSidebarMenuRequest,
@@ -132,7 +133,7 @@ const api: DeskApi = {
     showContextMenu: (request) =>
       invoke<ContextMenuAction | null>(IPC_CHANNELS.contextMenuShow, request),
     showKnowledgeSidebarMenu: (request: KnowledgeSidebarMenuRequest) =>
-      invoke<KnowledgeSidebarMenuAction | null>(IPC_CHANNELS.knowledgeSidebarMenuShow, request),
+      invoke<KnowledgeSidebarMenuChoice | null>(IPC_CHANNELS.knowledgeSidebarMenuShow, request),
     showNavigatorSidebarMenu: (request: NavigatorSidebarMenuRequest) =>
       invoke<NavigatorSidebarMenuAction | null>(IPC_CHANNELS.navigatorSidebarMenuShow, request),
     onTabShortcut: (callback) => {

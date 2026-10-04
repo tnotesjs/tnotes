@@ -72,6 +72,19 @@ export function createSettings(ctx: SettingsContext) {
     void updateSettings({ pinnedKnowledgeBaseIds: next })
   }
 
+  function reorderPinnedKnowledgeBase(
+    sourceId: string,
+    targetId: string,
+    placement: 'before' | 'after'
+  ): void {
+    if (!ctx.settings.value) return
+    const current = ctx.settings.value.pinnedKnowledgeBaseIds ?? []
+    const next = movePinId(current, sourceId, targetId, placement)
+    if (listsEqual(current, next)) return
+    ctx.settings.value = { ...ctx.settings.value, pinnedKnowledgeBaseIds: next }
+    void updateSettings({ pinnedKnowledgeBaseIds: next })
+  }
+
   function togglePinnedNote(knowledgeBaseId: string, noteUuid: string): void {
     if (!ctx.settings.value) return
     const map = { ...(ctx.settings.value.pinnedNoteUuids ?? {}) }
@@ -120,6 +133,7 @@ export function createSettings(ctx: SettingsContext) {
     adjustAppZoom,
     zoomFeedbackSequence,
     togglePinnedKnowledgeBase,
+    reorderPinnedKnowledgeBase,
     togglePinnedNote,
     pinNote,
     reorderPinnedNote

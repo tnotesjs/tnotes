@@ -46,7 +46,8 @@ async function makeHandle(config: Record<string, unknown> = {}): Promise<Knowled
     name: 'TNotes.test',
     rootPath,
     workspace,
-    snapshot: await workspace.scan()
+    snapshot: await workspace.scan(),
+    lastCommitAt: null
   }
   return handle
 }

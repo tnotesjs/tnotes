@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
+import { promisify } from 'node:util'
 import { watch, type FSWatcher } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -27,6 +29,24 @@ export interface WorkspaceScanState {
   emitChanged: () => void
   /** Desk userData; asset journals/recycle live here, never under KB assets/. */
   userDataDir?: string
+}
+
+const execFileAsync = promisify(execFile)
+
+/** 最近一次提交的时间。不是仓库、没有提交或 git 不可用时为空。 */
+export async function readLastCommitAt(rootPath: string): Promise<number | null> {
+  try {
+    const { stdout } = await execFileAsync('git', ['log', '-1', '--format=%ct'], {
+      cwd: rootPath,
+      timeout: 4000,
+      windowsHide: true,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+    })
+    const seconds = Number(String(stdout).trim())
+    return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null
+  } catch {
+    return null
+  }
 }
 
 /** fs.watch 漏事件时条目会永久留在 Map 里；每次标记顺带清掉过期的。 */
@@ -123,7 +143,8 @@ async function openHandle(
     name,
     rootPath,
     workspace,
-    snapshot: await workspace.scan()
+    snapshot: await workspace.scan(),
+    lastCommitAt: await readLastCommitAt(rootPath)
   }
   await backfillMissingNoteIds(state, handle)
   return handle

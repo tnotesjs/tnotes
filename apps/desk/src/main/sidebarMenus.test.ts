@@ -26,7 +26,7 @@ describe('sidebar native menus', () => {
     ['linux', '打开工作区目录']
   ] as const)('builds the knowledge sidebar menu for %s', (platform, reveal) => {
     const template = knowledgeSidebarMenuTemplate(
-      { hasWorkspace: true, loading: false },
+      { hasWorkspace: true, loading: false, sort: 'name-asc' },
       vi.fn(),
       platform
     )
@@ -34,17 +34,52 @@ describe('sidebar native menus', () => {
       '新建知识库',
       '重新扫描知识库',
       'separator',
+      '排序',
+      'separator',
       reveal,
       '更换工作区'
     ])
+    const sorts = template.find((item) => item.id === 'sort')?.submenu as Array<{
+      label?: string
+      checked?: boolean
+    }>
+    expect(sorts.map((item) => item.label)).toEqual([
+      '按照名称升序',
+      '按照名称降序',
+      '按照笔记数量升序',
+      '按照笔记数量降序',
+      '按照笔记完成数量升序',
+      '按照笔记完成数量降序',
+      '按照最近更新时间升序',
+      '按照最近更新时间降序'
+    ])
+    expect(sorts.find((item) => item.label === '按照名称升序')?.checked).toBe(true)
   })
 
   it('disables create/refresh while loading and reveal without workspace', () => {
-    const template = knowledgeSidebarMenuTemplate({ hasWorkspace: false, loading: true }, vi.fn())
+    const template = knowledgeSidebarMenuTemplate(
+      { hasWorkspace: false, loading: true, sort: 'name-asc' },
+      vi.fn()
+    )
     expect(template.find((item) => item.id === 'create')?.enabled).toBe(false)
     expect(template.find((item) => item.id === 'refresh')?.enabled).toBe(false)
     expect(template.find((item) => item.id === 'reveal-workspace')?.enabled).toBe(false)
     expect(template.find((item) => item.id === 'choose-workspace')?.enabled).not.toBe(false)
+  })
+
+  it('排序子菜单里当前项打勾', () => {
+    const template = knowledgeSidebarMenuTemplate(
+      { hasWorkspace: true, loading: false, sort: 'done-desc' },
+      vi.fn()
+    )
+    const sorts = template.find((item) => item.id === 'sort')?.submenu as Array<{
+      id?: string
+      type?: string
+      checked?: boolean
+    }>
+    expect(sorts.every((item) => item.type === 'radio')).toBe(true)
+    expect(sorts.find((item) => item.id === 'done-desc')?.checked).toBe(true)
+    expect(sorts.find((item) => item.id === 'name-asc')?.checked).toBe(false)
   })
 
   it('builds the navigator sidebar menu with preview/build state', () => {
@@ -123,13 +158,21 @@ describe('sidebar native menus', () => {
       options.callback?.()
     })
 
-    const first = showKnowledgeSidebarMenu({} as never, { hasWorkspace: true, loading: false })
-    await expect(first).resolves.toBe('refresh')
+    const first = showKnowledgeSidebarMenu({} as never, {
+      hasWorkspace: true,
+      loading: false,
+      sort: 'name-asc'
+    })
+    await expect(first).resolves.toEqual({ kind: 'action', action: 'refresh' })
 
     mocks.popup.mockImplementation((options: PopupOptions) => {
       options.callback?.()
     })
-    const second = showKnowledgeSidebarMenu({} as never, { hasWorkspace: true, loading: false })
+    const second = showKnowledgeSidebarMenu({} as never, {
+      hasWorkspace: true,
+      loading: false,
+      sort: 'name-asc'
+    })
     vi.runAllTimers()
     await expect(second).resolves.toBeNull()
   })

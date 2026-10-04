@@ -3,12 +3,17 @@ import { computed, ref, watch } from 'vue'
 
 import { useAgentStore } from '../agent/agentStore'
 import KnowledgeBaseIcon from './KnowledgeBaseIcon.vue'
-import UiTooltip from './UiTooltip.vue'
-import { listsEqual, orderedPinned, prunePinIds } from '../../../shared/pinList'
+import { listsEqual, movePinId, orderedPinned, prunePinIds } from '../../../shared/pinList'
 import { useEditorStore, KNOWLEDGE_SIDEBAR_COMPACT } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
 
-import type { KnowledgeBaseDescriptor, KnowledgeSidebarMenuAction } from '../../../shared/contracts'
+import type {
+  KnowledgeBaseDescriptor,
+  KnowledgeBaseSort,
+  KnowledgeSidebarMenuAction
+} from '../../../shared/contracts'
+
+const PIN_DRAG_TYPE = 'application/x-tnotes-kb-pin'
 
 const emit = defineEmits<{
   'create-knowledge-base': []
@@ -17,8 +22,8 @@ const emit = defineEmits<{
 const store = useWorkspaceStore()
 const editor = useEditorStore()
 const agent = useAgentStore()
-const query = ref('')
 const menuBusy = ref(false)
+const pinDrop = ref<{ id: string; placement: 'before' | 'after' } | null>(null)
 const compact = computed(
   () =>
     editor.knowledgeSidebarCollapsed || editor.knowledgeSidebarWidth <= KNOWLEDGE_SIDEBAR_COMPACT
@@ -28,29 +33,19 @@ function showIdeMenu(knowledgeBaseId: string): void {
   void window.desk.ide.showKnowledgeBaseMenu(knowledgeBaseId)
 }
 
-function matchesKb(item: KnowledgeBaseDescriptor, needle: string): boolean {
-  if (!needle) return true
-  const haystacks = [item.displayName, item.name, item.configName ?? '', item.rootPath]
-  return haystacks.some((value) => value.toLocaleLowerCase().includes(needle))
-}
-
-const filteredKnowledgeBases = computed(() => {
-  const needle = query.value.trim().toLocaleLowerCase()
-  return store.overview.knowledgeBases.filter((item) => matchesKb(item, needle))
-})
+const knowledgeBases = computed(() => store.overview.knowledgeBases)
 
 const pinnedKnowledgeBases = computed(() => {
   const ids = store.settings?.pinnedKnowledgeBaseIds ?? []
-  const byId = new Map(filteredKnowledgeBases.value.map((item) => [item.id, item]))
+  const byId = new Map(knowledgeBases.value.map((item) => [item.id, item]))
   return orderedPinned(ids, byId)
 })
 
-const knowledgePinsCollapsed = computed(() => editor.pinnedKnowledgeBasesCollapsed)
+const groupedKnowledgeBases = computed(() =>
+  sortKnowledgeBases(knowledgeBases.value, editor.knowledgeBaseSort)
+)
 
-const unpinnedKnowledgeBases = computed(() => {
-  const pinnedIds = new Set(pinnedKnowledgeBases.value.map((item) => item.id))
-  return filteredKnowledgeBases.value.filter((item) => !pinnedIds.has(item.id))
-})
+const groupExpanded = computed(() => !editor.knowledgeGroupCollapsed)
 
 watch(
   () => {
@@ -69,18 +64,100 @@ watch(
   }
 )
 
-const emptyMessage = computed(() => {
-  if (store.overview.knowledgeBases.length === 0) {
-    return {
-      title: '没有扫描到知识库',
-      detail: '工作区根或其直接子目录中需要存在 tnotes.json'
-    }
+const emptyMessage = computed(() =>
+  store.overview.path
+    ? {
+        title: '没有扫描到知识库',
+        detail: '工作区根或其直接子目录中需要存在 tnotes.json'
+      }
+    : {
+        title: '还没有打开工作区',
+        detail: '从菜单里选择或更换工作区'
+      }
+)
+
+function sortKnowledgeBases(
+  items: KnowledgeBaseDescriptor[],
+  sort: KnowledgeBaseSort | undefined
+): KnowledgeBaseDescriptor[] {
+  const mode = sort ?? 'name-asc'
+  const direction = mode.endsWith('-desc') ? -1 : 1
+  const kind = mode.slice(0, mode.lastIndexOf('-'))
+  return [...items].sort((left, right) => {
+    const delta = compareKnowledgeBases(left, right, kind) * direction
+    return delta || left.displayName.localeCompare(right.displayName)
+  })
+}
+
+function compareKnowledgeBases(
+  left: KnowledgeBaseDescriptor,
+  right: KnowledgeBaseDescriptor,
+  kind: string
+): number {
+  if (kind === 'count') return left.noteCount - right.noteCount
+  if (kind === 'done') return (left.completedCount ?? 0) - (right.completedCount ?? 0)
+  if (kind === 'updated') {
+    const leftAt = left.lastCommitAt ?? Number.NEGATIVE_INFINITY
+    const rightAt = right.lastCommitAt ?? Number.NEGATIVE_INFINITY
+    return leftAt - rightAt
   }
-  return {
-    title: '没有匹配的知识库',
-    detail: '试试其它名称关键字'
+  return left.displayName.localeCompare(right.displayName)
+}
+
+function toggleGroup(): void {
+  editor.knowledgeGroupCollapsed = !editor.knowledgeGroupCollapsed
+}
+
+function unpin(id: string): void {
+  store.togglePinnedKnowledgeBase(id)
+}
+
+function pinPlacement(event: DragEvent): 'before' | 'after' {
+  const row = event.currentTarget as HTMLElement
+  const ratio = (event.clientY - row.getBoundingClientRect().top) / row.offsetHeight
+  return ratio < 0.5 ? 'before' : 'after'
+}
+
+function onPinDragStart(event: DragEvent, item: KnowledgeBaseDescriptor): void {
+  const target = event.target
+  if (target instanceof Element && target.closest('.pin-button')) {
+    event.preventDefault()
+    return
   }
-})
+  if (!event.dataTransfer || pinnedKnowledgeBases.value.length < 2) {
+    event.preventDefault()
+    return
+  }
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData(PIN_DRAG_TYPE, item.id)
+}
+
+function onPinDragOver(event: DragEvent, item: KnowledgeBaseDescriptor): void {
+  if (!event.dataTransfer?.types.includes(PIN_DRAG_TYPE)) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'move'
+  const placement = pinPlacement(event)
+  if (pinDrop.value?.id !== item.id || pinDrop.value.placement !== placement) {
+    pinDrop.value = { id: item.id, placement }
+  }
+}
+
+function onPinDrop(event: DragEvent, item: KnowledgeBaseDescriptor): void {
+  if (!event.dataTransfer?.types.includes(PIN_DRAG_TYPE)) return
+  event.preventDefault()
+  const sourceId = event.dataTransfer.getData(PIN_DRAG_TYPE)
+  const placement = pinDrop.value?.placement === 'before' ? 'before' : 'after'
+  pinDrop.value = null
+  if (sourceId && sourceId !== item.id) {
+    const current = store.settings?.pinnedKnowledgeBaseIds ?? []
+    const next = movePinId(current, sourceId, item.id, placement)
+    if (!listsEqual(current, next)) store.reorderPinnedKnowledgeBase(sourceId, item.id, placement)
+  }
+}
+
+function onPinDragEnd(): void {
+  pinDrop.value = null
+}
 
 async function applyMenuAction(action: KnowledgeSidebarMenuAction): Promise<void> {
   if (action === 'create') {
@@ -103,73 +180,95 @@ async function applyMenuAction(action: KnowledgeSidebarMenuAction): Promise<void
   }
 }
 
-async function openHeaderMenu(): Promise<void> {
-  if (menuBusy.value || store.loading) return
+async function openMenu(): Promise<void> {
+  if (menuBusy.value) return
   menuBusy.value = true
   try {
     const result = await window.desk.app.showKnowledgeSidebarMenu({
       hasWorkspace: Boolean(store.overview.path),
-      loading: store.loading
+      loading: store.loading,
+      sort: editor.knowledgeBaseSort
     })
     if (!result.ok) {
       store.error = result.error.message
       return
     }
-    if (result.value) await applyMenuAction(result.value)
+    if (result.value?.kind === 'sort') editor.knowledgeBaseSort = result.value.sort
+    if (result.value?.kind === 'action') await applyMenuAction(result.value.action)
   } catch (cause) {
     store.error = cause instanceof Error ? cause.message : String(cause)
   } finally {
     menuBusy.value = false
   }
 }
+
 </script>
 
 <template>
   <aside id="knowledge-sidebar" class="knowledge-sidebar" :class="{ compact }">
-    <div class="knowledge-top">
-      <div v-if="!compact" class="search-wrap">
-        <span>⌕</span>
-        <input v-model="query" type="search" placeholder="搜索知识库" />
-      </div>
-      <div class="header-actions">
-        <UiTooltip label="更多知识库操作" align="end">
+    <div v-if="pinnedKnowledgeBases.length" class="pin-strip">
+        <div
+          v-for="item in pinnedKnowledgeBases"
+          :key="item.id"
+          class="knowledge-item"
+          :class="{
+            active: store.selectedKnowledgeBaseId === item.id,
+            'drop-before': pinDrop?.id === item.id && pinDrop.placement === 'before',
+            'drop-after': pinDrop?.id === item.id && pinDrop.placement === 'after'
+          }"
+          role="button"
+          tabindex="0"
+          :draggable="pinnedKnowledgeBases.length > 1 && !compact"
+          @click="store.selectKnowledgeBase(item.id)"
+          @keydown.enter.prevent="store.selectKnowledgeBase(item.id)"
+          @contextmenu.prevent="showIdeMenu(item.id)"
+          @dragstart="onPinDragStart($event, item)"
+          @dragover="onPinDragOver($event, item)"
+          @drop="onPinDrop($event, item)"
+          @dragend="onPinDragEnd"
+        >
+          <span class="knowledge-icon">
+            <KnowledgeBaseIcon :icon="item.icon" :fallback="item.displayName" />
+          </span>
+          <span
+            v-if="agent.pendingByKb[item.id]"
+            class="agent-dot"
+            :title="`${agent.pendingByKb[item.id]} 篇笔记有 Agent 改动待确认`"
+            :aria-label="`${agent.pendingByKb[item.id]} 篇笔记有 Agent 改动待确认`"
+          />
+          <span v-if="!compact" class="knowledge-copy">
+            <strong>{{ item.displayName }}</strong>
+          </span>
           <button
+            v-if="!compact"
             type="button"
-            class="menu-button"
-            aria-label="更多知识库操作"
-            :disabled="store.loading || menuBusy"
-            @click="openHeaderMenu"
+            class="pin-button"
+            aria-label="取消置顶"
+            title="取消置顶"
+            @click.stop="unpin(item.id)"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <g fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="4" cy="12" r="1" />
-                <circle cx="12" cy="12" r="1" />
-                <circle cx="20" cy="12" r="1" />
-              </g>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479c-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354m1.58 1.408l-.002-.001zm-.002-.001l.002.001A.5.5 0 0 1 6 2v5a.5.5 0 0 1-.276.447h-.002l-.012.007l-.054.03a5 5 0 0 0-.827.58c-.318.278-.585.596-.725.936h7.792c-.14-.34-.407-.658-.725-.936a5 5 0 0 0-.881-.61l-.012-.006h-.002A.5.5 0 0 1 10 7V2a.5.5 0 0 1 .295-.458a1.8 1.8 0 0 0 .351-.271c.08-.08.155-.17.214-.271H5.14q.091.15.214.271a1.8 1.8 0 0 0 .37.282"
+              />
             </svg>
           </button>
-        </UiTooltip>
+        </div>
       </div>
-    </div>
 
-    <template v-if="filteredKnowledgeBases.length">
-      <div
-        v-if="pinnedKnowledgeBases.length"
-        class="pin-section"
-        :class="{ 'is-fill': unpinnedKnowledgeBases.length === 0 }"
-      >
-        <div class="pin-section-head">
+      <div class="kb-group">
+        <div class="section-heading">
           <button
             type="button"
-            class="pin-heading"
-            data-pin-group="knowledge"
-            :aria-expanded="!knowledgePinsCollapsed"
-            :aria-label="knowledgePinsCollapsed ? '展开置顶' : '折叠置顶'"
-            @click="editor.togglePinnedKnowledgeBasesCollapsed()"
+            class="section-toggle"
+            :aria-expanded="groupExpanded"
+            :aria-label="editor.knowledgeGroupCollapsed ? '展开知识库' : '折叠知识库'"
+            @click="toggleGroup"
           >
             <svg
               class="chevron"
-              :class="{ collapsed: knowledgePinsCollapsed }"
+              :class="{ collapsed: !groupExpanded }"
               viewBox="0 0 16 16"
               aria-hidden="true"
             >
@@ -183,14 +282,31 @@ async function openHeaderMenu(): Promise<void> {
               />
             </svg>
             <template v-if="!compact">
-              <strong>置顶</strong>
-              <em>{{ pinnedKnowledgeBases.length }}</em>
+              <strong>知识库</strong>
+              <em>{{ knowledgeBases.length }}</em>
             </template>
           </button>
-        </div>
-        <div v-if="!knowledgePinsCollapsed" class="pin-section-body">
           <button
-            v-for="item in pinnedKnowledgeBases"
+            v-if="!compact"
+            type="button"
+            class="menu-button kb-menu-button"
+            aria-label="知识库操作"
+            aria-haspopup="menu"
+            :disabled="menuBusy"
+            @click="openMenu"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <g fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="4" cy="12" r="1" />
+                <circle cx="12" cy="12" r="1" />
+                <circle cx="20" cy="12" r="1" />
+              </g>
+            </svg>
+          </button>
+        </div>
+        <div v-show="groupExpanded" class="knowledge-list">
+          <button
+            v-for="item in groupedKnowledgeBases"
             :key="item.id"
             type="button"
             class="knowledge-item"
@@ -212,38 +328,11 @@ async function openHeaderMenu(): Promise<void> {
             </span>
           </button>
         </div>
-        <div v-if="unpinnedKnowledgeBases.length" class="pin-divider" role="separator" />
+        <div v-if="groupExpanded && knowledgeBases.length === 0" class="column-empty">
+          <strong>{{ emptyMessage.title }}</strong>
+          <span>{{ emptyMessage.detail }}</span>
+        </div>
       </div>
-      <div v-if="unpinnedKnowledgeBases.length" class="knowledge-list">
-        <button
-          v-for="item in unpinnedKnowledgeBases"
-          :key="item.id"
-          type="button"
-          class="knowledge-item"
-          :class="{ active: store.selectedKnowledgeBaseId === item.id }"
-          @click="store.selectKnowledgeBase(item.id)"
-          @contextmenu.prevent="showIdeMenu(item.id)"
-        >
-          <span class="knowledge-icon">
-            <KnowledgeBaseIcon :icon="item.icon" :fallback="item.displayName" />
-          </span>
-          <span
-            v-if="agent.pendingByKb[item.id]"
-            class="agent-dot"
-            :title="`${agent.pendingByKb[item.id]} 篇笔记有 Agent 改动待确认`"
-            :aria-label="`${agent.pendingByKb[item.id]} 篇笔记有 Agent 改动待确认`"
-          />
-          <span v-if="!compact" class="knowledge-copy">
-            <strong>{{ item.displayName }}</strong>
-          </span>
-        </button>
-      </div>
-    </template>
-    <div v-else class="column-empty">
-      <strong>{{ emptyMessage.title }}</strong>
-      <span>{{ emptyMessage.detail }}</span>
-    </div>
-
   </aside>
 </template>
 
@@ -256,61 +345,6 @@ async function openHeaderMenu(): Promise<void> {
   overflow: hidden;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
-}
-
-.knowledge-top {
-  flex: none;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 9px;
-  border-bottom: 1px solid var(--border);
-}
-
-.search-wrap {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-}
-
-.search-wrap > span {
-  position: absolute;
-  z-index: 1;
-  left: 9px;
-  top: 0;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  margin: 0;
-  color: var(--muted);
-  line-height: 1;
-  pointer-events: none;
-}
-
-.search-wrap input {
-  width: 100%;
-  height: 28px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  outline: none;
-  background: var(--input-bg);
-  color: var(--text);
-  padding: 0 9px 0 28px;
-  font-size: 11px;
-}
-
-.search-wrap input:focus {
-  border-color: var(--accent);
-}
-
-.header-actions {
-  flex: none;
-  position: relative;
-  display: flex;
-  gap: 6px;
 }
 
 .menu-button {
@@ -341,37 +375,86 @@ async function openHeaderMenu(): Promise<void> {
   opacity: 0.4;
 }
 
+.pin-strip {
+  flex: none;
+  max-height: 40%;
+  overflow-x: clip;
+  overflow-y: auto;
+  padding: 7px 7px 0;
+}
+
+.kb-group {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.section-heading {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 27px;
+  margin: 0 7px;
+  color: var(--muted);
+}
+
+.section-toggle {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.section-toggle strong {
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.section-toggle em {
+  min-width: 18px;
+  border-radius: 9px;
+  background: var(--raised);
+  padding: 1px 5px;
+  text-align: center;
+  font-style: normal;
+  font-size: 9px;
+}
+
+.chevron {
+  flex: none;
+  width: 18px;
+  height: 12px;
+  transition: transform 120ms ease;
+}
+
+.chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.kb-menu-button {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+}
+
 .knowledge-list {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 7px;
-}
-
-/* 置顶组在滚动列表外面，滚下面的知识库时它停在搜索栏下。条目多到超过侧栏一半时，只在组内滚动。 */
-.pin-section {
-  flex: none;
-  max-height: 50%;
-  overflow: auto;
-  background: var(--sidebar-bg);
-}
-
-.pin-section.is-fill {
-  flex: 1;
-  min-height: 0;
-  max-height: none;
-}
-
-.pin-section-head {
-  padding: 7px 7px 0;
-}
-
-.pin-section-body {
-  padding: 0 7px;
-}
-
-.pin-section.is-fill .pin-section-body {
-  padding-bottom: 7px;
+  padding: 0 7px 7px;
 }
 
 .agent-dot {
@@ -400,6 +483,15 @@ async function openHeaderMenu(): Promise<void> {
   padding: 2px 5px;
   text-align: left;
   cursor: pointer;
+  font-family: inherit;
+}
+
+.knowledge-item.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.knowledge-item.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .knowledge-item:hover {
@@ -439,77 +531,66 @@ async function openHeaderMenu(): Promise<void> {
   font-weight: 600;
 }
 
-.knowledge-sidebar.compact .knowledge-top {
+.pin-button {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.pin-button svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+
+.pin-button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.knowledge-sidebar.compact .pin-strip,
+.knowledge-sidebar.compact .knowledge-list,
+.knowledge-sidebar.compact .section-heading {
+  padding-left: 0;
+  padding-right: 0;
+  margin-left: 0;
+  margin-right: 0;
+  /* 有没有滚动条都留出同样的左右空档，图标才能落在同一条中线上。 */
+  scrollbar-gutter: stable both-edges;
+}
+
+.knowledge-sidebar.compact .section-heading {
+  overflow-y: auto;
+  height: 28px;
   justify-content: center;
+}
+
+.knowledge-sidebar.compact .section-toggle {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--raised);
+  justify-content: center;
+  gap: 0;
+}
+
+.knowledge-sidebar.compact .chevron {
+  width: 12px;
+  height: 12px;
 }
 
 .knowledge-sidebar.compact .knowledge-item {
   justify-content: center;
   gap: 0;
-}
-
-.pin-heading {
-  width: 100%;
-  height: 24px;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  overflow: hidden;
-  margin: 0 0 2px;
-  padding: 0 4px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--panel);
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.pin-divider {
-  height: 1px;
-  margin-top: 6px;
-  background: var(--border);
-  position: sticky;
-  bottom: 0;
-}
-
-.pin-heading strong {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 700;
-  text-align: left;
-}
-
-.pin-heading em {
-  min-width: 16px;
-  border-radius: 8px;
-  background: var(--raised);
-  padding: 0 4px;
-  text-align: center;
-  font-style: normal;
-  font-size: 9px;
-}
-
-.pin-heading .chevron {
-  flex: none;
-  width: 16px;
-  height: 12px;
-  transition: transform 120ms ease;
-}
-
-.pin-heading .chevron.collapsed {
-  transform: rotate(-90deg);
-}
-
-.knowledge-sidebar.compact .pin-heading {
-  justify-content: center;
-  padding: 0;
 }
 
 .knowledge-sidebar.compact .agent-dot {
@@ -532,5 +613,4 @@ async function openHeaderMenu(): Promise<void> {
   color: var(--text);
   font-size: 12px;
 }
-
 </style>

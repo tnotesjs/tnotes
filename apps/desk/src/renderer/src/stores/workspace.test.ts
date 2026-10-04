@@ -88,6 +88,8 @@ const knowledgeBase: KnowledgeBaseDetail = {
   health: 'ready',
   diagnostics: [],
   noteCount: 1,
+  completedCount: 0,
+  lastCommitAt: null,
   snapshotRevision: 'snapshot-1',
   toc: []
 }

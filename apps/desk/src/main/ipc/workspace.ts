@@ -60,7 +60,17 @@ export function registerWorkspace(getWindow: GetWindow): () => void {
     getWindow,
     z.object({
       hasWorkspace: z.boolean(),
-      loading: z.boolean()
+      loading: z.boolean(),
+      sort: z.enum([
+        'name-asc',
+        'name-desc',
+        'count-asc',
+        'count-desc',
+        'done-asc',
+        'done-desc',
+        'updated-asc',
+        'updated-desc'
+      ])
     }),
     (request) => {
       const window = getWindow()

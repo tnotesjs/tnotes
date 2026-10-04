@@ -57,6 +57,8 @@ const knowledgeBase: KnowledgeBaseDescriptor = {
   rootPath: '/tmp/kb-1',
   icon: null,
   noteCount: 1,
+  completedCount: 0,
+  lastCommitAt: null,
   lastOpenedAt: null
 } as KnowledgeBaseDescriptor
 

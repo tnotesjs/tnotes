@@ -37,6 +37,7 @@ import {
   EditorTab,
   KnowledgeBaseEditorSession,
   KnowledgeBaseDescriptor,
+  KnowledgeBaseSort,
   KnowledgeBaseIconDto,
   KbSettingsEditorTab,
   KbAssetsEditorTab,
@@ -205,6 +206,8 @@ export const useEditorStore = defineStore('editor', () => {
   const knowledgeSidebarHidden = ref(false)
   const expandedTocNodes = ref<Record<string, string[]>>({})
   const pinnedKnowledgeBasesCollapsed = ref(false)
+  const knowledgeGroupCollapsed = ref(false)
+  const knowledgeBaseSort = ref<KnowledgeBaseSort>('name-asc')
   const pinnedNotesCollapsed = ref<Record<string, boolean>>({})
   const maxOpenTabCount = ref(10)
   const wrapTabs = ref(true)
@@ -484,6 +487,8 @@ export const useEditorStore = defineStore('editor', () => {
     knowledgeSidebarHidden.value = session.knowledgeSidebarHidden
     expandedTocNodes.value = session.expandedTocNodes
     pinnedKnowledgeBasesCollapsed.value = session.pinnedKnowledgeBasesCollapsed ?? false
+    knowledgeGroupCollapsed.value = session.knowledgeGroupCollapsed ?? false
+    knowledgeBaseSort.value = session.knowledgeBaseSort ?? 'name-asc'
     pinnedNotesCollapsed.value = session.pinnedNotesCollapsed ?? {}
     trimToLimit()
   }
@@ -1426,6 +1431,8 @@ export const useEditorStore = defineStore('editor', () => {
       knowledgeSidebarHidden: knowledgeSidebarHidden.value,
       expandedTocNodes: serializedExpandedNodes,
       pinnedKnowledgeBasesCollapsed: pinnedKnowledgeBasesCollapsed.value,
+      knowledgeGroupCollapsed: knowledgeGroupCollapsed.value,
+      knowledgeBaseSort: knowledgeBaseSort.value,
       pinnedNotesCollapsed: { ...pinnedNotesCollapsed.value }
     }
   }
@@ -1448,6 +1455,8 @@ export const useEditorStore = defineStore('editor', () => {
     knowledgeSidebarHidden,
     expandedTocNodes,
     pinnedKnowledgeBasesCollapsed,
+    knowledgeGroupCollapsed,
+    knowledgeBaseSort,
     pinnedNotesCollapsed,
     togglePinnedKnowledgeBasesCollapsed,
     togglePinnedNotesCollapsed,

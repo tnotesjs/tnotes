@@ -11,6 +11,8 @@ export interface KnowledgeBaseHandle {
   rootPath: string
   workspace: TNotesKbWorkspace
   snapshot: KbSnapshot
+  /** 最近一次提交的时间，毫秒。没有仓库或没有提交时为空。 */
+  lastCommitAt: number | null
 }
 
 export interface WorkspaceChangeHint {

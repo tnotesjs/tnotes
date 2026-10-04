@@ -112,6 +112,8 @@ export function descriptor(handle: KnowledgeBaseHandle): KnowledgeBaseDescriptor
     health: hasError ? 'invalid' : 'ready',
     diagnostics: snapshot.diagnostics,
     noteCount: snapshot.notes.length,
+    completedCount: snapshot.notes.filter((note) => note.done).length,
+    lastCommitAt: handle.lastCommitAt,
     snapshotRevision: snapshot.revision
   }
 }

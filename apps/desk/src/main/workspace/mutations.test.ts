@@ -33,7 +33,8 @@ async function makeHandle(): Promise<KnowledgeBaseHandle> {
     name: 'TNotes.test',
     rootPath,
     workspace,
-    snapshot: await workspace.scan()
+    snapshot: await workspace.scan(),
+    lastCommitAt: null
   }
 }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, provide, ref, watch } from 'vue'
+import { inject, nextTick, provide, ref, watch } from 'vue'
 
 import { useAgentStore } from '../agent/agentStore'
 import { useEditorStore } from '../stores/editor'

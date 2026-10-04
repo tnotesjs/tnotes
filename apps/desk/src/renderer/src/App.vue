@@ -733,6 +733,8 @@ watch(
     () => editor.knowledgeSidebarHidden,
     () => editor.expandedTocNodes,
     () => editor.pinnedKnowledgeBasesCollapsed,
+    () => editor.knowledgeGroupCollapsed,
+    () => editor.knowledgeBaseSort,
     () => editor.pinnedNotesCollapsed,
     () => editor.lastNoteByGroup
   ],

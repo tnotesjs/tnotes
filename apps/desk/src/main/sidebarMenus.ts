@@ -6,11 +6,24 @@ import { Menu, type BrowserWindow, type MenuItemConstructorOptions } from 'elect
 
 import { maxBatchNoteCount } from '../shared/noteBatch'
 import type {
+  KnowledgeBaseSort,
   KnowledgeSidebarMenuAction,
+  KnowledgeSidebarMenuChoice,
   KnowledgeSidebarMenuRequest,
   NavigatorSidebarMenuAction,
   NavigatorSidebarMenuRequest
 } from '../shared/contracts'
+
+const KNOWLEDGE_BASE_SORTS: { id: KnowledgeBaseSort; label: string }[] = [
+  { id: 'name-asc', label: '按照名称升序' },
+  { id: 'name-desc', label: '按照名称降序' },
+  { id: 'count-asc', label: '按照笔记数量升序' },
+  { id: 'count-desc', label: '按照笔记数量降序' },
+  { id: 'done-asc', label: '按照笔记完成数量升序' },
+  { id: 'done-desc', label: '按照笔记完成数量降序' },
+  { id: 'updated-asc', label: '按照最近更新时间升序' },
+  { id: 'updated-desc', label: '按照最近更新时间降序' }
+]
 
 function revealWorkspaceLabel(platform: NodeJS.Platform = process.platform): string {
   if (platform === 'darwin') return '在访达中打开'
@@ -20,7 +33,7 @@ function revealWorkspaceLabel(platform: NodeJS.Platform = process.platform): str
 
 export function knowledgeSidebarMenuTemplate(
   request: KnowledgeSidebarMenuRequest,
-  select: (action: KnowledgeSidebarMenuAction) => void,
+  select: (choice: KnowledgeSidebarMenuChoice) => void,
   platform: NodeJS.Platform = process.platform
 ): MenuItemConstructorOptions[] {
   const item = (
@@ -31,11 +44,23 @@ export function knowledgeSidebarMenuTemplate(
     id,
     label,
     enabled,
-    click: () => select(id)
+    click: () => select({ kind: 'action', action: id })
   })
   return [
     item('create', '新建知识库', !request.loading),
     item('refresh', '重新扫描知识库', !request.loading),
+    { type: 'separator' },
+    {
+      id: 'sort',
+      label: '排序',
+      submenu: KNOWLEDGE_BASE_SORTS.map((option) => ({
+        id: option.id,
+        label: option.label,
+        type: 'radio' as const,
+        checked: request.sort === option.id,
+        click: () => select({ kind: 'sort', sort: option.id })
+      }))
+    },
     { type: 'separator' },
     item('reveal-workspace', revealWorkspaceLabel(platform), request.hasWorkspace),
     item('choose-workspace', '更换工作区')
@@ -75,7 +100,7 @@ export function navigatorSidebarMenuTemplate(
 export function showKnowledgeSidebarMenu(
   window: BrowserWindow,
   request: KnowledgeSidebarMenuRequest
-): Promise<KnowledgeSidebarMenuAction | null> {
+): Promise<KnowledgeSidebarMenuChoice | null> {
   return new Promise((resolve) => {
     const menu = Menu.buildFromTemplate(
       knowledgeSidebarMenuTemplate(request, (action) => resolve(action))

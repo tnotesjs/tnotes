@@ -207,6 +207,16 @@ export interface WorkspaceDiagnosticDto {
   path?: string
 }
 
+export type KnowledgeBaseSort =
+  | 'name-asc'
+  | 'name-desc'
+  | 'count-asc'
+  | 'count-desc'
+  | 'done-asc'
+  | 'done-desc'
+  | 'updated-asc'
+  | 'updated-desc'
+
 export interface KnowledgeBaseIconDto {
   src?: string
   svg?: string
@@ -235,6 +245,10 @@ export interface KnowledgeBaseDescriptor {
   health: 'ready' | 'invalid' | 'future-schema'
   diagnostics: WorkspaceDiagnosticDto[]
   noteCount: number
+  /** TOC 里勾成完成的笔记数。 */
+  completedCount: number
+  /** 最近一次提交的时间，毫秒。没有仓库或没有提交时为空。 */
+  lastCommitAt: number | null
   snapshotRevision: string
 }
 
@@ -531,7 +545,12 @@ export type ContextMenuRequest =
 export interface KnowledgeSidebarMenuRequest {
   hasWorkspace: boolean
   loading: boolean
+  sort: KnowledgeBaseSort
 }
+
+export type KnowledgeSidebarMenuChoice =
+  | { kind: 'action'; action: KnowledgeSidebarMenuAction }
+  | { kind: 'sort'; sort: KnowledgeBaseSort }
 
 export type KnowledgeSidebarMenuAction =
   'create' | 'refresh' | 'reveal-workspace' | 'choose-workspace'
@@ -1064,8 +1083,12 @@ export interface WorkspaceSession {
   /** 知识库列整列隐藏。缺省显示。拖窄成图标条仍走宽度，不走这个开关。 */
   knowledgeSidebarHidden: boolean
   expandedTocNodes: Record<string, string[]>
-  /** 知识库列表的置顶分组是否收起。缺省展开。 */
+  /** 知识库列表的置顶分组是否收起。缺省展开。界面已不再使用。 */
   pinnedKnowledgeBasesCollapsed: boolean
+  /** 「知识库」分组是否收起。缺省展开。 */
+  knowledgeGroupCollapsed: boolean
+  /** 「知识库」分组的排序。缺省按名称升序。 */
+  knowledgeBaseSort: KnowledgeBaseSort
   /** 每个知识库的笔记置顶分组是否收起。缺省展开。 */
   pinnedNotesCollapsed: Record<string, boolean>
 }
@@ -2329,7 +2352,7 @@ export interface DeskApi {
     showContextMenu(request: ContextMenuRequest): Promise<DeskResult<ContextMenuAction | null>>
     showKnowledgeSidebarMenu(
       request: KnowledgeSidebarMenuRequest
-    ): Promise<DeskResult<KnowledgeSidebarMenuAction | null>>
+    ): Promise<DeskResult<KnowledgeSidebarMenuChoice | null>>
     showNavigatorSidebarMenu(
       request: NavigatorSidebarMenuRequest
     ): Promise<DeskResult<NavigatorSidebarMenuAction | null>>

@@ -19,6 +19,8 @@ const knowledgeBase: KnowledgeBaseDescriptor = {
   health: 'ready',
   diagnostics: [],
   noteCount: 3,
+  completedCount: 0,
+  lastCommitAt: null,
   snapshotRevision: 'v1'
 }
 

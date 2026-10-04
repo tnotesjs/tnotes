@@ -255,6 +255,8 @@ describe('TocNodeList', () => {
       health: 'ready',
       diagnostics: [],
       noteCount: 1,
+      completedCount: 0,
+      lastCommitAt: null,
       snapshotRevision: 'rev-1'
     }
     editor.switchKnowledgeBase('kb-a', [targetNote.uuid])

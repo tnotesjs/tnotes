@@ -164,6 +164,19 @@ export const workspaceSessionSchema = z.object({
   knowledgeSidebarHidden: z.boolean().default(false),
   expandedTocNodes: z.record(z.string(), z.array(z.string())),
   pinnedKnowledgeBasesCollapsed: z.boolean().default(false),
+  knowledgeGroupCollapsed: z.boolean().default(false),
+  knowledgeBaseSort: z
+    .enum([
+      'name-asc',
+      'name-desc',
+      'count-asc',
+      'count-desc',
+      'done-asc',
+      'done-desc',
+      'updated-asc',
+      'updated-desc'
+    ])
+    .default('name-asc'),
   pinnedNotesCollapsed: z.record(z.string(), z.boolean()).default({})
 })
 

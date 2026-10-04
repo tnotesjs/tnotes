@@ -301,6 +301,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     adjustAppZoom,
     zoomFeedbackSequence,
     togglePinnedKnowledgeBase,
+    reorderPinnedKnowledgeBase,
     togglePinnedNote,
     pinNote,
     reorderPinnedNote
@@ -743,6 +744,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     uploadImage,
     updateSettings,
     togglePinnedKnowledgeBase,
+    reorderPinnedKnowledgeBase,
     togglePinnedNote,
     pinNote,
     reorderPinnedNote,
