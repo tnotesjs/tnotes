@@ -66,6 +66,10 @@ function collectBoxes(view: EditorView, from: number, to: number): Box[] {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
     acceptNode(node) {
       if (!domRange.intersectsNode(node)) return NodeFilter.FILTER_REJECT
+      // 标题和列表左侧的折叠箭头是操作按钮，不参与选区底色。
+      if (node instanceof HTMLElement && node.closest('.cm-lp-heading-toggle, .cm-lp-list-toggle')) {
+        return NodeFilter.FILTER_REJECT
+      }
       if (node instanceof HTMLElement && node.contentEditable === 'false') {
         return NodeFilter.FILTER_ACCEPT
       }
