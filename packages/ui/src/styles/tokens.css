@@ -17,6 +17,8 @@
   --tn-c-hover: rgba(142, 150, 170, 0.14);
   --tn-c-highlight: rgba(100, 108, 255, 0.16);
   --tn-c-brand-soft: var(--tn-c-highlight);
+  /* 阅读选区。语雀正文 ::selection：rgba(27, 162, 227, 0.2)，字色不改。 */
+  --tn-c-selection: rgba(27, 162, 227, 0.2);
   --tn-c-success: #18794e;
   --tn-c-warning: #915930;
   --tn-c-danger: #b8272c;
@@ -68,6 +70,8 @@
   /* 暗色分割线贴近编辑区，掺文字色后白底图和深色图都能看见边。 */
   --tn-c-media-edge: color-mix(in srgb, var(--tn-c-text-2) 42%, var(--tn-c-bg));
   --tn-c-hover: rgba(101, 117, 133, 0.16);
+  /* 同一青色。暗底上 0.2 太淡，提高到 0.35 才看得清。 */
+  --tn-c-selection: rgba(27, 162, 227, 0.35);
   --tn-c-success: #3dd68c;
   --tn-c-warning: #f9b44e;
   --tn-c-danger: #f66f81;

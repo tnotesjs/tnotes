@@ -54,7 +54,7 @@
 }
 
 .live-editor .cm-lp-selection {
-  background: var(--tn-c-highlight);
+  background: var(--tn-c-selection);
 }
 
 .live-editor .cm-placeholder {

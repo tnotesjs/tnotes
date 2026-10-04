@@ -17,6 +17,9 @@ body {
   color: var(--tn-c-text);
   font-family: var(--tn-font-sans);
 }
+::selection {
+  background: var(--tn-c-selection);
+}
 .tn-site-header {
   position: sticky;
   z-index: 20;
