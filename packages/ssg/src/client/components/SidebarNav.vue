@@ -14,16 +14,7 @@
           v-model="filter"
           aria-label="筛选目录"
           placeholder="筛选标题或题号"
-        /><button v-if="filter" type="button" @click="filter = ''">清空</button
-        ><button
-          type="button"
-          class="tn-sidebar-icon-button"
-          title="把目录滚动到当前笔记"
-          aria-label="定位当前笔记"
-          @click="locateActive"
-        >
-          <SiteIcon name="focus" />
-        </button>
+        /><button v-if="filter" type="button" @click="filter = ''">清空</button>
         <button
           type="button"
           class="tn-sidebar-icon-button"
@@ -79,11 +70,8 @@
  * Sidebar shell: owns the scroll container, the collapse context, and the
  * session state that has to outlive a full document load.
  *
- * The 定位当前笔记 button is the escape hatch for the one case restore cannot
- * cover — arriving from search or an in-article link, where the current note
- * sits outside the restored viewport. It sits in the tools row, always on, so
- * the reader never has to wonder whether it is about to appear; core had the
- * same control in its toolbar.
+ * Refresh locates the current note itself, including when its group is
+ * collapsed, so there is no separate focus button.
  *
  * No `<!-- -->` comments in the template: Vue SSR emits them verbatim into
  * every generated page.

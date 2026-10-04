@@ -23,11 +23,6 @@
  * - `outline`         desk  src/renderer/src/components/OutlineIcon.vue
  *                     Desk's 正文目录 toggle. Phones open the drawer with it, so
  *                     the two apps read the same way.
- * - `focus`           core  vitepress/assets/icons/icon__focus.svg
- *                     Core's sidebar had a 聚焦到当前笔记 button; the site's locate
- *                     control is the same feature, so it keeps the same glyph.
- *                     (The file's invisible full-circle path is dropped — it has
- *                     neither stroke nor fill.)
  * - `github`          core  vitepress/assets/icons/icon__github.svg
  *                     The comments block links out to the repo's discussions.
  * - `pageWidth`       desk  src/renderer/src/components/PageWidthIcon.vue
@@ -67,13 +62,6 @@ export const SITE_ICONS = {
     paths: [
       'M28 9h-6v2h6v4h-4v2h4v4h-6v2h6a2.003 2.003 0 0 0 2-2V11a2 2 0 0 0-2-2m-8 14h-8v-6a2 2 0 0 1 2-2h4v-4h-6V9h6a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-4v4h6Zm-17.5-.5v-1h3v-11h-3v-1h4v12h3v1z',
       'M6 10v12zm1-1H2v2h3v10H2v2h8v-2H7z'
-    ]
-  },
-  focus: {
-    viewBox: '0 0 24 24',
-    mode: 'stroke',
-    paths: [
-      'M19 12a7 7 0 0 1-7 7m7-7a7 7 0 0 0-7-7m7 7h3m-10 7a7 7 0 0 1-7-7m7 7v3M5 12a7 7 0 0 1 7-7m-7 7H2m10-7V2m1 10a1 1 0 1 1-2 0a1 1 0 0 1 2 0Z'
     ]
   },
   github: {
