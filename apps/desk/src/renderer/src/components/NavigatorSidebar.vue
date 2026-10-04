@@ -499,13 +499,10 @@ async function openHeaderMenu(): Promise<void> {
         aria-label="打开知识库根目录的 README.md"
         @click="openReadme"
       >
-        <svg viewBox="0 0 16 16" aria-hidden="true">
+        <svg viewBox="0 0 1024 1024" aria-hidden="true">
           <path
-            d="M4 2.5h5.5L12 5v8.5H4z M9.5 2.5V5H12 M6 8h4 M6 10.5h4"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.2"
-            stroke-linejoin="round"
+            fill="currentColor"
+            d="M854.6 288.6L639.4 73.4c-6-6-14.1-9.4-22.6-9.4H192c-17.7 0-32 14.3-32 32v832c0 17.7 14.3 32 32 32h640c17.7 0 32-14.3 32-32V311.3c0-8.5-3.4-16.7-9.4-22.7M790.2 326H602V137.8zm1.8 562H232V136h302v216a42 42 0 0 0 42 42h216z"
           />
         </svg>
         <strong>README</strong>
@@ -1119,6 +1116,7 @@ async function openHeaderMenu(): Promise<void> {
 
 .readme-entry svg {
   flex: none;
+  /* 与下方折叠箭头同一列宽，图标在格子里居中，文字起点才能和「变更」对齐 */
   width: 18px;
   height: 14px;
 }
