@@ -1682,6 +1682,8 @@ export interface SearchResultDto {
   noteIndex: string
   /** Real note folder / file stem, e.g. "0001. 标题". */
   fileName: string
+  /** POSIX path relative to the knowledge-base root. */
+  relPath: string
   title: string
   snippet: string
   score: number

@@ -457,7 +457,7 @@ async function openHeaderMenu(): Promise<void> {
         <input v-model="query" type="search" placeholder="搜索标题和正文" />
       </div>
       <div class="header-actions">
-        <UiTooltip label="更多笔记操作">
+        <UiTooltip label="更多笔记操作" align="end">
           <button
             type="button"
             class="menu-button"
@@ -465,7 +465,13 @@ async function openHeaderMenu(): Promise<void> {
             :disabled="!kbReady || menuBusy"
             @click="openHeaderMenu"
           >
-            ⋯
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <g fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="4" cy="12" r="1" />
+                <circle cx="12" cy="12" r="1" />
+                <circle cx="20" cy="12" r="1" />
+              </g>
+            </svg>
           </button>
         </UiTooltip>
       </div>
@@ -1027,18 +1033,25 @@ async function openHeaderMenu(): Promise<void> {
 .menu-button {
   height: 28px;
   width: 28px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--raised);
-  color: var(--text);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
   cursor: pointer;
-  font-size: 18px;
-  line-height: 20px;
+}
+
+.menu-button svg {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
 .menu-button:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--hover);
+  color: var(--text);
 }
 
 .menu-button:disabled {

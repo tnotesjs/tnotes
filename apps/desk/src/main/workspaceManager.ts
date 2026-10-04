@@ -511,6 +511,7 @@ export class WorkspaceManager {
             noteUuid,
             noteIndex: current.note.index,
             fileName: current.note.fileName.replace(/\.md$/i, ''),
+            relPath: current.note.relPath,
             title: current.note.title,
             content,
             revision: createHash('sha256').update(content).digest('hex')
@@ -546,6 +547,7 @@ export class WorkspaceManager {
       noteUuid,
       noteIndex: note.index,
       fileName: note.fileName.replace(/\.md$/i, ''),
+      relPath: note.relPath,
       title: note.title,
       content,
       revision: createHash('sha256').update(content).digest('hex')

@@ -5,7 +5,8 @@ import type { DeskTocNode, SearchResultDto } from '../../../shared/contracts'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
 import { resultValue } from '../stores/workspace/helpers'
-import { noteFileName } from './noteFileName'
+import { documentKey } from '../stores/workspace/helpers'
+import { noteFileName, noteLabelParts, workspaceRelativePath } from './noteFileName'
 import {
   createPaletteCommands,
   filterPaletteCommands,
@@ -49,6 +50,36 @@ const commands = computed(() =>
 
 const commandMode = computed(() => isCommandMode(query.value))
 const filteredCommands = computed(() => filterPaletteCommands(commands.value, query.value))
+const commandGroups = computed(() => {
+  const groups: { category: string; items: { command: PaletteCommand; index: number }[] }[] = []
+  filteredCommands.value.forEach((command, index) => {
+    const current = groups[groups.length - 1]
+    if (!current || current.category !== command.category) {
+      groups.push({ category: command.category, items: [{ command, index }] })
+      return
+    }
+    current.items.push({ command, index })
+  })
+  return groups
+})
+
+function shownPath(
+  knowledgeBaseId: string,
+  noteUuid: string,
+  relPath: string | undefined
+): string {
+  const loaded = workspace.documents[documentKey(knowledgeBaseId, noteUuid)]?.document.relPath
+  return notePath(knowledgeBaseId, loaded || relPath || '')
+}
+
+function notePath(knowledgeBaseId: string, relPath: string): string {
+  const bases = [
+    ...workspace.overview.knowledgeBases,
+    ...workspace.overview.allKnowledgeBases
+  ]
+  const knowledgeBase = bases.find((item) => item.id === knowledgeBaseId)
+  return workspaceRelativePath(workspace.overview.path, knowledgeBase?.rootPath, relPath)
+}
 
 function tocNoteByUuid(
   nodes: DeskTocNode[],
@@ -67,17 +98,27 @@ const recentNotes = computed(() => {
   if (!knowledgeBaseId) return []
   const toc = workspace.knowledgeBase?.id === knowledgeBaseId ? workspace.knowledgeBase.toc : []
   const seen = new Set<string>()
-  const notes: { knowledgeBaseId: string; noteUuid: string; title: string; fileName: string }[] = []
+  const notes: {
+    knowledgeBaseId: string
+    noteUuid: string
+    title: string
+    fileName: string
+    noteIndex: string
+    relPath: string
+  }[] = []
   for (const group of editor.groups) {
     for (const tab of [...group.tabs].sort((a, b) => (b.openedAt ?? 0) - (a.openedAt ?? 0))) {
       if (tab.type !== 'note' || tab.knowledgeBaseId !== knowledgeBaseId) continue
       if (seen.has(tab.noteUuid)) continue
       seen.add(tab.noteUuid)
       const tocNote = tocNoteByUuid(toc, tab.noteUuid)
+      const session = workspace.documents[documentKey(tab.knowledgeBaseId, tab.noteUuid)]
       notes.push({
         knowledgeBaseId: tab.knowledgeBaseId,
         noteUuid: tab.noteUuid,
         title: tab.title,
+        noteIndex: tocNote?.noteIndex ?? session?.document.index ?? '',
+        relPath: session?.document.relPath ?? '',
         fileName: tocNote
           ? noteFileName({
               noteIndex: tocNote.noteIndex,
@@ -306,75 +347,108 @@ defineExpose({ openSearch, openCommands, close })
         class="command-palette__menu"
         role="listbox"
       >
-        <template v-if="commandMode">
-          <button
-            v-for="(command, index) in filteredCommands"
-            :key="command.id"
-            type="button"
-            class="command-palette__item"
-            :class="{ 'is-active': index === activeIndex, 'is-disabled': !command.enabled() }"
-            role="option"
-            :aria-selected="index === activeIndex"
-            @mousedown.prevent="activeIndex = index"
-            @click="void confirm()"
-          >
-            <span>
-              <small>{{ command.category }}</small>
-              <strong>{{ command.title }}</strong>
-            </span>
-            <span class="command-palette__meta">
-              <code>{{ command.hint }}</code>
-              <kbd v-if="command.shortcut">{{ command.shortcut }}</kbd>
-            </span>
-          </button>
-          <div v-if="filteredCommands.length === 0" class="command-palette__empty">
-            没有匹配的命令
-          </div>
-        </template>
-        <template v-else-if="query.trim()">
-          <div v-if="searchLoading" class="command-palette__empty">正在搜索…</div>
-          <button
-            v-for="(result, index) in searchResults"
-            :key="`${result.knowledgeBaseId}:${result.noteUuid}`"
-            type="button"
-            class="command-palette__item"
-            :class="{ 'is-active': index === activeIndex }"
-            role="option"
-            :aria-selected="index === activeIndex"
-            @mousedown.prevent="activeIndex = index"
-            @click="void confirm()"
-          >
-            <span>
-              <small>笔记</small>
-              <strong>{{ noteFileName(result) }}</strong>
-            </span>
-            <em>{{ result.snippet }}</em>
-          </button>
-          <div v-if="!searchLoading && searchResults.length === 0" class="command-palette__empty">
-            没有匹配标题或正文的笔记
-          </div>
-        </template>
-        <template v-else>
-          <button
-            v-for="(note, index) in recentNotes"
-            :key="`${note.knowledgeBaseId}:${note.noteUuid}`"
-            type="button"
-            class="command-palette__item"
-            :class="{ 'is-active': index === activeIndex }"
-            role="option"
-            :aria-selected="index === activeIndex"
-            @mousedown.prevent="activeIndex = index"
-            @click="void confirm()"
-          >
-            <span>
-              <small>最近打开</small>
-              <strong>{{ note.fileName }}</strong>
-            </span>
-          </button>
-          <div v-if="recentNotes.length === 0" class="command-palette__empty">
-            输入关键字搜索当前知识库，或输入 &gt; 运行命令
-          </div>
-        </template>
+        <div class="command-palette__list">
+          <template v-if="commandMode">
+            <template v-for="group in commandGroups" :key="group.category">
+              <div class="command-palette__heading">{{ group.category }}</div>
+              <button
+                v-for="item in group.items"
+                :key="item.command.id"
+                type="button"
+                class="command-palette__item"
+                :class="{
+                  'is-active': item.index === activeIndex,
+                  'is-disabled': !item.command.enabled()
+                }"
+                role="option"
+                :aria-selected="item.index === activeIndex"
+                @mousedown.prevent="activeIndex = item.index"
+                @click="void confirm()"
+              >
+                <strong>{{ item.command.title }}</strong>
+                <span class="command-palette__meta">
+                  <code>{{ item.command.hint }}</code>
+                  <kbd v-if="item.command.shortcut">{{ item.command.shortcut }}</kbd>
+                </span>
+              </button>
+            </template>
+            <div v-if="filteredCommands.length === 0" class="command-palette__empty">
+              没有匹配的命令
+            </div>
+          </template>
+          <template v-else-if="query.trim()">
+            <div v-if="searchLoading" class="command-palette__empty">正在搜索…</div>
+            <button
+              v-for="(result, index) in searchResults"
+              :key="`${result.knowledgeBaseId}:${result.noteUuid}`"
+              type="button"
+              class="command-palette__item is-stacked"
+              :class="{ 'is-active': index === activeIndex }"
+              role="option"
+              :aria-selected="index === activeIndex"
+              @mousedown.prevent="activeIndex = index"
+              @click="void confirm()"
+            >
+              <span>
+                <span class="command-palette__name">
+                  <span
+                    v-if="noteLabelParts(noteFileName(result), result.noteIndex).index"
+                    class="command-palette__index"
+                  >
+                    {{ noteLabelParts(noteFileName(result), result.noteIndex).index }}
+                  </span>
+                  <strong>{{ noteLabelParts(noteFileName(result), result.noteIndex).title }}</strong>
+                </span>
+                <em>{{ result.snippet }}</em>
+              </span>
+              <span
+                v-if="shownPath(result.knowledgeBaseId, result.noteUuid, result.relPath)"
+                class="command-palette__path"
+                :title="shownPath(result.knowledgeBaseId, result.noteUuid, result.relPath)"
+              >
+                {{ shownPath(result.knowledgeBaseId, result.noteUuid, result.relPath) }}
+              </span>
+            </button>
+            <div v-if="!searchLoading && searchResults.length === 0" class="command-palette__empty">
+              没有匹配标题或正文的笔记
+            </div>
+          </template>
+          <template v-else>
+            <div v-if="recentNotes.length" class="command-palette__heading">最近打开</div>
+            <button
+              v-for="(note, index) in recentNotes"
+              :key="`${note.knowledgeBaseId}:${note.noteUuid}`"
+              type="button"
+              class="command-palette__item"
+              :class="{ 'is-active': index === activeIndex }"
+              role="option"
+              :aria-selected="index === activeIndex"
+              @mousedown.prevent="activeIndex = index"
+              @click="void confirm()"
+            >
+              <span class="command-palette__name">
+                <span
+                  v-if="noteLabelParts(note.fileName, note.noteIndex).index"
+                  class="command-palette__index"
+                >
+                  {{ noteLabelParts(note.fileName, note.noteIndex).index }}
+                </span>
+                <strong>{{ noteLabelParts(note.fileName, note.noteIndex).title }}</strong>
+              </span>
+              <span
+                v-if="shownPath(note.knowledgeBaseId, note.noteUuid, note.relPath)"
+                class="command-palette__path"
+                :title="shownPath(note.knowledgeBaseId, note.noteUuid, note.relPath)"
+              >
+                {{ shownPath(note.knowledgeBaseId, note.noteUuid, note.relPath) }}
+              </span>
+            </button>
+            <div v-if="recentNotes.length === 0" class="command-palette__empty">
+              输入关键字搜索当前知识库，或输入 &gt; 运行命令
+            </div>
+          </template>
+        </div>
+        <div class="command-palette__hint">↑↓ 选择 · 回车打开 · Esc 关闭</div>
       </div>
     </div>
   </div>
@@ -403,31 +477,58 @@ defineExpose({ openSearch, openCommands, close })
   outline: none;
 }
 
-.command-palette.is-open .command-palette__input,
 .command-palette__input:focus {
   border-color: var(--accent);
 }
 
+.command-palette.is-open .command-palette__input {
+  border-color: transparent;
+  border-bottom-color: var(--border);
+  border-radius: 10px 10px 0 0;
+  background: var(--raised);
+}
+
 .command-palette__menu {
   position: absolute;
-  top: calc(100% + 6px);
-  left: 50%;
+  top: 100%;
+  left: 0;
   z-index: 1100;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  width: min(560px, 80vw);
+  width: 100%;
   max-height: min(420px, 60vh);
+  overflow: hidden;
+  border: 0;
+  border-radius: 0 0 10px 10px;
+  background: var(--raised);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 32%);
+}
+
+.command-palette__list {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   overflow: auto;
-  padding: 6px;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--titlebar-bg) 82%, transparent);
-  box-shadow: 0 16px 40px rgb(0 0 0 / 28%);
-  backdrop-filter: saturate(160%) blur(22px);
-  -webkit-backdrop-filter: saturate(160%) blur(22px);
-  transform: translateX(-50%);
+  padding: 4px;
+}
+
+.command-palette__heading {
+  padding: 6px 8px 2px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.command-palette__hint {
+  flex: none;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .command-palette__item {
@@ -454,7 +555,7 @@ defineExpose({ openSearch, openCommands, close })
   color: var(--muted);
 }
 
-.command-palette__item > span {
+.command-palette__item.is-stacked > span {
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -472,7 +573,34 @@ defineExpose({ openSearch, openCommands, close })
   white-space: nowrap;
 }
 
+.command-palette__name {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.command-palette__index {
+  flex: none;
+  color: var(--muted);
+  opacity: 0.45;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.command-palette__path {
+  flex: none;
+  max-width: 48%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .command-palette__item strong {
+  min-width: 0;
   overflow: hidden;
   font-size: 12px;
   font-weight: 600;

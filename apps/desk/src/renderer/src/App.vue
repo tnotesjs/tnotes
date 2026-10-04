@@ -1518,6 +1518,8 @@ onUnmounted(() => {
 
 .titlebar {
   position: relative;
+  /* 搜索下拉从顶栏溢出。标签加号是 sticky + z-index，会和顶栏抢同一层并盖住菜单。 */
+  z-index: 10;
   height: 42px;
   flex: none;
   display: flex;

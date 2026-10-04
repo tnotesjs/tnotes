@@ -19,6 +19,7 @@ const documents: SearchIndexDocument[] = [
     noteUuid: 'note-a',
     noteIndex: '0038',
     fileName: '0038. 后台搜索索引',
+    relPath: 'notes/0038. 后台搜索索引.md',
     title: '后台搜索索引',
     content: '# 后台搜索索引\n\nDesk 使用独立线程维护全文搜索，不阻塞编辑器。',
     revision: 'a'
@@ -30,6 +31,7 @@ const documents: SearchIndexDocument[] = [
     noteUuid: 'note-b',
     noteIndex: '0001',
     fileName: '0001. 编辑器说明',
+    relPath: 'notes/0001. 编辑器说明.md',
     title: '编辑器说明',
     content: '这里也提到了搜索，但属于另一个知识库。',
     revision: 'b'
@@ -71,6 +73,7 @@ describe('搜索缓存指纹', () => {
     noteUuid: 'note-1',
     noteIndex: '0001',
     fileName: '0001. 旧标题.md',
+    relPath: 'notes/0001. 旧标题.md',
     title: '旧标题',
     content: '# 旧标题\n',
     revision: 'rev-1'
@@ -81,6 +84,9 @@ describe('搜索缓存指纹', () => {
     expect(searchDocumentFingerprint({ ...base, title: '新标题' })).not.toBe(original)
     expect(searchDocumentFingerprint({ ...base, fileName: '0001. 新标题.md' })).not.toBe(original)
     expect(searchDocumentFingerprint({ ...base, noteIndex: '0002' })).not.toBe(original)
+    expect(searchDocumentFingerprint({ ...base, relPath: 'notes/0002. 旧标题.md' })).not.toBe(
+      original
+    )
     expect(searchDocumentFingerprint({ ...base })).toBe(original)
   })
 

@@ -11,6 +11,8 @@ export interface SearchIndexDocument {
   noteUuid: string
   noteIndex: string
   fileName: string
+  /** POSIX path relative to the knowledge-base root. */
+  relPath: string
   title: string
   content: string
   revision: string
@@ -22,7 +24,13 @@ export interface SearchIndexDocument {
  * 旧值，落盘后重启依旧陈旧。
  */
 export function searchDocumentFingerprint(document: SearchIndexDocument): string {
-  return [document.revision, document.fileName, document.title, document.noteIndex].join('\u0000')
+  return [
+    document.revision,
+    document.fileName,
+    document.title,
+    document.noteIndex,
+    document.relPath
+  ].join('\u0000')
 }
 
 export function searchFingerprintSignature(fingerprints: Record<string, string>): string {
@@ -63,6 +71,7 @@ export function searchOptions(): ConstructorParameters<typeof MiniSearch<SearchI
       'noteIndex',
       'fileName',
       'title',
+      'relPath',
       'content'
     ],
     tokenize: tokenizeSearchText,
@@ -126,6 +135,7 @@ export function querySearchIndex(
       noteUuid: result.noteUuid as string,
       noteIndex: result.noteIndex as string,
       fileName: result.fileName as string,
+      relPath: (result.relPath as string) ?? '',
       title: result.title as string,
       snippet: searchSnippet(result.content as string, normalized),
       score: result.score

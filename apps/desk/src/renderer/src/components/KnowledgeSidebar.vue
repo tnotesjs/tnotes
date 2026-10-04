@@ -132,7 +132,7 @@ async function openHeaderMenu(): Promise<void> {
         <input v-model="query" type="search" placeholder="搜索知识库" />
       </div>
       <div class="header-actions">
-        <UiTooltip label="更多知识库操作">
+        <UiTooltip label="更多知识库操作" align="end">
           <button
             type="button"
             class="menu-button"
@@ -140,7 +140,13 @@ async function openHeaderMenu(): Promise<void> {
             :disabled="store.loading || menuBusy"
             @click="openHeaderMenu"
           >
-            ⋯
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <g fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="4" cy="12" r="1" />
+                <circle cx="12" cy="12" r="1" />
+                <circle cx="20" cy="12" r="1" />
+              </g>
+            </svg>
           </button>
         </UiTooltip>
       </div>
@@ -238,9 +244,6 @@ async function openHeaderMenu(): Promise<void> {
       <span>{{ emptyMessage.detail }}</span>
     </div>
 
-    <footer class="workspace-footer" :title="store.overview.path ?? ''">
-      <span v-if="!compact">{{ store.overview.path ?? '尚未选择工作区' }}</span>
-    </footer>
   </aside>
 </template>
 
@@ -261,44 +264,46 @@ async function openHeaderMenu(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 6px;
-  overflow: hidden;
   padding: 7px 9px;
   border-bottom: 1px solid var(--border);
 }
 
 .search-wrap {
-  height: auto;
+  position: relative;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--input-bg);
-  color: var(--muted);
 }
 
 .search-wrap > span {
-  flex: none;
-  font-size: 13px;
+  position: absolute;
+  z-index: 1;
+  left: 9px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1;
+  pointer-events: none;
 }
 
 .search-wrap input {
-  flex: 1;
-  min-width: 0;
-  height: 26px;
-  border: 0;
+  width: 100%;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   outline: none;
-  background: transparent;
+  background: var(--input-bg);
   color: var(--text);
+  padding: 0 9px 0 28px;
   font-size: 11px;
 }
 
 .search-wrap input:focus {
-  outline: none;
+  border-color: var(--accent);
 }
 
 .header-actions {
@@ -311,18 +316,25 @@ async function openHeaderMenu(): Promise<void> {
 .menu-button {
   height: 28px;
   width: 28px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--raised);
-  color: var(--text);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
   cursor: pointer;
-  font-size: 18px;
-  line-height: 20px;
+}
+
+.menu-button svg {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
 .menu-button:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--hover);
+  color: var(--text);
 }
 
 .menu-button:disabled {
@@ -521,23 +533,4 @@ async function openHeaderMenu(): Promise<void> {
   font-size: 12px;
 }
 
-.workspace-footer {
-  height: 36px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px 0 14px;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.workspace-footer > span {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 </style>
