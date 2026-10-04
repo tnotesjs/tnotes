@@ -30,9 +30,17 @@ import { mindmapPreviewMarkdown, rebuildMindmapFence } from '../editor/markdown/
 import { clampMindmapHeight, parseFootprintsSource } from '@tnotesjs/ui'
 import { installMarkdownMath } from '../agent/agentMarkdown'
 import { livePreviewHost, type LivePreviewHost } from './host'
+import { expandReferenceLinks } from './referenceLinks'
 import { revealAt } from './widgets'
 
 export type CardKind = 'container' | 'mermaid' | 'mindmap' | 'component' | 'html' | 'table'
+
+function definitionKey(definitions: ReadonlyMap<string, string>): string {
+  return [...definitions.entries()]
+    .map(([label, url]) => `${label} ${url}`)
+    .sort()
+    .join('\n')
+}
 
 /** 用户在卡片里切换了代码组标签：记下来，露出源码时显示同一页。 */
 export const setCodeGroupTab = StateEffect.define<{ pos: number; index: number }>({
@@ -160,13 +168,19 @@ export class CardWidget extends WidgetType {
     readonly source: string,
     /** 点击卡片后光标落在源码里的哪个位置（相对卡片起点） */
     private readonly revealOffset: number,
-    private readonly knowledgeBaseId: string
+    private readonly knowledgeBaseId: string,
+    /** 围栏外的链接定义。容器和导图单独渲染，源码没变时定义变了也要重画。 */
+    private readonly definitions: ReadonlyMap<string, string> = new Map()
   ) {
     super()
   }
 
   eq(other: CardWidget): boolean {
-    return other.kind === this.kind && other.source === this.source
+    return (
+      other.kind === this.kind &&
+      other.source === this.source &&
+      definitionKey(other.definitions) === definitionKey(this.definitions)
+    )
   }
 
   get estimatedHeight(): number {
@@ -215,7 +229,7 @@ export class CardWidget extends WidgetType {
     const resolveImage = host.resolveImage.bind(host)
     switch (this.kind) {
       case 'container': {
-        const element = renderContainerFromSource(this.source, resolveImage)
+        const element = renderContainerFromSource(this.source, resolveImage, this.definitions)
         if (element.dataset.footprints === '1') {
           const payload = parseFootprintsSource(this.source)
           const handle = mountFootprintsPreview(element, {
@@ -242,7 +256,7 @@ export class CardWidget extends WidgetType {
         return hostEl
       }
       case 'mindmap':
-        return renderMindmapCard(card, this.source, host, view)
+        return renderMindmapCard(card, this.source, host, view, this.definitions)
       case 'component': {
         const hostEl = document.createElement('div')
         hostEl.className = 'cm-lp-component'
@@ -301,7 +315,8 @@ function renderMindmapCard(
   card: HTMLElement,
   initialSource: string,
   host: LivePreviewHost,
-  view: EditorView
+  view: EditorView,
+  definitions: ReadonlyMap<string, string>
 ): HTMLElement {
   let source = initialSource
   const readOnly = host.isReadOnly()
@@ -327,7 +342,7 @@ function renderMindmapCard(
   const propsFor = (fence: string, height?: number): MindmapPreviewProps => {
     const preview = mindmapPreviewMarkdown(fence)
     return {
-      source: preview.markdown,
+      source: expandReferenceLinks(preview.markdown, definitions),
       initialExpandLevel: preview.initialExpandLevel,
       height: height ?? preview.height,
       editable: !readOnly,

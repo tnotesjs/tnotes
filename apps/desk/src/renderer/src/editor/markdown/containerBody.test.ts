@@ -157,6 +157,23 @@ describe('renderContainerFromSource', () => {
     expect(activeTitle()).toBe('c')
   })
 
+  it('renders inline math inside a callout', () => {
+    const el = renderContainerFromSource('::: tip\n\n$1 < 2$\n\n:::')
+    expect(el.querySelector('.katex')).not.toBeNull()
+    expect(el.textContent ?? '').not.toContain('$1 < 2$')
+  })
+
+  it('resolves reference links from definitions outside the callout', () => {
+    const el = renderContainerFromSource(
+      '::: info\n\n[百度][1]\n\n:::',
+      (src) => src,
+      new Map([['1', 'https://www.baidu.com']])
+    )
+    const link = el.querySelector('a')
+    expect(link?.textContent).toBe('百度')
+    expect(link?.getAttribute('href')).toBe('https://www.baidu.com')
+  })
+
   it('sanitizes script tags in the body', () => {
     const el = renderContainerFromSource('::: tip\n<script>alert(1)</script>ok\n:::')
     expect(el.querySelector('script')).toBeNull()

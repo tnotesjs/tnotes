@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it'
 import taskLists from 'markdown-it-task-lists'
 import linkAttributes from 'markdown-it-link-attributes'
+import { installMarkdownMath } from '../../agent/agentMarkdown'
 import DOMPurify from 'dompurify'
 import CodeGroup from '@tnotesjs/ui/code-group'
 import { parseImageAttrs } from '@tnotesjs/ui/image-markdown'
@@ -144,6 +145,7 @@ function getMarkdownIt(): InstanceType<typeof MarkdownIt> {
   const instance = new MarkdownIt({ html: true, linkify: true, breaks: false })
   instance.use(taskLists)
   instance.use(linkAttributes, { attrs: { target: '_self', rel: 'noopener' } })
+  installMarkdownMath(instance)
 
   markdownIt = instance
   return instance
@@ -182,8 +184,21 @@ function applyImageSizeAttrs(image: HTMLImageElement): void {
   }
 }
 
-function renderBody(body: string, resolveImage: ResolveImage): string {
-  const raw = getMarkdownIt().render(body)
+function withLinkDefinitions(body: string, definitions?: ReadonlyMap<string, string>): string {
+  if (!definitions || definitions.size === 0) return body
+  const lines = [...definitions.entries()].map(([label, url]) => {
+    const destination = /[\s()]/.test(url) ? `<${url.replaceAll('>', '%3E')}>` : url
+    return `[${label}]: ${destination}`
+  })
+  return `${body.replace(/\s*$/, '')}\n\n${lines.join('\n')}\n`
+}
+
+function renderBody(
+  body: string,
+  resolveImage: ResolveImage,
+  definitions?: ReadonlyMap<string, string>
+): string {
+  const raw = getMarkdownIt().render(withLinkDefinitions(body, definitions))
   const sanitized = DOMPurify.sanitize(raw)
   return rewriteImageSources(sanitized, resolveImage)
 }
@@ -318,7 +333,9 @@ const defaultResolveImage: ResolveImage = (src) =>
  */
 export function renderContainerFromSource(
   source: string,
-  resolveImage: ResolveImage = defaultResolveImage
+  resolveImage: ResolveImage = defaultResolveImage,
+  /** 围栏外的链接定义。容器正文单独渲染，看不到笔记末尾的 `[1]: url`。 */
+  definitions?: ReadonlyMap<string, string>
 ): HTMLElement {
   const { name, title, body, hasBody } = parseContainerSource(source)
   if (name === 'code-group') return buildCodeGroup(body)
@@ -330,6 +347,6 @@ export function renderContainerFromSource(
     host.dataset.footprints = '1'
     return host
   }
-  const bodyHtml = hasBody ? renderBody(body, resolveImage) : ''
+  const bodyHtml = hasBody ? renderBody(body, resolveImage, definitions) : ''
   return buildContainerDom(name, title, bodyHtml)
 }

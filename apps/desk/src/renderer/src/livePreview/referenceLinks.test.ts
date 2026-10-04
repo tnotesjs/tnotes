@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { livePreviewField, setFocused } from './decorations'
 import { tnotesMarkdown } from './language'
+import { expandReferenceLinks } from './referenceLinks'
 
 const views: EditorView[] = []
 
@@ -78,5 +79,19 @@ describe('reference links', () => {
 
     const inline = mount('[描述](https://inline.example/a)\n\n[描述]: https://nope.example\n')
     expect(hrefs(inline)).toEqual([{ text: '描述', href: 'https://inline.example/a' }])
+  })
+})
+
+describe('expandReferenceLinks', () => {
+  const definitions = new Map([['1', 'https://www.baidu.com']])
+
+  it('rewrites a full reference and leaves unresolved or parenthesized links alone', () => {
+    expect(expandReferenceLinks('- [百度][1]\n', definitions)).toBe(
+      '- [百度](https://www.baidu.com)\n'
+    )
+    expect(expandReferenceLinks('- [没有][missing]\n', definitions)).toBe('- [没有][missing]\n')
+    expect(expandReferenceLinks('- [已有](https://example.com)\n', definitions)).toBe(
+      '- [已有](https://example.com)\n'
+    )
   })
 })

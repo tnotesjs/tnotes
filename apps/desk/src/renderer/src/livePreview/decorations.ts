@@ -960,7 +960,7 @@ function build(state: EditorState): LivePreviewState {
   const card = (node: SyntaxNode, kind: CardKind, revealOffset: number): void => {
     const start = doc.lineAt(node.from)
     const source = doc.sliceString(start.from, node.to)
-    replaceBlock(node.from, node.to, new CardWidget(kind, source, revealOffset, kbId))
+    replaceBlock(node.from, node.to, new CardWidget(kind, source, revealOffset, kbId, definitions))
   }
   const listDepth = (node: SyntaxNode): number => {
     let depth = -1
