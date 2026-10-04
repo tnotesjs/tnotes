@@ -172,6 +172,39 @@ const interactionField = StateField.define<InteractionState>({
   }
 })
 
+/** 标题行的点击区域比 CodeMirror 记录的行盒更靠下时，把光标放回真正点中的那一行。 */
+function correctClickToRenderedLine(view: EditorView, event: MouseEvent): boolean {
+  if (!view.state.facet(livePreviewEnabled)) return false
+  const target = event.target
+  if (!(target instanceof Element)) return false
+  const hit = target.closest('.cm-line')
+  if (!hit || !view.contentDOM.contains(hit)) return false
+  const guessed = view.posAtCoords({ x: event.clientX, y: event.clientY })
+  let linePos: number
+  try {
+    linePos = view.posAtDOM(hit, 0)
+  } catch {
+    return false
+  }
+  const doc = view.state.doc
+  const hitLine = doc.lineAt(linePos)
+  if (guessed != null && doc.lineAt(guessed).number === hitLine.number) return false
+  const text = view.coordsAtPos(hitLine.from)
+  // 行盒的下半段可能已经被算进下一行，改用这一行文字的上沿来定位。
+  const y = text ? text.top + 1 : event.clientY
+  let pos = view.posAtCoords({ x: event.clientX, y })
+  if (pos == null || doc.lineAt(pos).number !== hitLine.number) {
+    pos = text && event.clientX > text.right ? hitLine.to : hitLine.from
+  }
+  const anchor = event.shiftKey ? view.state.selection.main.anchor : pos
+  view.dispatch({
+    selection: EditorSelection.single(anchor, pos),
+    userEvent: 'select.pointer'
+  })
+  view.focus()
+  return true
+}
+
 const pointerTracker = ViewPlugin.fromClass(
   class {
     private readonly onUp: () => void
@@ -195,7 +228,7 @@ const pointerTracker = ViewPlugin.fromClass(
   },
   {
     eventHandlers: {
-      mousedown(event) {
+      mousedown(event, view) {
         if (event.button !== 0 || event.detail > 1) return
         // 按在正文文字上才冻结；点组件（图片、卡片）由组件自己处理
         const target = event.target as HTMLElement | null
@@ -205,7 +238,9 @@ const pointerTracker = ViewPlugin.fromClass(
           )
         )
           return
+        const corrected = correctClickToRenderedLine(view, event)
         this.start()
+        return corrected
       }
     }
   }

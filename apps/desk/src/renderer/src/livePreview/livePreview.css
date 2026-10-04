@@ -1474,6 +1474,11 @@
   white-space: normal;
 }
 
+/* 轮播的上下外边距在卡片里面。不包住的话会塌到卡片外，点击标题行后半段会落到下一行。 */
+.live-editor .cm-lp-card:has(> .tn-swiper) {
+  display: flow-root;
+}
+
 .live-editor .cm-lp-card::after {
   content: '';
   position: absolute;

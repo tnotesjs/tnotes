@@ -33,6 +33,8 @@ import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
 import {
   arrowDownIntoBlock,
+  arrowLeftToVisible,
+  arrowRightToVisible,
   arrowUpIntoBlock,
   clearLineStyles,
   continueMarkup,
@@ -331,6 +333,8 @@ function createState(doc: string): EditorState {
         { key: 'Shift-Tab', run: shiftTabCommand },
         { key: 'ArrowDown', run: arrowDownIntoBlock },
         { key: 'ArrowUp', run: arrowUpIntoBlock },
+        { key: 'ArrowLeft', run: arrowLeftToVisible },
+        { key: 'ArrowRight', run: arrowRightToVisible },
         { key: 'Mod-b', run: (v) => (wrapSelectionCommand(v, '**', '**'), true) },
         { key: 'Mod-i', run: (v) => (wrapSelectionCommand(v, '*', '*'), true) },
         { key: 'Mod-e', run: (v) => (wrapSelectionCommand(v, '`', '`', '代码'), true) },

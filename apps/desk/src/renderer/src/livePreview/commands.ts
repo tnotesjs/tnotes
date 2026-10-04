@@ -1,5 +1,6 @@
 import { indentLess, indentMore } from '@codemirror/commands'
 import { deleteMarkupBackward, insertNewlineContinueMarkup } from '@codemirror/lang-markdown'
+import { foldedRanges } from '@codemirror/language'
 import { Transaction, type StateCommand } from '@codemirror/state'
 import { EditorView, type Command } from '@codemirror/view'
 
@@ -11,7 +12,8 @@ import {
   wrapSelectionEdit,
   type TextEdit
 } from '../markdown/sourceEdits'
-import { hiddenBlocks } from './decorations'
+import { collapsedCodeBodies } from './codeBlockChrome'
+import { hiddenCodeGroupBodies } from './decorations'
 import { renumberOrderedLists } from './lists'
 
 export function applyTextEdit(view: EditorView, edit: TextEdit): void {
@@ -193,24 +195,67 @@ export const headingBackspace: Command = (view) => {
 }
 
 /**
- * 上下方向键走进被组件整块替换的源码（否则光标会直接跳过卡片，永远露不出源码）。
+ * 方向键默认按屏幕行走，折行仍停在这一行里。
+ * 像素落点如果跳过了看得见的行、走到看不见的行，或反向弹走，就改停到移动方向上的下一行可见行。
+ * 高度为 0 的围栏、收起的代码、代码组隐藏页、折叠正文和属性头都整段跨过去。
  */
-function enterHiddenBlock(forward: boolean): Command {
+export function verticalStopLine(
+  current: number,
+  landed: number,
+  forward: boolean,
+  lineCount: number,
+  restable: (lineNo: number) => boolean
+): number | null {
+  if (landed === current) return null
+  const step = forward ? 1 : -1
+  const next = current + step
+  if (next < 1 || next > lineCount) return null
+  let lineNo = next
+  while (lineNo >= 1 && lineNo <= lineCount && !restable(lineNo)) lineNo += step
+  if (lineNo < 1 || lineNo > lineCount) return forward ? lineCount : 1
+  const wrongWay = forward ? landed < current : landed > current
+  const skipped = forward ? landed > lineNo : landed < lineNo
+  if (wrongWay || skipped || !restable(landed)) return lineNo
+  return null
+}
+
+function lineIsRestable(view: EditorView, lineNo: number): boolean {
+  const line = view.state.doc.line(lineNo)
+  const pos = line.from
+  if (collapsedCodeBodies(view.state).some((body) => pos >= body.from && pos < body.to)) return false
+  if (hiddenCodeGroupBodies(view.state).some((body) => pos >= body.from && pos <= body.to))
+    return false
+  let folded = false
+  foldedRanges(view.state).between(line.from, line.to, (from, to) => {
+    if (pos >= from && pos < to) folded = true
+  })
+  if (folded) return false
+  const coords = view.coordsAtPos(pos)
+  if (coords && coords.bottom - coords.top < 1) return false
+  return true
+}
+
+function arrowByScreenLine(forward: boolean): Command {
   return (view) => {
     const selection = view.state.selection.main
     if (!selection.empty) return false
     const doc = view.state.doc
     const line = doc.lineAt(selection.head)
-    const blocks = hiddenBlocks(view.state)
-    const block = forward
-      ? blocks.find((item) => item.from === line.to + 1)
-      : blocks.find((item) => item.to === line.from - 1)
-    if (!block) return false
     const moved = view.moveVertically(selection, forward)
-    const leavesLine = forward ? moved.head > line.to : moved.head < line.from
-    if (!leavesLine) return false
+    const stop = verticalStopLine(
+      line.number,
+      doc.lineAt(moved.head).number,
+      forward,
+      doc.lines,
+      (lineNo) => lineIsRestable(view, lineNo)
+    )
+    if (stop == null) return false
+    const target = doc.line(stop)
+    const coords = view.coordsAtPos(line.from)
+    const fromWidget = Boolean(coords && coords.bottom - coords.top >= 40)
+    const column = fromWidget || !lineIsRestable(view, line.number) ? 0 : selection.head - line.from
     view.dispatch({
-      selection: { anchor: forward ? block.from : block.to },
+      selection: { anchor: Math.min(target.from + column, target.to) },
       scrollIntoView: true,
       userEvent: 'select'
     })
@@ -218,5 +263,48 @@ function enterHiddenBlock(forward: boolean): Command {
   }
 }
 
-export const arrowDownIntoBlock = enterHiddenBlock(true)
-export const arrowUpIntoBlock = enterHiddenBlock(false)
+export const arrowDownIntoBlock = arrowByScreenLine(true)
+export const arrowUpIntoBlock = arrowByScreenLine(false)
+
+/**
+ * ← → 默认走一个字符。落点若在看不见的行（结束围栏、隐藏页）上，就继续走到下一处看得见的位置。
+ * 返回 default：交给编辑器自己走一格；stay：那边没有看得见的位置，按键不移动光标。
+ */
+export function horizontalStop(
+  steps: number[],
+  restable: (pos: number) => boolean
+): 'default' | 'stay' | number {
+  if (steps.length === 0) return 'stay'
+  if (restable(steps[0])) return 'default'
+  return steps.find((pos) => restable(pos)) ?? 'stay'
+}
+
+function arrowByChar(forward: boolean): Command {
+  return (view) => {
+    const selection = view.state.selection.main
+    if (!selection.empty) return false
+    const steps: number[] = []
+    let range = selection
+    for (let guard = 0; guard < view.state.doc.length; guard += 1) {
+      const next = view.moveByChar(range, forward)
+      if (next.head === range.head) break
+      steps.push(next.head)
+      range = next
+      if (lineIsRestable(view, view.state.doc.lineAt(next.head).number)) break
+    }
+    const stop = horizontalStop(steps, (pos) =>
+      lineIsRestable(view, view.state.doc.lineAt(pos).number)
+    )
+    if (stop === 'default') return false
+    if (stop === 'stay') return true
+    view.dispatch({
+      selection: { anchor: stop },
+      scrollIntoView: true,
+      userEvent: 'select'
+    })
+    return true
+  }
+}
+
+export const arrowLeftToVisible = arrowByChar(false)
+export const arrowRightToVisible = arrowByChar(true)
