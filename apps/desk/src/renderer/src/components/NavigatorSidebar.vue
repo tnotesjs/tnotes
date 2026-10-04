@@ -888,7 +888,7 @@ async function openHeaderMenu(): Promise<void> {
               </UiTooltip>
               <em>{{ store.knowledgeBase.noteCount }}</em>
             </div>
-            <div v-show="tocExpanded">
+            <div v-show="tocExpanded" class="toc-list">
               <TocNodeList
                 v-if="visibleToc.length"
                 ref="tocListRef"
@@ -1206,6 +1206,11 @@ async function openHeaderMenu(): Promise<void> {
 /* 搜索态没有「变更」栏，目录栏回到顶部 */
 .navigator-body.is-searching .toc-heading {
   top: 0;
+}
+
+/* 第一篇笔记贴着吸顶标题时，选中描边的上沿会被标题盖住。 */
+.toc-list {
+  margin-top: 4px;
 }
 
 .section-heading {
