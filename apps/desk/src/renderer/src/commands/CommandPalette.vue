@@ -44,7 +44,11 @@ const commands = computed(() =>
       if (workspace.knowledgeBase) editor.openKbAssets(workspace.knowledgeBase)
     },
     hasSelectedKnowledgeBase: () => Boolean(workspace.knowledgeBase),
-    toggleTerminal: () => emit('toggleTerminal')
+    toggleTerminal: () => emit('toggleTerminal'),
+    theme: workspace.settings?.theme ?? 'system',
+    setTheme: (theme) => {
+      void workspace.updateSettings({ theme })
+    }
   })
 )
 

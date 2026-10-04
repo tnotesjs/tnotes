@@ -1,6 +1,8 @@
 import { canRunHeadingFold, runHeadingFold } from './headingFoldBridge'
 import { canRunViewToggle, runViewToggle } from './viewToggleBridge'
 
+import type { ThemeMode } from '../../../shared/contracts'
+
 export interface PaletteCommand {
   id: string
   title: string
@@ -19,6 +21,8 @@ export interface PaletteCommandContext {
   openKbAssets: () => void
   hasSelectedKnowledgeBase: () => boolean
   toggleTerminal: () => void
+  theme: ThemeMode
+  setTheme: (theme: ThemeMode) => void
 }
 
 export function createPaletteCommands(context: PaletteCommandContext): PaletteCommand[] {
@@ -29,7 +33,7 @@ export function createPaletteCommands(context: PaletteCommandContext): PaletteCo
       title: '全部折叠标题',
       category: '编辑器',
       hint: 'Fold All',
-      keywords: ['fold', 'all', 'collapse', 'fold all'],
+      keywords: ['fold all'],
       enabled: foldEnabled,
       run: () => void runHeadingFold('fold-all')
     },
@@ -38,7 +42,7 @@ export function createPaletteCommands(context: PaletteCommandContext): PaletteCo
       title: '全部展开标题',
       category: '编辑器',
       hint: 'Unfold All',
-      keywords: ['unfold', 'all', 'expand', 'unfold all'],
+      keywords: ['unfold all'],
       enabled: foldEnabled,
       run: () => void runHeadingFold('unfold-all')
     },
@@ -48,7 +52,7 @@ export function createPaletteCommands(context: PaletteCommandContext): PaletteCo
         title: `折叠 ${level} 级标题`,
         category: '编辑器',
         hint: `Fold Level ${level}`,
-        keywords: ['fold', 'level', `h${level}`, `heading ${level}`, `fold level ${level}`],
+        keywords: [`fold level ${level}`],
         enabled: foldEnabled,
         run: () => void runHeadingFold(`fold-level-${level}`)
       },
@@ -57,14 +61,7 @@ export function createPaletteCommands(context: PaletteCommandContext): PaletteCo
         title: `展开 ${level} 级标题`,
         category: '编辑器',
         hint: `Unfold Level ${level}`,
-        keywords: [
-          'unfold',
-          'expand',
-          'level',
-          `h${level}`,
-          `heading ${level}`,
-          `unfold level ${level}`
-        ],
+        keywords: [`unfold level ${level}`],
         enabled: foldEnabled,
         run: () => void runHeadingFold(`unfold-level-${level}`)
       }
@@ -74,7 +71,7 @@ export function createPaletteCommands(context: PaletteCommandContext): PaletteCo
       title: '切换视图（可视化 / 源码）',
       category: '编辑器',
       hint: 'Toggle View',
-      keywords: ['view', 'source', 'visual', 'markdown', '视图', '源码', '可视化'],
+      keywords: ['toggle view'],
       shortcut: '⌘ K V',
       enabled: canRunViewToggle,
       run: () => {
@@ -86,7 +83,7 @@ export function createPaletteCommands(context: PaletteCommandContext): PaletteCo
       title: '保存当前笔记',
       category: '笔记',
       hint: 'Save',
-      keywords: ['save', '保存'],
+      keywords: ['save'],
       shortcut: '⌘ S',
       enabled: () => true,
       run: () => context.saveDocument()
@@ -96,7 +93,7 @@ export function createPaletteCommands(context: PaletteCommandContext): PaletteCo
       title: '资源',
       category: '知识库',
       hint: 'KB Assets',
-      keywords: ['kb', 'assets', '资源', '图片', '附件'],
+      keywords: ['assets'],
       enabled: () => context.hasSelectedKnowledgeBase(),
       run: () => context.openKbAssets()
     },
@@ -105,7 +102,7 @@ export function createPaletteCommands(context: PaletteCommandContext): PaletteCo
       title: '知识库配置',
       category: '知识库',
       hint: 'KB Settings',
-      keywords: ['kb', 'settings', 'config', '配置', '知识库'],
+      keywords: ['kb settings'],
       enabled: () => context.hasSelectedKnowledgeBase(),
       run: () => context.openKbSettings()
     },
@@ -114,7 +111,7 @@ export function createPaletteCommands(context: PaletteCommandContext): PaletteCo
       title: '切换终端面板',
       category: '终端',
       hint: 'Toggle Terminal',
-      keywords: ['terminal', 'shell', 'console', '终端', '命令行'],
+      keywords: ['terminal'],
       shortcut: '⌘J',
       enabled: () => true,
       run: () => context.toggleTerminal()
@@ -124,11 +121,45 @@ export function createPaletteCommands(context: PaletteCommandContext): PaletteCo
       title: '打开设置',
       category: '应用',
       hint: 'Settings',
-      keywords: ['settings', 'preferences', '设置'],
+      keywords: ['settings'],
       enabled: () => true,
       run: () => context.openSettings()
-    }
+    },
+    ...themeCommands(context)
   ]
+}
+
+const themeChoices: { mode: ThemeMode; title: string; hint: string; keywords: string[] }[] = [
+  {
+    mode: 'system',
+    title: '主题：跟随系统',
+    hint: 'System',
+    keywords: ['theme system']
+  },
+  {
+    mode: 'light',
+    title: '主题：浅色',
+    hint: 'Light',
+    keywords: ['theme light']
+  },
+  {
+    mode: 'dark',
+    title: '主题：深色',
+    hint: 'Dark',
+    keywords: ['theme dark']
+  }
+]
+
+function themeCommands(context: PaletteCommandContext): PaletteCommand[] {
+  return themeChoices.map((choice) => ({
+    id: `theme-${choice.mode}`,
+    title: choice.title,
+    category: '外观',
+    hint: context.theme === choice.mode ? '当前' : choice.hint,
+    keywords: choice.keywords,
+    enabled: () => true,
+    run: () => context.setTheme(choice.mode)
+  }))
 }
 
 export function commandQuery(raw: string): string {

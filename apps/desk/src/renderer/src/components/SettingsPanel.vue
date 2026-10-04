@@ -9,6 +9,7 @@ import GitSettings from './settings/GitSettings.vue'
 import ImageSettings from './settings/ImageSettings.vue'
 import AgentSettings from './settings/AgentSettings.vue'
 import McpSettings from './settings/McpSettings.vue'
+import CommandsSettings from './settings/CommandsSettings.vue'
 import ShortcutsSettings from './settings/ShortcutsSettings.vue'
 import TabsSettings from './settings/TabsSettings.vue'
 import TocSettings from './settings/TocSettings.vue'
@@ -79,6 +80,11 @@ const groups = [
     id: 'shortcuts',
     label: '快捷键',
     icon: 'M4 7h16v10H4zM7 10h2M12 10h2M16 10h0.1M7 14h10'
+  },
+  {
+    id: 'commands',
+    label: '命令',
+    icon: 'M5 7l5 5-5 5M13 17h6'
   }
 ]
 
@@ -186,7 +192,7 @@ async function applyDraft(): Promise<void> {
 
 watch(draft, () => scheduleApply(), { deep: true })
 
-const pageGroupIds = new Set(['config', 'shortcuts'])
+const pageGroupIds = new Set(['config', 'shortcuts', 'commands'])
 const formGroups = groups.filter((group) => !pageGroupIds.has(group.id))
 const pageMode = computed(() => pageGroupIds.has(activeGroup.value))
 
@@ -346,6 +352,7 @@ function onSettingsSynced(settings: AppSettings): void {
             v-else-if="activeGroup === 'config'"
             @settings-synced="onSettingsSynced"
           />
+          <CommandsSettings v-else-if="activeGroup === 'commands'" />
           <ShortcutsSettings v-else />
         </div>
       </div>

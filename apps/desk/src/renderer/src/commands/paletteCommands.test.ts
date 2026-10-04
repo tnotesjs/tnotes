@@ -13,7 +13,9 @@ const commands = createPaletteCommands({
   openKbSettings: () => undefined,
   openKbAssets: () => undefined,
   hasSelectedKnowledgeBase: () => true,
-  toggleTerminal: () => {}
+  toggleTerminal: () => {},
+  theme: 'dark',
+  setTheme: () => undefined
 })
 
 describe('palette commands', () => {
@@ -38,6 +40,17 @@ describe('palette commands', () => {
     expect(
       filterPaletteCommands(commands, '>Fold Level 1').map((command) => command.hint)
     ).toContain('Fold Level 1')
+  })
+
+  it('lists the three theme choices and marks the current one', () => {
+    const themes = filterPaletteCommands(commands, '>主题')
+    expect(themes.map((command) => command.title)).toEqual([
+      '主题：跟随系统',
+      '主题：浅色',
+      '主题：深色'
+    ])
+    expect(themes.find((command) => command.id === 'theme-dark')?.hint).toBe('当前')
+    expect(themes.find((command) => command.id === 'theme-light')?.hint).toBe('Light')
   })
 
   it('matches queries as substrings or subsequences', () => {

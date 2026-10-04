@@ -149,6 +149,28 @@ describe('SettingsPanel Markdown quick-input catalog', () => {
     expect((delay?.element as HTMLInputElement).disabled).toBe(true)
   })
 
+  it('lists every command palette command for lookup', async () => {
+    const wrapper = mount(SettingsPanel)
+    const commandsNav = wrapper
+      .findAll('button.nav-item')
+      .find((item) => item.text().includes('命令'))
+    expect(commandsNav).toBeTruthy()
+    await commandsNav?.trigger('click')
+
+    const text = wrapper.text()
+    expect(text).toContain('命令清单')
+    expect(text).toContain('全部折叠标题')
+    expect(text).toContain('折叠 1–6 级标题')
+    expect(text).not.toContain('折叠 1 级标题')
+    expect(text).toContain('主题：跟随系统')
+    expect(text).toContain('主题：浅色')
+    expect(text).toContain('主题：深色')
+    expect(text).toContain('theme')
+    expect(text).toContain('打开设置')
+    expect(wrapper.find('[aria-label="筛选命令"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('lists the shortcuts the current editor actually handles', async () => {
     const wrapper = mount(SettingsPanel)
     const shortcutsNav = wrapper
