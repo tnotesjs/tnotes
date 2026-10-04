@@ -235,6 +235,35 @@ async function hydrateMindmaps(root: ParentNode, base: string): Promise<void> {
   }
 }
 
+async function hydrateWordLists(root: ParentNode): Promise<void> {
+  const nodes = [...root.querySelectorAll<HTMLElement>('[data-tn-island="word-list"]')].filter(
+    (el) => el.dataset.tnReady !== '1'
+  )
+  if (!nodes.length) return
+  const wordListMod = await import('@tnotesjs/ui/word-list')
+  const WordList = wordListMod.default
+  for (const el of nodes) {
+    el.dataset.tnReady = '1'
+    let words: string[] = []
+    try {
+      const parsed = JSON.parse(decodeURIComponent(el.dataset.words || '[]')) as unknown
+      if (!Array.isArray(parsed)) continue
+      words = parsed.filter((item): item is string => typeof item === 'string')
+    } catch {
+      continue
+    }
+    const host = document.createElement('div')
+    el.replaceWith(host)
+    createApp(WordList, {
+      words,
+      needSort: el.dataset.needSort === 'true'
+    }).mount(host)
+    host
+      .querySelector<HTMLElement>('[data-tn-island="word-list"]')
+      ?.setAttribute('data-tn-ready', '1')
+  }
+}
+
 export async function hydrateIslands(
   root: ParentNode = document,
   options: HydrateIslandsOptions = {}
@@ -242,5 +271,9 @@ export async function hydrateIslands(
   hydrateCodeGroups(root)
   hydrateCodeBlocks(root)
   hydrateTnSwipers(root)
-  await Promise.all([hydrateMermaids(root), hydrateMindmaps(root, options.base ?? '/')])
+  await Promise.all([
+    hydrateMermaids(root),
+    hydrateMindmaps(root, options.base ?? '/'),
+    hydrateWordLists(root)
+  ])
 }

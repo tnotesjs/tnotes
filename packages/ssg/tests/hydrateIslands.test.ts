@@ -1,8 +1,26 @@
 /** @vitest-environment happy-dom */
 
-import { describe, expect, it } from 'vitest'
+import { h } from 'vue'
+import { describe, expect, it, vi } from 'vitest'
 
 import { hydrateIslands } from '../src/client/hydrateIslands'
+
+vi.mock('@tnotesjs/ui/word-list', () => ({
+  default: {
+    name: 'WordList',
+    props: ['words', 'needSort'],
+    setup(props: { words: string[] }) {
+      return () =>
+        h(
+          'div',
+          { class: 'tn-word-list', 'data-tn-island': 'word-list' },
+          props.words.map((word, index) =>
+            h('span', { class: 'index', key: word }, `${index + 1}.${word}`)
+          )
+        )
+    }
+  }
+}))
 
 /** 一份贴近真实 SSR 输出的代码块（每个代码块标题左侧都有折叠 Icon）。 */
 function codeBlockMarkup(code: string): string {
@@ -55,6 +73,17 @@ describe('hydrateIslands', () => {
     expect(button.getAttribute('aria-label')).toBe('展开代码')
     button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     expect(block.classList.contains('is-collapsed')).toBe(false)
+  })
+
+  it('用笔记里的词汇挂上 WordList，再跑一次不会套两层', async () => {
+    const words = encodeURIComponent(JSON.stringify(['cancel', 'sake']))
+    document.body.innerHTML = `<div class="tn-word-list" data-tn-island="word-list" data-words="${words}" data-need-sort="false"></div>`
+    await hydrateIslands(document.body)
+    await hydrateIslands(document.body)
+    expect([...document.querySelectorAll('.index')].map((node) => node.textContent)).toEqual([
+      '1.cancel',
+      '2.sake'
+    ])
   })
 
   it('代码分组切换 tab 时自动展开新面板里被收起的代码块', async () => {

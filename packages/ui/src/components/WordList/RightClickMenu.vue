@@ -1,5 +1,10 @@
 <template>
-  <div v-if="show" class="rightClickMenu" :style="{ left: x + 'px', top: y + 'px' }">
+  <div
+    v-if="show"
+    class="rightClickMenu"
+    :style="{ left: x + 'px', top: y + 'px' }"
+    @mousedown.stop
+  >
     <div v-if="showPin" class="menuItem" @click="handlePin">📌 Pin</div>
     <div class="menuItem" @click="(e) => handlePronounce(e, 'en-GB')">📢 Pronounce（英）</div>
     <div class="menuItem" @click="(e) => handlePronounce(e, 'en-US')">📢 Pronounce（美）</div>
@@ -61,12 +66,12 @@ const handleReset = () => {
 .rightClickMenu {
   position: fixed;
   z-index: 99999;
-  background: #2c2c2c;
-  border: 1px solid #444;
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  background: var(--tn-c-bg-elv, var(--tn-c-bg));
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 8px;
+  box-shadow: var(--tn-shadow-2);
   font-size: 13px;
-  color: #eee;
+  color: var(--tn-c-text);
   cursor: pointer;
   user-select: none;
 }
@@ -75,7 +80,7 @@ const handleReset = () => {
   padding: 8px 16px;
 
   &:hover {
-    background-color: #444;
+    background: var(--tn-c-hover);
   }
 }
 </style>

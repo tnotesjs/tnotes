@@ -62,7 +62,7 @@ function markdownRenderer(): InstanceType<typeof MarkdownIt> {
 
 /** 卡片里这些元素有自己的交互，点它们不应该把光标移进源码。 */
 const INTERACTIVE =
-  'button, a, input, select, textarea, summary, video, iframe, [role="tab"], .tn-swiper-tabs, .tn-swiper-resize, .tn-swiper-image-toolbar, .swiper-button-prev, .swiper-button-next'
+  'button, a, input, select, textarea, summary, video, iframe, [role="tab"], .tn-swiper-tabs, .tn-swiper-resize, .tn-swiper-image-toolbar, .swiper-button-prev, .swiper-button-next, .rightClickMenu'
 
 interface Mounted {
   destroy(): void

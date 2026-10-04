@@ -48,6 +48,7 @@ const sortedWords = computed(() => {
   if (!props.needSort) return unique
   return unique.sort((a, b) => a.toLowerCase().charCodeAt(0) - b.toLowerCase().charCodeAt(0))
 })
+const islandWords = computed(() => encodeURIComponent(JSON.stringify(sortedWords.value)))
 const checkedStates = ref({})
 
 const updateCheckedState = (word, isChecked) => {
@@ -84,6 +85,7 @@ const cardX = ref(0)
 const cardY = ref(0)
 const cardContent = ref('')
 const wordCache = ref({})
+const wordMarkdown = ref({})
 
 // 加载失败的词汇（也就是词库中不存在的词汇）
 const failedWords = ref({})
@@ -112,6 +114,66 @@ let currentWordForContextMenu = null
 // 防抖计时器
 let hoverTimer = null
 
+function wordSlug(word) {
+  return encodeURIComponent(word.toLowerCase().replaceAll(/\s/g, '_'))
+}
+
+function wordGithubUrl(word) {
+  return `${props.wordsBaseUrl}${wordSlug(word)}.md`
+}
+
+async function ensureWord(word) {
+  if (wordCache.value[word]) return
+  const url = `${props.wordsRawBaseUrl}${wordSlug(word)}.md`
+  try {
+    const res = await fetch(url)
+    if (res.ok) {
+      const text = await res.text()
+      wordMarkdown.value[word] = text
+      wordCache.value[word] = marked.parse(text)
+    } else {
+      wordCache.value[word] = `<em>无法加载单词内容</em>`
+      failedWords.value[word] = true
+    }
+  } catch (err) {
+    console.error(err)
+    wordCache.value[word] = `<em>加载失败</em>`
+    failedWords.value[word] = true
+  }
+}
+
+const copiedCardId = ref(null)
+let copiedTimer = null
+
+async function copyCardMarkdown(card, event) {
+  event.stopPropagation()
+  const markdown = wordMarkdown.value[card.word]
+  if (!markdown) return
+  try {
+    await navigator.clipboard.writeText(markdown)
+  } catch {
+    const field = document.createElement('textarea')
+    field.value = markdown
+    field.setAttribute('readonly', '')
+    field.style.position = 'fixed'
+    field.style.left = '-9999px'
+    document.body.append(field)
+    field.select()
+    document.execCommand('copy')
+    field.remove()
+  }
+  copiedCardId.value = card.id
+  clearTimeout(copiedTimer)
+  copiedTimer = setTimeout(() => {
+    copiedCardId.value = null
+  }, 1500)
+}
+
+function openCardOnGithub(card, event) {
+  event.stopPropagation()
+  window.open(wordGithubUrl(card.word), '_blank', 'noopener')
+}
+
 /**
  * 显示单词卡片
  */
@@ -128,29 +190,8 @@ const showWordCard = async (e, word) => {
       cardY.value = clientY + 10
       showCard.value = true
 
-      if (wordCache.value[word]) {
-        cardContent.value = wordCache.value[word]
-        resolve()
-        return
-      }
-
-      const url = `${props.wordsRawBaseUrl}${encodeURIComponent(
-        word.toLowerCase().replaceAll(/\s/g, '_')
-      )}.md`
-      try {
-        const res = await fetch(url)
-        if (res.ok) {
-          let text = await res.text()
-          text = marked.parse(text)
-          wordCache.value[word] = text
-          cardContent.value = text
-        } else {
-          cardContent.value = `<em>无法加载单词内容</em>`
-        }
-      } catch (err) {
-        console.error(err)
-        cardContent.value = `<em>加载失败</em>`
-      }
+      await ensureWord(word)
+      cardContent.value = wordCache.value[word] || `<em>加载失败</em>`
       resolve()
     }, 300)
   })
@@ -208,28 +249,8 @@ const preloadWords = async () => {
   for (let i = 0; i < wordsToPreload.length; i++) {
     const word = wordsToPreload[i]
 
-    // 如果已经缓存过，跳过
     if (wordCache.value[word]) continue
-
-    const url = `${props.wordsRawBaseUrl}${encodeURIComponent(
-      word.toLowerCase().replaceAll(/\s/g, '_')
-    )}.md`
-    try {
-      const res = await fetch(url)
-      if (res.ok) {
-        let text = await res.text()
-        text = marked.parse(text)
-        wordCache.value[word] = text
-        console.log(`✅ 预加载完成: ${word}`)
-      } else {
-        wordCache.value[word] = `<em>无法加载单词内容</em>`
-        failedWords.value[word] = true
-      }
-    } catch (err) {
-      console.error(`❌ 加载失败: ${word}`, err)
-      wordCache.value[word] = `<em>加载失败</em>`
-      failedWords.value[word] = true
-    }
+    await ensureWord(word)
 
     // 可选：加个延迟避免并发请求过多
     await new Promise((resolve) => setTimeout(resolve, 200))
@@ -446,6 +467,7 @@ onMounted(() => {
  */
 onUnmounted(() => {
   clearTimeout(hoverTimer)
+  clearTimeout(copiedTimer)
   if (typeof document !== 'undefined') {
     document.removeEventListener('mousemove', onDragging)
     document.removeEventListener('mouseup', stopDrag)
@@ -455,7 +477,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="tn-word-list">
+  <div
+    class="tn-word-list"
+    data-tn-island="word-list"
+    :data-words="islandWords"
+    :data-need-sort="needSort ? 'true' : 'false'"
+  >
     <ol>
       <li
         v-for="(word, index) in sortedWords"
@@ -515,10 +542,60 @@ onUnmounted(() => {
         @mousedown="(e) => startDrag(card, e)"
         @click="bringToFront(card)"
       >
+        <div class="wordCardTools">
+          <button
+            type="button"
+            class="cardTool"
+            aria-label="在 GitHub 打开"
+            title="在 GitHub 打开"
+            @mousedown.stop
+            @click.stop="openCardOnGithub(card, $event)"
+          >
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8"
+              />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="cardTool"
+            :aria-label="copiedCardId === card.id ? '已复制' : '复制 Markdown'"
+            :title="copiedCardId === card.id ? '已复制' : '复制 Markdown'"
+            @mousedown.stop
+            @click.stop="copyCardMarkdown(card, $event)"
+          >
+            <svg
+              v-if="copiedCardId !== card.id"
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              aria-hidden="true"
+            >
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                d="M9 9h10v10H9zM5 15V5h10"
+              />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="m5 12 5 5L20 7"
+              />
+            </svg>
+          </button>
+        </div>
         <div class="wordCardContentWrapper">
           <div class="wordCardContent" v-html="card.content"></div>
         </div>
-        <button class="closeBtn" @click.stop="removeCard(card.id)">✖</button>
+        <button class="closeBtn" @mousedown.stop @click.stop="removeCard(card.id)">✖</button>
         <div class="resizeHandle" @mousedown.stop="startResize(card, $event)"></div>
       </div>
     </template>
@@ -555,9 +632,35 @@ onUnmounted(() => {
 
   // Checkbox 样式
   input[type='checkbox'] {
-    margin: 8px;
-    transform: scale(1.3);
+    appearance: none;
+    -webkit-appearance: none;
+    position: relative;
+    box-sizing: border-box;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    margin: 0 8px;
+    border: 1px solid var(--tn-c-task-check-border);
+    border-radius: 4px;
+    background: var(--tn-c-task-check-bg);
     cursor: pointer;
+
+    &:checked {
+      border-color: var(--tn-c-task-check);
+      background: var(--tn-c-task-check);
+    }
+
+    &:checked::after {
+      content: '';
+      position: absolute;
+      left: 4.5px;
+      top: 1px;
+      width: 4px;
+      height: 9px;
+      border: solid #fff;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
   }
 
   // 链接样式
@@ -581,8 +684,9 @@ onUnmounted(() => {
 
   // 单词列表样式
   ol {
-    list-style-type: decimal;
-    padding-left: 20px;
+    list-style: none;
+    margin: 0;
+    padding-left: 0;
 
     li {
       display: flex;
@@ -603,13 +707,12 @@ onUnmounted(() => {
   }
 }
 
-// 单词卡片样式（🌑 暗色悬浮卡片）
 .wordCard {
   position: fixed;
   z-index: 9999;
-  background: #1e1e1e;
-  border: 1px solid #333;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  background: var(--tn-c-bg-elv, var(--tn-c-bg));
+  border: 1px solid var(--tn-c-divider);
+  box-shadow: var(--tn-shadow-2);
   padding: 12px 16px;
   max-width: 600px;
   min-width: 200px;
@@ -617,12 +720,11 @@ onUnmounted(() => {
   font-size: 14px;
   line-height: 1.4;
   border-radius: 8px;
-  color: #eee;
+  color: var(--tn-c-text);
   pointer-events: auto;
-  font-family: sans-serif;
+  font-family: var(--tn-font-sans, sans-serif);
   cursor: move;
 
-  // 关闭按钮
   .closeBtn {
     position: absolute;
     right: 5px;
@@ -631,19 +733,49 @@ onUnmounted(() => {
     border: none;
     font-size: 16px;
     cursor: pointer;
-    color: #ccc;
+    color: var(--tn-c-text-2);
 
     &:hover {
-      color: white;
+      color: var(--tn-c-text);
     }
   }
 }
 
 // 卡片内容包裹器
+.wordCardTools {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+}
+
+.cardTool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tn-c-text-2);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--tn-c-hover);
+    color: var(--tn-c-text);
+  }
+}
+
 .wordCardContentWrapper {
   width: 100%;
   height: 100%;
   overflow: auto;
+  box-sizing: border-box;
+  padding-top: 22px;
 }
 
 // 卡片内容样式
@@ -661,13 +793,13 @@ onUnmounted(() => {
   bottom: 0;
   width: 12px;
   height: 12px;
-  background-color: #666;
+  background-color: var(--tn-c-text-2);
   cursor: nwse-resize;
   z-index: 2;
   border-radius: 50%;
 
   &:hover {
-    background-color: #aaa;
+    background-color: var(--tn-c-text);
   }
 }
 </style>
