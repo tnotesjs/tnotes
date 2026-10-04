@@ -364,3 +364,32 @@ function arrowByChar(forward: boolean): Command {
 
 export const arrowLeftToVisible = arrowByChar(false)
 export const arrowRightToVisible = arrowByChar(true)
+
+/**
+ * macOS 按住 Option 时 `key` 不再是字母：U 变成 Dead，T 变成 †，S 变成 ß。
+ * CodeMirror 用 `key` 对 `Mod-Alt-u`，所以对不上。这里改认物理键 `code`。
+ */
+const altModByCode: Record<string, (view: EditorView) => void> = {
+  KeyU: (view) => setLinePrefix(view, '> '),
+  KeyT: (view) => setLinePrefix(view, '- [ ] '),
+  KeyS: (view) => insertText(view, '\n---\n'),
+  Digit0: (view) => setLinePrefix(view, ''),
+  Numpad0: (view) => setLinePrefix(view, '')
+}
+
+for (let level = 1; level <= 6; level += 1) {
+  const apply = (view: EditorView): void => setLinePrefix(view, `${'#'.repeat(level)} `)
+  altModByCode[`Digit${level}`] = apply
+  altModByCode[`Numpad${level}`] = apply
+}
+
+export function runAltModShortcut(view: EditorView, event: KeyboardEvent): boolean {
+  if (event.repeat || event.isComposing || event.shiftKey) return false
+  const mac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
+  const primary = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
+  if (!primary || !event.altKey) return false
+  const apply = altModByCode[event.code]
+  if (!apply) return false
+  apply(view)
+  return true
+}

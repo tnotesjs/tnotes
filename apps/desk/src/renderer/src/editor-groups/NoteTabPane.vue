@@ -21,8 +21,6 @@ import { useAgentStore } from '../agent/agentStore'
 import { registerHeadingFoldRunner } from '../commands/headingFoldBridge'
 import { registerViewToggleRunner } from '../commands/viewToggleBridge'
 import {
-  anchorWithSource,
-  captureDtoFromPayload,
   clearSelection,
   invalidateSelection,
   reportSelection,
@@ -35,7 +33,6 @@ import {
   reportPinValidation,
   revalidatePinFromDisk
 } from '../context/pinnedContextStore'
-import { registerPinSelectionRunner } from '../commands/pinSelectionBridge'
 import { findTab } from './layoutModel'
 import { validateTextAnchor } from '../selection/pinnedAnchorCheck'
 import { insertableImageMarkdown } from './noteAssets'
@@ -43,12 +40,7 @@ import { pastedImageMarkdown } from '../editor/markdown/pasteImageWidth'
 import { insertExcalidrawCanvas } from '../editor/excalidraw/insertCanvas'
 import { HEADING_NUMBER_DEFAULT_MAX_DEPTH } from '../../../shared/headingNumbering'
 
-import type {
-  NoteEditorTab,
-  NoteViewMode,
-  PinSelectionRequest,
-  PinnedSelectionAnchor
-} from '../../../shared/contracts'
+import type { NoteEditorTab, NoteViewMode } from '../../../shared/contracts'
 import type { HeadingFoldCommand } from '../livePreview/headingFold'
 
 interface MarkdownEditorHandle {
@@ -319,58 +311,6 @@ const pinOwner = computed(() => {
 })
 
 /**
- * 把当前选区固定为 Agent 上下文（右键菜单 / 快捷键 / 命令面板共用）。
- *
- * 固定的是**不可变快照 + 校验锚点**：拿不到可靠锚点时明确拒绝，
- * 而不是固定一份以后验不了的上下文。
- */
-async function pinCurrentSelection(): Promise<void> {
-  const identity = selectionIdentity.value
-  const handle = markdownEditor.value
-  if (!identity || !handle?.pinnableSelection) {
-    workspace.status = '当前没有可固定的正文选区。'
-    return
-  }
-  const pinnable = handle.pinnableSelection()
-  if (!pinnable) {
-    workspace.status = '当前选区无法固定：没有选中内容，或选了多个不连续的范围。'
-    return
-  }
-  const request: PinSelectionRequest = {
-    owner: {
-      groupId: props.groupId,
-      tabId: props.tab.id,
-      knowledgeBaseId: props.tab.knowledgeBaseId,
-      noteUuid: props.tab.noteUuid
-    },
-    knowledgeBase: identity.knowledgeBase,
-    note: identity.note,
-    editor: {
-      viewMode: identity.editor.viewMode,
-      contentSource: identity.editor.contentSource,
-      hasUnsavedChanges: identity.editor.hasUnsavedChanges,
-      revision: identity.editor.revision
-    },
-    capture: captureDtoFromPayload(identity, pinnable.capture),
-    anchor: anchorWithSource(
-      pinnable.anchor,
-      identity.editor.contentSource,
-      pinnable.capture.selectedText
-    ) as PinnedSelectionAnchor
-  }
-  const result = await window.desk.context.pinSelection(request)
-  if (!result.ok) {
-    workspace.status = `固定失败：${result.error.message}`
-    return
-  }
-  if (!result.value.accepted) {
-    workspace.status = `固定失败：${result.value.reason ?? '未知原因'}`
-    return
-  }
-  workspace.status = '已固定为 Agent 上下文（状态条里可以查看或解除）。'
-}
-
-/**
  * 校验固定上下文是否仍然有效。
  *
  * 触发点：内容变化（revision）、磁盘被外部改动、切视图、编辑器重建、固定状态变化 ——
@@ -442,21 +382,6 @@ watch(
   }
 )
 
-/**
- * 固定上下文（⌘K P）的执行者：只有**当前活动编辑器**（活动标签 + 活动分组）才登记，
- * 否则多分组时后挂载的组内标签会把执行者抢走，快捷键会作用到没有选区的那个面板上。
- */
-let unregisterPinRunner: (() => void) | null = null
-watch(
-  isActiveEditor,
-  (active) => {
-    if (!active) return
-    unregisterPinRunner?.()
-    unregisterPinRunner = registerPinSelectionRunner(() => void pinCurrentSelection())
-  },
-  { immediate: true }
-)
-
 // 视图开关（⌘K V）的执行者：同样只认当前活动编辑器
 let unregisterViewRunner: (() => void) | null = null
 watch(
@@ -473,8 +398,6 @@ onUnmounted(() => {
   if (outlineHeadingTimer) clearTimeout(outlineHeadingTimer)
   if (props.active) registerHeadingFoldRunner(null)
   if (props.active) registerViewToggleRunner(null)
-  unregisterPinRunner?.()
-  unregisterPinRunner = null
   unregisterViewRunner?.()
   unregisterViewRunner = null
   // 关闭**来源标签**→ 固定失效（不静默回到实时选区）。
@@ -771,7 +694,6 @@ function openLink(url: string): void {
           @paste-image="pasteImage"
           @heading-level-change="headingLevel = $event"
           @selection-change="handleEditorSelection"
-          @pin-selection="pinCurrentSelection"
         />
       </div>
       <aside

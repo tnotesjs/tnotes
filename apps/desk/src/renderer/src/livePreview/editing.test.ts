@@ -1,12 +1,18 @@
 // @vitest-environment happy-dom
 import { readFileSync } from 'node:fs'
-import { EditorSelection, EditorState } from '@codemirror/state'
+import { EditorSelection, EditorState, Prec } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { codeFolding, syntaxHighlighting } from '@codemirror/language'
 import { classHighlighter } from '@lezer/highlight'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { continueMarkup, headingBackspace, tabCommand, wrapSelection } from './commands'
+import {
+  continueMarkup,
+  headingBackspace,
+  runAltModShortcut,
+  tabCommand,
+  wrapSelection
+} from './commands'
 import { taskToggleChange } from './widgets'
 import {
   codeGroupTabs,
@@ -634,6 +640,67 @@ describe('live preview editing', () => {
       ':::'
     ].join('\n')
     expect(slotDigits(group, '.cm-lp-code-tabs .cm-lp-code-fold-slot')).toBe('2')
+  })
+
+  it('quotes the current line when Option-Command-U arrives as a dead key', () => {
+    const platform = navigator.platform
+    Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true })
+    const parent = document.createElement('div')
+    document.body.append(parent)
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc: '123\n',
+        extensions: [
+          Prec.high(
+            EditorView.domEventHandlers({
+              keydown(event, view) {
+                if (!runAltModShortcut(view, event)) return false
+                event.preventDefault()
+                return true
+              }
+            })
+          )
+        ]
+      })
+    })
+    views.push(view)
+    view.contentDOM.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Dead',
+        code: 'KeyU',
+        altKey: true,
+        metaKey: true,
+        bubbles: true,
+        cancelable: true
+      })
+    )
+    expect(view.state.doc.toString()).toBe('> 123\n')
+    Object.defineProperty(navigator, 'platform', { value: platform, configurable: true })
+  })
+
+  it('draws a line through strikethrough text after the tildes are hidden', () => {
+    const parent = document.createElement('div')
+    parent.className = 'live-editor'
+    document.body.append(parent)
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc: '~~123~~\n',
+        extensions: [
+          tnotesMarkdown(),
+          syntaxHighlighting(classHighlighter),
+          livePreviewEnabled.of(true),
+          EditorView.editorAttributes.of({ class: 'cm-lp-visual' }),
+          livePreviewField
+        ]
+      })
+    })
+    view.dispatch({ effects: setFocused.of(false) })
+    views.push(view)
+    const struck = view.dom.querySelector('.tok-strikethrough')
+    expect(struck?.textContent).toContain('123')
+    expect(struck?.textContent).not.toContain('~~')
   })
 
   it('keeps heading inline code in the brand color instead of the heading color', () => {

@@ -1,11 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { TN_NOTES_SLASH_ITEMS } from '../../markdown/slashMenu'
-import {
-  MARKDOWN_BLOCK_SHORTCUTS,
-  MARKDOWN_INLINE_SHORTCUTS
-} from '../../markdown/markdownInputRules'
 import { useWorkspaceStore } from '../../stores/workspace'
 
 const store = useWorkspaceStore()
@@ -18,16 +13,16 @@ const shortcutGroups = computed(() => [
       ['关闭当前标签', `${primaryKey.value} W`],
       ['关闭已保存笔记', `${primaryKey.value} K  U`],
       ['全部关闭', `${primaryKey.value} K  W`],
-      ['将预览标签保持打开', `${primaryKey.value} K  Enter`],
       ['固定 / 解除固定', `${primaryKey.value} K  Shift Enter`],
       ['切换「可视化 / 源码」视图', `${primaryKey.value} K  V`],
-      ['把当前选区固定为 Agent 上下文', `${primaryKey.value} K  P`],
       ['下一个 / 上一个标签', 'Ctrl Tab / Ctrl Shift Tab'],
       ['切换当前标签组内第 1–9 个标签（含固定标签）', `${primaryKey.value} 1…9`],
       ['复制笔记目录路径', `${altKey.value} ${primaryKey.value} C`],
       ['在系统文件管理器中显示', `${altKey.value} ${primaryKey.value} R`],
       ['搜索当前知识库中的笔记', `${primaryKey.value} P`],
-      ['命令面板', `${primaryKey.value} Shift P`]
+      ['命令面板', `${primaryKey.value} Shift P`],
+      ['切换终端面板', `${primaryKey.value} J`],
+      ['打开内置 Agent', `${primaryKey.value} L`]
     ]
   },
   {
@@ -41,26 +36,14 @@ const shortcutGroups = computed(() => [
       ['正文', `${altKey.value} ${primaryKey.value} 0`],
       ['粗体 / 斜体', `${primaryKey.value} B / ${primaryKey.value} I`],
       ['删除线', `${primaryKey.value} Shift X`],
+      ['高亮', `${primaryKey.value} Shift H`],
       ['清除当前行 / 选中行的加粗、斜体、删除线（仅笔记）', `${primaryKey.value} \\`],
       ['行内代码', `${primaryKey.value} E`],
+      ['插入链接', `${primaryKey.value} Shift K`],
       ['有序 / 无序列表', `${primaryKey.value} Shift 7 / 8`],
       ['任务列表', `${altKey.value} ${primaryKey.value} T`],
-      ['引用', `${primaryKey.value} Shift U`],
+      ['引用', `${altKey.value} ${primaryKey.value} U`],
       ['分割线', `${altKey.value} ${primaryKey.value} S`]
-    ]
-  },
-  {
-    title: 'Markdown 快速输入',
-    items: [
-      ...TN_NOTES_SLASH_ITEMS.map((item) => [
-        `${item.label} · ${item.keywords.join(', ')}`,
-        item.shortcut
-      ]),
-      ...MARKDOWN_BLOCK_SHORTCUTS.map((item) => [
-        `${item.label} · ${[item.syntax, ...item.aliases].join(' / ')}`,
-        item.trigger
-      ]),
-      ...MARKDOWN_INLINE_SHORTCUTS.map((item) => [item.label + ' · ' + item.syntax, item.trigger])
     ]
   }
 ])

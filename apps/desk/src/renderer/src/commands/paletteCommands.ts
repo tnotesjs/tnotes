@@ -1,5 +1,4 @@
 import { canRunHeadingFold, runHeadingFold } from './headingFoldBridge'
-import { canRunPinSelection, runPinSelection } from './pinSelectionBridge'
 import { canRunViewToggle, runViewToggle } from './viewToggleBridge'
 
 export interface PaletteCommand {
@@ -70,18 +69,6 @@ export function createPaletteCommands(context: PaletteCommandContext): PaletteCo
         run: () => void runHeadingFold(`unfold-level-${level}`)
       }
     ]),
-    {
-      id: 'pin-selection-context',
-      title: '固定为 Agent 上下文',
-      category: '编辑器',
-      hint: 'Pin Selection for Agent',
-      keywords: ['pin', 'agent', 'mcp', 'context', '固定', '选区', '上下文'],
-      shortcut: '⌘ K P',
-      enabled: canRunPinSelection,
-      run: () => {
-        runPinSelection()
-      }
-    },
     {
       id: 'toggle-note-view',
       title: '切换视图（可视化 / 源码）',

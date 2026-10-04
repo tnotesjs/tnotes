@@ -6,8 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DEFAULT_MCP_PORT, type AppSettings } from '../../../shared/contracts'
 import { DEFAULT_AGENT_SETTINGS } from '../../../shared/agentModels'
-import { MARKDOWN_BLOCK_SHORTCUTS, MARKDOWN_INLINE_SHORTCUTS } from '../markdown/markdownInputRules'
-import { TN_NOTES_SLASH_ITEMS } from '../markdown/slashMenu'
 import { useWorkspaceStore } from '../stores/workspace'
 import SettingsPanel from './SettingsPanel.vue'
 
@@ -151,7 +149,7 @@ describe('SettingsPanel Markdown quick-input catalog', () => {
     expect((delay?.element as HTMLInputElement).disabled).toBe(true)
   })
 
-  it('renders every shared slash, block, and inline shortcut entry', async () => {
+  it('lists the shortcuts the current editor actually handles', async () => {
     const wrapper = mount(SettingsPanel)
     const shortcutsNav = wrapper
       .findAll('button.nav-item')
@@ -159,27 +157,18 @@ describe('SettingsPanel Markdown quick-input catalog', () => {
     expect(shortcutsNav).toBeTruthy()
     await shortcutsNav?.trigger('click')
 
-    const group = wrapper
-      .findAll('.shortcut-group')
-      .find((candidate) => candidate.find('h3').text().includes('Markdown 快速输入'))
-    expect(group?.exists()).toBe(true)
-    const text = group?.text() ?? ''
-
-    for (const item of TN_NOTES_SLASH_ITEMS) {
-      expect(text).toContain(item.label)
-      expect(text).toContain(item.shortcut)
-      expect(text).toContain(item.keywords.join(', '))
-    }
-    for (const item of MARKDOWN_BLOCK_SHORTCUTS) {
-      expect(text).toContain(item.syntax)
-      for (const alias of item.aliases) expect(text).toContain(alias)
-      expect(text).toContain(item.trigger)
-    }
-    for (const item of MARKDOWN_INLINE_SHORTCUTS) {
-      expect(text).toContain(item.label)
-      expect(text).toContain(item.syntax)
-      expect(text).toContain(item.trigger)
-    }
+    const text = wrapper.text()
+    expect(text).not.toContain('Markdown 快速输入')
+    expect(text).toContain('引用')
+    expect(text).toContain('⌥ ⌘ U')
+    expect(text).toContain('高亮')
+    expect(text).toContain('⌘ Shift H')
+    expect(text).toContain('插入链接')
+    expect(text).toContain('⌘ Shift K')
+    expect(text).toContain('切换终端面板')
+    expect(text).toContain('⌘ J')
+    expect(text).toContain('打开内置 Agent')
+    expect(text).toContain('⌘ L')
   })
 })
 

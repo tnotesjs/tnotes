@@ -19,8 +19,8 @@ function input(overrides: Partial<Electron.Input> = {}): Electron.Input {
   }
 }
 
-describe('⌘K 组合键：视图开关与固定上下文', () => {
-  it('⌘K 之后按 V 切换视图，按 P 固定上下文', () => {
+describe('⌘K 组合键：视图开关', () => {
+  it('⌘K 之后按 V 切换视图，按住 ⌘ 再按 P 仍是搜索', () => {
     const resolver = new TabShortcutResolver()
     const now = 1_000
     const primary = process.platform === 'darwin' ? { meta: true } : { control: true }
@@ -49,14 +49,11 @@ describe('⌘K 组合键：视图开关与固定上下文', () => {
       handled: true,
       command: null
     })
-    // 1.5s 内：V → 视图开关，P → 固定上下文
     expect(resolver.resolve(plain('v'), process.platform, now + 100).command).toBe(
       'toggle-note-view'
     )
     resolver.resolve(key('k'), process.platform, now + 200)
-    expect(resolver.resolve(plain('p'), process.platform, now + 300).command).toBe(
-      'pin-current-selection'
-    )
+    expect(resolver.resolve(key('p'), process.platform, now + 300).command).toBe('open-quick-open')
   })
 
   it('组合键窗口过期后不再触发', () => {
@@ -214,6 +211,24 @@ describe('tab shortcuts', () => {
     ).toBe('toggle-pin-active-tab')
   })
 
+  it('keeps the chord while Shift itself is pressed, then pins on Shift+Enter', () => {
+    const resolver = new TabShortcutResolver()
+    expect(resolver.resolve(input({ key: 'k', meta: true }), 'darwin', 100).command).toBeNull()
+    expect(
+      resolver.resolve(input({ key: 'Shift', code: 'ShiftLeft', meta: true, shift: true }), 'darwin', 200)
+    ).toEqual({ handled: false, command: null })
+    expect(
+      resolver.resolve(input({ key: 'Enter', code: 'Enter', meta: true, shift: true }), 'darwin', 300)
+        .command
+    ).toBe('toggle-pin-active-tab')
+  })
+
+  it('does not keep a preview tab open on Command+K then Enter', () => {
+    const resolver = new TabShortcutResolver()
+    resolver.resolve(input({ key: 'k', meta: true }), 'darwin', 100)
+    expect(resolver.resolve(input({ key: 'Enter', meta: true }), 'darwin', 200).command).toBeNull()
+  })
+
   it('copies and reveals the active note with VS Code platform shortcuts', () => {
     expect(resolveTabShortcut(input({ key: 'c', meta: true, alt: true }), 'darwin')).toBe(
       'copy-active-note-path'
@@ -221,6 +236,12 @@ describe('tab shortcuts', () => {
     expect(resolveTabShortcut(input({ key: 'r', meta: true, alt: true }), 'darwin')).toBe(
       'reveal-active-note-in-file-manager'
     )
+    expect(
+      resolveTabShortcut(input({ key: 'ç', code: 'KeyC', meta: true, alt: true }), 'darwin')
+    ).toBe('copy-active-note-path')
+    expect(
+      resolveTabShortcut(input({ key: '®', code: 'KeyR', meta: true, alt: true }), 'darwin')
+    ).toBe('reveal-active-note-in-file-manager')
     expect(resolveTabShortcut(input({ key: 'c', control: true, alt: true }), 'win32')).toBe(
       'copy-active-note-path'
     )

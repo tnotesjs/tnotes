@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * 本机 MCP（选区上下文服务）设置。
+ * 本机 MCP 设置。
  *
- * 首版只有一个**只读**工具 `get_current_selection`：外部 Agent 用它读取用户当前选中的笔记内容，
- * 不必让用户复制路径和正文。
+ * 首版只有一个只读工具 `get_current_note`：外部 Agent 用它读取当前打开的笔记在哪。
+ * 不提供选区。
  *
  * 开关 / 端口跟其它设置一样走草稿（`props.draft`），由设置面板统一保存；
  * 保存后主进程会立刻应用（`mcpManager.applySettings`），并把真实状态广播回来：
@@ -58,7 +58,7 @@ const stateLabel = computed(() => {
 
 const stateDetail = computed(() => {
   if (loadFailed.value) return '无法从主进程读取 MCP 服务状态，请重启 Desk 后再试。'
-  if (!props.draft.mcp.enabled) return '打开开关后，外部 Agent 才能通过下面的地址读取当前选区。'
+  if (!props.draft.mcp.enabled) return '打开开关后，外部 Agent 才能通过下面的地址读取当前笔记。'
   if (status.value?.error) return status.value.error
   if (!status.value?.running) return '开关已打开，但服务当前没有在监听。'
   const parts = [`已连接会话 ${status.value.sessions} 个`]
@@ -116,8 +116,8 @@ async function rotate(): Promise<void> {
     <header class="section-heading">
       <strong>本机 MCP</strong>
       <span>
-        把「当前选中的笔记内容」以只读工具
-        <code>get_current_selection</code> 提供给本机 Agent。只监听本机回环地址，请求必须带令牌。
+        把当前打开的笔记位置以只读工具
+        <code>get_current_note</code> 提供给本机 Agent。只监听本机回环地址，请求必须带令牌。
       </span>
     </header>
     <ResetGroupButton @reset="emit('reset')" />
@@ -200,12 +200,9 @@ async function rotate(): Promise<void> {
         </p>
         <pre data-testid="mcp-config">{{ configExample }}</pre>
         <p>
-          用法约定：用户提到「Desk 当前选区 / 我选中的内容」时，先调用
-          <code>get_current_selection</code>；返回的 status 不是 ok（no_selection /
-          unsupported_selection / selection_invalidated /
-          context_too_large）时，如实告诉用户当前没有有效选区， 不要臆测内容。contentSource=draft
-          表示内容来自编辑器草稿，可能与磁盘不一致，
-          <strong>不要按返回的行列坐标直接修改磁盘文件</strong>。
+          用法约定：用户提到「当前笔记 / 这篇笔记」时调用
+          <code>get_current_note</code>。status 不是 ok 时如实说明没有打开笔记，不要臆测路径。
+          按返回路径读到的是磁盘内容，可能不含未保存编辑。首版不提供选区。
         </p>
         <p>只读：工具不会修改笔记内容、文件或 Git 状态。</p>
         <button

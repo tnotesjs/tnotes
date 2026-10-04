@@ -1,4 +1,4 @@
-import { indentUnit } from '@codemirror/language'
+import { HighlightStyle, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { tags } from '@lezer/highlight'
 
@@ -294,9 +294,17 @@ const highlight: MarkdownConfig = {
   ]
 }
 
+/**
+ * `classHighlighter` 没有 `tags.strikethrough`。不补上的话，可视化藏掉 `~~` 之后正文没有中线。
+ */
+export const strikethroughHighlight: Extension = syntaxHighlighting(
+  HighlightStyle.define([{ tag: tags.strikethrough, class: 'tok-strikethrough' }])
+)
+
 /** TNotes 笔记用的 Markdown 语言：GFM + 容器 + frontmatter + 公式，代码块按语言嵌套高亮。 */
 export function tnotesMarkdown(): Extension {
   return [
+    strikethroughHighlight,
     indentUnit.of('    '),
     markdown({
       base: markdownLanguage,

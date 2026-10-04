@@ -194,7 +194,7 @@ function insertBlock(id: string): void {
             <FormatIcon name="heading-number-remove" />
           </button>
         </UiTooltip>
-        <UiTooltip v-else-if="item === 'quote'" label="引用" shortcut="⇧ ⌘ U">
+        <UiTooltip v-else-if="item === 'quote'" label="引用" shortcut="⌥ ⌘ U">
           <button
             type="button"
             aria-label="引用"
@@ -214,7 +214,7 @@ function insertBlock(id: string): void {
             <FormatIcon name="unordered-list" />
           </button>
         </UiTooltip>
-        <UiTooltip v-else-if="item === 'ordered-list'" label="有序列表">
+        <UiTooltip v-else-if="item === 'ordered-list'" label="有序列表" shortcut="⇧ ⌘ 7">
           <button
             type="button"
             aria-label="有序列表"
@@ -234,7 +234,7 @@ function insertBlock(id: string): void {
             <FormatIcon name="checkbox" />
           </button>
         </UiTooltip>
-        <UiTooltip v-else-if="item === 'link'" label="链接">
+        <UiTooltip v-else-if="item === 'link'" label="链接" shortcut="⇧ ⌘ K">
           <button
             type="button"
             aria-label="链接"

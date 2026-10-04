@@ -8,7 +8,6 @@ import NavigatorSidebar from './components/NavigatorSidebar.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import AgentPanel from './agent/AgentPanel.vue'
 import { useAgentStore } from './agent/agentStore'
-import PinnedContextBar from './components/PinnedContextBar.vue'
 import ToastHost from './components/ToastHost.vue'
 import AppZoomFeedback from './components/AppZoomFeedback.vue'
 import CommandPalette from './commands/CommandPalette.vue'
@@ -17,7 +16,6 @@ import { useEditorStore } from './stores/editor'
 import { findTab, tabAtNumber } from './editor-groups/layoutModel'
 import { syncActiveNote } from './context/activeNoteReporter'
 import { installPinnedContextSync } from './context/pinnedContextStore'
-import { runPinSelection } from './commands/pinSelectionBridge'
 import {
   clampSidebarWidth,
   KNOWLEDGE_SIDEBAR_MAX,
@@ -399,18 +397,9 @@ async function handleTabShortcut(command: TabShortcutCommand): Promise<void> {
     await store.requestCloseTabs('all')
     return
   }
-  if (command === 'pin-current-selection') {
-    // 交给活动标签页：只有它有当前编辑器句柄与笔记身份
-    if (!runPinSelection()) store.status = '当前没有可固定的正文选区。'
-    return
-  }
   if (command === 'toggle-note-view') {
     // 交给活动标签页自己的 toggleMode：草稿保护与 flush 顺序都在那里
     runViewToggle()
-    return
-  }
-  if (command === 'keep-active-tab-open') {
-    if (editor.activeTab) editor.keepOpen(editor.activeTab.id)
     return
   }
   if (command === 'toggle-pin-active-tab') {
@@ -1001,8 +990,6 @@ onUnmounted(() => {
       </button>
       <button type="button" aria-label="忽略本次更新" @click="dismissUpdateBanner">×</button>
     </div>
-
-    <PinnedContextBar v-if="store.hasWorkspace" />
 
     <main
       v-if="store.hasWorkspace"

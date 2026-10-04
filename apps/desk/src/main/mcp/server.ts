@@ -1,7 +1,7 @@
 /**
- * 本机 MCP 服务（Streamable HTTP，只读工具 `get_current_selection`）。
+ * 本机 MCP 服务（Streamable HTTP，只读工具 `get_current_note`）。
  *
- * 三层里的最外层：把 `selectionContext`（与协议无关的读取接口）暴露给外部 MCP 客户端。
+ * 首版只回答当前打开的笔记在哪，不读取选区、也不提供固定选区。
  * 用官方 SDK（`@modelcontextprotocol/sdk`）实现协议，不自己写 JSON-RPC。
  *
  * 本机服务的安全措施（按 SDK 对本机 Streamable HTTP 的建议）：
@@ -20,46 +20,21 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 import { randomUUID } from 'node:crypto'
 
 import { activeNoteService } from '../context/activeNoteService'
-import { pinnedContext } from '../context/pinnedContextService'
 import { deskLog } from '../log'
-import { selectionContext } from '../selection/selectionService'
 import { ensureToken, rotateToken, tokenMatches } from './token'
 
 import { MCP_PATH } from '../../shared/contracts'
 
-import type {
-  ActiveNoteContextDto,
-  McpServerStatusDto,
-  PinnedContextDto,
-  SelectionContextSnapshotDto
-} from '../../shared/contracts'
+import type { ActiveNoteContextDto, McpServerStatusDto } from '../../shared/contracts'
 
 export interface McpServerOptions {
   port: number
-  /** 工具说明里告诉 Agent 的"先调用"约定 */
-  selectionService?: typeof selectionContext
 }
 
 interface Session {
   transport: StreamableHTTPServerTransport
   server: McpServer
 }
-
-/** 工具说明：明确草稿与磁盘的区别，避免 Agent 拿草稿坐标去改磁盘文件 */
-const TOOL_DESCRIPTION = [
-  '读取 TNotes Desk 里用户的选中内容及其上下文。',
-  '不需要参数，也不接受文件路径；返回的是用户在 Desk 里的选择。',
-  '两种模式：source=live 是**当前实时选区**；source=pinned 是用户用「固定为 Agent 上下文」',
-  '临时固定的一份快照（不随后续选择变化，多次调用不会消费掉它）。',
-  'status=ok 时给出笔记身份、编辑器视图、内容版本、选中文本与范围/相关块，',
-  '并用 source / pinnedAt 标明这份上下文是实时还是固定的。',
-  'status 也可能是 no_selection / unsupported_selection / selection_invalidated /',
-  'context_too_large / pinned_invalidated：**都不是服务器错误**，而是结构化结果。',
-  'pinned_invalidated 表示固定上下文已被解除、来源标签关闭或校验失效 ——',
-  '此时不要回退去读用户当前选中的别的内容，如实告知用户并等他们重新选择。',
-  '注意：contentSource=draft 表示内容来自编辑器草稿（可能与磁盘不同），',
-  '此时不要按返回的行列坐标直接去修改磁盘文件；请以磁盘内容为准重新定位。'
-].join('')
 
 /** `get_current_note` 的工具说明：只给定位信息，且磁盘内容可能落后于未保存编辑 */
 const NOTE_TOOL_DESCRIPTION = [
@@ -71,57 +46,6 @@ const NOTE_TOOL_DESCRIPTION = [
   '注意：这里不返回正文。按返回的路径读到的是**磁盘内容**，可能不包含尚未保存的编辑',
   '（editor.hasUnsavedChanges 会标出来）；这个工具不会保存、也不会写入任何文件。'
 ].join('')
-
-function snapshotText(snapshot: SelectionContextSnapshotDto): string {
-  return JSON.stringify(snapshot, null, 2)
-}
-
-/** 固定上下文 → MCP 返回：有效时给不可变快照，失效时只给状态与原因（不给旧正文） */
-function pinnedSnapshot(pinned: PinnedContextDto): SelectionContextSnapshotDto {
-  const limits = { ...pinned.limits }
-  if (pinned.state === 'invalidated') {
-    return {
-      status: 'pinned_invalidated',
-      snapshotId: null,
-      capturedAt: null,
-      source: 'pinned',
-      ...(pinned.pinnedAt ? { pinnedAt: pinned.pinnedAt } : {}),
-      ...(pinned.knowledgeBase ? { knowledgeBase: { ...pinned.knowledgeBase } } : {}),
-      ...(pinned.note ? { note: { ...pinned.note } } : {}),
-      message: `${pinned.reason ?? '固定上下文已失效'}。固定内容已不再返回，也不会改读当前选中的其它内容；请让用户重新固定或重新选择。`,
-      limits
-    }
-  }
-  return {
-    status: 'ok',
-    snapshotId: pinned.pinId,
-    capturedAt: pinned.pinnedAt,
-    source: 'pinned',
-    ...(pinned.pinnedAt ? { pinnedAt: pinned.pinnedAt } : {}),
-    ...(pinned.knowledgeBase ? { knowledgeBase: { ...pinned.knowledgeBase } } : {}),
-    ...(pinned.note ? { note: { ...pinned.note } } : {}),
-    ...(pinned.editor
-      ? {
-          editor: {
-            viewMode: pinned.editor.viewMode,
-            collector: pinned.editor.viewMode === 'source' ? 'source' : 'visual',
-            contentSource: pinned.editor.contentSource,
-            hasUnsavedChanges: pinned.editor.hasUnsavedChanges,
-            revision: pinned.editor.revision
-          }
-        }
-      : {}),
-    selection: {
-      selectedText: pinned.selection?.selectedText ?? '',
-      mapping: pinned.selection?.mapping ?? 'block',
-      ...(pinned.selection?.sourceRange
-        ? { sourceRange: { ...pinned.selection.sourceRange } }
-        : {}),
-      blocks: (pinned.selection?.blocks ?? []).map((block) => ({ ...block }))
-    },
-    limits
-  }
-}
 
 function noteText(context: ActiveNoteContextDto): string {
   return JSON.stringify(context, null, 2)
@@ -319,37 +243,22 @@ export class McpSelectionServer {
     return { transport, server }
   }
 
-  /** 组装 MCP 服务与工具（每次会话一份，工具回调读的是全局选区服务） */
-  createMcpServer(service: typeof selectionContext = selectionContext): McpServer {
+  /** 组装 MCP 服务与工具（每次会话一份） */
+  createMcpServer(): McpServer {
     const server = new McpServer(
-      { name: 'tnotes-desk-selection', version: '0.1.0' },
+      { name: 'tnotes-desk', version: '0.1.0' },
       {
         instructions:
-          'TNotes Desk 的只读上下文服务。用户提到"Desk 当前选区 / 我选中的内容"时，' +
-          '先调用 get_current_selection；没有有效选区就如实告知用户（status 不是 ok），不要臆测内容。' +
-          '用户提到"当前笔记 / 这篇笔记"时调用 get_current_note 取路径；' +
-          '按路径读到的是磁盘内容，可能不含未保存编辑。'
-      }
-    )
-    server.registerTool(
-      'get_current_selection',
-      { title: '读取 Desk 当前选区', description: TOOL_DESCRIPTION, inputSchema: {} },
-      () => {
-        const pinned = pinnedContext.read()
-        const snapshot: SelectionContextSnapshotDto =
-          pinned.state === 'none' ? { ...service.read(), source: 'live' } : pinnedSnapshot(pinned)
-        this.lastCallAt = new Date().toISOString()
-        return {
-          content: [{ type: 'text' as const, text: snapshotText(snapshot) }],
-          structuredContent: snapshot as unknown as Record<string, unknown>,
-          isError: false
-        }
+          'TNotes Desk 的只读上下文服务。用户提到"当前笔记 / 这篇笔记"时调用 get_current_note 取路径；' +
+          '没有打开笔记（status 不是 ok）就如实告知，不要臆测路径。' +
+          '按路径读到的是磁盘内容，可能不含未保存编辑。首版不提供选区。'
       }
     )
     server.registerTool(
       'get_current_note',
       { title: '读取 Desk 当前笔记', description: NOTE_TOOL_DESCRIPTION, inputSchema: {} },
       () => {
+        this.lastCallAt = new Date().toISOString()
         const context = activeNoteService.read()
         return {
           content: [{ type: 'text' as const, text: noteText(context) }],

@@ -15,7 +15,7 @@ import {
   syntaxTree
 } from '@codemirror/language'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
-import { Compartment, EditorSelection, EditorState, type Extension } from '@codemirror/state'
+import { Compartment, EditorSelection, EditorState, Prec, type Extension } from '@codemirror/state'
 import {
   EditorView,
   drawSelection,
@@ -40,6 +40,7 @@ import {
   clearLineStyles,
   continueMarkup,
   deleteMarkup,
+  runAltModShortcut,
   headingBackspace,
   insertText,
   prefixSelection as prefixSelectionCommand,
@@ -326,6 +327,15 @@ function createState(doc: string): EditorState {
         autocorrect: 'off',
         autocapitalize: 'off'
       }),
+      Prec.high(
+        EditorView.domEventHandlers({
+          keydown(event, view) {
+            if (!runAltModShortcut(view, event)) return false
+            event.preventDefault()
+            return true
+          }
+        })
+      ),
       keymap.of([
         { key: 'Enter', run: continueMarkup },
         { key: 'Enter', run: insertNewlineAndIndent },
@@ -342,7 +352,7 @@ function createState(doc: string): EditorState {
         { key: 'Mod-e', run: (v) => (wrapSelectionCommand(v, '`', '`', '代码'), true) },
         { key: 'Mod-Shift-x', run: (v) => (wrapSelectionCommand(v, '~~', '~~'), true) },
         { key: 'Mod-Shift-h', run: (v) => (wrapSelectionCommand(v, '==', '=='), true) },
-        { key: 'Mod-k', run: (v) => (wrapSelectionCommand(v, '[', '](https://)', '链接'), true) },
+        { key: 'Mod-Shift-k', run: (v) => (wrapSelectionCommand(v, '[', '](https://)', '链接'), true) },
         { key: 'Mod-Shift-7', run: (v) => (setLinePrefixCommand(v, '1. '), true) },
         { key: 'Mod-Shift-8', run: (v) => (setLinePrefixCommand(v, '- '), true) },
         { key: 'Mod-Alt-t', run: (v) => (setLinePrefixCommand(v, '- [ ] '), true) },
