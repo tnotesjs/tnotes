@@ -125,7 +125,7 @@ async function openHeaderMenu(): Promise<void> {
 </script>
 
 <template>
-  <aside class="knowledge-sidebar" :class="{ compact }">
+  <aside id="knowledge-sidebar" class="knowledge-sidebar" :class="{ compact }">
     <div class="knowledge-top">
       <div v-if="!compact" class="search-wrap">
         <span>⌕</span>

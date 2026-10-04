@@ -161,6 +161,7 @@ export const workspaceSessionSchema = z.object({
   navigatorSidebarWidth: z.number().min(160).max(700),
   knowledgeSidebarCollapsed: z.boolean(),
   navigatorSidebarCollapsed: z.boolean(),
+  knowledgeSidebarHidden: z.boolean().default(false),
   expandedTocNodes: z.record(z.string(), z.array(z.string())),
   pinnedKnowledgeBasesCollapsed: z.boolean().default(false),
   pinnedNotesCollapsed: z.record(z.string(), z.boolean()).default({})

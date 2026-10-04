@@ -202,6 +202,7 @@ export const useEditorStore = defineStore('editor', () => {
   const navigatorSidebarWidth = ref(NAVIGATOR_SIDEBAR_DEFAULT)
   const knowledgeSidebarCollapsed = ref(false)
   const navigatorSidebarCollapsed = ref(false)
+  const knowledgeSidebarHidden = ref(false)
   const expandedTocNodes = ref<Record<string, string[]>>({})
   const pinnedKnowledgeBasesCollapsed = ref(false)
   const pinnedNotesCollapsed = ref<Record<string, boolean>>({})
@@ -480,6 +481,7 @@ export const useEditorStore = defineStore('editor', () => {
     navigatorSidebarWidth.value = session.navigatorSidebarWidth
     knowledgeSidebarCollapsed.value = session.knowledgeSidebarCollapsed
     navigatorSidebarCollapsed.value = session.navigatorSidebarCollapsed
+    knowledgeSidebarHidden.value = session.knowledgeSidebarHidden
     expandedTocNodes.value = session.expandedTocNodes
     pinnedKnowledgeBasesCollapsed.value = session.pinnedKnowledgeBasesCollapsed ?? false
     pinnedNotesCollapsed.value = session.pinnedNotesCollapsed ?? {}
@@ -1421,6 +1423,7 @@ export const useEditorStore = defineStore('editor', () => {
       navigatorSidebarWidth: navigatorSidebarWidth.value,
       knowledgeSidebarCollapsed: knowledgeSidebarCollapsed.value,
       navigatorSidebarCollapsed: navigatorSidebarCollapsed.value,
+      knowledgeSidebarHidden: knowledgeSidebarHidden.value,
       expandedTocNodes: serializedExpandedNodes,
       pinnedKnowledgeBasesCollapsed: pinnedKnowledgeBasesCollapsed.value,
       pinnedNotesCollapsed: { ...pinnedNotesCollapsed.value }
@@ -1442,6 +1445,7 @@ export const useEditorStore = defineStore('editor', () => {
     navigatorSidebarWidth,
     knowledgeSidebarCollapsed,
     navigatorSidebarCollapsed,
+    knowledgeSidebarHidden,
     expandedTocNodes,
     pinnedKnowledgeBasesCollapsed,
     pinnedNotesCollapsed,

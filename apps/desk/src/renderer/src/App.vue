@@ -140,8 +140,13 @@ let unsubscribeUpdates: (() => void) | null = null
 /** 两块大胶囊离窗口边缘的空隙，和 VSCode 侧栏、编辑区之间的缝一样。 */
 const CAPSULE_INSET = 6
 
+function visibleKnowledgeWidth(): number {
+  if (editor.knowledgeSidebarHidden) return 0
+  return editor.knowledgeSidebarCollapsed ? 48 : editor.knowledgeSidebarWidth
+}
+
 const workspaceColumns = computed(() => {
-  const knowledgeWidth = editor.knowledgeSidebarCollapsed ? 48 : editor.knowledgeSidebarWidth
+  const knowledgeWidth = visibleKnowledgeWidth()
   const navigatorWidth = editor.navigatorSidebarCollapsed ? 0 : editor.navigatorSidebarWidth
   const sideWidth = knowledgeWidth + navigatorWidth
   const navigatorGap = editor.navigatorSidebarCollapsed ? 0 : CAPSULE_INSET
@@ -154,13 +159,26 @@ const workspaceColumns = computed(() => {
 
 /** 目录栏朝编辑区的那条边。收起后这条边贴着知识库栏，手柄留在这里。 */
 const navigatorEdge = computed(() => {
-  const knowledgeWidth = editor.knowledgeSidebarCollapsed ? 48 : editor.knowledgeSidebarWidth
+  const knowledgeWidth = visibleKnowledgeWidth()
   const navigatorWidth = editor.navigatorSidebarCollapsed ? 0 : editor.navigatorSidebarWidth
   return `${CAPSULE_INSET + knowledgeWidth + navigatorWidth}px`
 })
 
+/** 知识库手柄所在的边。藏起时贴外缘；目录也藏起时和目录手柄同一条边。 */
+const knowledgeHandleEdge = computed(() => {
+  if (editor.knowledgeSidebarHidden) return `${CAPSULE_INSET}px`
+  const width = editor.knowledgeSidebarCollapsed ? 48 : editor.knowledgeSidebarWidth
+  return `${CAPSULE_INSET + width}px`
+})
+
 const sideCapsuleStyle = computed(() => {
-  const knowledgeWidth = editor.knowledgeSidebarCollapsed ? 48 : editor.knowledgeSidebarWidth
+  const knowledgeWidth = visibleKnowledgeWidth()
+  if (editor.knowledgeSidebarHidden && editor.navigatorSidebarCollapsed) {
+    return { gridTemplateColumns: '0px', gridTemplateAreas: '"kb"' }
+  }
+  if (editor.knowledgeSidebarHidden) {
+    return { gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateAreas: '"nav"' }
+  }
   if (editor.navigatorSidebarCollapsed) {
     return { gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateAreas: '"kb"' }
   }
@@ -181,6 +199,10 @@ const navigatorLayoutReversed = computed(() => store.settings?.workspaceLayout =
 
 function toggleNavigatorSidebar(): void {
   editor.navigatorSidebarCollapsed = !editor.navigatorSidebarCollapsed
+}
+
+function toggleKnowledgeSidebar(): void {
+  editor.knowledgeSidebarHidden = !editor.knowledgeSidebarHidden
 }
 
 const workspaceAreas = computed(() => {
@@ -708,6 +730,7 @@ watch(
     () => editor.navigatorSidebarWidth,
     () => editor.knowledgeSidebarCollapsed,
     () => editor.navigatorSidebarCollapsed,
+    () => editor.knowledgeSidebarHidden,
     () => editor.expandedTocNodes,
     () => editor.pinnedKnowledgeBasesCollapsed,
     () => editor.pinnedNotesCollapsed,
@@ -1000,16 +1023,48 @@ onUnmounted(() => {
         '--nav-edge': navigatorEdge
       }"
     >
-      <div class="side-capsule" style="grid-area: side" :style="sideCapsuleStyle">
-        <KnowledgeSidebar style="grid-area: kb" @create-knowledge-base="openCreateKbDialog" />
+      <div
+        v-show="!editor.knowledgeSidebarHidden || !editor.navigatorSidebarCollapsed"
+        class="side-capsule"
+        style="grid-area: side"
+        :style="sideCapsuleStyle"
+      >
+        <KnowledgeSidebar
+          v-show="!editor.knowledgeSidebarHidden"
+          style="grid-area: kb"
+          @create-knowledge-base="openCreateKbDialog"
+        />
         <div
-          v-show="!editor.navigatorSidebarCollapsed"
+          v-show="!editor.knowledgeSidebarHidden && !editor.navigatorSidebarCollapsed"
           class="resize-handle seam"
           role="separator"
           aria-orientation="vertical"
           style="grid-area: seam"
           @mousedown="startResize('knowledge', $event)"
-        />
+        >
+          <button
+            type="button"
+            class="navigator-collapse-handle knowledge-collapse-handle"
+            :class="{ 'is-reversed': navigatorLayoutReversed }"
+            aria-controls="knowledge-sidebar"
+            aria-expanded="true"
+            aria-label="隐藏知识库"
+            title="隐藏知识库"
+            @mousedown.stop
+            @click="toggleKnowledgeSidebar"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="m15 6l-6 6l6 6"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
         <NavigatorSidebar
           v-show="!editor.navigatorSidebarCollapsed"
           id="navigator-sidebar"
@@ -1069,16 +1124,53 @@ onUnmounted(() => {
       <div v-if="agentStore.open" class="agent-capsule" style="grid-area: agent">
         <AgentPanel ref="agentPanel" />
       </div>
+      <div
+        v-if="!editor.knowledgeSidebarHidden && editor.navigatorSidebarCollapsed"
+        class="resize-handle knowledge-edge-resize"
+        :class="{ 'is-reversed': navigatorLayoutReversed }"
+        :style="{ '--kb-edge': knowledgeHandleEdge }"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整知识库宽度"
+        @mousedown="startResize('knowledge', $event)"
+      />
       <button
         v-if="editor.navigatorSidebarCollapsed"
         type="button"
-        class="navigator-collapse-handle is-collapsed"
+        class="navigator-collapse-handle is-collapsed is-stacked"
         :class="{ 'is-reversed': navigatorLayoutReversed }"
         aria-controls="navigator-sidebar"
         aria-expanded="false"
         aria-label="显示目录"
-        title="显示目录"
+        data-tooltip="显示目录"
         @click="toggleNavigatorSidebar"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="m15 6l-6 6l6 6"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+      <button
+        v-if="editor.knowledgeSidebarHidden || editor.navigatorSidebarCollapsed"
+        type="button"
+        class="navigator-collapse-handle knowledge-collapse-handle"
+        :class="{
+          'is-collapsed': editor.knowledgeSidebarHidden,
+          'is-reversed': navigatorLayoutReversed,
+          'is-stacked': editor.navigatorSidebarCollapsed
+        }"
+        :style="{ '--kb-edge': knowledgeHandleEdge }"
+        aria-controls="knowledge-sidebar"
+        :aria-expanded="!editor.knowledgeSidebarHidden"
+        :aria-label="editor.knowledgeSidebarHidden ? '显示知识库' : '隐藏知识库'"
+        :data-tooltip="editor.knowledgeSidebarHidden ? '显示知识库' : '隐藏知识库'"
+        @click="toggleKnowledgeSidebar"
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path
@@ -1630,6 +1722,7 @@ onUnmounted(() => {
 }
 
 .side-capsule .seam {
+  position: relative;
   z-index: 2;
   width: 10px;
   margin-left: -5px;
@@ -1711,14 +1804,34 @@ onUnmounted(() => {
 .navigator-collapse-handle.is-collapsed:not(.is-reversed) {
   width: 28px;
   padding-left: 14px;
-  border: 1px solid var(--border);
-  clip-path: inset(0 0 0 50%);
 }
 
 .navigator-collapse-handle.is-collapsed.is-reversed {
   width: 28px;
   padding-right: 14px;
+}
+
+/* 半边药丸画在 ::before 上，提示才能画在按钮外面，不被裁掉。 */
+.navigator-collapse-handle.is-collapsed {
+  background: transparent;
+  border-color: transparent;
+}
+
+.navigator-collapse-handle.is-collapsed::before {
+  content: '';
+  position: absolute;
+  inset: 0;
   border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--editor-bg);
+  pointer-events: none;
+}
+
+.navigator-collapse-handle.is-collapsed:not(.is-reversed)::before {
+  clip-path: inset(0 0 0 50%);
+}
+
+.navigator-collapse-handle.is-collapsed.is-reversed::before {
   clip-path: inset(0 50% 0 0);
 }
 
@@ -1726,8 +1839,28 @@ onUnmounted(() => {
   color: var(--accent);
 }
 
-.navigator-collapse-handle.is-collapsed:hover {
+.navigator-collapse-handle.is-collapsed:hover::before {
   border-color: var(--accent);
+}
+
+.navigator-collapse-handle[data-tooltip] {
+  position: absolute;
+}
+
+.navigator-collapse-handle.is-collapsed[data-tooltip]::after {
+  top: 50%;
+  left: calc(100% + 8px);
+  transform: translateY(-50%);
+}
+
+.navigator-collapse-handle.is-collapsed[data-tooltip]:hover::after,
+.navigator-collapse-handle.is-collapsed[data-tooltip]:focus-visible::after {
+  transform: translateY(-50%);
+}
+
+.navigator-collapse-handle.is-collapsed.is-reversed[data-tooltip]::after {
+  left: auto;
+  right: calc(100% + 8px);
 }
 
 .navigator-collapse-handle svg {
@@ -1746,10 +1879,61 @@ onUnmounted(() => {
   transform: rotate(180deg);
 }
 
+/* 知识库手柄平时在自己和目录的分隔条上。目录收起后改到同一条边，并往上让开目录手柄。 */
+.knowledge-collapse-handle {
+  left: var(--kb-edge, 0px);
+  right: auto;
+}
+
+.knowledge-collapse-handle.is-reversed {
+  left: auto;
+  right: var(--kb-edge, 0px);
+}
+
+.navigator-collapse-handle.is-collapsed.is-stacked {
+  margin-top: 26px;
+}
+
+.navigator-collapse-handle.knowledge-collapse-handle.is-stacked {
+  margin-top: -26px;
+}
+
+.seam > .knowledge-collapse-handle,
+.seam > .knowledge-collapse-handle.is-reversed {
+  left: 50%;
+  right: auto;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.seam:hover > .knowledge-collapse-handle,
+.seam:focus-within > .knowledge-collapse-handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .workspace-layout .resize-handle {
   position: relative;
   cursor: col-resize;
   background: transparent;
+}
+
+/* 目录收起后，知识库和编辑区贴在一起，这条边仍然可以拖宽度。 */
+.workspace-layout .knowledge-edge-resize {
+  position: absolute;
+  z-index: 7;
+  top: 6px;
+  bottom: 6px;
+  left: var(--kb-edge, 0px);
+  width: 10px;
+  transform: translateX(-50%);
+}
+
+.workspace-layout .knowledge-edge-resize.is-reversed {
+  left: auto;
+  right: var(--kb-edge, 0px);
+  transform: translateX(50%);
 }
 
 .workspace-layout .resize-handle::before {

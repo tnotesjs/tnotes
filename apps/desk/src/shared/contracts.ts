@@ -1061,6 +1061,8 @@ export interface WorkspaceSession {
   navigatorSidebarWidth: number
   knowledgeSidebarCollapsed: boolean
   navigatorSidebarCollapsed: boolean
+  /** 知识库列整列隐藏。缺省显示。拖窄成图标条仍走宽度，不走这个开关。 */
+  knowledgeSidebarHidden: boolean
   expandedTocNodes: Record<string, string[]>
   /** 知识库列表的置顶分组是否收起。缺省展开。 */
   pinnedKnowledgeBasesCollapsed: boolean
