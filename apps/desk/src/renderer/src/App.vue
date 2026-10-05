@@ -1620,7 +1620,6 @@ onUnmounted(() => {
   align-items: center;
   gap: 13px;
   padding: 0 9px;
-  border-bottom: 1px solid var(--border);
   background: var(--titlebar-bg);
   -webkit-app-region: drag;
 }
@@ -1701,7 +1700,7 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   display: grid;
-  padding: 6px;
+  padding: 0 6px 6px;
   background: var(--app-bg);
   grid-template-columns: 218px 6px minmax(0, 1fr);
 }
