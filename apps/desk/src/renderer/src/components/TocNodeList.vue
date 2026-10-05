@@ -415,7 +415,8 @@ function drop(event: DragEvent, target: DeskTocNode): void {
     draggingNodeId.value = null
     if (target.type === 'note' && sourceId && sourceId !== target.uuid) {
       const knowledgeBaseId = store.knowledgeBase?.id
-      if (knowledgeBaseId) store.reorderPinnedNote(knowledgeBaseId, sourceId, target.uuid, placement)
+      if (knowledgeBaseId)
+        store.reorderPinnedNote(knowledgeBaseId, sourceId, target.uuid, placement)
     }
     return
   }

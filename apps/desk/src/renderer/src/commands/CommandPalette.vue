@@ -67,20 +67,13 @@ const commandGroups = computed(() => {
   return groups
 })
 
-function shownPath(
-  knowledgeBaseId: string,
-  noteUuid: string,
-  relPath: string | undefined
-): string {
+function shownPath(knowledgeBaseId: string, noteUuid: string, relPath: string | undefined): string {
   const loaded = workspace.documents[documentKey(knowledgeBaseId, noteUuid)]?.document.relPath
   return notePath(knowledgeBaseId, loaded || relPath || '')
 }
 
 function notePath(knowledgeBaseId: string, relPath: string): string {
-  const bases = [
-    ...workspace.overview.knowledgeBases,
-    ...workspace.overview.allKnowledgeBases
-  ]
+  const bases = [...workspace.overview.knowledgeBases, ...workspace.overview.allKnowledgeBases]
   const knowledgeBase = bases.find((item) => item.id === knowledgeBaseId)
   return workspaceRelativePath(workspace.overview.path, knowledgeBase?.rootPath, relPath)
 }
@@ -401,7 +394,9 @@ defineExpose({ openSearch, openCommands, close })
                   >
                     {{ noteLabelParts(noteFileName(result), result.noteIndex).index }}
                   </span>
-                  <strong>{{ noteLabelParts(noteFileName(result), result.noteIndex).title }}</strong>
+                  <strong>{{
+                    noteLabelParts(noteFileName(result), result.noteIndex).title
+                  }}</strong>
                 </span>
                 <em>{{ result.snippet }}</em>
               </span>

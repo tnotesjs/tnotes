@@ -175,11 +175,18 @@ describe('tab shortcuts', () => {
     const resolver = new TabShortcutResolver()
     expect(resolver.resolve(input({ key: 'k', meta: true }), 'darwin', 100).command).toBeNull()
     expect(
-      resolver.resolve(input({ key: 'Shift', code: 'ShiftLeft', meta: true, shift: true }), 'darwin', 200)
+      resolver.resolve(
+        input({ key: 'Shift', code: 'ShiftLeft', meta: true, shift: true }),
+        'darwin',
+        200
+      )
     ).toEqual({ handled: false, command: null })
     expect(
-      resolver.resolve(input({ key: 'Enter', code: 'Enter', meta: true, shift: true }), 'darwin', 300)
-        .command
+      resolver.resolve(
+        input({ key: 'Enter', code: 'Enter', meta: true, shift: true }),
+        'darwin',
+        300
+      ).command
     ).toBe('toggle-pin-active-tab')
   })
 

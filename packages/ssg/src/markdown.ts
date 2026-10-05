@@ -185,7 +185,10 @@ function swiperImageAttrs(
   if (markedWidth || markedAlign) {
     return {
       width: markedWidth,
-      align: markedAlign === 'left' || markedAlign === 'center' || markedAlign === 'right' ? markedAlign : undefined
+      align:
+        markedAlign === 'left' || markedAlign === 'center' || markedAlign === 'right'
+          ? markedAlign
+          : undefined
     }
   }
   const raw = next?.type === 'text' ? next.content || '' : ''

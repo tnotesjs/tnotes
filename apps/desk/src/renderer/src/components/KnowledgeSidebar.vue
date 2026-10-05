@@ -210,32 +210,118 @@ async function openMenu(): Promise<void> {
     menuBusy.value = false
   }
 }
-
 </script>
 
 <template>
   <aside id="knowledge-sidebar" class="knowledge-sidebar" :class="{ compact }">
     <div v-if="pinnedKnowledgeBases.length" class="pin-strip">
-        <div
-          v-for="item in pinnedKnowledgeBases"
+      <div
+        v-for="item in pinnedKnowledgeBases"
+        :key="item.id"
+        class="knowledge-item"
+        :class="{
+          active: store.selectedKnowledgeBaseId === item.id,
+          dragging: draggingPinId === item.id,
+          'drop-before': pinDrop?.id === item.id && pinDrop.placement === 'before',
+          'drop-after': pinDrop?.id === item.id && pinDrop.placement === 'after'
+        }"
+        role="button"
+        tabindex="0"
+        :draggable="pinnedKnowledgeBases.length > 1 && !compact"
+        @click="store.selectKnowledgeBase(item.id)"
+        @keydown.enter.prevent="store.selectKnowledgeBase(item.id)"
+        @contextmenu.prevent="showIdeMenu(item.id)"
+        @dragstart="onPinDragStart($event, item)"
+        @dragover="onPinDragOver($event, item)"
+        @drop="onPinDrop($event, item)"
+        @dragend="onPinDragEnd"
+      >
+        <span class="knowledge-icon">
+          <KnowledgeBaseIcon :icon="item.icon" :fallback="item.displayName" />
+        </span>
+        <span
+          v-if="agent.pendingByKb[item.id]"
+          class="agent-dot"
+          :title="`${agent.pendingByKb[item.id]} 篇笔记有 Agent 改动待确认`"
+          :aria-label="`${agent.pendingByKb[item.id]} 篇笔记有 Agent 改动待确认`"
+        />
+        <span v-if="!compact" class="knowledge-copy">
+          <strong>{{ item.displayName }}</strong>
+        </span>
+        <button
+          v-if="!compact"
+          type="button"
+          class="pin-button"
+          aria-label="取消置顶"
+          title="取消置顶"
+          @click.stop="unpin(item.id)"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479c-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354m1.58 1.408l-.002-.001zm-.002-.001l.002.001A.5.5 0 0 1 6 2v5a.5.5 0 0 1-.276.447h-.002l-.012.007l-.054.03a5 5 0 0 0-.827.58c-.318.278-.585.596-.725.936h7.792c-.14-.34-.407-.658-.725-.936a5 5 0 0 0-.881-.61l-.012-.006h-.002A.5.5 0 0 1 10 7V2a.5.5 0 0 1 .295-.458a1.8 1.8 0 0 0 .351-.271c.08-.08.155-.17.214-.271H5.14q.091.15.214.271a1.8 1.8 0 0 0 .37.282"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="kb-group">
+      <div class="section-heading">
+        <button
+          type="button"
+          class="section-toggle"
+          :aria-expanded="groupExpanded"
+          :aria-label="editor.knowledgeGroupCollapsed ? '展开知识库' : '折叠知识库'"
+          @click="toggleGroup"
+        >
+          <svg
+            class="chevron"
+            :class="{ collapsed: !groupExpanded }"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+          >
+            <path
+              d="M4 6l4 4 4-4"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <template v-if="!compact">
+            <strong>知识库</strong>
+            <em>{{ knowledgeBases.length }}</em>
+          </template>
+        </button>
+        <button
+          v-if="!compact"
+          type="button"
+          class="menu-button kb-menu-button"
+          aria-label="知识库操作"
+          aria-haspopup="menu"
+          :disabled="menuBusy"
+          @click="openMenu"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <g fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="4" cy="12" r="1" />
+              <circle cx="12" cy="12" r="1" />
+              <circle cx="20" cy="12" r="1" />
+            </g>
+          </svg>
+        </button>
+      </div>
+      <div v-show="groupExpanded" class="knowledge-list">
+        <button
+          v-for="item in groupedKnowledgeBases"
           :key="item.id"
+          type="button"
           class="knowledge-item"
-          :class="{
-            active: store.selectedKnowledgeBaseId === item.id,
-            dragging: draggingPinId === item.id,
-            'drop-before': pinDrop?.id === item.id && pinDrop.placement === 'before',
-            'drop-after': pinDrop?.id === item.id && pinDrop.placement === 'after'
-          }"
-          role="button"
-          tabindex="0"
-          :draggable="pinnedKnowledgeBases.length > 1 && !compact"
+          :class="{ active: store.selectedKnowledgeBaseId === item.id }"
           @click="store.selectKnowledgeBase(item.id)"
-          @keydown.enter.prevent="store.selectKnowledgeBase(item.id)"
           @contextmenu.prevent="showIdeMenu(item.id)"
-          @dragstart="onPinDragStart($event, item)"
-          @dragover="onPinDragOver($event, item)"
-          @drop="onPinDrop($event, item)"
-          @dragend="onPinDragEnd"
         >
           <span class="knowledge-icon">
             <KnowledgeBaseIcon :icon="item.icon" :fallback="item.displayName" />
@@ -249,100 +335,13 @@ async function openMenu(): Promise<void> {
           <span v-if="!compact" class="knowledge-copy">
             <strong>{{ item.displayName }}</strong>
           </span>
-          <button
-            v-if="!compact"
-            type="button"
-            class="pin-button"
-            aria-label="取消置顶"
-            title="取消置顶"
-            @click.stop="unpin(item.id)"
-          >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479c-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354m1.58 1.408l-.002-.001zm-.002-.001l.002.001A.5.5 0 0 1 6 2v5a.5.5 0 0 1-.276.447h-.002l-.012.007l-.054.03a5 5 0 0 0-.827.58c-.318.278-.585.596-.725.936h7.792c-.14-.34-.407-.658-.725-.936a5 5 0 0 0-.881-.61l-.012-.006h-.002A.5.5 0 0 1 10 7V2a.5.5 0 0 1 .295-.458a1.8 1.8 0 0 0 .351-.271c.08-.08.155-.17.214-.271H5.14q.091.15.214.271a1.8 1.8 0 0 0 .37.282"
-              />
-            </svg>
-          </button>
-        </div>
+        </button>
       </div>
-
-      <div class="kb-group">
-        <div class="section-heading">
-          <button
-            type="button"
-            class="section-toggle"
-            :aria-expanded="groupExpanded"
-            :aria-label="editor.knowledgeGroupCollapsed ? '展开知识库' : '折叠知识库'"
-            @click="toggleGroup"
-          >
-            <svg
-              class="chevron"
-              :class="{ collapsed: !groupExpanded }"
-              viewBox="0 0 16 16"
-              aria-hidden="true"
-            >
-              <path
-                d="M4 6l4 4 4-4"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.6"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <template v-if="!compact">
-              <strong>知识库</strong>
-              <em>{{ knowledgeBases.length }}</em>
-            </template>
-          </button>
-          <button
-            v-if="!compact"
-            type="button"
-            class="menu-button kb-menu-button"
-            aria-label="知识库操作"
-            aria-haspopup="menu"
-            :disabled="menuBusy"
-            @click="openMenu"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <g fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="4" cy="12" r="1" />
-                <circle cx="12" cy="12" r="1" />
-                <circle cx="20" cy="12" r="1" />
-              </g>
-            </svg>
-          </button>
-        </div>
-        <div v-show="groupExpanded" class="knowledge-list">
-          <button
-            v-for="item in groupedKnowledgeBases"
-            :key="item.id"
-            type="button"
-            class="knowledge-item"
-            :class="{ active: store.selectedKnowledgeBaseId === item.id }"
-            @click="store.selectKnowledgeBase(item.id)"
-            @contextmenu.prevent="showIdeMenu(item.id)"
-          >
-            <span class="knowledge-icon">
-              <KnowledgeBaseIcon :icon="item.icon" :fallback="item.displayName" />
-            </span>
-            <span
-              v-if="agent.pendingByKb[item.id]"
-              class="agent-dot"
-              :title="`${agent.pendingByKb[item.id]} 篇笔记有 Agent 改动待确认`"
-              :aria-label="`${agent.pendingByKb[item.id]} 篇笔记有 Agent 改动待确认`"
-            />
-            <span v-if="!compact" class="knowledge-copy">
-              <strong>{{ item.displayName }}</strong>
-            </span>
-          </button>
-        </div>
-        <div v-if="groupExpanded && knowledgeBases.length === 0" class="column-empty">
-          <strong>{{ emptyMessage.title }}</strong>
-          <span>{{ emptyMessage.detail }}</span>
-        </div>
+      <div v-if="groupExpanded && knowledgeBases.length === 0" class="column-empty">
+        <strong>{{ emptyMessage.title }}</strong>
+        <span>{{ emptyMessage.detail }}</span>
       </div>
+    </div>
   </aside>
 </template>
 

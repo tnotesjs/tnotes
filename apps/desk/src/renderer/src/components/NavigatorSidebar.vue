@@ -853,10 +853,10 @@ async function openHeaderMenu(): Promise<void> {
                     stroke-width="1.6"
                     stroke-linecap="round"
                     stroke-linejoin="round"
-                />
-              </svg>
-              <strong>目录</strong>
-              <em>{{ store.knowledgeBase.noteCount }}</em>
+                  />
+                </svg>
+                <strong>目录</strong>
+                <em>{{ store.knowledgeBase.noteCount }}</em>
               </button>
               <button
                 type="button"
@@ -932,7 +932,10 @@ async function openHeaderMenu(): Promise<void> {
             type="button"
             role="menuitem"
             :disabled="Boolean(gitState?.busy)"
-            @click="closeSectionMenu(); store.refreshGit(store.selectedKnowledgeBaseId ?? undefined)"
+            @click="
+              closeSectionMenu()
+              store.refreshGit(store.selectedKnowledgeBaseId ?? undefined)
+            "
           >
             刷新 Git 状态
           </button>
@@ -940,7 +943,10 @@ async function openHeaderMenu(): Promise<void> {
             type="button"
             role="menuitem"
             :disabled="!gitState?.initialized || Boolean(gitState?.busy)"
-            @click="closeSectionMenu(); store.pullGit(store.selectedKnowledgeBaseId!)"
+            @click="
+              closeSectionMenu()
+              store.pullGit(store.selectedKnowledgeBaseId!)
+            "
           >
             拉取远端更新
           </button>
@@ -948,7 +954,10 @@ async function openHeaderMenu(): Promise<void> {
             type="button"
             role="menuitem"
             :disabled="!gitState?.initialized || Boolean(gitState?.busy)"
-            @click="closeSectionMenu(); store.requestGitPublish(store.selectedKnowledgeBaseId!)"
+            @click="
+              closeSectionMenu()
+              store.requestGitPublish(store.selectedKnowledgeBaseId!)
+            "
           >
             提交并推送
           </button>
@@ -958,14 +967,31 @@ async function openHeaderMenu(): Promise<void> {
             type="button"
             role="menuitem"
             :disabled="store.loading"
-            @click="closeSectionMenu(); store.reloadKnowledgeBase()"
+            @click="
+              closeSectionMenu()
+              store.reloadKnowledgeBase()
+            "
           >
             手动刷新目录
           </button>
-          <button type="button" role="menuitem" @click="closeSectionMenu(); toggleNoteIndex()">
+          <button
+            type="button"
+            role="menuitem"
+            @click="
+              closeSectionMenu()
+              toggleNoteIndex()
+            "
+          >
             {{ tocShowIndex ? '隐藏笔记编号' : '显示笔记编号' }}
           </button>
-          <button type="button" role="menuitem" @click="closeSectionMenu(); toggleTocBatch()">
+          <button
+            type="button"
+            role="menuitem"
+            @click="
+              closeSectionMenu()
+              toggleTocBatch()
+            "
+          >
             折叠/展开全部
           </button>
         </template>

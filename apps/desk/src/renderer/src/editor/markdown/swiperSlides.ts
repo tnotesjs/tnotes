@@ -99,15 +99,18 @@ export function updateSwiperSlideAttrs(
 ): string {
   const newline = fence.includes('\r\n') ? '\r\n' : '\n'
   let seen = -1
-  const lines = fence.replace(/\r\n?/g, '\n').split('\n').map((line) => {
-    const parsed = parseImageLine(line)
-    if (!parsed) return line
-    seen += 1
-    if (seen !== index) return line
-    const entry = applySlideChange(parsed.entry, next)
-    const attrs = formatSwiperAttrs(entry)
-    return `${parsed.head}${attrs ? ` ${attrs}` : ''}`
-  })
+  const lines = fence
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => {
+      const parsed = parseImageLine(line)
+      if (!parsed) return line
+      seen += 1
+      if (seen !== index) return line
+      const entry = applySlideChange(parsed.entry, next)
+      const attrs = formatSwiperAttrs(entry)
+      return `${parsed.head}${attrs ? ` ${attrs}` : ''}`
+    })
   return lines.join(newline)
 }
 

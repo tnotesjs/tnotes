@@ -224,7 +224,8 @@ export function verticalStopLine(
 function lineIsRestable(view: EditorView, lineNo: number): boolean {
   const line = view.state.doc.line(lineNo)
   const pos = line.from
-  if (collapsedCodeBodies(view.state).some((body) => pos >= body.from && pos < body.to)) return false
+  if (collapsedCodeBodies(view.state).some((body) => pos >= body.from && pos < body.to))
+    return false
   if (hiddenCodeGroupBodies(view.state).some((body) => pos >= body.from && pos <= body.to))
     return false
   let folded = false

@@ -330,7 +330,9 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
             {{ item.displayName === item.id ? item.id : `${item.displayName}（${item.id}）` }}
           </option>
         </select>
-        <button type="button" class="settings-action" @click="addModel(provider)">手动添加模型</button>
+        <button type="button" class="settings-action" @click="addModel(provider)">
+          手动添加模型
+        </button>
       </div>
     </div>
     <div class="add-actions">

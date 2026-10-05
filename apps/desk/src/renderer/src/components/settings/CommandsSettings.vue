@@ -162,5 +162,4 @@ const groups = computed(() => {
   padding: 3px 7px;
   font: inherit;
 }
-
 </style>

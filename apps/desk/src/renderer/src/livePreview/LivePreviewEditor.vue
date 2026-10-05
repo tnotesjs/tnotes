@@ -354,7 +354,10 @@ function createState(doc: string): EditorState {
         { key: 'Mod-e', run: (v) => (wrapSelectionCommand(v, '`', '`', '代码'), true) },
         { key: 'Mod-Shift-x', run: (v) => (wrapSelectionCommand(v, '~~', '~~'), true) },
         { key: 'Mod-Shift-h', run: (v) => (wrapSelectionCommand(v, '==', '=='), true) },
-        { key: 'Mod-Shift-k', run: (v) => (wrapSelectionCommand(v, '[', '](https://)', '链接'), true) },
+        {
+          key: 'Mod-Shift-k',
+          run: (v) => (wrapSelectionCommand(v, '[', '](https://)', '链接'), true)
+        },
         { key: 'Mod-Shift-7', run: (v) => (setLinePrefixCommand(v, '1. '), true) },
         { key: 'Mod-Shift-8', run: (v) => (setLinePrefixCommand(v, '- '), true) },
         { key: 'Mod-Alt-t', run: (v) => (setLinePrefixCommand(v, '- [ ] '), true) },

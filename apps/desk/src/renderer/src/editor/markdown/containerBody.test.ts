@@ -167,15 +167,15 @@ describe('renderContainerFromSource', () => {
       }
     )
     const buttons = [...el.querySelectorAll('.tn-swiper-image-toolbar button')]
-    expect(buttons.find((button) => button.textContent === '中')?.classList.contains('is-active')).toBe(
-      true
-    )
-    buttons.find((button) => button.textContent === '左')?.dispatchEvent(
-      new MouseEvent('mousedown', { bubbles: true })
-    )
-    buttons.find((button) => button.textContent === '原始大小')?.dispatchEvent(
-      new MouseEvent('mousedown', { bubbles: true })
-    )
+    expect(
+      buttons.find((button) => button.textContent === '中')?.classList.contains('is-active')
+    ).toBe(true)
+    buttons
+      .find((button) => button.textContent === '左')
+      ?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    buttons
+      .find((button) => button.textContent === '原始大小')
+      ?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     expect(commits).toEqual([
       { index: 0, align: 'left' },
       { index: 0, width: '' }

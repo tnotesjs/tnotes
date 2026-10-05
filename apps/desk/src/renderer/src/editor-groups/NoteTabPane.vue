@@ -760,11 +760,7 @@ function openLink(url: string): void {
     </div>
     <Teleport :to="docHeadEl">
       <div v-if="showNoteTitle" class="note-doc-title">
-        <NoteDoneToggle
-          :done="noteDone"
-          :disabled="noteDoneDisabled"
-          @toggle="toggleNoteDone"
-        />
+        <NoteDoneToggle :done="noteDone" :disabled="noteDoneDisabled" @toggle="toggleNoteDone" />
         <span class="note-index">{{ session.document.index }}.</span>
         <input
           v-if="editingTitle"

@@ -549,8 +549,7 @@ export interface KnowledgeSidebarMenuRequest {
 }
 
 export type KnowledgeSidebarMenuChoice =
-  | { kind: 'action'; action: KnowledgeSidebarMenuAction }
-  | { kind: 'sort'; sort: KnowledgeBaseSort }
+  { kind: 'action'; action: KnowledgeSidebarMenuAction } | { kind: 'sort'; sort: KnowledgeBaseSort }
 
 export type KnowledgeSidebarMenuAction =
   'create' | 'refresh' | 'reveal-workspace' | 'choose-workspace'

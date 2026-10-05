@@ -66,9 +66,17 @@ describe('swiperSlides', () => {
       ].join('\n')
     )
     expect(updateSwiperSlideAttrs(fence, 0, { align: null, width: '' })).toBe(
-      ['::: swiper', '', '123', '', '![a](./a.png)', '', '![b](./b.png) {align=right}', '', ':::'].join(
-        '\n'
-      )
+      [
+        '::: swiper',
+        '',
+        '123',
+        '',
+        '![a](./a.png)',
+        '',
+        '![b](./b.png) {align=right}',
+        '',
+        ':::'
+      ].join('\n')
     )
   })
 

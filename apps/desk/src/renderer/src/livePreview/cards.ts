@@ -230,15 +230,10 @@ export class CardWidget extends WidgetType {
     const resolveImage = host.resolveImage.bind(host)
     switch (this.kind) {
       case 'container': {
-        const element = renderContainerFromSource(
-          this.source,
-          resolveImage,
-          this.definitions,
-          {
-            readOnly: host.isReadOnly(),
-            commit: (index, next) => commitSwiperSlide(view, card, index, next)
-          }
-        )
+        const element = renderContainerFromSource(this.source, resolveImage, this.definitions, {
+          readOnly: host.isReadOnly(),
+          commit: (index, next) => commitSwiperSlide(view, card, index, next)
+        })
         if (element.dataset.footprints === '1') {
           const payload = parseFootprintsSource(this.source)
           const handle = mountFootprintsPreview(element, {

@@ -45,7 +45,9 @@ function letterKey(input: ShortcutInput): string {
 
 function isEnterKey(input: ShortcutInput): boolean {
   const key = input.key.toLowerCase()
-  return key === 'enter' || key === 'return' || input.code === 'Enter' || input.code === 'NumpadEnter'
+  return (
+    key === 'enter' || key === 'return' || input.code === 'Enter' || input.code === 'NumpadEnter'
+  )
 }
 
 export class TabShortcutResolver {

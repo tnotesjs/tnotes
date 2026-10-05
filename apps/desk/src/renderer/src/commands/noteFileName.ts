@@ -10,10 +10,7 @@ export function noteFileName(note: {
 }
 
 /** 把「0012. 标题」拆成可淡化的编号和标题。编号对不上时整段当标题。 */
-export function noteLabelParts(
-  label: string,
-  noteIndex: string
-): { index: string; title: string } {
+export function noteLabelParts(label: string, noteIndex: string): { index: string; title: string } {
   const stem = label.replace(/\.md$/i, '').trim()
   const index = noteIndex.trim()
   if (!index || !stem.startsWith(index)) return { index: '', title: stem }

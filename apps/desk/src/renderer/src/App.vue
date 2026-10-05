@@ -207,9 +207,7 @@ function toggleKnowledgeSidebar(): void {
 
 const workspaceAreas = computed(() => {
   const base =
-    store.settings?.workspaceLayout === 'content-dir-kb'
-      ? 'editor gap side'
-      : 'side gap editor'
+    store.settings?.workspaceLayout === 'content-dir-kb' ? 'editor gap side' : 'side gap editor'
   return agentStore.open ? `"${base} agent-gap agent"` : `"${base}"`
 })
 
