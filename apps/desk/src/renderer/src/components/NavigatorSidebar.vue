@@ -933,8 +933,10 @@ async function openHeaderMenu(): Promise<void> {
             role="menuitem"
             :disabled="Boolean(gitState?.busy)"
             @click="
-              closeSectionMenu()
-              store.refreshGit(store.selectedKnowledgeBaseId ?? undefined)
+              () => {
+                closeSectionMenu()
+                store.refreshGit(store.selectedKnowledgeBaseId ?? undefined)
+              }
             "
           >
             刷新 Git 状态
@@ -944,8 +946,10 @@ async function openHeaderMenu(): Promise<void> {
             role="menuitem"
             :disabled="!gitState?.initialized || Boolean(gitState?.busy)"
             @click="
-              closeSectionMenu()
-              store.pullGit(store.selectedKnowledgeBaseId!)
+              () => {
+                closeSectionMenu()
+                store.pullGit(store.selectedKnowledgeBaseId!)
+              }
             "
           >
             拉取远端更新
@@ -955,8 +959,10 @@ async function openHeaderMenu(): Promise<void> {
             role="menuitem"
             :disabled="!gitState?.initialized || Boolean(gitState?.busy)"
             @click="
-              closeSectionMenu()
-              store.requestGitPublish(store.selectedKnowledgeBaseId!)
+              () => {
+                closeSectionMenu()
+                store.requestGitPublish(store.selectedKnowledgeBaseId!)
+              }
             "
           >
             提交并推送
@@ -968,8 +974,10 @@ async function openHeaderMenu(): Promise<void> {
             role="menuitem"
             :disabled="store.loading"
             @click="
-              closeSectionMenu()
-              store.reloadKnowledgeBase()
+              () => {
+                closeSectionMenu()
+                store.reloadKnowledgeBase()
+              }
             "
           >
             手动刷新目录
@@ -978,8 +986,10 @@ async function openHeaderMenu(): Promise<void> {
             type="button"
             role="menuitem"
             @click="
-              closeSectionMenu()
-              toggleNoteIndex()
+              () => {
+                closeSectionMenu()
+                toggleNoteIndex()
+              }
             "
           >
             {{ tocShowIndex ? '隐藏笔记编号' : '显示笔记编号' }}
@@ -988,8 +998,10 @@ async function openHeaderMenu(): Promise<void> {
             type="button"
             role="menuitem"
             @click="
-              closeSectionMenu()
-              toggleTocBatch()
+              () => {
+                closeSectionMenu()
+                toggleTocBatch()
+              }
             "
           >
             折叠/展开全部
