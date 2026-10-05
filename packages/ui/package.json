@@ -1,6 +1,6 @@
 {
   "name": "@tnotesjs/ui",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Shared Vue UI for TNotes built-in blocks — consumed by the TNotes SSG and Desk.",
   "type": "module",
   "exports": {
@@ -33,6 +33,7 @@
     "./styles/swiper.css": "./src/styles/swiper.css",
     "./swiper": {
       "types": "./src/swiper/hydrate.ts",
+      "node": "./dist/swiper/hydrate.js",
       "import": "./src/swiper/hydrate.ts",
       "default": "./src/swiper/hydrate.ts"
     },
@@ -125,7 +126,7 @@
   ],
   "license": "MIT",
   "scripts": {
-    "build": "tsup src/code/highlight.ts src/components/Footprints/parse.ts src/components/Mindmap/markdown.ts src/markdown/image.ts --format esm --dts --out-dir dist --clean",
+    "build": "tsup src/code/highlight.ts src/components/Footprints/parse.ts src/components/Mindmap/markdown.ts src/markdown/image.ts src/swiper/hydrate.ts --format esm --dts --out-dir dist --clean",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "lint": "eslint . --max-warnings=0",
