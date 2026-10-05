@@ -119,10 +119,9 @@ afterEach(() => {
 })
 
 describe('KbPathBreadcrumb', () => {
-  it('renders the path from the knowledge-base root', () => {
+  it('renders the path inside the knowledge base, without the library name', () => {
     const wrapper = mountBreadcrumb('notes/0001. hello-algo.md')
     expect(wrapper.findAll('.kb-path-segment').map((button) => button.text())).toEqual([
-      'hello-algo',
       'notes',
       '0001. hello-algo.md'
     ])
@@ -133,7 +132,7 @@ describe('KbPathBreadcrumb', () => {
   it('lists the clicked segment parent directory and auto-focuses the filter', async () => {
     const wrapper = mountBreadcrumb('notes/0001. hello-algo.md')
     // 点「notes」段 = 展开它的父目录（库根），同级条目就是 notes / README.md …
-    await wrapper.findAll('.kb-path-segment')[1].trigger('click')
+    await wrapper.findAll('.kb-path-segment')[0].trigger('click')
     await flushPromises()
     expect(listMock).toHaveBeenCalledWith({ knowledgeBaseId: 'kb-a', relPath: '' })
     expect(wrapper.findAll('.kb-path-row').map((row) => row.text())).toEqual([
@@ -144,17 +143,19 @@ describe('KbPathBreadcrumb', () => {
     ])
     expect(document.activeElement).toBe(wrapper.get('.kb-path-filter').element)
 
-    // 点当前文件名 = 展开 notes，当前文件预高亮
-    await wrapper.findAll('.kb-path-segment')[2].trigger('click')
+    // 点所在目录的下一级 = 展开 notes，当前文件预高亮
+    wrapper.unmount()
+    const nested = mountBreadcrumb('notes/sub/0001. hello-algo.md')
+    await nested.findAll('.kb-path-segment')[1].trigger('click')
     await flushPromises()
     expect(listMock).toHaveBeenLastCalledWith({ knowledgeBaseId: 'kb-a', relPath: 'notes' })
-    expect(wrapper.findAll('.kb-path-row').map((row) => row.text())).toEqual([
+    expect(nested.findAll('.kb-path-row').map((row) => row.text())).toEqual([
       '0001. hello-algo.md128 B',
       'sub',
       'cover.png4.0 KB'
     ])
-    expect(wrapper.get('.kb-path-row.is-active').text()).toContain('0001. hello-algo.md')
-    wrapper.unmount()
+    expect(nested.get('.kb-path-row.is-active').text()).toContain('sub')
+    nested.unmount()
   })
 
   it('filters, moves with arrows and opens the highlighted file with Enter', async () => {
@@ -173,12 +174,12 @@ describe('KbPathBreadcrumb', () => {
   })
 
   it('opens notes/ markdown through the note session when the TOC matches', async () => {
-    const wrapper = mountBreadcrumb('notes/0001. hello-algo.md')
+    const wrapper = mountBreadcrumb('notes/sub/0001. hello-algo.md')
     const workspace = useWorkspaceStore()
     const editor = useEditorStore()
     const openNote = vi.spyOn(workspace, 'openNoteByUuid').mockResolvedValue()
     const openTextFile = vi.spyOn(editor, 'openTextFile').mockReturnValue('tab-1')
-    await wrapper.findAll('.kb-path-segment')[2].trigger('click')
+    await wrapper.findAll('.kb-path-segment')[1].trigger('click')
     await flushPromises()
     await wrapper.get('.kb-path-row').trigger('click')
     await flushPromises()
@@ -188,10 +189,10 @@ describe('KbPathBreadcrumb', () => {
   })
 
   it('enters a subdirectory instead of opening it', async () => {
-    const wrapper = mountBreadcrumb('notes/0001. hello-algo.md')
+    const wrapper = mountBreadcrumb('notes/sub/0001. hello-algo.md')
     const editor = useEditorStore()
     const openTextFile = vi.spyOn(editor, 'openTextFile').mockReturnValue('tab-1')
-    await wrapper.findAll('.kb-path-segment')[2].trigger('click')
+    await wrapper.findAll('.kb-path-segment')[1].trigger('click')
     await flushPromises()
     const directoryRow = wrapper.findAll('.kb-path-row').find((row) => row.text() === 'sub')
     await directoryRow!.trigger('click')
@@ -204,11 +205,11 @@ describe('KbPathBreadcrumb', () => {
   })
 
   it('refuses excalidraw with a pointer to the assets panel', async () => {
-    const wrapper = mountBreadcrumb('assets/0001-x.excalidraw')
+    const wrapper = mountBreadcrumb('assets/nested/0001-x.excalidraw')
     const workspace = useWorkspaceStore()
     const editor = useEditorStore()
     const openTextFile = vi.spyOn(editor, 'openTextFile').mockReturnValue('tab-1')
-    await wrapper.findAll('.kb-path-segment')[2].trigger('click')
+    await wrapper.findAll('.kb-path-segment')[1].trigger('click')
     await flushPromises()
     await wrapper.get('.kb-path-row').trigger('click')
     await flushPromises()
@@ -218,11 +219,11 @@ describe('KbPathBreadcrumb', () => {
   })
 
   it('refuses known binary files with a status message', async () => {
-    const wrapper = mountBreadcrumb('notes/cover.png')
+    const wrapper = mountBreadcrumb('notes/sub/cover.png')
     const workspace = useWorkspaceStore()
     const editor = useEditorStore()
     const openTextFile = vi.spyOn(editor, 'openTextFile').mockReturnValue('tab-1')
-    await wrapper.findAll('.kb-path-segment')[2].trigger('click')
+    await wrapper.findAll('.kb-path-segment')[1].trigger('click')
     await flushPromises()
     await wrapper.get('.kb-path-filter').setValue('cover.png')
     await wrapper.get('.kb-path-filter').trigger('keydown', { key: 'Enter' })
@@ -234,7 +235,7 @@ describe('KbPathBreadcrumb', () => {
 
   it('closes with Escape and returns focus to the trigger segment', async () => {
     const wrapper = mountBreadcrumb('notes/0001. hello-algo.md')
-    const trigger = wrapper.findAll('.kb-path-segment')[1]
+    const trigger = wrapper.findAll('.kb-path-segment')[0]
     await trigger.trigger('click')
     await flushPromises()
     await wrapper.get('.kb-path-filter').trigger('keydown', { key: 'Escape' })
@@ -285,22 +286,22 @@ describe('KbPathBreadcrumb long path folding', () => {
   })
 
   it('folds middle levels into an ellipsis whose dropdown reaches them', async () => {
-    const wrapper = mountBreadcrumb('notes/sub/deep/file.md')
+    const wrapper = mountBreadcrumb('notes/sub/deep/more/file.md')
     resizeCallbacks.forEach((callback) =>
       callback([{ contentRect: { width: 300 } } as ResizeObserverEntry], {} as ResizeObserver)
     )
     await flushPromises()
     expect(wrapper.findAll('.kb-path-segment').map((button) => button.text())).toEqual([
-      'hello-algo',
+      'notes',
       '…',
       'file.md'
     ])
     await wrapper.get('.kb-path-segment.is-ellipsis').trigger('click')
     await flushPromises()
     expect(wrapper.findAll('.kb-path-row').map((row) => row.text())).toEqual([
-      'notes目录',
       'sub目录',
-      'deep目录'
+      'deep目录',
+      'more目录'
     ])
     // 从被折叠的层级直接进入：锚点保持省略号，下拉换成该层的父目录条目
     await wrapper

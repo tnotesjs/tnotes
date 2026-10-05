@@ -19,6 +19,13 @@ const breadcrumbChoice = computed({
   }
 })
 
+const titleChoice = computed({
+  get: () => (props.draft.showNoteTitle ? 'shown' : 'hidden'),
+  set: (value: string) => {
+    props.draft.showNoteTitle = value === 'shown'
+  }
+})
+
 const autosaveChoice = computed({
   get: () => (props.draft.autosave.enabled ? 'on' : 'off'),
   set: (value: string) => {
@@ -73,6 +80,13 @@ async function checkNow(): Promise<void> {
       <label class="field">
         <span>显示路径面包屑</span>
         <select v-model="breadcrumbChoice">
+          <option value="shown">显示</option>
+          <option value="hidden">隐藏</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>显示笔记标题</span>
+        <select v-model="titleChoice">
           <option value="shown">显示</option>
           <option value="hidden">隐藏</option>
         </select>

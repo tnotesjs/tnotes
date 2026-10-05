@@ -2,7 +2,8 @@
 /**
  * 知识库路径面包屑（自包含）。
  *
- * 从库根出发显示「库名 > notes > 0001. hello-algo.md」，点任意一段都会展开
+ * 从库内第一级开始显示「notes > 0001. hello.md」，不包含库名。
+ * 点任意一段都会展开
  * **该段父目录**的同级条目下拉：目录可以继续进入，文件按统一路由打开。
  * 主进程只列一层且有拒绝名单，所以层级永远靠这里逐层请求，渲染端不缓存文件树。
  *
@@ -409,8 +410,12 @@ function onDocumentFocusIn(event: Event): void {
   close()
 }
 
-function closeOnViewportChange(): void {
-  if (menu.value) close()
+function closeOnViewportChange(event: Event): void {
+  if (!menu.value) return
+  // 条目很多时，预高亮当前文件会滚动菜单自己的列表。这不是窗口滚动，不能把菜单关掉。
+  const target = event.target
+  if (target instanceof Node && menuRef.value?.contains(target)) return
+  close()
 }
 
 watch(
@@ -470,7 +475,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <nav ref="barRef" class="kb-path-breadcrumb" aria-label="知识库路径" @keydown="onBarKeydown">
+  <nav
+    v-if="items.length"
+    ref="barRef"
+    class="kb-path-breadcrumb"
+    aria-label="知识库路径"
+    @keydown="onBarKeydown"
+  >
     <template
       v-for="(item, index) in items"
       :key="'isEllipsis' in item ? 'ellipsis' : item.relPath || 'root'"

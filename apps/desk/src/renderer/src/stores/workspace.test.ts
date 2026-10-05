@@ -27,6 +27,7 @@ const autosaveSettings: AppSettings = {
   defaultNotePageWidth: 'standard',
   noteOutline: 'shown',
   showPathBreadcrumb: true,
+  showNoteTitle: true,
   appZoomPercent: 100,
   autosave: { enabled: true, delayMs: 50 },
   createNotePosition: 'top',

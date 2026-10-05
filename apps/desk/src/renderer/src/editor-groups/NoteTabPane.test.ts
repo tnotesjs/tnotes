@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { flushPromises, shallowMount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, shallowMount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NoteEditorTab } from '../../../shared/contracts'
@@ -21,6 +21,12 @@ const tab: NoteEditorTab = {
   pageWidth: 'standard',
   dirty: false,
   pinned: false
+}
+
+function dom<T extends Element>(selector: string): DOMWrapper<T> {
+  const element = document.querySelector(selector)
+  if (!element) throw new Error(`missing ${selector}`)
+  return new DOMWrapper(element as T)
 }
 
 function setup(readOnly = false, content = '## 概述') {
@@ -73,7 +79,7 @@ afterEach(() => document.body.replaceChildren())
 describe('note header', () => {
   it('puts formatting on the same row as the title and view modes', async () => {
     const { wrapper, editor } = setup()
-    // 顺序：标题 | 【视图切换 + 格式工具栏】 | 右侧布局开关
+    // 顺序：面包屑 | 【视图切换 + 格式工具栏】 | 右侧布局开关
     const toolbar = wrapper.get('.document-toolbar')
     expect(
       [...toolbar.element.children].map((node) => node.classList[0] ?? node.nodeName.toLowerCase())
@@ -163,8 +169,8 @@ describe('note header', () => {
   it('puts the done toggle right before the note index and routes it to the store', async () => {
     const { wrapper, workspace } = setup()
     const toggleDone = vi.spyOn(workspace, 'toggleDone').mockResolvedValue()
-    const index = wrapper.get('.note-index')
-    const toggle = wrapper.get('.done-toggle')
+    const index = dom('.note-index')
+    const toggle = dom('.done-toggle')
     // 位置就是验收指的那一格：紧贴编号左侧
     expect(index.element.previousElementSibling).toBe(toggle.element)
     // 与目录树同一个组件、同一套 class
@@ -180,11 +186,11 @@ describe('note header', () => {
     const { wrapper, workspace } = setup()
     workspace.documents['kb-a:note-a']!.document.config.done = true
     await flushPromises()
-    expect(wrapper.get('.done-toggle').classes()).toContain('done')
+    expect(dom('.done-toggle').classes()).toContain('done')
     wrapper.unmount()
 
     const readOnly = setup(true)
-    expect(readOnly.wrapper.get('.done-toggle').attributes('disabled')).toBeDefined()
+    expect(dom('.done-toggle').attributes('disabled')).toBeDefined()
     readOnly.wrapper.unmount()
   })
 
@@ -193,7 +199,7 @@ describe('note header', () => {
     editor.requestTitleEdit('kb-a', 'note-a')
     const { wrapper } = setup()
     await flushPromises()
-    const input = wrapper.get<HTMLInputElement>('input.note-title-input')
+    const input = dom<HTMLInputElement>('input.note-title-input')
     expect(input.element.value).toBe('概述')
     expect(document.activeElement).toBe(input.element)
     expect(input.element.selectionStart).toBe(0)
@@ -203,8 +209,8 @@ describe('note header', () => {
 
   it('edits only the title and submits a trimmed name on blur', async () => {
     const { wrapper, rename } = setup()
-    await wrapper.get('.note-title-button').trigger('click')
-    const input = wrapper.get('input')
+    await dom('.note-title-button').trigger('click')
+    const input = dom('input.note-title-input')
     expect(input.element.value).toBe('概述')
     expect(document.activeElement).toBe(input.element)
     expect(input.element.selectionEnd).toBe(2)
@@ -214,33 +220,33 @@ describe('note header', () => {
     await input.trigger('blur')
     await flushPromises()
     expect(rename).toHaveBeenCalledExactlyOnceWith('kb-a', 'note-a', '新的名称')
-    expect(wrapper.find('input').exists()).toBe(false)
+    expect(document.querySelector('input.note-title-input')).toBeNull()
     wrapper.unmount()
   })
 
   it.each(['', '   ', '  概述  '])('ignores empty or unchanged titles: %j', async (value) => {
     const { wrapper, rename } = setup()
-    await wrapper.get('.note-title-button').trigger('click')
-    await wrapper.get('input').setValue(value)
-    await wrapper.get('input').trigger('blur')
+    await dom('.note-title-button').trigger('click')
+    await dom('input.note-title-input').setValue(value)
+    await dom('input.note-title-input').trigger('blur')
     expect(rename).not.toHaveBeenCalled()
-    expect(wrapper.get('.note-title-button').text()).toBe('概述')
+    expect(dom('.note-title-button').text()).toBe('概述')
     wrapper.unmount()
   })
 
   it('cancels with Escape and ignores IME Enter until composition ends', async () => {
     const { wrapper, rename } = setup()
-    await wrapper.get('.note-title-button').trigger('click')
-    await wrapper.get('input').setValue('取消修改')
-    await wrapper.get('input').trigger('keydown', { key: 'Escape' })
+    await dom('.note-title-button').trigger('click')
+    await dom('input.note-title-input').setValue('取消修改')
+    await dom('input.note-title-input').trigger('keydown', { key: 'Escape' })
     expect(rename).not.toHaveBeenCalled()
-    expect(wrapper.find('input').exists()).toBe(false)
-    await wrapper.get('.note-title-button').trigger('click')
-    await wrapper.get('input').setValue('确认修改')
-    await wrapper.get('input').trigger('keydown', { key: 'Enter', isComposing: true })
+    expect(document.querySelector('input.note-title-input')).toBeNull()
+    await dom('.note-title-button').trigger('click')
+    await dom('input.note-title-input').setValue('确认修改')
+    await dom('input.note-title-input').trigger('keydown', { key: 'Enter', isComposing: true })
     expect(rename).not.toHaveBeenCalled()
-    expect(wrapper.find('input').exists()).toBe(true)
-    await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+    expect(document.querySelector('input.note-title-input')).not.toBeNull()
+    await dom('input.note-title-input').trigger('keydown', { key: 'Enter' })
     await flushPromises()
     expect(rename).toHaveBeenCalledExactlyOnceWith('kb-a', 'note-a', '确认修改')
     wrapper.unmount()
@@ -249,21 +255,21 @@ describe('note header', () => {
   it('reports rename failures and leaves the original title intact', async () => {
     const { wrapper, rename, workspace } = setup()
     rename.mockRejectedValue(new Error('名称不合法'))
-    await wrapper.get('.note-title-button').trigger('click')
-    await wrapper.get('input').setValue('invalid/name')
-    await wrapper.get('input').trigger('blur')
+    await dom('.note-title-button').trigger('click')
+    await dom('input.note-title-input').setValue('invalid/name')
+    await dom('input.note-title-input').trigger('blur')
     await flushPromises()
     expect(workspace.error).toBe('名称不合法')
-    expect(wrapper.get('.note-title-button').text()).toBe('概述')
-    expect(wrapper.get('.note-title-button').attributes('disabled')).toBeUndefined()
+    expect(dom('.note-title-button').text()).toBe('概述')
+    expect(dom('.note-title-button').attributes('disabled')).toBeUndefined()
     wrapper.unmount()
   })
 
   it('does not rename a read-only document', async () => {
     const { wrapper, rename } = setup(true)
-    expect(wrapper.get('.note-title-button').attributes('disabled')).toBeDefined()
-    await wrapper.get('.note-title-button').trigger('click')
-    expect(wrapper.find('input').exists()).toBe(false)
+    expect(dom('.note-title-button').attributes('disabled')).toBeDefined()
+    await dom('.note-title-button').trigger('click')
+    expect(document.querySelector('input.note-title-input')).toBeNull()
     expect(rename).not.toHaveBeenCalled()
     wrapper.unmount()
   })

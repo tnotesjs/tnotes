@@ -80,6 +80,7 @@ interface MarkdownEditorHandle {
 const props = defineProps<{ tab: NoteEditorTab; groupId: string; active: boolean }>()
 const editor = useEditorStore()
 const workspace = useWorkspaceStore()
+const showNoteTitle = computed(() => workspace.settings?.showNoteTitle !== false)
 const key = computed(() => `${props.tab.knowledgeBaseId}:${props.tab.noteUuid}`)
 const session = computed(() =>
   workspace.getDocumentSession(props.tab.knowledgeBaseId, props.tab.noteUuid)
@@ -163,6 +164,17 @@ watch(key, () => {
   descriptionDraft.value = readFrontmatterFields(session.value?.content ?? '').description
   sideTab.value = 'settings'
 })
+
+const docHeadEl = document.createElement('div')
+docHeadEl.className = 'cm-lp-doc-head'
+
+watch(
+  showNoteTitle,
+  (shown) => {
+    docHeadEl.classList.toggle('is-hidden', !shown)
+  },
+  { immediate: true }
+)
 
 const titleInput = ref<HTMLInputElement | null>(null)
 const editingTitle = ref(false)
@@ -443,6 +455,7 @@ function onTitleKeydown(event: KeyboardEvent): void {
   if (event.isComposing) return
   if (event.key === 'Enter') {
     event.preventDefault()
+    void commitTitle()
     titleInput.value?.blur()
   } else if (event.key === 'Escape') {
     event.preventDefault()
@@ -451,6 +464,8 @@ function onTitleKeydown(event: KeyboardEvent): void {
 }
 
 onMounted(() => {
+  // 编辑器还没把标题挂进滚动区时（测试里的 stub），先放到文档里，避免标题无处安放。
+  if (!docHeadEl.isConnected) document.body.append(docHeadEl)
   void workspace.ensureDocument(props.tab.knowledgeBaseId, props.tab.noteUuid)
   // 编辑器重建 / 重新打开笔记后也要校验固定上下文
   void nextTick(validatePinnedContext)
@@ -575,43 +590,14 @@ function openLink(url: string): void {
       <button type="button" @click="workspace.keepEditorAgainstDisk">保留编辑内容</button>
     </div>
 
-    <div v-if="workspace.settings?.showPathBreadcrumb !== false" class="note-path-bar">
-      <KbPathBreadcrumb
-        :knowledge-base-id="tab.knowledgeBaseId"
-        :rel-path="session.document.relPath"
-        :fallback-name="tab.knowledgeBaseName"
-      />
-    </div>
-
     <div class="document-toolbar">
-      <div class="document-path" :title="session.document.filePath">
-        <NoteDoneToggle
-          :done="noteDone"
-          :disabled="noteDoneDisabled"
-          @toggle="toggleNoteDone"
+      <div class="document-path">
+        <KbPathBreadcrumb
+          v-if="workspace.settings?.showPathBreadcrumb !== false"
+          :knowledge-base-id="tab.knowledgeBaseId"
+          :rel-path="session.document.relPath"
+          :fallback-name="tab.knowledgeBaseName"
         />
-        <span class="note-index">{{ session.document.index }}.</span>
-        <input
-          v-if="editingTitle"
-          ref="titleInput"
-          v-model="titleDraft"
-          class="note-title-input"
-          aria-label="笔记名称"
-          autocomplete="off"
-          @blur="commitTitle"
-          @keydown="onTitleKeydown"
-        />
-        <button
-          v-else
-          type="button"
-          class="note-title-button"
-          aria-label="重命名笔记"
-          :disabled="session.document.readOnly || renaming"
-          @click="editTitle"
-        >
-          {{ session.document.title }}
-        </button>
-        <span v-if="session.document.readOnly" class="read-only">只读</span>
       </div>
 
       <NoteFormatToolbar
@@ -677,6 +663,7 @@ function openLink(url: string): void {
           :key="key"
           ref="markdownEditor"
           class="editor-surface"
+          :document-head="docHeadEl"
           :content="session.content"
           :mode="tab.viewMode"
           :read-only="session.document.readOnly"
@@ -771,6 +758,37 @@ function openLink(url: string): void {
         />
       </aside>
     </div>
+    <Teleport :to="docHeadEl">
+      <div v-if="showNoteTitle" class="note-doc-title">
+        <NoteDoneToggle
+          :done="noteDone"
+          :disabled="noteDoneDisabled"
+          @toggle="toggleNoteDone"
+        />
+        <span class="note-index">{{ session.document.index }}.</span>
+        <input
+          v-if="editingTitle"
+          ref="titleInput"
+          v-model="titleDraft"
+          class="note-title-input"
+          aria-label="笔记名称"
+          autocomplete="off"
+          @blur="commitTitle"
+          @keydown="onTitleKeydown"
+        />
+        <button
+          v-else
+          type="button"
+          class="note-title-button"
+          aria-label="重命名笔记"
+          :disabled="session.document.readOnly || renaming"
+          @click="editTitle"
+        >
+          {{ session.document.title }}
+        </button>
+        <span v-if="session.document.readOnly" class="read-only">只读</span>
+      </div>
+    </Teleport>
   </div>
   <div v-else class="loading-note">正在读取笔记…</div>
 </template>
@@ -799,15 +817,6 @@ function openLink(url: string): void {
   background: var(--editor-bg);
 }
 
-/* 路径面包屑：独立的 slim 行，压在标题工具条上方 */
-.note-path-bar {
-  flex: none;
-  height: 22px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--editor-bg);
-}
-
 .layout-toggles {
   justify-self: end;
   display: flex;
@@ -819,12 +828,24 @@ function openLink(url: string): void {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 4px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--muted);
-  font-size: 10px;
+}
+
+.document-path :deep(.kb-path-breadcrumb) {
+  font-size: 12px;
+}
+
+.note-doc-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 12px 0 8px;
+  color: var(--editor-text);
+  font-size: 28px;
+  font-weight: 650;
+  line-height: 1.3;
 }
 
 .note-index,
@@ -832,16 +853,25 @@ function openLink(url: string): void {
   flex: none;
 }
 
+.note-doc-title .note-index {
+  color: var(--muted);
+  font-size: 22px;
+  font-weight: 550;
+}
+
 .note-title-button,
 .note-title-input {
   min-width: 0;
-  height: 26px;
+  flex: 1;
+  height: auto;
+  min-height: 40px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 6px;
   padding: 0 4px;
   background: transparent;
   color: inherit;
   font: inherit;
+  font-weight: inherit;
 }
 
 .note-title-button {
@@ -864,8 +894,8 @@ function openLink(url: string): void {
 .note-title-input {
   flex: 1;
   outline: none;
-  border-color: var(--accent);
-  background: var(--panel);
+  border-color: transparent;
+  background: transparent;
   color: var(--text);
 }
 

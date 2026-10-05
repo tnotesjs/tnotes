@@ -99,8 +99,10 @@ const props = withDefaults(
     active: boolean
     pageWidth?: NotePageWidth
     outlineVisible?: boolean
+    /** 插在正文滚动区域顶部的标题容器，和正文一起滚动 */
+    documentHead?: HTMLElement | null
   }>(),
-  { pageWidth: 'standard', outlineVisible: true, noteRelPath: '' }
+  { pageWidth: 'standard', outlineVisible: true, noteRelPath: '', documentHead: null }
 )
 
 const editorStore = useEditorStore()
@@ -575,6 +577,7 @@ defineExpose({
 onMounted(() => {
   if (!host.value) return
   view = new EditorView({ state: createState(props.content), parent: host.value })
+  if (props.documentHead) view.scrollDOM.prepend(props.documentHead)
   adoptArchivedReviews(view)
   registerLiveEditor(props.knowledgeBaseId, props.noteUuid, view)
   window.addEventListener(DESK_SELECT_ALL_EVENT, selectAll)

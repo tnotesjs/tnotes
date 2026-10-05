@@ -150,6 +150,14 @@ describe('配置文件字段级容错', () => {
     expect(saveSettings({ showPathBreadcrumb: false }).showPathBreadcrumb).toBe(false)
     expect(loadSettings().showPathBreadcrumb).toBe(false)
   })
+
+  it('缺省显示笔记标题，也可以改成隐藏', () => {
+    expect(loadSettings().showNoteTitle).toBe(true)
+    writeFileSync(path(), JSON.stringify({ theme: 'dark' }))
+    expect(loadSettings().showNoteTitle).toBe(true)
+    expect(saveSettings({ showNoteTitle: false }).showNoteTitle).toBe(false)
+    expect(loadSettings().showNoteTitle).toBe(false)
+  })
 })
 
 describe('新网页标签的默认地址', () => {

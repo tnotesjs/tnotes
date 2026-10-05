@@ -102,7 +102,29 @@ body {
   min-height: 0;
   max-height: calc(100vh - 64px);
   padding: 20px 12px;
-  border-right: 1px solid var(--tn-c-divider);
+  border-right: 0;
+}
+/*
+ * The column rule used to be the sidebar's own border, so it stopped where the
+ * directory stopped. Draw it on the page instead: it runs from under the header
+ * to the bottom of the document, however short the entries are.
+ */
+.tn-site {
+  position: relative;
+}
+.tn-site::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  top: 64px;
+  bottom: 0;
+  left: calc(var(--sidebar-width, 272px) - 1px);
+  width: 1px;
+  background: var(--tn-c-divider);
+  pointer-events: none;
+}
+.tn-site.sidebar-hidden::before {
+  display: none;
 }
 .tn-site-sidebar-scroll {
   flex: 1;
@@ -518,18 +540,19 @@ html.tn-hide-note-index .tn-site-sidebar-index {
   background: var(--tn-c-hover);
 }
 /*
- * The sidebar's own border is the control: one handle straddling it, centred on
- * the viewport. It has to survive the sidebar being hidden — inside the sidebar
- * it would go with it — so it is a fixed sibling. The chevron is a single shape,
- * turned to point away from the panel edge still on screen, so direction carries
- * the action and colour only reinforces it.
+ * The sidebar's own border is the control: one handle straddling it, sitting in the
+ * upper part of the column. Centring it on the viewport leaves it below a short
+ * directory, detached from the entries. It has to survive the sidebar being
+ * hidden — inside the sidebar it would go with it — so it is a fixed sibling.
+ * The chevron is a single shape, turned to point away from the panel edge still
+ * on screen, so direction carries the action and colour only reinforces it.
  */
 .tn-sidebar-handle {
   position: fixed;
   z-index: 15;
-  top: 50%;
+  top: 132px;
   left: var(--sidebar-width, 272px);
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -552,7 +575,7 @@ html.tn-hide-note-index .tn-site-sidebar-index {
   height: 14px;
 }
 /*
- * Tucked away: it keeps its centring and moves to the viewport edge, so only the
+ * Tucked away: it keeps the same upper position and moves to the viewport edge, so only the
  * outer half of the pill shows — a collapsed-panel tab rather than a button
  * floating in the gutter. Half an 18px pill is 9px, which cannot hold a 14px
  * arrow, so the pill widens and the padding re-centres the smaller chevron in
@@ -617,6 +640,9 @@ html.tn-hide-note-index .tn-site-sidebar-index {
   }
 }
 @media (max-width: 760px) {
+  .tn-site::before {
+    display: none;
+  }
   .tn-site-sidebar.is-drawer-open {
     display: flex;
     position: fixed;
@@ -627,6 +653,7 @@ html.tn-hide-note-index .tn-site-sidebar-index {
     max-height: 100dvh;
     width: min(340px, 88vw);
     z-index: 90;
+    border-right: 1px solid var(--tn-c-divider);
     background: var(--tn-c-bg);
     padding: 16px 12px;
   }

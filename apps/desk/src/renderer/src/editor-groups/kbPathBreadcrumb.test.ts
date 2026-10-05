@@ -55,18 +55,25 @@ describe('kb path splitting', () => {
     expect(extensionOf('a/b/archive.tar.gz')).toBe('.gz')
   })
 
-  it('builds breadcrumb segments from the knowledge-base root', () => {
+  it('builds directory crumbs inside the knowledge base', () => {
     expect(buildKbPathSegments('hello-algo', 'notes/0001. hello-algo.md')).toEqual([
-      { label: 'hello-algo', relPath: '', isRoot: true },
       { label: 'notes', relPath: 'notes', isRoot: false },
       { label: '0001. hello-algo.md', relPath: 'notes/0001. hello-algo.md', isRoot: false }
     ])
-    expect(buildKbPathSegments('kb', '')).toEqual([{ label: 'kb', relPath: '', isRoot: true }])
+    expect(buildKbPathSegments('kb', 'notes/sub/0001. a.md')).toEqual([
+      { label: 'notes', relPath: 'notes', isRoot: false },
+      { label: 'sub', relPath: 'notes/sub', isRoot: false },
+      { label: '0001. a.md', relPath: 'notes/sub/0001. a.md', isRoot: false }
+    ])
+    expect(buildKbPathSegments('kb', 'README.md')).toEqual([
+      { label: 'README.md', relPath: 'README.md', isRoot: false }
+    ])
+    expect(buildKbPathSegments('kb', '')).toEqual([])
   })
 })
 
 describe('foldKbPathSegments', () => {
-  const segments = buildKbPathSegments('kb', 'a/b/c/d/file.md')
+  const segments = buildKbPathSegments('kb', 'a/b/c/d/e/file.md')
 
   it('keeps every segment when it fits', () => {
     expect(foldKbPathSegments(segments, segments.length)).toEqual(segments)
@@ -76,15 +83,15 @@ describe('foldKbPathSegments', () => {
   it('folds middle levels into an ellipsis that still carries them', () => {
     const items = foldKbPathSegments(segments, 3)
     expect(items).toHaveLength(3)
-    expect(items[0]).toMatchObject({ label: 'kb', relPath: '' })
+    expect(items[0]).toMatchObject({ label: 'a', relPath: 'a' })
     expect(items[items.length - 1]).toMatchObject({
       label: 'file.md',
-      relPath: 'a/b/c/d/file.md'
+      relPath: 'a/b/c/d/e/file.md'
     })
     const ellipsis = items[1]
     expect(ellipsis).toMatchObject({ isEllipsis: true, label: '…' })
     if (!('isEllipsis' in ellipsis)) throw new Error('expected ellipsis')
-    expect(ellipsis.hidden.map((segment) => segment.label)).toEqual(['a', 'b', 'c', 'd'])
+    expect(ellipsis.hidden.map((segment) => segment.label)).toEqual(['b', 'c', 'd', 'e'])
   })
 
   it('never folds when it cannot keep head + ellipsis + tail', () => {
@@ -94,7 +101,7 @@ describe('foldKbPathSegments', () => {
 
   it('keeps as many leading levels as capacity allows', () => {
     const items = foldKbPathSegments(segments, 4)
-    expect(items.map((item) => item.label)).toEqual(['kb', 'a', '…', 'file.md'])
+    expect(items.map((item) => item.label)).toEqual(['a', 'b', '…', 'file.md'])
   })
 })
 

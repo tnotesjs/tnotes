@@ -17,6 +17,35 @@
   font-family: inherit;
   line-height: inherit;
   overflow: auto;
+  flex-wrap: wrap;
+  align-content: flex-start;
+}
+
+.live-editor .cm-lp-doc-head {
+  flex: 1 0 100%;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 16px 48px 0;
+}
+
+.live-editor .cm-lp-doc-head.is-hidden {
+  display: none;
+}
+
+.live-editor.is-wide .cm-lp-doc-head {
+  max-width: none;
+}
+
+.live-editor .cm-editor.cm-lp-source .cm-lp-doc-head {
+  max-width: none;
+  padding: 12px 32px 0 8px;
+}
+
+.live-editor .cm-editor.cm-lp-source .cm-content {
+  width: auto;
+  flex: 1 1 auto;
 }
 
 .live-editor .cm-content {
@@ -26,6 +55,10 @@
   margin: 0 auto;
   padding: 28px 48px 45vh;
   caret-color: var(--tn-c-brand);
+}
+
+.live-editor .cm-scroller:has(.cm-lp-doc-head:not(.is-hidden)) .cm-content {
+  padding-top: 8px;
 }
 
 .live-editor.is-wide .cm-content {

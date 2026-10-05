@@ -42,6 +42,7 @@ const settingsSchema = z.object({
   // 打开笔记时右侧大纲的默认显隐。旧的 noteTocDisplay 不再读取。
   noteOutline: z.enum(['shown', 'hidden']).default('shown'),
   showPathBreadcrumb: z.boolean().default(true),
+  showNoteTitle: z.boolean().default(true),
   headingNumberMaxDepth: z
     .number()
     .transform(clampHeadingNumberMaxDepth)

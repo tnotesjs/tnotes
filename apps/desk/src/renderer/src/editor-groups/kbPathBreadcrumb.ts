@@ -166,14 +166,15 @@ export function extensionOf(relPath: string): string {
 }
 
 /**
- * 构造从库根出发的完整分段：库名 + 每一级目录 + 文件名。
+ * 面包屑从知识库内部第一级开始。库名不出现（左侧列表已经选定了库），
+ * 目录和当前文件都保留。
  *
  * 例：`buildKbPathSegments('hello-algo', 'notes/0001. hello-algo.md')`
- * → `[hello-algo(''), notes, 0001. hello-algo.md]`
+ * → `[notes, 0001. hello-algo.md]`
  */
-export function buildKbPathSegments(rootName: string, relPath: string): KbPathSegment[] {
+export function buildKbPathSegments(_rootName: string, relPath: string): KbPathSegment[] {
   const segments = splitKbRelPath(relPath)
-  const result: KbPathSegment[] = [{ label: rootName, relPath: '', isRoot: true }]
+  const result: KbPathSegment[] = []
   let current = ''
   for (const segment of segments) {
     current = current ? `${current}/${segment}` : segment
@@ -183,7 +184,7 @@ export function buildKbPathSegments(rootName: string, relPath: string): KbPathSe
 }
 
 /**
- * 空间不够时把中间层级折成一个省略号段：保留库名与当前文件名，
+ * 空间不够时把中间层级折成一个省略号段：保留开头的目录和最后一级，
  * 被折掉的层级挂在 `hidden` 上，下拉里仍可直接进入。
  *
  * `capacity` 是预估能放下的分段数；小于 3 时不折叠（放不下「首段 + … + 末段」）。

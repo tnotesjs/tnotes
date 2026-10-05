@@ -16,6 +16,7 @@ const settings: AppSettings = {
   defaultNotePageWidth: 'standard',
   noteOutline: 'shown',
   showPathBreadcrumb: true,
+  showNoteTitle: true,
   headingNumberMaxDepth: 2,
   git: { autoFetch: false },
   mcp: { enabled: false, port: DEFAULT_MCP_PORT },
@@ -129,11 +130,14 @@ describe('SettingsPanel Markdown quick-input catalog', () => {
     const field = (label: string) =>
       wrapper.findAll('label.field').find((candidate) => candidate.find('span').text() === label)
     const breadcrumb = field('显示路径面包屑')?.find('select')
+    const title = field('显示笔记标题')?.find('select')
     const autosave = field('自动保存')?.find('select')
     const delay = field('自动保存延迟')?.find('input')
 
     expect(breadcrumb?.findAll('option').map((option) => option.text())).toEqual(['显示', '隐藏'])
     expect(breadcrumb?.element.value).toBe('shown')
+    expect(title?.findAll('option').map((option) => option.text())).toEqual(['显示', '隐藏'])
+    expect(title?.element.value).toBe('shown')
     expect(autosave?.findAll('option').map((option) => option.text())).toEqual(['开启', '关闭'])
     expect(autosave?.element.value).toBe('on')
     expect((delay?.element as HTMLInputElement).value).toBe('800')

@@ -1758,9 +1758,10 @@ onUnmounted(() => {
 .navigator-collapse-handle {
   position: absolute;
   z-index: 8;
-  top: 50%;
+  /* 靠上，不跟视口居中。目录比半屏矮时，居中的手柄会落在条目下面。 */
+  top: 88px;
   left: var(--nav-edge, 0px);
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1785,7 +1786,7 @@ onUnmounted(() => {
 .navigator-resize .navigator-collapse-handle.is-reversed {
   left: 50%;
   right: auto;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   opacity: 0;
   pointer-events: none;
 }
@@ -1799,7 +1800,7 @@ onUnmounted(() => {
 .navigator-collapse-handle.is-reversed {
   left: auto;
   right: var(--nav-edge, 0px);
-  transform: translate(50%, -50%);
+  transform: translateX(50%);
 }
 
 .navigator-collapse-handle.is-collapsed:not(.is-reversed) {
@@ -1903,7 +1904,7 @@ onUnmounted(() => {
 .seam > .knowledge-collapse-handle.is-reversed {
   left: 50%;
   right: auto;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   opacity: 0;
   pointer-events: none;
 }

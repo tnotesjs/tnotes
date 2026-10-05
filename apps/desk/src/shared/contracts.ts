@@ -692,6 +692,8 @@ export interface AppSettings {
   noteOutline: NoteOutlineVisibility
   /** 笔记和文本文件标题上方的路径面包屑。默认显示。 */
   showPathBreadcrumb: boolean
+  /** 正文顶部的完成状态、编号和可重命名标题。默认显示。 */
+  showNoteTitle: boolean
   /** 标题编号层级上限（1-6）：1. 与 1.1. 允许出现的最大段数。 */
   headingNumberMaxDepth: number
   appZoomPercent: number

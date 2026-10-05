@@ -330,7 +330,7 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
             {{ item.displayName === item.id ? item.id : `${item.displayName}（${item.id}）` }}
           </option>
         </select>
-        <button type="button" class="link" @click="addModel(provider)">手动添加模型</button>
+        <button type="button" class="settings-action" @click="addModel(provider)">手动添加模型</button>
       </div>
     </div>
     <div class="add-actions">
@@ -409,19 +409,15 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
   vertical-align: middle;
 }
 
-.link {
-  border: 0;
-  background: transparent;
-  color: var(--accent, #3b82f6);
-  cursor: pointer;
-  padding: 0;
-  font: inherit;
-  align-self: flex-start;
+.model-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.add-actions {
-  display: flex;
-  gap: 8px;
+.model-actions .settings-action {
+  height: 32px;
+  flex: none;
 }
 
 .provider-kind {
@@ -449,13 +445,12 @@ async function clearKey(provider: AgentProviderConfig): Promise<void> {
   font-size: 11px;
 }
 
-.model-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .add-listed {
   max-width: 280px;
+}
+
+.add-actions {
+  display: flex;
+  gap: 8px;
 }
 </style>
