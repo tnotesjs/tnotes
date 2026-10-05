@@ -174,6 +174,32 @@ describe('native context menus', () => {
     expect(mocks.popup).toHaveBeenCalledWith(expect.objectContaining({ window }))
   })
 
+  it('keeps the item when macOS delivers the click after the menu has closed', async () => {
+    mocks.build.mockImplementation((template: MenuItemConstructorOptions[]) => {
+      mocks.popup.mockImplementation((options: PopupOptions) => {
+        options.callback?.()
+        setTimeout(() => {
+          template
+            .find((item) => item.id === 'toggle-toc-pin')
+            ?.click?.(
+              {} as Electron.MenuItem,
+              {} as Electron.BrowserWindow,
+              {} as Electron.KeyboardEvent
+            )
+        }, 10)
+      })
+      return { popup: mocks.popup }
+    })
+    await expect(
+      showContextMenu({} as Electron.BrowserWindow, {
+        kind: 'note',
+        pinned: false,
+        tocPinned: false,
+        completed: false
+      })
+    ).resolves.toBe('toggle-toc-pin')
+  })
+
   it('resolves to null when the user dismisses the menu without choosing an item', async () => {
     mocks.build.mockReturnValue({ popup: (options: PopupOptions) => options.callback?.() })
     expect(

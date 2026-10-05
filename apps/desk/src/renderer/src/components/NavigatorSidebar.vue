@@ -540,6 +540,40 @@ async function openHeaderMenu(): Promise<void> {
         </svg>
         <strong>README</strong>
       </button>
+      <section
+        v-show="!query.trim() && (pinnedNotes.length > 0 || draggingNote)"
+        class="pin-section"
+        data-pin-group="notes"
+        @dragover.capture="onNavigatorDragOver"
+        @drop.capture="onNavigatorDrop"
+      >
+        <div
+          v-if="draggingNote && pinnedNotes.length === 0"
+          class="pin-drop-slot"
+          :class="{ 'is-drop': pinDropHover }"
+        />
+        <TocNodeList
+          v-show="pinnedNotes.length > 0"
+          class="pin-notes"
+          :nodes="pinnedNotes"
+          :selected-note-uuid="selectedTocNoteUuid"
+          :allow-reorder="false"
+          :pin-reorder="pinnedNotes.length > 1"
+          :pin-drop-active="pinDropHover"
+          :batch-deleting="batchDeleting"
+          :batch-selected="batchSelected"
+          @select="store.selectNote"
+          @select-permanent="store.selectNote($event, undefined, true)"
+          @select-split="store.selectNote($event, 'right')"
+          @toggle-done="store.toggleDone"
+          @request-create="(node, placement) => emit('createNote', node, placement)"
+          @request-rename="emit('requestRename', $event)"
+          @request-reindex="emit('requestReindex', $event)"
+          @request-delete="emit('requestDelete', $event)"
+          @toggle-batch-note="toggleBatchNote"
+          @toggle-batch-group="toggleBatchGroup"
+        />
+      </section>
       <div
         class="navigator-body"
         :class="{
@@ -549,38 +583,6 @@ async function openHeaderMenu(): Promise<void> {
         @drop.capture="onNavigatorDrop"
         @scroll="closeSectionMenu"
       >
-        <section
-          v-show="!query.trim() && (pinnedNotes.length > 0 || draggingNote)"
-          class="pin-section"
-          data-pin-group="notes"
-        >
-          <div
-            v-if="draggingNote && pinnedNotes.length === 0"
-            class="pin-drop-slot"
-            :class="{ 'is-drop': pinDropHover }"
-          />
-          <TocNodeList
-            v-show="pinnedNotes.length > 0"
-            class="pin-notes"
-            :nodes="pinnedNotes"
-            :selected-note-uuid="selectedTocNoteUuid"
-            :allow-reorder="false"
-            :pin-reorder="pinnedNotes.length > 1"
-            :pin-drop-active="pinDropHover"
-            :batch-deleting="batchDeleting"
-            :batch-selected="batchSelected"
-            @select="store.selectNote"
-            @select-permanent="store.selectNote($event, undefined, true)"
-            @select-split="store.selectNote($event, 'right')"
-            @toggle-done="store.toggleDone"
-            @request-create="(node, placement) => emit('createNote', node, placement)"
-            @request-rename="emit('requestRename', $event)"
-            @request-reindex="emit('requestReindex', $event)"
-            @request-delete="emit('requestDelete', $event)"
-            @toggle-batch-note="toggleBatchNote"
-            @toggle-batch-group="toggleBatchGroup"
-          />
-        </section>
         <section class="changes-section">
           <div class="section-heading git-heading">
             <button
@@ -1202,9 +1204,16 @@ async function openHeaderMenu(): Promise<void> {
  * 父容器一起滚走。让 section 不生成盒子，标题就按滚动容器的直接子级参与布局。
  */
 .changes-section,
-.pin-section,
 .toc-section {
   display: contents;
+}
+
+/* 置顶在滚动容器外面，高度跟内容走，自己不出现滚动条。 */
+.pin-section {
+  flex: none;
+  overflow: visible;
+  padding: 0 7px;
+  background: var(--panel);
 }
 
 /* 选择器带上 .navigator-body 是有意的：`.section-heading`（下面那条共享基类规则）

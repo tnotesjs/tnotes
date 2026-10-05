@@ -13,6 +13,7 @@ import type {
   NavigatorSidebarMenuAction,
   NavigatorSidebarMenuRequest
 } from '../shared/contracts'
+import { popupForChoice } from './menuPopup'
 
 const KNOWLEDGE_BASE_SORTS: { id: KnowledgeBaseSort; label: string }[] = [
   { id: 'name-asc', label: '按照名称升序' },
@@ -101,28 +102,24 @@ export function showKnowledgeSidebarMenu(
   window: BrowserWindow,
   request: KnowledgeSidebarMenuRequest
 ): Promise<KnowledgeSidebarMenuChoice | null> {
-  return new Promise((resolve) => {
-    const menu = Menu.buildFromTemplate(
-      knowledgeSidebarMenuTemplate(request, (action) => resolve(action))
-    )
-    menu.popup({
-      window,
-      callback: () => setImmediate(() => resolve(null))
+  let chosen: KnowledgeSidebarMenuChoice | null = null
+  const menu = Menu.buildFromTemplate(
+    knowledgeSidebarMenuTemplate(request, (action) => {
+      chosen = action
     })
-  })
+  )
+  return popupForChoice(menu, window, () => chosen)
 }
 
 export function showNavigatorSidebarMenu(
   window: BrowserWindow,
   request: NavigatorSidebarMenuRequest
 ): Promise<NavigatorSidebarMenuAction | null> {
-  return new Promise((resolve) => {
-    const menu = Menu.buildFromTemplate(
-      navigatorSidebarMenuTemplate(request, (action) => resolve(action))
-    )
-    menu.popup({
-      window,
-      callback: () => setImmediate(() => resolve(null))
+  let chosen: NavigatorSidebarMenuAction | null = null
+  const menu = Menu.buildFromTemplate(
+    navigatorSidebarMenuTemplate(request, (action) => {
+      chosen = action
     })
-  })
+  )
+  return popupForChoice(menu, window, () => chosen)
 }

@@ -163,6 +163,7 @@ describe('sidebar native menus', () => {
       loading: false,
       sort: 'name-asc'
     })
+    await vi.runAllTimersAsync()
     await expect(first).resolves.toEqual({ kind: 'action', action: 'refresh' })
 
     mocks.popup.mockImplementation((options: PopupOptions) => {
@@ -183,12 +184,13 @@ describe('sidebar native menus', () => {
       selected = template.find((item) => item.id === 'create-note')?.click
       return { popup: mocks.popup }
     })
-    mocks.popup.mockImplementation(() => {
+    mocks.popup.mockImplementation((options: PopupOptions) => {
       selected?.(
         {} as Electron.MenuItem,
         {} as Electron.BrowserWindow,
         {} as Electron.KeyboardEvent
       )
+      options.callback?.()
     })
 
     await expect(

@@ -1,6 +1,7 @@
 import { Menu, type BrowserWindow, type MenuItemConstructorOptions } from 'electron'
 
 import type { ContextMenuAction, ContextMenuRequest } from '../shared/contracts'
+import { popupForChoice } from './menuPopup'
 import { loadSettings } from './settings'
 
 export function contextMenuTemplate(
@@ -87,12 +88,11 @@ export function showContextMenu(
   window: BrowserWindow,
   request: ContextMenuRequest
 ): Promise<ContextMenuAction | null> {
-  return new Promise((resolve) => {
-    const menu = Menu.buildFromTemplate(contextMenuTemplate(request, resolve))
-    menu.popup({
-      window,
-      // Some platforms report dismissal before dispatching the selected item's click.
-      callback: () => setImmediate(() => resolve(null))
+  let chosen: ContextMenuAction | null = null
+  const menu = Menu.buildFromTemplate(
+    contextMenuTemplate(request, (action) => {
+      chosen = action
     })
-  })
+  )
+  return popupForChoice(menu, window, () => chosen)
 }

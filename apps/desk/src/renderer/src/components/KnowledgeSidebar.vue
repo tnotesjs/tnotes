@@ -24,6 +24,7 @@ const editor = useEditorStore()
 const agent = useAgentStore()
 const menuBusy = ref(false)
 const pinDrop = ref<{ id: string; placement: 'before' | 'after' } | null>(null)
+const draggingPinId = ref<string | null>(null)
 const compact = computed(
   () =>
     editor.knowledgeSidebarCollapsed || editor.knowledgeSidebarWidth <= KNOWLEDGE_SIDEBAR_COMPACT
@@ -128,8 +129,15 @@ function onPinDragStart(event: DragEvent, item: KnowledgeBaseDescriptor): void {
     event.preventDefault()
     return
   }
+  draggingPinId.value = item.id
   event.dataTransfer.effectAllowed = 'move'
   event.dataTransfer.setData(PIN_DRAG_TYPE, item.id)
+  const ghost = document.createElement('div')
+  ghost.className = 'toc-drag-ghost'
+  ghost.textContent = item.displayName
+  document.body.append(ghost)
+  event.dataTransfer.setDragImage(ghost, 18, 16)
+  requestAnimationFrame(() => ghost.remove())
 }
 
 function onPinDragOver(event: DragEvent, item: KnowledgeBaseDescriptor): void {
@@ -157,6 +165,7 @@ function onPinDrop(event: DragEvent, item: KnowledgeBaseDescriptor): void {
 
 function onPinDragEnd(): void {
   pinDrop.value = null
+  draggingPinId.value = null
 }
 
 async function applyMenuAction(action: KnowledgeSidebarMenuAction): Promise<void> {
@@ -213,6 +222,7 @@ async function openMenu(): Promise<void> {
           class="knowledge-item"
           :class="{
             active: store.selectedKnowledgeBaseId === item.id,
+            dragging: draggingPinId === item.id,
             'drop-before': pinDrop?.id === item.id && pinDrop.placement === 'before',
             'drop-after': pinDrop?.id === item.id && pinDrop.placement === 'after'
           }"
@@ -375,9 +385,10 @@ async function openMenu(): Promise<void> {
   opacity: 0.4;
 }
 
+/* 置顶不跟知识库列表一起滚。列表再长，这些图标也留在顶部。 */
 .pin-strip {
   flex: none;
-  max-height: 40%;
+  max-height: calc(100% - 120px);
   overflow-x: clip;
   overflow-y: auto;
   padding: 7px 7px 0;
@@ -486,12 +497,35 @@ async function openMenu(): Promise<void> {
   font-family: inherit;
 }
 
-.knowledge-item.drop-before {
-  box-shadow: inset 0 2px 0 var(--accent);
+.knowledge-item.dragging {
+  opacity: 0.38;
 }
 
+.knowledge-item.drop-before,
 .knowledge-item.drop-after {
-  box-shadow: inset 0 -2px 0 var(--accent);
+  box-shadow: none;
+}
+
+.knowledge-item.drop-before::before,
+.knowledge-item.drop-after::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  right: 4px;
+  left: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: -3px 0 0 1px var(--accent);
+  pointer-events: none;
+}
+
+.knowledge-item.drop-before::before {
+  top: -1px;
+}
+
+.knowledge-item.drop-after::after {
+  bottom: -1px;
 }
 
 .knowledge-item:hover {

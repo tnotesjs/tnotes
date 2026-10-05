@@ -6,7 +6,7 @@ import type { AppSettings } from '../../../../shared/contracts'
 import { clampAppZoom, APP_ZOOM_DEFAULT, APP_ZOOM_STEP } from '../../../../shared/appZoom'
 import { listsEqual, movePinId, pinToFront, unpinId } from '../../../../shared/pinList'
 
-import { resultValue } from './helpers'
+import { ipcPlain, resultValue } from './helpers'
 
 export interface SettingsContext {
   editor: ReturnType<typeof useEditorStore>
@@ -22,7 +22,8 @@ export function createSettings(ctx: SettingsContext) {
   function updateSettings(next: Partial<AppSettings>): Promise<AppSettings> {
     const revision = zoomRevision
     const writing = writeQueue.then(async () => {
-      const updated = resultValue(await window.desk.settings.update(next))
+      // Vue 的响应式数组过不了 IPC 的结构化克隆，先收成普通 JSON。
+      const updated = resultValue(await window.desk.settings.update(ipcPlain(next)))
       confirmedZoom = updated.appZoomPercent
       // A slow settings response must not undo more recent keyboard/button input.
       const visible =
@@ -94,6 +95,7 @@ export function createSettings(ctx: SettingsContext) {
       : pinToFront(current, noteUuid)
     if (next.length === 0) delete map[knowledgeBaseId]
     else map[knowledgeBaseId] = next
+    ctx.settings.value = { ...ctx.settings.value, pinnedNoteUuids: map }
     void updateSettings({ pinnedNoteUuids: map })
   }
 
