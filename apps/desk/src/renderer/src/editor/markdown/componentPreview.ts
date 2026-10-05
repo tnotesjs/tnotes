@@ -10,6 +10,8 @@ import {
 } from '@tnotesjs/ui'
 import type { NotesTableRow, FootprintsPayload } from '@tnotesjs/ui'
 
+import { DESK_MERMAID_SECURITY_LEVEL } from './mermaidSecurity'
+
 export interface BilibiliVideoPreviewProps {
   id: string
   autoplay?: boolean
@@ -132,7 +134,8 @@ export function mountWordListPreview(
   }
 }
 
-/** Mounts shared Mermaid preview (strict security for Desk).
+/** Mounts shared Mermaid preview.
+ * `securityLevel` must be passed: the shared component defaults to `loose`.
  * Uses a render-fn + reactive props so `centerChange` / `update:center`
  * listeners stay wired (createApp(Component, { onCenterChange }) was a no-op
  * for write-back) and source updates do not remount the tree.
@@ -163,6 +166,7 @@ export function mountMermaidPreview(
         h(Mermaid, {
           source: state.source,
           center: state.center,
+          securityLevel: DESK_MERMAID_SECURITY_LEVEL,
           onCenterChange: emitCenter,
           'onUpdate:center': emitCenter
         })

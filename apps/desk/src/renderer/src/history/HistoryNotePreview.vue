@@ -11,6 +11,7 @@ import { createApp, h, nextTick, onBeforeUnmount, ref, watch, type App } from 'v
 import { ExcalidrawSvg } from '@tnotesjs/ui/excalidraw-view'
 import Mermaid from '@tnotesjs/ui/mermaid'
 
+import { DESK_MERMAID_SECURITY_LEVEL } from '../editor/markdown/mermaidSecurity'
 import { renderHistoryMarkdown, type HistoryDiagnostic, type HistoryMount } from './historyMarkdown'
 import { createHistoryPreviewSession } from './historyPreviewSession'
 
@@ -81,7 +82,13 @@ function mountMermaidBlock(element: HTMLElement, mount: HistoryMount): void {
   if (!mount.text) return
   mountInto(element, () =>
     createApp({
-      render: () => h(Mermaid, { source: mount.text, enableCopy: false, enableFullscreen: false })
+      render: () =>
+        h(Mermaid, {
+          source: mount.text,
+          securityLevel: DESK_MERMAID_SECURITY_LEVEL,
+          enableCopy: false,
+          enableFullscreen: false
+        })
     })
   )
 }
