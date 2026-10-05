@@ -99,7 +99,6 @@ import type {
   TabShortcutCommand,
   TabCloseChoice,
   ContextMenuAction,
-  KnowledgeSidebarMenuAction,
   KnowledgeSidebarMenuChoice,
   KnowledgeSidebarMenuRequest,
   NavigatorSidebarMenuAction,

@@ -24,26 +24,9 @@ describe('⌘K 组合键：视图开关', () => {
     const resolver = new TabShortcutResolver()
     const now = 1_000
     const primary = process.platform === 'darwin' ? { meta: true } : { control: true }
-    const key = (k) => ({
-      type: 'keyDown',
-      key: k,
-      shift: false,
-      control: false,
-      alt: false,
-      meta: false,
-      isComposing: false,
-      ...primary
-    })
+    const key = (k: string) => input({ key: k, ...primary })
     // 组合键的第二个键是**不带修饰键**的（⌘K 之后再按 V / P）
-    const plain = (k: string) => ({
-      type: 'keyDown',
-      key: k,
-      shift: false,
-      control: false,
-      alt: false,
-      meta: false,
-      isComposing: false
-    })
+    const plain = (k: string) => input({ key: k })
     // 起手：⌘K 只进入组合键窗口，不发命令
     expect(resolver.resolve(key('k'), process.platform, now)).toEqual({
       handled: true,
@@ -60,32 +43,9 @@ describe('⌘K 组合键：视图开关', () => {
     const resolver = new TabShortcutResolver()
     const now = 1_000
     const primary = process.platform === 'darwin' ? { meta: true } : { control: true }
-    const key = (k) => ({
-      type: 'keyDown',
-      key: k,
-      shift: false,
-      control: false,
-      alt: false,
-      meta: false,
-      isComposing: false,
-      ...primary
-    })
+    const key = (k: string) => input({ key: k, ...primary })
     resolver.resolve(key('k'), process.platform, now)
-    expect(
-      resolver.resolve(
-        {
-          type: 'keyDown',
-          key: 'p',
-          shift: false,
-          control: false,
-          alt: false,
-          meta: false,
-          isComposing: false
-        },
-        process.platform,
-        now + 2_000
-      ).command
-    ).toBeNull()
+    expect(resolver.resolve(input({ key: 'p' }), process.platform, now + 2_000).command).toBeNull()
   })
 })
 

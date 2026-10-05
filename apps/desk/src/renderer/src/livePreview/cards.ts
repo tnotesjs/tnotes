@@ -311,7 +311,8 @@ function commitSwiperSlide(
   } catch {
     return
   }
-  let node = syntaxTree(view.state).resolveInner(pos, 1)
+  const start = syntaxTree(view.state).resolveInner(pos, 1)
+  let node: typeof start | null = start
   while (node && node.name !== 'Container') node = node.parent
   if (!node) return
   const from = view.state.doc.lineAt(node.from).from
