@@ -354,9 +354,13 @@ function buildSwiper(
   editor?: SwiperSlideEditor
 ): HTMLElement {
   const slides = parseSwiperSlides(bodyMarkdown)
+  const visibleSlides = slides.flatMap((slide, index) => {
+    const resolved = resolveImage(slide.src)
+    return resolved ? [{ slide, index, resolved }] : []
+  })
   const root = document.createElement('div')
   root.className = 'tn-swiper'
-  if (slides.length === 0) {
+  if (visibleSlides.length === 0) {
     root.classList.add('is-empty')
     const container = document.createElement('div')
     container.className = 'swiper-container'
@@ -375,19 +379,20 @@ function buildSwiper(
   wrapper.className = 'swiper-wrapper'
   const editable = Boolean(editor && !editor.readOnly)
 
-  slides.forEach((slide, index) => {
+  visibleSlides.forEach(({ slide, index, resolved }) => {
     const slideEl = document.createElement('div')
     slideEl.className = 'swiper-slide'
     const alignClass = slideAlignClass(slide)
     if (alignClass) slideEl.classList.add(alignClass)
     slideEl.dataset.title = swiperSlideTabTitle(slide)
     const img = document.createElement('img')
-    img.src = resolveImage(slide.src) || slide.src
+    img.src = resolved
     img.alt = slide.alt
     if (!editable) {
       if (slide.width) img.style.width = slide.width
       slideEl.append(img)
     } else {
+      // Keep original fence index so width/align commits still target the right line.
       slideEl.append(buildEditableSlide(img, slide, index, editor!, container))
     }
     wrapper.append(slideEl)

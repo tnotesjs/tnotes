@@ -15,15 +15,15 @@ describe('resolveMarkdownImageUrl', () => {
     expect(url.searchParams.get('path')).toBe('./assets/%E5%9B%BE%20%E7%89%87.png')
   })
 
-  it.each(['https://example.com/image.png', 'data:image/png;base64,AA=='])(
-    'leaves safe embedded and remote resources unchanged: %s',
+  it.each(['https://example.com/image.png', 'http://example.com/image.png'])(
+    'leaves remote http(s) resources unchanged: %s',
     (source) => {
       expect(resolveMarkdownImageUrl(source, 'kb', 'note')).toBe(source)
     }
   )
 
   it.each([
-    'http://example.com/image.png',
+    'data:image/png;base64,AA==',
     'data:image/svg+xml;base64,PHN2Zz4=',
     'tnotes-asset://asset?path=1.png',
     'javascript:alert(1)',
@@ -31,7 +31,7 @@ describe('resolveMarkdownImageUrl', () => {
     'blob:https://example.com/id',
     '//cdn.example.com/image.png',
     '#generated-image'
-  ])('blocks unsafe or context-bearing resources: %s', (source) => {
+  ])('blocks non-allowlisted resources: %s', (source) => {
     expect(resolveMarkdownImageUrl(source, 'kb', 'note')).toBe('')
   })
 

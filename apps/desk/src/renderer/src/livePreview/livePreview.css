@@ -44,8 +44,12 @@
 }
 
 .live-editor .cm-editor.cm-lp-source .cm-content {
+  /* Stay beside gutters when cm-scroller wraps the doc head onto its own row.
+     Long unbreakable source lines must not inflate min-content and wrap the
+     whole content block under the gutter (blank editor + line numbers only). */
   width: auto;
-  flex: 1 1 auto;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .live-editor .cm-content {
@@ -135,9 +139,12 @@
   max-width: none;
   margin: 0;
   padding: 16px 32px 45vh 8px;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .live-editor .cm-editor.cm-lp-source .cm-gutters {
+  flex-shrink: 0;
   background-color: var(--editor-bg);
   color: var(--tn-c-text-2);
   border-right: 1px solid var(--tn-c-divider);

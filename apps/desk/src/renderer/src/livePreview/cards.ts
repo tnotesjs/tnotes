@@ -238,7 +238,7 @@ export class CardWidget extends WidgetType {
           const payload = parseFootprintsSource(this.source)
           const handle = mountFootprintsPreview(element, {
             ...payload,
-            images: payload.images.map((src) => resolveImage(src) || src)
+            images: payload.images.map((src) => resolveImage(src)).filter(Boolean)
           })
           mounted.set(card, {
             destroy: () => {
