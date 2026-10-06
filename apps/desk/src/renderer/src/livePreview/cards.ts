@@ -6,7 +6,8 @@ import MarkdownIt from 'markdown-it'
 
 import {
   destroyContainerPreview,
-  renderContainerFromSource
+  renderContainerFromSource,
+  withLinkDefinitions
 } from '../editor/markdown/containerBody'
 import { updateSwiperSlideAttrs, type SwiperSlideChange } from '../editor/markdown/swiperSlides'
 import {
@@ -71,10 +72,17 @@ interface Mounted {
 
 const mounted = new WeakMap<HTMLElement, Mounted>()
 
-function renderTable(source: string, resolveImage: (src: string) => string): HTMLElement {
+function renderTable(
+  source: string,
+  resolveImage: (src: string) => string,
+  definitions: ReadonlyMap<string, string> = new Map()
+): HTMLElement {
   const wrapper = document.createElement('div')
   wrapper.className = 'cm-lp-table-card tn-prose'
-  const html = DOMPurify.sanitize(markdownRenderer().render(source))
+  // 表格卡片单独渲染，需拼上笔记级 LinkReference，否则 `[文字][1]` 无 href
+  const html = DOMPurify.sanitize(
+    markdownRenderer().render(withLinkDefinitions(source, definitions))
+  )
   wrapper.innerHTML = html
   wrapper.querySelectorAll('img').forEach((image) => {
     const resolved = resolveImage(image.getAttribute('src') ?? '')
@@ -172,7 +180,7 @@ export class CardWidget extends WidgetType {
     /** 点击卡片后光标落在源码里的哪个位置（相对卡片起点） */
     private readonly revealOffset: number,
     private readonly knowledgeBaseId: string,
-    /** 围栏外的链接定义。容器和导图单独渲染，源码没变时定义变了也要重画。 */
+    /** 围栏外的链接定义。容器、导图和表格单独渲染，源码没变时定义变了也要重画。 */
     private readonly definitions: ReadonlyMap<string, string> = new Map(),
     /** 当前笔记；WordList 勾选态按「知识库 + 笔记」存，换笔记要重画。 */
     private readonly noteUuid: string = ''
@@ -282,7 +290,7 @@ export class CardWidget extends WidgetType {
       case 'html':
         return renderHtml(this.source, resolveImage)
       case 'table':
-        return renderTable(this.source, resolveImage)
+        return renderTable(this.source, resolveImage, this.definitions)
     }
   }
 

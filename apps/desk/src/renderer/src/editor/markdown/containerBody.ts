@@ -191,7 +191,8 @@ function applyImageSizeAttrs(image: HTMLImageElement): void {
   }
 }
 
-function withLinkDefinitions(body: string, definitions?: ReadonlyMap<string, string>): string {
+/** 把笔记级链接定义拼到片段末尾，供单独渲染的卡片（容器/表格）解析引用链接。 */
+export function withLinkDefinitions(body: string, definitions?: ReadonlyMap<string, string>): string {
   if (!definitions || definitions.size === 0) return body
   const lines = [...definitions.entries()].map(([label, url]) => {
     const destination = /[\s()]/.test(url) ? `<${url.replaceAll('>', '%3E')}>` : url
