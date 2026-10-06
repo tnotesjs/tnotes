@@ -111,11 +111,12 @@ describe('pullKnowledgeBase', () => {
       await fs.writeFile(path.join(other, 'extra.txt'), 'from remote\n')
       await execFileAsync('git', ['add', '.'], { cwd: other })
       await execFileAsync('git', ['commit', '-m', 'remote change'], { cwd: other })
-      await execFileAsync('git', ['push'], { cwd: other })
+      await execFileAsync('git', ['push', '-u', 'origin', 'HEAD'], { cwd: other })
 
       const result = await pullKnowledgeBase(root)
       expect(result.ok).toBe(true)
       expect(result.conflict).toBe(false)
+      expect(result.message).toContain('快进')
       await expect(fs.readFile(path.join(root, 'extra.txt'), 'utf8')).resolves.toContain(
         'from remote'
       )
@@ -133,7 +134,7 @@ describe('pullKnowledgeBase', () => {
       await fs.writeFile(path.join(other, 'clash.txt'), 'remote\n')
       await execFileAsync('git', ['add', '.'], { cwd: other })
       await execFileAsync('git', ['commit', '-m', 'remote clash'], { cwd: other })
-      await execFileAsync('git', ['push'], { cwd: other })
+      await execFileAsync('git', ['push', '-u', 'origin', 'HEAD'], { cwd: other })
 
       await write('clash.txt', 'local\n')
       await git(['add', '.'])

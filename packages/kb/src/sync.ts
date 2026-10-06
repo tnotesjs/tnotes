@@ -242,7 +242,9 @@ export async function pullKnowledgeBase(
 
   const runGit = options.runGit ?? defaultRunner(rootPath)
 
-  const fetch = await runGit(['fetch', '--prune'], 60_000)
+  // fetch + merge --ff-only @{u}：比再跑一遍 `git pull` 更稳——
+  // CI（Linux）上偶发 `pull --ff-only` 在刚 fetch 完后仍报 Already up to date。
+  const fetch = await runGit(['fetch', '--prune', 'origin'], 60_000)
   if (fetch.code !== 0) {
     const detail = (fetch.stderr || fetch.stdout || '').trim()
     return {
@@ -252,8 +254,20 @@ export async function pullKnowledgeBase(
     }
   }
 
-  const pull = await runGit(['pull', '--ff-only'], 90_000)
-  if (pull.code !== 0) {
+  const upstream = await runGit(
+    ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'],
+    15_000
+  )
+  if (upstream.code !== 0 || !upstream.stdout.trim()) {
+    return {
+      ok: false,
+      conflict: true,
+      message: PULL_CONFLICT_MESSAGE
+    }
+  }
+
+  const merge = await runGit(['merge', '--ff-only', upstream.stdout.trim()], 90_000)
+  if (merge.code !== 0) {
     return {
       ok: false,
       conflict: true,
