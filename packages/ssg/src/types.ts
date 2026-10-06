@@ -99,6 +99,10 @@ export interface SiteNoteRef {
 }
 
 /** The serialized `virtual:tnotes-site` payload available to the client. */
+export interface SiteCompletionStats {
+  byYear: Record<string, Record<string, Record<string, { delta: number; total: number; commits?: number }>>>
+}
+
 export interface SiteData {
   base: string
   title: string
@@ -109,4 +113,6 @@ export interface SiteData {
   sidebar: SidebarItem[]
   markdown: MarkdownConfig
   notes: SiteNoteRef[]
+  /** Derived from tnotes.stats.json when present. */
+  completionStats: SiteCompletionStats | null
 }

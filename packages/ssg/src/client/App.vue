@@ -51,6 +51,7 @@
         :mobile-open="mobileOpen"
         :desktop-hidden="sidebarHidden"
         :width="sidebarWidth"
+        :completion-stats="site.completionStats"
         @resize="sidebarWidth = $event"
         @click="closeDrawerOnPick"
       />

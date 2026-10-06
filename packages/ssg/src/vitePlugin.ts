@@ -1,11 +1,25 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import type { Plugin } from 'vite'
 
 import { PAGE_ID_PREFIX, parsePageModuleId, type PageSourceStore } from './pageStore'
-import type { ResolvedSsgConfig } from './types'
+import type { ResolvedSsgConfig, SiteData } from './types'
 
 const PAGES_ID = '\0virtual:tnotes-pages'
 const SITE_ID = '\0virtual:tnotes-site'
 const THEME_ID = '\0virtual:tnotes-theme'
+
+function readCompletionStats(root: string): SiteData['completionStats'] {
+  try {
+    const file = path.join(root, 'tnotes.stats.json')
+    if (!fs.existsSync(file)) return null
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as { byYear?: Record<string, any> }
+    if (!raw?.byYear || typeof raw.byYear !== 'object') return null
+    return { byYear: raw.byYear }
+  } catch {
+    return null
+  }
+}
 
 const serializeSite = (site: ResolvedSsgConfig, store: PageSourceStore) => ({
   base: site.base,
@@ -20,7 +34,8 @@ const serializeSite = (site: ResolvedSsgConfig, store: PageSourceStore) => ({
     lineNumbers: site.markdown.lineNumbers,
     math: site.markdown.math,
     imageLazyLoading: site.markdown.imageLazyLoading
-  }
+  },
+  completionStats: readCompletionStats(site.root)
 })
 
 /**

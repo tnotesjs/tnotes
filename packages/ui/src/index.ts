@@ -40,3 +40,4 @@ export {
   createSwiperTabNav,
   wrapSlideIndex
 } from './swiper/hydrate'
+export { default as ContributionHeatmap } from './components/ContributionHeatmap/ContributionHeatmap.vue'
