@@ -16,6 +16,10 @@ import { flushPendingEdits } from '../../editor/markdown/pendingEdits'
 import { documentDirty, documentKey, resultValue, type DocumentSession } from './helpers'
 import { createPendingSaves } from './pendingSaves'
 
+interface SaveOptions {
+  silent?: boolean
+}
+
 export interface DocumentsContext {
   editor: ReturnType<typeof useEditorStore>
   documents: Ref<Record<string, DocumentSession>>
@@ -34,7 +38,12 @@ export interface DocumentsContext {
 }
 
 export function createDocuments(ctx: DocumentsContext) {
-  const pendingSaves = createPendingSaves()
+  // 重叠保存只留最新一次；但只要被合并的请求里有一次是手动（非 silent），
+  // 后续那一轮就按手动保存跑（提示「已保存」等），不让较晚的 autosave 把手动意图冲掉
+  const pendingSaves = createPendingSaves<SaveOptions>((queued, next) => ({
+    ...next,
+    silent: Boolean(queued.silent && next.silent)
+  }))
   const pausedAutosave = new Set<string>()
 
   function pauseDocumentAutosave(key: string): () => void {
@@ -216,14 +225,15 @@ export function createDocuments(ctx: DocumentsContext) {
     if (ctx.activeDocumentKey.value) updateDocumentContent(ctx.activeDocumentKey.value, content)
   }
 
-  function saveDocument(key: string, options: { silent?: boolean } = {}): Promise<void> {
-    return pendingSaves.run(key, () => performSaveDocument(key, options))
+  /**
+   * 同 key 保存 coalesce：在途保存不打断；期间的重叠请求只保留最新一次（含 options），
+   * 在途结束后再跑一轮 performSaveDocument（不 dirty 时它会直接返回）。
+   */
+  function saveDocument(key: string, options: SaveOptions = {}): Promise<void> {
+    return pendingSaves.run(key, options, (merged) => performSaveDocument(key, merged))
   }
 
-  async function performSaveDocument(
-    key: string,
-    options: { silent?: boolean } = {}
-  ): Promise<void> {
+  async function performSaveDocument(key: string, options: SaveOptions = {}): Promise<void> {
     const session = ctx.documents.value[key]
     if (!session || !session.dirty || session.document.readOnly || session.saving) return
     // 编辑器里还有没写回 store 的修改：此刻 content 是**旧内容**。写下去会把用户的
@@ -286,7 +296,9 @@ export function createDocuments(ctx: DocumentsContext) {
         if (!options.silent) ctx.status.value = '已保存'
       } else {
         if (!options.silent) ctx.status.value = '已保存先前修改，仍有未保存内容'
+        // 已有排队中的后续保存：本轮结束后会立即再存一次，不必再挂 autosave
         if (
+          !pendingSaves.hasQueued(key) &&
           !pausedAutosave.has(key) &&
           ctx.settings.value?.autosave.enabled &&
           !ctx.autosaveTimers.has(key)

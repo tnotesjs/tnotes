@@ -739,6 +739,47 @@ describe('workspace document saving', () => {
     await saving
   })
 
+  it('autosave 在途时 ⌘S：不丢手动意图，结束后按最新内容、非 silent 再存一轮', async () => {
+    const workspace = useWorkspaceStore()
+    const key = `${knowledgeBase.id}:note-a`
+    workspace.settings = autosaveSettings
+    await workspace.ensureDocument(knowledgeBase.id, 'note-a')
+
+    workspace.updateDocumentContent(key, 'autosave edit')
+    await vi.advanceTimersByTimeAsync(50)
+    expect(saveRequests).toHaveLength(1)
+
+    // autosave 还没落盘：用户按 ⌘S，然后继续改字
+    const manualSave = workspace.saveDocument(key)
+    workspace.updateDocumentContent(key, 'latest edit')
+    // 期间 autosave 计时器再次触发（silent）：不能把手动保存降级为静默
+    await vi.advanceTimersByTimeAsync(50)
+    expect(saveRequests).toHaveLength(1)
+
+    pendingSaves[0].resolve(mutation('autosave edit', 'revision-2'))
+    for (let tick = 0; tick < 20; tick += 1) await Promise.resolve()
+
+    // 立即再跑一轮，不必等 autosave 计时器
+    expect(saveRequests).toHaveLength(2)
+    expect(saveRequests[1]).toMatchObject({
+      content: 'latest edit',
+      expectedRevision: 'revision-2'
+    })
+
+    pendingSaves[1].resolve(mutation('latest edit', 'revision-3'))
+    await manualSave
+
+    expect(workspace.getDocumentSession(knowledgeBase.id, 'note-a')).toMatchObject({
+      document: { revision: 'revision-3' },
+      content: 'latest edit',
+      dirty: false,
+      saving: false
+    })
+    expect(workspace.status).toBe('已保存')
+    await vi.runAllTimersAsync()
+    expect(saveRequests).toHaveLength(2)
+  })
+
   it('requeues autosave when a timer fires while an earlier save is still running', async () => {
     const workspace = useWorkspaceStore()
     const key = `${knowledgeBase.id}:note-a`
