@@ -32,6 +32,16 @@ describe('rebuildMermaidFence', () => {
       '```mermaid center\nflowchart LR\n  X --> Y\n```\n'
     )
   })
+
+  it('keeps the fence marker and other meta when toggling center', () => {
+    expect(rebuildMermaidFence('````mermaid [流程]\nA-->B\n````', true)).toBe(
+      '````mermaid center [流程]\nA-->B\n````'
+    )
+    expect(rebuildMermaidFence('~~~mermaid center [流程]\nA-->B\n~~~', false)).toBe(
+      '~~~mermaid [流程]\nA-->B\n~~~'
+    )
+    expect(rebuildMermaidFence('```mermaid\nA-->B\n```', false)).toBe('```mermaid\nA-->B\n```')
+  })
 })
 
 describe('renderDiagram', () => {

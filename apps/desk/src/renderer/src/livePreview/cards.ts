@@ -26,7 +26,7 @@ import {
   mountWordListPreview,
   type MindmapPreviewProps
 } from '../editor/markdown/componentPreview'
-import { parseFencedCode } from '../editor/markdown/diagramRenderer'
+import { parseFencedCode, rebuildMermaidFence } from '../editor/markdown/diagramRenderer'
 import { mindmapPreviewMarkdown, rebuildMindmapFence } from '../editor/markdown/mindmapFence'
 import { clampMindmapHeight, parseFootprintsSource } from '@tnotesjs/ui'
 import { installMarkdownMath } from '../agent/agentMarkdown'
@@ -255,7 +255,12 @@ export class CardWidget extends WidgetType {
         const hostEl = document.createElement('div')
         hostEl.className = 'cm-lp-diagram'
         const fence = parseFencedCode(this.source)
-        const handle = mountMermaidPreview(hostEl, { source: fence.code, center: fence.center })
+        const handle = mountMermaidPreview(hostEl, {
+          source: fence.code,
+          center: fence.center,
+          // 居中按图片排版对待：点「居中 / 取消居中」写回围栏信息行（`mermaid center` / `mermaid`）
+          onCenterChange: (center: boolean) => writeMermaidCenter(view, card, center)
+        })
         mounted.set(card, { destroy: () => handle.unmount() })
         return hostEl
       }
@@ -321,8 +326,8 @@ function commitSwiperSlide(
   })
 }
 
-/** 卡片所在的这段 ```mindmap 围栏在文档里的当前位置（卡片从行首起，到闭合围栏为止）。 */
-function mindmapFenceAt(view: EditorView, card: HTMLElement): { from: number; to: number } | null {
+/** 卡片所在的这段围栏（```mindmap / ```mermaid）在文档里的当前位置（卡片从行首起，到闭合围栏为止）。 */
+function fencedCodeAt(view: EditorView, card: HTMLElement): { from: number; to: number } | null {
   let pos: number
   try {
     pos = view.posAtDOM(card)
@@ -344,6 +349,21 @@ function mindmapFenceAt(view: EditorView, card: HTMLElement): { from: number; to
   return found
 }
 
+/** Mermaid 卡片的「居中 / 取消居中」：把 `center` 关键字写回文档里的围栏信息行。 */
+function writeMermaidCenter(view: EditorView, card: HTMLElement, center: boolean): void {
+  if (view.state.facet(livePreviewHost).isReadOnly()) return
+  const range = fencedCodeAt(view, card)
+  if (!range) return
+  const current = view.state.doc.sliceString(range.from, range.to)
+  if (parseFencedCode(current).center === center) return
+  const next = rebuildMermaidFence(current, center).replace(/\n$/, '')
+  if (next === current) return
+  view.dispatch({
+    changes: { from: range.from, to: range.to, insert: next },
+    userEvent: 'input.mermaid'
+  })
+}
+
 function renderMindmapCard(
   card: HTMLElement,
   initialSource: string,
@@ -360,7 +380,7 @@ function renderMindmapCard(
 
   const writeFence = (build: (fence: string) => string): void => {
     if (host.isReadOnly()) return
-    const range = mindmapFenceAt(view, card)
+    const range = fencedCodeAt(view, card)
     if (!range) return
     const current = view.state.doc.sliceString(range.from, range.to)
     const next = build(current).replace(/\n$/, '')

@@ -24,13 +24,25 @@ export function parseFencedCode(source: string): FencedCode {
   return { lang, code: lines.slice(1, end).join('\n'), title, center }
 }
 
-/** Rebuild a mermaid fence; toggles the `center` info keyword and/or body. */
+/**
+ * Rebuild a mermaid fence; toggles the `center` info keyword and/or body.
+ * Keeps the original fence marker (``` / ```` / ~~~), indentation and other meta (e.g. `[title]`).
+ */
 export function rebuildMermaidFence(source: string, center: boolean, body?: string): string {
   const parsed = parseFencedCode(source)
   const trailingNewline = /\r?\n$/.test(source)
-  const info = center ? 'mermaid center' : 'mermaid'
+  const firstLine = source.replace(/\r\n?/g, '\n').split('\n')[0] ?? ''
+  const opening = firstLine.match(/^( {0,3})(`{3,}|~{3,})\s*([^\s]*)\s*(.*)$/)
+  const indent = opening?.[1] ?? ''
+  const marker = opening?.[2] ?? '```'
+  const lang = opening?.[3] || 'mermaid'
+  const meta = (opening?.[4] ?? '')
+    .split(/\s+/)
+    .filter((part) => part && part.toLowerCase() !== 'center')
+  if (center) meta.unshift('center')
+  const info = [lang, ...meta].join(' ')
   const code = body ?? parsed.code
-  const fence = `\`\`\`${info}\n${code}\n\`\`\``
+  const fence = `${indent}${marker}${info}\n${code}\n${indent}${marker}`
   return trailingNewline ? `${fence}\n` : fence
 }
 
