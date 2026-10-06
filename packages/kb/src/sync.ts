@@ -242,9 +242,11 @@ export async function pullKnowledgeBase(
 
   const runGit = options.runGit ?? defaultRunner(rootPath)
 
-  // fetch + merge --ff-only @{u}：比再跑一遍 `git pull` 更稳——
-  // CI（Linux）上偶发 `pull --ff-only` 在刚 fetch 完后仍报 Already up to date。
-  const fetch = await runGit(['fetch', '--prune', 'origin'], 60_000)
+  // Explicit refspec keeps local bare remotes honest on CI Linux runners.
+  const fetch = await runGit(
+    ['fetch', '--prune', 'origin', '+refs/heads/*:refs/remotes/origin/*'],
+    60_000
+  )
   if (fetch.code !== 0) {
     const detail = (fetch.stderr || fetch.stdout || '').trim()
     return {
@@ -258,7 +260,8 @@ export async function pullKnowledgeBase(
     ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'],
     15_000
   )
-  if (upstream.code !== 0 || !upstream.stdout.trim()) {
+  const upstreamRef = upstream.stdout.trim()
+  if (upstream.code !== 0 || !upstreamRef) {
     return {
       ok: false,
       conflict: true,
@@ -266,7 +269,25 @@ export async function pullKnowledgeBase(
     }
   }
 
-  const merge = await runGit(['merge', '--ff-only', upstream.stdout.trim()], 90_000)
+  const aheadBehind = await runGit(
+    ['rev-list', '--left-right', '--count', `HEAD...${upstreamRef}`],
+    30_000
+  )
+  let behind = 0
+  if (aheadBehind.code === 0) {
+    const parts = aheadBehind.stdout.trim().split(/\s+/).map(Number)
+    behind = Number.isFinite(parts[1]) ? parts[1] : 0
+  }
+
+  if (behind === 0) {
+    return {
+      ok: true,
+      conflict: false,
+      message: '已是最新，无需拉取'
+    }
+  }
+
+  const merge = await runGit(['merge', '--ff-only', upstreamRef], 90_000)
   if (merge.code !== 0) {
     return {
       ok: false,

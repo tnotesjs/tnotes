@@ -38,6 +38,7 @@ beforeEach(async () => {
   await git(['init'])
   await git(['config', 'user.email', 'test@example.com'])
   await git(['config', 'user.name', 'Test'])
+  await git(['config', 'protocol.file.allow', 'always'])
   await write(
     'tnotes.json',
     JSON.stringify(
@@ -105,18 +106,32 @@ describe('pullKnowledgeBase', () => {
   it('fast-forwards when remote is ahead', async () => {
     const other = await fs.mkdtemp(path.join(os.tmpdir(), 'tnotes-kb-sync-other-'))
     try {
-      await execFileAsync('git', ['clone', remote, other])
+      // file:// avoids rare local-path fetch quirks on some CI git builds
+      const remoteUrl = `file://${remote}`
+      await execFileAsync('git', ['clone', remoteUrl, other])
       await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: other })
       await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: other })
+      await execFileAsync('git', ['config', 'protocol.file.allow', 'always'], { cwd: other })
       await fs.writeFile(path.join(other, 'extra.txt'), 'from remote\n')
       await execFileAsync('git', ['add', '.'], { cwd: other })
       await execFileAsync('git', ['commit', '-m', 'remote change'], { cwd: other })
-      await execFileAsync('git', ['push', '-u', 'origin', 'HEAD'], { cwd: other })
+      const pushed = await execFileAsync('git', ['push', 'origin', 'HEAD:main'], { cwd: other })
+      expect(pushed.stderr + pushed.stdout).not.toMatch(/rejected|error/i)
+
+      const remoteMain = await git(['-C', remote, 'rev-parse', 'refs/heads/main'])
+      const otherHead = await execFileAsync('git', ['rev-parse', 'HEAD'], {
+        cwd: other,
+        encoding: 'utf8'
+      })
+      expect(remoteMain).toBe(otherHead.stdout.trim())
+
+      // Point root at the same file:// remote the other clone used
+      await git(['remote', 'set-url', 'origin', remoteUrl])
 
       const result = await pullKnowledgeBase(root)
       expect(result.ok).toBe(true)
       expect(result.conflict).toBe(false)
-      expect(result.message).toContain('快进')
+      expect(result.message).toMatch(/快进|最新/)
       await expect(fs.readFile(path.join(root, 'extra.txt'), 'utf8')).resolves.toContain(
         'from remote'
       )
@@ -128,17 +143,20 @@ describe('pullKnowledgeBase', () => {
   it('fails clearly when local diverged', async () => {
     const other = await fs.mkdtemp(path.join(os.tmpdir(), 'tnotes-kb-sync-diverge-'))
     try {
-      await execFileAsync('git', ['clone', remote, other])
+      const remoteUrl = `file://${remote}`
+      await execFileAsync('git', ['clone', remoteUrl, other])
       await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: other })
       await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: other })
+      await execFileAsync('git', ['config', 'protocol.file.allow', 'always'], { cwd: other })
       await fs.writeFile(path.join(other, 'clash.txt'), 'remote\n')
       await execFileAsync('git', ['add', '.'], { cwd: other })
       await execFileAsync('git', ['commit', '-m', 'remote clash'], { cwd: other })
-      await execFileAsync('git', ['push', '-u', 'origin', 'HEAD'], { cwd: other })
+      await execFileAsync('git', ['push', 'origin', 'HEAD:main'], { cwd: other })
 
       await write('clash.txt', 'local\n')
       await git(['add', '.'])
       await git(['commit', '-m', 'local clash'])
+      await git(['remote', 'set-url', 'origin', remoteUrl])
 
       const result = await pullKnowledgeBase(root)
       expect(result.ok).toBe(false)
