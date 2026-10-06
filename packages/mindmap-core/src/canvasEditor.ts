@@ -23,7 +23,7 @@ import {
   replaceInlineRange,
   stripInline
 } from './model/inline'
-import type { InlineFormat } from './model/inline'
+import type { InlineFormat, InlineParseOptions } from './model/inline'
 import { CanvasRenderer, canvasNodeTier } from './render/canvasRenderer'
 import type {
   CanvasDragPreview,
@@ -71,13 +71,18 @@ export interface CanvasContextRequest {
   canFocus: boolean
 }
 
-function renderCanvasInlineRuns(root: HTMLElement, raw: string, sourceMode = false): void {
+function renderCanvasInlineRuns(
+  root: HTMLElement,
+  raw: string,
+  sourceMode = false,
+  options?: InlineParseOptions
+): void {
   if (sourceMode) {
     root.textContent = raw
     return
   }
   const fragment = document.createDocumentFragment()
-  for (const segment of parseInlineSegments(raw)) {
+  for (const segment of parseInlineSegments(raw, options)) {
     const run = document.createElement('span')
     run.className = 'inline-run'
     for (const format of ['bold', 'italic', 'underline', 'strike', 'highlight', 'code'] as const) {
@@ -235,7 +240,8 @@ export class CanvasEditor {
     this.renderer = new CanvasRenderer(
       container,
       (src) => this.events.resolveImageSrc?.(src) ?? src,
-      options.theme
+      options.theme,
+      () => this.session.linkDefinitions
     )
     this.renderer.onImageLoad = (src, aspect) => {
       this.imageAspects.set(src, aspect)
@@ -536,11 +542,16 @@ export class CanvasEditor {
     Object.defineProperties(input, {
       value: {
         configurable: true,
-        get: () => (node.content.image ? this.editingDraftRaw : stripInline(this.editingDraftRaw)),
+        get: () =>
+          node.content.image
+            ? this.editingDraftRaw
+            : stripInline(this.editingDraftRaw, this.session.inlineOptions),
         set: (next: string) => {
           const value = String(next)
           this.renderEditingDraft(
-            node.content.image ? value : replaceInlineDisplayText(this.editingDraftRaw, value)
+            node.content.image
+              ? value
+              : replaceInlineDisplayText(this.editingDraftRaw, value, this.session.inlineOptions)
           )
         }
       },
@@ -549,7 +560,12 @@ export class CanvasEditor {
       selectionEnd: { configurable: true, get: () => richSelectionOffsets(input)?.end ?? 0 }
     })
     input.setSelectionRange = (start: number, end: number) => setRichSelection(input, start, end)
-    renderCanvasInlineRuns(input, this.editingDraftRaw, !!node.content.image)
+    renderCanvasInlineRuns(
+      input,
+      this.editingDraftRaw,
+      !!node.content.image,
+      this.session.inlineOptions
+    )
     this.editingInitialDisplayText = input.value
     this.syncEditingOverlayGeometry()
     input.addEventListener('draft-render', this.syncEditingOverlayGeometry)
@@ -579,7 +595,14 @@ export class CanvasEditor {
       e.preventDefault()
       const next = node.content.image
         ? `${visible.slice(0, start)}${inserted}${visible.slice(end)}`
-        : replaceInlineRange(this.editingDraftRaw, start, end, inserted)
+        : replaceInlineRange(
+            this.editingDraftRaw,
+            start,
+            end,
+            inserted,
+            undefined,
+            this.session.inlineOptions
+          )
       this.renderEditingDraft(next, start + inserted.length)
     })
     input.addEventListener('input', (event) => {
@@ -587,7 +610,7 @@ export class CanvasEditor {
       const nextText = (input.textContent ?? '').replace(/[\r\n]/g, '')
       const next = node.content.image
         ? nextText
-        : replaceInlineDisplayText(this.editingDraftRaw, nextText)
+        : replaceInlineDisplayText(this.editingDraftRaw, nextText, this.session.inlineOptions)
       const selection = richSelectionOffsets(input)
       this.renderEditingDraft(next, selection?.start, selection?.end)
     })
@@ -601,7 +624,11 @@ export class CanvasEditor {
       this.editingComposing = false
       const next = node.content.image
         ? nextText
-        : replaceInlineDisplayText(this.editingCompositionBaseRaw, nextText)
+        : replaceInlineDisplayText(
+            this.editingCompositionBaseRaw,
+            nextText,
+            this.session.inlineOptions
+          )
       this.renderEditingDraft(next, selection?.start, selection?.end)
     })
     input.addEventListener('paste', (event) => {
@@ -611,7 +638,14 @@ export class CanvasEditor {
       if (!selection) return
       const next = node.content.image
         ? `${input.value.slice(0, selection.start)}${plain}${input.value.slice(selection.end)}`
-        : replaceInlineRange(this.editingDraftRaw, selection.start, selection.end, plain)
+        : replaceInlineRange(
+            this.editingDraftRaw,
+            selection.start,
+            selection.end,
+            plain,
+            undefined,
+            this.session.inlineOptions
+          )
       this.renderEditingDraft(next, selection.start + plain.length)
     })
 
@@ -758,7 +792,7 @@ export class CanvasEditor {
     const node = this.editingNode
     if (!input || !node) return
     this.editingDraftRaw = raw
-    renderCanvasInlineRuns(input, raw, !!node.content.image)
+    renderCanvasInlineRuns(input, raw, !!node.content.image, this.session.inlineOptions)
     input.dispatchEvent(new Event('draft-render'))
     if (start !== undefined) {
       input.focus()
@@ -810,7 +844,7 @@ export class CanvasEditor {
     if (!node) return null
     this.editingNode = node
     this.editingDraftRaw = node.content.raw
-    renderCanvasInlineRuns(input, this.editingDraftRaw)
+    renderCanvasInlineRuns(input, this.editingDraftRaw, false, this.session.inlineOptions)
     input.setSelectionRange(start, end)
     return { input, node, start, end }
   }
@@ -862,7 +896,7 @@ export class CanvasEditor {
       return node.content.link
     let plainOffset = 0
     const urls = new Set<string>()
-    for (const segment of parseInlineSegments(node.content.raw)) {
+    for (const segment of parseInlineSegments(node.content.raw, this.session.inlineOptions)) {
       const segmentStart = plainOffset
       const segmentEnd = plainOffset + segment.text.length
       if (segmentEnd > start && segmentStart < end && segment.link) urls.add(segment.link.url)

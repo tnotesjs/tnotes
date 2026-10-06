@@ -182,7 +182,14 @@ function replacedNodeValue(
   }
   let raw = node.content.raw
   for (const range of [...selectedRanges].reverse()) {
-    raw = replaceInlineRange(raw, range.start, range.end, replacement.value)
+    raw = replaceInlineRange(
+      raw,
+      range.start,
+      range.end,
+      replacement.value,
+      undefined,
+      props.session.inlineOptions
+    )
   }
   return { raw, text: node.content.text, count: selectedRanges.length }
 }

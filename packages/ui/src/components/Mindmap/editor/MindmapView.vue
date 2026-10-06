@@ -357,4 +357,19 @@ onBeforeUnmount(() => {
   outline: none;
   background: var(--mm-canvas-bg);
 }
+/* CanvasEditor 在宿主上切换这些状态类；光标规则原在已删除的独立 app 样式里，这里补回。 */
+.mindmap-view-host.mm-editor {
+  cursor: default;
+}
+.mindmap-view-host.mm-editor.is-space-pan {
+  cursor: grab;
+}
+.mindmap-view-host.mm-editor.is-panning,
+.mindmap-view-host.mm-editor.is-node-dragging {
+  cursor: grabbing;
+}
+.mindmap-view-host.mm-editor.is-link-hover,
+.mindmap-view-host.mm-editor.is-control-hover {
+  cursor: pointer;
+}
 </style>

@@ -14,7 +14,9 @@ import {
   toggleInlineFormat,
   updateInlineLink
 } from './inline'
-import type { InlineFormat, NodeContent } from './inline'
+import type { InlineFormat, InlineParseOptions, LinkDefinitions, NodeContent } from './inline'
+
+const NO_DEFINITIONS: LinkDefinitions = new Map()
 
 export interface MindmapNode {
   id: string
@@ -58,9 +60,17 @@ export function visibleChildren(node: MindmapNode): MindmapNode[] {
 
 export class MindmapDocument {
   root: MindmapNode
+  /** 链接引用定义（宿主传入，key 已规范化）；节点里的 `[文字][id]` 据此解析成链接。 */
+  readonly definitions: LinkDefinitions
 
-  constructor(title = '未命名') {
-    this.root = createNode(parseInline(title))
+  constructor(title = '未命名', options: InlineParseOptions = {}) {
+    this.definitions = options.definitions ?? NO_DEFINITIONS
+    this.root = createNode(parseInline(title, this.inlineOptions))
+  }
+
+  /** 交给行内解析/编辑函数的选项，保证引用式链接在编辑时也按定义解析、按原写法写回。 */
+  get inlineOptions(): InlineParseOptions {
+    return { definitions: this.definitions }
   }
 
   find(id: string): MindmapNode | null {
@@ -93,7 +103,7 @@ export class MindmapDocument {
   }
 
   insertChild(parent: MindmapNode, index = parent.children.length, raw = ''): MindmapNode {
-    return this.addNode(parent, parseInline(raw), index)
+    return this.addNode(parent, parseInline(raw, this.inlineOptions), index)
   }
 
   /** 在指定节点之后插入同级；node 为根时改为追加子节点 */
@@ -102,7 +112,7 @@ export class MindmapDocument {
       return this.insertChild(this.root, this.root.children.length, raw)
     }
     const i = node.parent.children.indexOf(node)
-    return this.addNode(node.parent, parseInline(raw), i + 1)
+    return this.addNode(node.parent, parseInline(raw, this.inlineOptions), i + 1)
   }
 
   /** 删除节点（根节点不可删），返回删除位置用于选中相邻节点 */
@@ -168,11 +178,11 @@ export class MindmapDocument {
   /** 用新的行内源码更新节点内容（保留任务状态）。 */
   updateRaw(node: MindmapNode, raw: string): void {
     if (node === this.root) {
-      node.content = parseInline(raw.trim() || node.content.raw)
+      node.content = parseInline(raw.trim() || node.content.raw, this.inlineOptions)
       return
     }
     const checked = node.content.checked
-    const next = parseInline(raw)
+    const next = parseInline(raw, this.inlineOptions)
     next.checked = checked
     node.content = next
   }
@@ -181,7 +191,12 @@ export class MindmapDocument {
   updateDisplayText(node: MindmapNode, text: string): void {
     if (node === this.root) {
       node.content = parseInline(
-        replaceInlineDisplayText(node.content.raw, text.trim() || node.content.text)
+        replaceInlineDisplayText(
+          node.content.raw,
+          text.trim() || node.content.text,
+          this.inlineOptions
+        ),
+        this.inlineOptions
       )
       return
     }
@@ -191,7 +206,10 @@ export class MindmapDocument {
       return
     }
     const checked = node.content.checked
-    const next = parseInline(replaceInlineDisplayText(node.content.raw, text.trim()))
+    const next = parseInline(
+      replaceInlineDisplayText(node.content.raw, text.trim(), this.inlineOptions),
+      this.inlineOptions
+    )
     next.checked = checked
     node.content = next
   }
@@ -199,7 +217,10 @@ export class MindmapDocument {
   toggleInlineFormat(node: MindmapNode, start: number, end: number, format: InlineFormat): void {
     if (node.content.image) return
     const checked = node.content.checked
-    const next = parseInline(toggleInlineFormat(node.content.raw, start, end, format))
+    const next = parseInline(
+      toggleInlineFormat(node.content.raw, start, end, format, this.inlineOptions),
+      this.inlineOptions
+    )
     next.checked = checked
     node.content = next
   }
@@ -208,7 +229,15 @@ export class MindmapDocument {
     if (node.content.image || node.content.text.length === 0) return
     const checked = node.content.checked
     const next = parseInline(
-      setInlineFormat(node.content.raw, 0, node.content.text.length, format, enabled)
+      setInlineFormat(
+        node.content.raw,
+        0,
+        node.content.text.length,
+        format,
+        enabled,
+        this.inlineOptions
+      ),
+      this.inlineOptions
     )
     next.checked = checked
     node.content = next
@@ -217,19 +246,28 @@ export class MindmapDocument {
   clearInlineFormats(node: MindmapNode, start = 0, end = node.content.text.length): void {
     if (node.content.image || start === end) return
     const checked = node.content.checked
-    const next = parseInline(clearInlineFormats(node.content.raw, start, end))
+    const next = parseInline(
+      clearInlineFormats(node.content.raw, start, end, this.inlineOptions),
+      this.inlineOptions
+    )
     next.checked = checked
     node.content = next
   }
 
   inlineFormatActive(node: MindmapNode, start: number, end: number, format: InlineFormat): boolean {
-    return !node.content.image && inlineFormatActive(node.content.raw, start, end, format)
+    return (
+      !node.content.image &&
+      inlineFormatActive(node.content.raw, start, end, format, this.inlineOptions)
+    )
   }
 
   setInlineLink(node: MindmapNode, start: number, end: number, url: string | null): void {
     if (node.content.image) return
     const checked = node.content.checked
-    const next = parseInline(setInlineLink(node.content.raw, start, end, url))
+    const next = parseInline(
+      setInlineLink(node.content.raw, start, end, url, this.inlineOptions),
+      this.inlineOptions
+    )
     next.checked = checked
     node.content = next
   }
@@ -237,7 +275,10 @@ export class MindmapDocument {
   updateInlineLink(node: MindmapNode, rawStart: number, rawEnd: number, url: string | null): void {
     if (node.content.image) return
     const checked = node.content.checked
-    const next = parseInline(updateInlineLink(node.content.raw, rawStart, rawEnd, url))
+    const next = parseInline(
+      updateInlineLink(node.content.raw, rawStart, rawEnd, url, this.inlineOptions),
+      this.inlineOptions
+    )
     next.checked = checked
     node.content = next
   }
@@ -306,9 +347,9 @@ export function snapshotDoc(doc: MindmapDocument): string {
   return JSON.stringify(toJSON(doc.root))
 }
 
-export function restoreDoc(json: string): MindmapDocument {
+export function restoreDoc(json: string, options: InlineParseOptions = {}): MindmapDocument {
   const data = JSON.parse(json) as MindmapNodeJSON
-  const doc = new MindmapDocument('')
+  const doc = new MindmapDocument('', options)
   const build = (d: MindmapNodeJSON, parent: MindmapNode | null): MindmapNode => {
     const node: MindmapNode = {
       id: d.id,

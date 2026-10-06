@@ -9,6 +9,7 @@ import type { LayoutResult, NodeBox } from '../layout/treeLayout'
 import { TEXT_LINE_HEIGHT } from '../layout/treeLayout'
 import type { MindmapNode } from '../model/document'
 import { parseInlineSegments } from '../model/inline'
+import type { LinkDefinitions } from '../model/inline'
 import type { InlineMarks } from '../model/inline'
 import { nodeGeometry, resolveNodeControl } from './hitTest'
 
@@ -186,7 +187,9 @@ export class CanvasRenderer {
   constructor(
     private container: HTMLElement,
     private readonly resolveImageSrc: (src: string) => string = (src) => src,
-    theme: CanvasThemeMode = 'auto'
+    theme: CanvasThemeMode = 'auto',
+    /** 链接引用定义；节点里的 `[文字][id]` 按此画成链接。 */
+    private readonly linkDefinitions: () => LinkDefinitions | null = () => null
   ) {
     this.canvas = document.createElement('canvas')
     this.canvas.className = 'mm-canvas'
@@ -496,7 +499,7 @@ export class CanvasRenderer {
             link: null
           }
         ]
-      : parseInlineSegments(node.content.raw)
+      : parseInlineSegments(node.content.raw, { definitions: this.linkDefinitions() })
     let segmentOffset = 0
     const positioned = segments.map((segment) => {
       const start = segmentOffset

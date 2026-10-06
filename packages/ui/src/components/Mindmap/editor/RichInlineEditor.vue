@@ -12,6 +12,8 @@ import {
 } from '@tnotesjs/mindmap-core'
 import type { InlineLink, RichInlineEditorElement } from '@tnotesjs/mindmap-core'
 
+import { useMindmapInlineOptions } from '../inlineOptions'
+
 const props = withDefaults(
   defineProps<{
     editorId: string
@@ -43,6 +45,7 @@ const emit = defineEmits<{
   linkClick: [link: InlineLink, event: Event]
 }>()
 
+const inlineOptions = useMindmapInlineOptions()
 const rootRef = ref<RichInlineEditorElement>()
 const draftRaw = ref(props.raw)
 let sourceRaw = props.raw
@@ -50,14 +53,14 @@ let dirty = false
 let composing = false
 let compositionBaseRaw = props.raw
 
-const text = computed(() => stripInline(draftRaw.value))
+const text = computed(() => stripInline(draftRaw.value, inlineOptions()))
 
 function renderInlineDom() {
   const root = rootRef.value
   if (!root) return
   const fragment = document.createDocumentFragment()
   let plainOffset = 0
-  for (const segment of parseInlineSegments(draftRaw.value)) {
+  for (const segment of parseInlineSegments(draftRaw.value, inlineOptions())) {
     const run = document.createElement('span')
     run.className = 'inline-run'
     for (const format of ['bold', 'italic', 'underline', 'strike', 'highlight', 'code'] as const) {
@@ -89,7 +92,7 @@ function renderInlineDom() {
 }
 
 function payload(): DraftPayload {
-  return { raw: draftRaw.value, text: stripInline(draftRaw.value) }
+  return { raw: draftRaw.value, text: stripInline(draftRaw.value, inlineOptions()) }
 }
 
 function renderDraft(
@@ -120,7 +123,14 @@ function replaceSelection(textToInsert: string) {
     focus: text.value.length,
     direction: 'forward' as const
   }
-  const nextRaw = replaceInlineRange(draftRaw.value, selection.start, selection.end, textToInsert)
+  const nextRaw = replaceInlineRange(
+    draftRaw.value,
+    selection.start,
+    selection.end,
+    textToInsert,
+    undefined,
+    inlineOptions()
+  )
   const caret = selection.start + textToInsert.length
   renderDraft(nextRaw, { start: caret })
 }
@@ -148,7 +158,14 @@ function onBeforeInput(event: InputEvent) {
   if (event.inputType === 'insertText' || event.inputType === 'insertReplacementText') {
     if (event.data == null) return
     event.preventDefault()
-    const nextRaw = replaceInlineRange(draftRaw.value, selection.start, selection.end, event.data)
+    const nextRaw = replaceInlineRange(
+      draftRaw.value,
+      selection.start,
+      selection.end,
+      event.data,
+      undefined,
+      inlineOptions()
+    )
     renderDraft(nextRaw, { start: selection.start + event.data.length })
     return
   }
@@ -159,7 +176,10 @@ function onBeforeInput(event: InputEvent) {
       selection.start === selection.end
         ? previousGraphemeOffset(text.value, selection.start)
         : selection.start
-    renderDraft(replaceInlineRange(draftRaw.value, start, selection.end, ''), { start })
+    renderDraft(
+      replaceInlineRange(draftRaw.value, start, selection.end, '', undefined, inlineOptions()),
+      { start }
+    )
     return
   }
 
@@ -169,17 +189,30 @@ function onBeforeInput(event: InputEvent) {
       selection.start === selection.end
         ? nextGraphemeOffset(text.value, selection.end)
         : selection.end
-    renderDraft(replaceInlineRange(draftRaw.value, selection.start, end, ''), {
-      start: selection.start
-    })
+    renderDraft(
+      replaceInlineRange(draftRaw.value, selection.start, end, '', undefined, inlineOptions()),
+      {
+        start: selection.start
+      }
+    )
     return
   }
 
   if (event.inputType === 'deleteByCut') {
     event.preventDefault()
-    renderDraft(replaceInlineRange(draftRaw.value, selection.start, selection.end, ''), {
-      start: selection.start
-    })
+    renderDraft(
+      replaceInlineRange(
+        draftRaw.value,
+        selection.start,
+        selection.end,
+        '',
+        undefined,
+        inlineOptions()
+      ),
+      {
+        start: selection.start
+      }
+    )
     return
   }
 
@@ -201,7 +234,10 @@ function onInput(event: InputEvent) {
   const nextText = (root.textContent ?? '').replace(/[\r\n]/g, '')
   if (nextText === text.value) return
   const selection = richSelectionOffsets(root)
-  renderDraft(replaceInlineDisplayText(draftRaw.value, nextText), selection ?? undefined)
+  renderDraft(
+    replaceInlineDisplayText(draftRaw.value, nextText, inlineOptions()),
+    selection ?? undefined
+  )
 }
 
 function onCompositionStart() {
@@ -216,7 +252,10 @@ function finishComposition() {
   const nextText = (root.textContent ?? '').replace(/[\r\n]/g, '')
   const selection = richSelectionOffsets(root)
   composing = false
-  renderDraft(replaceInlineDisplayText(compositionBaseRaw, nextText), selection ?? undefined)
+  renderDraft(
+    replaceInlineDisplayText(compositionBaseRaw, nextText, inlineOptions()),
+    selection ?? undefined
+  )
 }
 
 function onCompositionEnd() {
@@ -308,9 +347,9 @@ function installCompatibilityApi(root: RichInlineEditorElement) {
   Object.defineProperties(root, {
     value: {
       configurable: true,
-      get: () => stripInline(draftRaw.value),
+      get: () => stripInline(draftRaw.value, inlineOptions()),
       set: (next: string) => {
-        renderDraft(replaceInlineDisplayText(draftRaw.value, String(next)))
+        renderDraft(replaceInlineDisplayText(draftRaw.value, String(next), inlineOptions()))
       }
     },
     rawValue: { configurable: true, get: () => draftRaw.value },

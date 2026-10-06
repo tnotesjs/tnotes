@@ -13,6 +13,7 @@ import {
 } from './expandLevel'
 import { FORCE_EXIT_FULLSCREEN_EVENT, reconcileMindmapFullscreen } from './fullscreenFlag'
 import { normalizeMindmapMarkdown } from './markdown'
+import { provideMindmapInlineOptions } from './inlineOptions'
 import MindmapOutlineNode from './MindmapOutlineNode.vue'
 import MindmapViewIcon from './MindmapViewIcon.vue'
 import FocusBreadcrumbs from './FocusBreadcrumbs.vue'
@@ -96,6 +97,11 @@ const props = withDefaults(
      * (e.g. `./assets/foo.png`). Required for editable paste-to-assets.
      */
     writeAsset?: (blob: Blob) => Promise<{ relativePath: string; alt?: string }>
+    /**
+     * 链接引用定义（`[id]: url`，Desk 从围栏外的笔记正文收集）。
+     * 节点里的 `[文字][id]` / `[文字][]` / `[文字]` 据此显示为链接，写回时保留引用写法。
+     */
+    linkDefinitions?: ReadonlyMap<string, string> | Record<string, string>
   }>(),
   {
     content: '',
@@ -106,7 +112,8 @@ const props = withDefaults(
     height: undefined,
     isDark: undefined,
     resolveImageSrc: undefined,
-    writeAsset: undefined
+    writeAsset: undefined,
+    linkDefinitions: undefined
   }
 )
 
@@ -220,7 +227,8 @@ function rebuildSession(): void {
   suppressChangeEmit = true
   const next = new MindmapSession({
     markdown: normalizedContent.value,
-    fileName: 'mindmap-preview.tn-mindmap.md'
+    fileName: 'mindmap-preview.tn-mindmap.md',
+    definitions: props.linkDefinitions
   })
   applyInitialExpandLevel(next, expandLevel.value)
   const invalidate = () => {
@@ -656,6 +664,19 @@ function handleDocumentKeydown(event: KeyboardEvent): void {
   isCanvasActive.value = false
   canvasHost.value?.blur()
 }
+
+provideMindmapInlineOptions(() => session.value?.inlineOptions ?? {})
+
+/** 定义变了（笔记里改了 `[1]: url`）就按新定义重建会话；内容不变时不重建。 */
+const definitionsKey = computed(() => {
+  const defs = props.linkDefinitions
+  if (!defs) return ''
+  const entries = defs instanceof Map ? [...defs.entries()] : Object.entries(defs)
+  return JSON.stringify(entries)
+})
+watch(definitionsKey, (value, previous) => {
+  if (value !== previous && session.value) rebuildSession()
+})
 
 watch(
   normalizedContent,

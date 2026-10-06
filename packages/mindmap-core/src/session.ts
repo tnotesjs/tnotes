@@ -15,13 +15,18 @@ import {
   restoreDoc,
   snapshotDoc
 } from './model/document'
-import { parseInline } from './model/inline'
-import type { InlineFormat } from './model/inline'
+import { createLinkDefinitions, parseInline } from './model/inline'
+import type { InlineFormat, InlineParseOptions, LinkDefinitions } from './model/inline'
 import type { MindmapNode } from './model/document'
 
 export interface SessionOptions {
   markdown?: string
   fileName?: string
+  /**
+   * 链接引用定义（`[id]: url`，通常在导图围栏外面）。键不必预先规范化。
+   * 节点里的 `[文字][id]` / `[文字][]` / `[文字]` 据此显示为链接，序列化仍保留引用写法。
+   */
+  definitions?: Iterable<readonly [string, string]> | Record<string, string> | null
 }
 
 export interface PreparedDocumentChange {
@@ -61,11 +66,13 @@ export class MindmapSession {
   private sourceMarkdown = ''
   private diagnosticsState: MarkdownDiagnostic[] = []
   private listeners = new Map<keyof SessionEvents, Set<Handler<never>>>()
+  private readonly definitionsState: LinkDefinitions
 
   constructor(options: SessionOptions = {}) {
+    this.definitionsState = createLinkDefinitions(options.definitions)
     this.fileName = options.fileName ?? '未命名'
     this.sourceMarkdown = options.markdown ?? `# ${this.cleanFileName()}\n`
-    const result = parseMarkdown(this.sourceMarkdown, this.cleanFileName())
+    const result = parseMarkdown(this.sourceMarkdown, this.cleanFileName(), this.inlineOptions)
     this.doc = result.doc
     this.diagnosticsState = result.diagnostics
   }
@@ -97,6 +104,15 @@ export class MindmapSession {
   }
 
   // ---------- 基础访问 ----------
+
+  /** 本会话的链接引用定义（key 已规范化）；视图渲染行内片段时要带上。 */
+  get linkDefinitions(): LinkDefinitions {
+    return this.definitionsState
+  }
+
+  get inlineOptions(): InlineParseOptions {
+    return { definitions: this.definitionsState }
+  }
 
   get document(): MindmapDocument {
     return this.doc
@@ -153,7 +169,7 @@ export class MindmapSession {
    * 非法源码只更新原文和诊断，最后一棵合法文档树保持不变。
    */
   setMarkdown(md: string): void {
-    const result = parseMarkdown(md, this.cleanFileName())
+    const result = parseMarkdown(md, this.cleanFileName(), this.inlineOptions)
     this.sourceMarkdown = md
     this.diagnosticsState = result.diagnostics
     if (result.valid) {
@@ -192,7 +208,7 @@ export class MindmapSession {
     const focusIds = this.focusStack.map((node) => node.id)
     const collapsed = new Map<string, boolean>()
     this.doc.traverse((n) => collapsed.set(n.id, n.collapsed))
-    this.doc = restoreDoc(snap)
+    this.doc = restoreDoc(snap, this.inlineOptions)
     this.doc.traverse((n) => {
       const c = collapsed.get(n.id)
       if (c !== undefined) n.collapsed = c
@@ -461,7 +477,7 @@ export class MindmapSession {
     alt = '截图'
   ): PreparedDocumentChange | null {
     const baseSnapshot = snapshotDoc(this.doc)
-    const preparedDoc = restoreDoc(baseSnapshot)
+    const preparedDoc = restoreDoc(baseSnapshot, this.inlineOptions)
     const anchor = preparedDoc.find(anchorId)
     if (!anchor) return null
 
@@ -489,7 +505,7 @@ export class MindmapSession {
           throw new Error('文档已变化，无法提交过期的图片插入事务')
         committed = true
         this.history.record(baseSnapshot)
-        this.doc = restoreDoc(preparedSnapshot)
+        this.doc = restoreDoc(preparedSnapshot, this.inlineOptions)
         this.focusStack = this.focusStack
           .map((node) => this.doc.find(node.id))
           .filter((node): node is MindmapNode => node !== null)
@@ -512,7 +528,7 @@ export class MindmapSession {
     this.mutate(() => {
       const oldParent = node.parent!
       const index = oldParent.children.indexOf(node)
-      created = this.doc.addNode(oldParent, parseInline(''), index)
+      created = this.doc.addNode(oldParent, parseInline('', this.inlineOptions), index)
       this.doc.move(node, created, 0)
     })
     return created
@@ -525,7 +541,7 @@ export class MindmapSession {
     let created: MindmapNode | null = null
     this.mutate(() => {
       const i = node.parent!.children.indexOf(node)
-      created = this.doc.addNode(node.parent!, parseInline(''), i)
+      created = this.doc.addNode(node.parent!, parseInline('', this.inlineOptions), i)
     })
     return created
   }

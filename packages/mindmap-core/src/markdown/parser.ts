@@ -9,6 +9,7 @@
 import { MindmapDocument } from '../model/document'
 import type { MindmapNode } from '../model/document'
 import { parseInline } from '../model/inline'
+import type { InlineParseOptions } from '../model/inline'
 
 const H1_RE = /^#(?!#)\s+(\S.*)$/
 const LIST_RE = /^(\s*)[-*+]\s+(.*)$/
@@ -49,7 +50,15 @@ function firstContentColumn(line: string): number {
   return index < 0 ? 1 : index + 1
 }
 
-export function parseMarkdown(md: string, fileName = '未命名'): ParseResult {
+/**
+ * `options.definitions`：围栏外的链接引用定义，节点里的 `[文字][id]` / `[文字][]` / `[文字]`
+ * 据此显示为链接；raw 仍保持用户原文，序列化不会把地址内联。
+ */
+export function parseMarkdown(
+  md: string,
+  fileName = '未命名',
+  options: InlineParseOptions = {}
+): ParseResult {
   const lines = md.split(/\r?\n/)
   const diagnostics: MarkdownDiagnostic[] = []
   const h1Indices: number[] = []
@@ -104,7 +113,7 @@ export function parseMarkdown(md: string, fileName = '未命名'): ParseResult {
   }
 
   const titleMatch = h1Index >= 0 ? H1_RE.exec(lines[h1Index]) : null
-  const doc = new MindmapDocument(titleMatch?.[1].trim() || fileName)
+  const doc = new MindmapDocument(titleMatch?.[1].trim() || fileName, options)
 
   if (h1Index >= 0) {
     // stack[d] = 深度 d 的缩进列；depthNode[d] = 深度 d 最近一个节点
@@ -144,7 +153,7 @@ export function parseMarkdown(md: string, fileName = '未命名'): ParseResult {
         checked = cm[1].toLowerCase() === 'x'
         contentRaw = (cm[2] ?? '').trim()
       }
-      const content = parseInline(contentRaw)
+      const content = parseInline(contentRaw, options)
       content.checked = checked
 
       const parent = depth === 0 ? doc.root : (depthNode[depth - 1] ?? doc.root)

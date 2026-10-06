@@ -1,4 +1,4 @@
-import { createApp, h, reactive, type App } from 'vue'
+import { createApp, h, markRaw, reactive, type App } from 'vue'
 import {
   BilibiliVideo,
   Mermaid,
@@ -199,6 +199,8 @@ export interface MindmapPreviewProps {
   onExpandLevelChange?: (level: number) => void
   resolveImageSrc?: (src: string) => string
   writeAsset?: (blob: Blob) => Promise<{ relativePath: string; alt?: string }>
+  /** 笔记里的链接引用定义（围栏外的 `[id]: url`），导图据此解析 `[文字][id]`。 */
+  linkDefinitions?: ReadonlyMap<string, string>
 }
 
 export function mountMindmapPreview(
@@ -219,7 +221,9 @@ export function mountMindmapPreview(
     onMarkdownChange: props.onMarkdownChange,
     onExpandLevelChange: props.onExpandLevelChange,
     resolveImageSrc: props.resolveImageSrc,
-    writeAsset: props.writeAsset
+    writeAsset: props.writeAsset,
+    // Map 不需要深层响应式，按引用整体替换
+    linkDefinitions: markRaw(props.linkDefinitions ?? new Map<string, string>())
   })
 
   let app: App | null = createApp({
@@ -233,6 +237,7 @@ export function mountMindmapPreview(
           expandLevelControl: state.expandLevelControl,
           resolveImageSrc: state.resolveImageSrc,
           writeAsset: state.writeAsset,
+          linkDefinitions: state.linkDefinitions,
           onChange: (markdown: string) => state.onMarkdownChange?.(markdown),
           onExpandLevelChange: (level: number) => state.onExpandLevelChange?.(level)
         })
@@ -251,6 +256,7 @@ export function mountMindmapPreview(
       if (next.onExpandLevelChange) state.onExpandLevelChange = next.onExpandLevelChange
       if (next.resolveImageSrc) state.resolveImageSrc = next.resolveImageSrc
       if (next.writeAsset) state.writeAsset = next.writeAsset
+      state.linkDefinitions = markRaw(next.linkDefinitions ?? new Map<string, string>())
     },
     unmount: () => {
       app?.unmount()

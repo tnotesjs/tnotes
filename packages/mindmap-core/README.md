@@ -16,3 +16,5 @@ if (result.ok) {
 ```
 
 只读画布：`CanvasViewer`（导航 / 折叠 / 平移缩放，不改文档）。
+
+链接引用定义：围栏外的 `[1]: url` 由宿主传入 `definitions`（`MindmapSession({ definitions })` / `parseMarkdown(md, name, { definitions })`），节点里的 `[文字][1]` / `[文字][]` / `[文字]` 显示为链接，编辑后仍写回引用写法。行内代码里不当链接。

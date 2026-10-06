@@ -1,12 +1,12 @@
 import { cloneSubtree, parseMarkdown } from '@tnotesjs/mindmap-core'
-import type { MindmapNode, MindmapSession } from '@tnotesjs/mindmap-core'
+import type { InlineParseOptions, MindmapNode, MindmapSession } from '@tnotesjs/mindmap-core'
 
 const LIST_LINE_RE = /^\s*[-*+]\s+/
 
 /** In-app fallback when Electron denies async Clipboard API (common in Desk). */
 let mindmapClipboardBuffer = ''
 
-function clipboardNodes(text: string): MindmapNode[] {
+function clipboardNodes(text: string, options?: InlineParseOptions): MindmapNode[] {
   const fragment = text
     .split(/\r?\n/)
     .filter((line) => line.trim() !== '')
@@ -17,7 +17,7 @@ function clipboardNodes(text: string): MindmapNode[] {
     })
     .join('\n')
   if (!fragment) return []
-  const parsed = parseMarkdown(`# _\n\n${fragment}\n`)
+  const parsed = parseMarkdown(`# _\n\n${fragment}\n`, '_', options)
   if (!parsed.valid) return []
   return parsed.doc.root.children.map((node) => cloneSubtree(node))
 }
@@ -74,7 +74,7 @@ export function pasteCanvasOutline(
   anchorId: string,
   text: string
 ): string[] {
-  const nodes = clipboardNodes(text)
+  const nodes = clipboardNodes(text, session.inlineOptions)
   const anchor = session.document.find(anchorId)
   if (!anchor || nodes.length === 0) return []
   const insertedIds: string[] = []

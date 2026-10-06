@@ -1259,7 +1259,7 @@ function onEditorPasteMultiline(node: MindmapNode, text: string) {
       return `${m[1]}- ${m[2]}`
     })
     .join('\n')
-  const { doc: tmp } = parseMarkdown(`# _\n\n${fragment}\n`)
+  const { doc: tmp } = parseMarkdown(`# _\n\n${fragment}\n`, '_', session.inlineOptions)
   const nodes = tmp.root.children.map((c) => cloneSubtree(c))
   if (nodes.length === 0) return
 
@@ -1506,7 +1506,19 @@ function onImageResizeUp() {
 
 // ---------- 键盘导航（焦点在容器、非编辑态时） ----------
 
+function isNativeTextEntry(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target.isContentEditable
+  )
+}
+
 function onKeydown(e: KeyboardEvent) {
+  // 容器内的独立输入框（如 LinkPopover 的链接地址）冒泡上来的按键交给其原生行为，
+  // 否则 ←/→ 会被当成折叠/展开、Backspace/Delete 会删节点。
+  if (e.target !== e.currentTarget && isNativeTextEntry(e.target)) return
   const session = props.session
   const sel = session.selectedNode
   const mod = e.metaKey || e.ctrlKey

@@ -29,8 +29,11 @@ export {
 export type { MindmapNode } from './model/document'
 export {
   clearInlineFormats,
+  createLinkDefinitions,
   inlineFormatActive,
   inlineAttributesAt,
+  normalizeLinkLabel,
+  parseInline,
   parseInlineSegments,
   replaceInlineDisplayText,
   replaceInlineRange,
@@ -45,8 +48,11 @@ export type {
   InlineAttributes,
   InlineFormat,
   InlineLink,
+  InlineLinkReference,
   InlineMarks,
+  InlineParseOptions,
   InlineSegment,
+  LinkDefinitions,
   NodeContent
 } from './model/inline'
 export { parseMarkdown } from './markdown/parser'

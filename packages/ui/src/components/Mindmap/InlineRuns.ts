@@ -1,17 +1,20 @@
 import { parseInlineSegments } from '@tnotesjs/mindmap-core'
 import { defineComponent, h } from 'vue'
 
+import { useMindmapInlineOptions } from './inlineOptions'
+
 export default defineComponent({
   name: 'MindmapInlineRuns',
   props: {
     raw: { type: String, default: '' }
   },
   setup(props) {
+    const inlineOptions = useMindmapInlineOptions()
     return () =>
       h(
         'span',
         { class: 'mindmap-inline-runs' },
-        parseInlineSegments(props.raw).map((segment) => {
+        parseInlineSegments(props.raw, inlineOptions()).map((segment) => {
           const classes = Object.entries(segment.marks)
             .filter(([, enabled]) => enabled)
             .map(([name]) => `is-${name}`)

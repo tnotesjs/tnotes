@@ -24,26 +24,6 @@ function destination(raw: string): string {
   return trimmed
 }
 
-/**
- * 把 `[文字][1]` / `[文字][]` 展开成 `[文字](url)`。
- * 导图只认圆括号链接；定义行在围栏外面，展开后才能画成链接。
- * 地址里有空白或括号时导图解析不了，保持原文。
- */
-export function expandReferenceLinks(
-  markdown: string,
-  definitions: ReadonlyMap<string, string>
-): string {
-  if (definitions.size === 0) return markdown
-  return markdown.replace(
-    /(^|[^!\\])\[([^\]]+)\]\[([^\]]*)\]/g,
-    (match, prefix: string, label: string, id: string) => {
-      const url = definitions.get(normalizeLinkLabel(id || label))
-      if (!url || /[\s()]/.test(url)) return match
-      return `${prefix}[${label}](${url})`
-    }
-  )
-}
-
 /** 全文的链接定义。同名标签以第一次出现的为准。 */
 export function linkDefinitions(state: EditorState): Map<string, string> {
   const map = new Map<string, string>()

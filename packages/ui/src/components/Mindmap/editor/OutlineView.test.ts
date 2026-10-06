@@ -717,6 +717,27 @@ describe('大纲富文本、链接与浮动工具栏', () => {
     open.mockRestore()
   })
 
+  it('链接地址输入框内的 ←/→/Backspace 保持原生行为，不被大纲导航拦截', async () => {
+    const { session, host } = mountOutline('# T\n\n- [桥水官网](https://old.example)\n  - child\n')
+    const node = session.document.root.children[0]
+    session.select(node.id)
+    ;(host.querySelector('.inline-run.link') as HTMLElement).dispatchEvent(new Event('mouseenter'))
+    await settle()
+    const popover = document.body.querySelector('.link-popover') as HTMLElement
+    ;(popover.querySelector('[aria-label="编辑链接地址"]') as HTMLButtonElement).click()
+    await settle()
+    const urlInput = popover.querySelector('.link-input') as HTMLInputElement
+    for (const key of ['ArrowLeft', 'ArrowRight', 'Backspace', 'Delete']) {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      urlInput.dispatchEvent(event)
+      expect(event.defaultPrevented).toBe(false)
+    }
+    await settle()
+    expect(node.collapsed).toBe(false)
+    expect(session.document.root.children[0]).toBe(node)
+    expect(session.selectedNode?.id).toBe(node.id)
+  })
+
   it('直接编辑链接 label 保留 href，清空最后一个字时移除链接', async () => {
     const { session, host } = mountOutline('# T\n\n- [label](https://old.example)\n')
     const node = session.document.root.children[0]

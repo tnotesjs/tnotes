@@ -31,7 +31,6 @@ import { mindmapPreviewMarkdown, rebuildMindmapFence } from '../editor/markdown/
 import { clampMindmapHeight, deskWordListStorageScope, parseFootprintsSource } from '@tnotesjs/ui'
 import { installMarkdownMath } from '../agent/agentMarkdown'
 import { livePreviewHost, type LivePreviewHost } from './host'
-import { expandReferenceLinks } from './referenceLinks'
 import { revealAt } from './widgets'
 
 export type CardKind = 'container' | 'mermaid' | 'mindmap' | 'component' | 'html' | 'table'
@@ -402,7 +401,9 @@ function renderMindmapCard(
   const propsFor = (fence: string, height?: number): MindmapPreviewProps => {
     const preview = mindmapPreviewMarkdown(fence)
     return {
-      source: expandReferenceLinks(preview.markdown, definitions),
+      // 围栏原文直接交给导图；`[文字][id]` 由导图按笔记里的定义解析，写回时保留引用写法
+      source: preview.markdown,
+      linkDefinitions: definitions,
       initialExpandLevel: preview.initialExpandLevel,
       height: height ?? preview.height,
       editable: !readOnly,
