@@ -339,7 +339,6 @@ function askAgentForPullConflict(): void {
   void agentStore.preparePrompt(prompt)
 }
 
-
 function toggleTerminalPanel(): void {
   terminalStore.toggle()
   if (terminalStore.open) void terminalPanel.value?.createOrFocus()

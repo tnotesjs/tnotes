@@ -33,11 +33,9 @@
       <div ref="scrollRef" class="tn-heatmap-scroll" @mouseleave="hideTip">
         <div class="tn-heatmap-graph">
           <div class="tn-heatmap-months" :style="{ width: gridWidth }">
-            <span
-              v-for="m in monthLabels"
-              :key="m.month"
-              :style="{ left: colOffset(m.col) }"
-            >{{ m.text }}</span>
+            <span v-for="m in monthLabels" :key="m.month" :style="{ left: colOffset(m.col) }">{{
+              m.text
+            }}</span>
           </div>
           <div class="tn-heatmap-body">
             <div class="tn-heatmap-weekdays" aria-hidden="true">
@@ -65,7 +63,14 @@
       <div class="tn-heatmap-footer">
         <div class="tn-heatmap-detail">
           <span class="tn-heatmap-year-done">
-            {{ activeYear }} 年累计完成 <strong>{{ yearStats.total }}</strong> 篇<template v-if="yearStats.net"> · 本年 <span :class="deltaClass(yearStats.net)">{{ yearStats.net > 0 ? '+' : '' }}{{ yearStats.net }}</span></template>
+            {{ activeYear }} 年累计完成 <strong>{{ yearStats.total }}</strong> 篇<template
+              v-if="yearStats.net"
+            >
+              · 本年
+              <span :class="deltaClass(yearStats.net)"
+                >{{ yearStats.net > 0 ? '+' : '' }}{{ yearStats.net }}</span
+              ></template
+            >
           </span>
         </div>
         <div class="tn-heatmap-legend">
@@ -145,7 +150,7 @@ watch(
       activeYear.value = list[list.length - 1]
     }
   },
-  { immediate: true },
+  { immediate: true }
 )
 
 function pad2(n: number): string {
@@ -179,7 +184,7 @@ function flatten(byYear: ByYear): Cell[] {
           recorded: true,
           week: 0,
           weekday: mondayIndex(dt),
-          level: 0,
+          level: 0
         })
       }
     }
@@ -250,7 +255,7 @@ const yearCells = computed<Cell[]>(() => {
       recorded: Boolean(hit),
       week,
       weekday,
-      level: !inYear ? LEVEL_OUT : hit ? levelFor(hit.commits, maxCommits) : 0,
+      level: !inYear ? LEVEL_OUT : hit ? levelFor(hit.commits, maxCommits) : 0
     })
     if (weekday === 6) week += 1
     cursor.setDate(cursor.getDate() + 1)
@@ -268,7 +273,7 @@ function colOffset(col: number): string {
 }
 
 const gridWidth = computed(
-  () => `calc(${weekCount.value} * (var(--tn-hm-cell) + var(--tn-hm-gap)) - var(--tn-hm-gap))`,
+  () => `calc(${weekCount.value} * (var(--tn-hm-cell) + var(--tn-hm-gap)) - var(--tn-hm-gap))`
 )
 
 /**
@@ -330,7 +335,7 @@ function showTip(cell: Cell, ev: MouseEvent): void {
   tip.value = {
     cell,
     x: r.left - base.left + r.width / 2,
-    y: r.top - base.top - 6,
+    y: r.top - base.top - 6
   }
 }
 
@@ -354,7 +359,7 @@ watch(
       (parseFloat(cs.getPropertyValue('--tn-hm-gap')) || 3)
     el.scrollLeft = Math.max(0, (lastWeek + 4) * pitch - el.clientWidth + 32)
   },
-  { flush: 'post', immediate: true },
+  { flush: 'post', immediate: true }
 )
 </script>
 
@@ -539,14 +544,28 @@ watch(
 .tn-heatmap-cell.out {
   visibility: hidden;
 }
-.l0 { background: var(--tn-hm-l0); }
-.l1 { background: var(--tn-hm-l1); }
-.l2 { background: var(--tn-hm-l2); }
-.l3 { background: var(--tn-hm-l3); }
-.l4 { background: var(--tn-hm-l4); }
+.l0 {
+  background: var(--tn-hm-l0);
+}
+.l1 {
+  background: var(--tn-hm-l1);
+}
+.l2 {
+  background: var(--tn-hm-l2);
+}
+.l3 {
+  background: var(--tn-hm-l3);
+}
+.l4 {
+  background: var(--tn-hm-l4);
+}
 /* 详情中的完成数：正 → 绿，负（回退）→ 粉 */
-.tn-hm-pos { color: var(--tn-hm-l3); }
-.tn-hm-neg { color: var(--tn-hm-n3); }
+.tn-hm-pos {
+  color: var(--tn-hm-l3);
+}
+.tn-hm-neg {
+  color: var(--tn-hm-n3);
+}
 
 /* ---- 底栏：左侧当年完成汇总（静态），右侧图例（少 → 多） ---- */
 .tn-heatmap-footer {
@@ -600,8 +619,12 @@ watch(
   opacity: 0.9;
 }
 /* tooltip 深底上用更亮的粉 / 绿 */
-.tn-heatmap-tooltip .tn-hm-neg { color: #ff9aac; }
-.tn-heatmap-tooltip .tn-hm-pos { color: #7ee2a0; }
+.tn-heatmap-tooltip .tn-hm-neg {
+  color: #ff9aac;
+}
+.tn-heatmap-tooltip .tn-hm-pos {
+  color: #7ee2a0;
+}
 .tn-heatmap-tooltip::after {
   content: '';
   position: absolute;

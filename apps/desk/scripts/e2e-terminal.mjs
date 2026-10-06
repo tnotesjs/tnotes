@@ -189,7 +189,7 @@ try {
   await page.getByText('term-kb', { exact: true }).first().click()
 
   // 打开底部面板（命令任务与交互式终端共用一个面板）
-  await page.locator('.terminal-toggle').click()
+  await page.getByRole('button', { name: '切换终端面板' }).click()
   await waitFor(async () => (await page.locator('.terminal-panel').count()) > 0, 8000)
   record('S0 底部面板可打开', (await page.locator('.terminal-panel').count()) > 0)
 

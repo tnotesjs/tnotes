@@ -272,10 +272,7 @@ export async function pullKnowledgeBase(
 export const PULL_CONFLICT_USER_MESSAGE = PULL_CONFLICT_MESSAGE
 
 /** Build the Agent preset prompt for a pull conflict (user must still click send). */
-export function buildPullConflictAgentPrompt(input: {
-  name: string
-  rootPath: string
-}): string {
+export function buildPullConflictAgentPrompt(input: { name: string; rootPath: string }): string {
   return (
     `本地知识库 ${input.name}:${input.rootPath} 在 git pull 时发生冲突或无法快进合并。` +
     `请分析冲突原因，必要时协助解决冲突并完成拉取（可先查看 git status / 冲突文件，再提出或直接修复方案）。`

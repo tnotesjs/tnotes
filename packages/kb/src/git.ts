@@ -90,7 +90,12 @@ export async function listCommitsAfter(
   rootPath: string,
   sinceCommit: string
 ): Promise<GitCommitMeta[]> {
-  const result = await git(rootPath, ['log', '--reverse', '--format=%H %aI', `${sinceCommit}..HEAD`])
+  const result = await git(rootPath, [
+    'log',
+    '--reverse',
+    '--format=%H %aI',
+    `${sinceCommit}..HEAD`
+  ])
   if (!result.ok) return []
   return result.stdout
     .split('\n')

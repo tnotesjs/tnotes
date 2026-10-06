@@ -11,11 +11,7 @@
 import path from 'node:path'
 
 import { createKnowledgeBase } from './create'
-import {
-  DEFAULT_PUSH_COMMIT_MESSAGE,
-  pullKnowledgeBase,
-  pushKnowledgeBase
-} from './sync'
+import { DEFAULT_PUSH_COMMIT_MESSAGE, pullKnowledgeBase, pushKnowledgeBase } from './sync'
 import { createWorkspace } from './workspace'
 
 function printHelp(): void {

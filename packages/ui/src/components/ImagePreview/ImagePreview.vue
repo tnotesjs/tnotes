@@ -48,7 +48,7 @@ function reset(): void {
 }
 
 /** 当前图所在的预览根（笔记 / 编辑器），而不是整页 document。 */
-function previewRoot(image: HTMLImageElement): ParentNode {
+function previewRoot(image: HTMLImageElement): Document | Element {
   return (props.scope ? image.closest(props.scope) : null) ?? image.ownerDocument ?? document
 }
 

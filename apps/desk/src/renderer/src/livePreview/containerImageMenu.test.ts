@@ -145,19 +145,12 @@ describe('details fold icon + session open cache', () => {
     expect(detailsSessionKey(note, before)).toBe(detailsSessionKey(note, after))
 
     let open = false
-    const first = renderContainerFromSource(
-      before,
-      (s) => s,
-      undefined,
-      undefined,
-      editor,
-      {
-        open: false,
-        onOpenChange: (next) => {
-          open = next
-        }
+    const first = renderContainerFromSource(before, (s) => s, undefined, undefined, editor, {
+      open: false,
+      onOpenChange: (next) => {
+        open = next
       }
-    ) as HTMLDetailsElement
+    }) as HTMLDetailsElement
     first.querySelector('summary')!.click()
     expect(first.open).toBe(true)
     expect(open).toBe(true)
@@ -165,14 +158,9 @@ describe('details fold icon + session open cache', () => {
     // 模拟 CardWidget 按 session key 重建
     const session = new Map<string, boolean>()
     session.set(detailsSessionKey(note, before), open)
-    const remount = renderContainerFromSource(
-      after,
-      (s) => s,
-      undefined,
-      undefined,
-      editor,
-      { open: session.get(detailsSessionKey(note, after)) ?? false }
-    ) as HTMLDetailsElement
+    const remount = renderContainerFromSource(after, (s) => s, undefined, undefined, editor, {
+      open: session.get(detailsSessionKey(note, after)) ?? false
+    }) as HTMLDetailsElement
     expect(remount.open).toBe(true)
     expect(remount.querySelector('.cm-lp-container-image')).not.toBeNull()
   })

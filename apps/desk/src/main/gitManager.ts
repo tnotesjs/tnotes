@@ -1030,7 +1030,11 @@ export class GitManager {
             error: result.message
           })
           // Refresh after a failed pull attempt that may have fetched
-          if (result.message && !before.conflict && !(before.behind > 0 && before.changes.length > 0)) {
+          if (
+            result.message &&
+            !before.conflict &&
+            !(before.behind > 0 && before.changes.length > 0)
+          ) {
             const refreshed = await this.refreshRepository(repository, result.message)
             return { state: refreshed, message: result.message, conflict: true }
           }
@@ -1285,10 +1289,7 @@ export class GitManager {
         return true
       },
       runGit: async (args, timeoutMs) => {
-        const timeout =
-          args[0] === 'commit' || args[0] === 'push'
-            ? 120_000
-            : (timeoutMs ?? 30_000)
+        const timeout = args[0] === 'commit' || args[0] === 'push' ? 120_000 : (timeoutMs ?? 30_000)
         const command = await this.execute(repository.rootPath, args, timeout, extras)
         return {
           code: command.code,

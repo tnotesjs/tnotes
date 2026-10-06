@@ -116,7 +116,9 @@ describe('pullKnowledgeBase', () => {
       const result = await pullKnowledgeBase(root)
       expect(result.ok).toBe(true)
       expect(result.conflict).toBe(false)
-      await expect(fs.readFile(path.join(root, 'extra.txt'), 'utf8')).resolves.toContain('from remote')
+      await expect(fs.readFile(path.join(root, 'extra.txt'), 'utf8')).resolves.toContain(
+        'from remote'
+      )
     } finally {
       await fs.rm(other, { recursive: true, force: true })
     }

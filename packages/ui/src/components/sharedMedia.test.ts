@@ -98,7 +98,7 @@ describe('shared code and media components', () => {
     expect(document.documentElement.style.overflow).toBe('')
   })
 
-  it('only collects images inside the clicked image\'s editor scope (no cross-tab gallery)', async () => {
+  it("only collects images inside the clicked image's editor scope (no cross-tab gallery)", async () => {
     const tabA = document.createElement('div')
     tabA.className = 'cm-editor'
     tabA.innerHTML =

@@ -279,7 +279,8 @@
   color: var(--tn-c-text-2);
   line-height: 0;
 }
-:is(.tn-prose, .vp-doc, .cm-lp-card) :where(details.tn-custom-block > summary > .tn-details-fold svg) {
+:is(.tn-prose, .vp-doc, .cm-lp-card)
+  :where(details.tn-custom-block > summary > .tn-details-fold svg) {
   width: 12px;
   height: 12px;
   transform: none;

@@ -171,7 +171,11 @@ export async function readStatsFile(
   try {
     const raw = await fs.readFile(path.join(rootPath, STATS_FILE), 'utf8')
     const parsed = JSON.parse(raw) as { version?: number; sourceCommit?: unknown; byYear?: unknown }
-    if (typeof parsed?.version !== 'number' || typeof parsed.byYear !== 'object' || !parsed.byYear) {
+    if (
+      typeof parsed?.version !== 'number' ||
+      typeof parsed.byYear !== 'object' ||
+      !parsed.byYear
+    ) {
       return null
     }
     return {
@@ -185,10 +189,7 @@ export async function readStatsFile(
 }
 
 export async function writeStatsFile(rootPath: string, stats: KbStatsFile): Promise<void> {
-  await writeFileAtomic(
-    path.join(rootPath, STATS_FILE),
-    `${JSON.stringify(stats, null, 2)}\n`
-  )
+  await writeFileAtomic(path.join(rootPath, STATS_FILE), `${JSON.stringify(stats, null, 2)}\n`)
 }
 
 export interface DayRow {
@@ -451,8 +452,7 @@ export async function updateCompletedNotesStats(
   const nextConfig: KbConfig = { ...config, stats: nextStats }
   const changedFiles: MutationResult<KbStats>['changedFiles'] = []
 
-  const configNeedsWrite =
-    JSON.stringify(config.stats ?? null) !== JSON.stringify(nextStats)
+  const configNeedsWrite = JSON.stringify(config.stats ?? null) !== JSON.stringify(nextStats)
   if (configNeedsWrite) {
     await writeFileAtomic(
       path.join(rootPath, CONFIG_FILE),
