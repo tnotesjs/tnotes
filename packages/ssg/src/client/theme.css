@@ -75,7 +75,8 @@ body {
 .tn-site-actions .tn-site-repo-link:hover {
   color: var(--tn-c-brand);
 }
-.tn-site-repo-link svg {
+.tn-site-repo-link svg,
+.tn-site-search-button svg {
   width: 18px;
   height: 18px;
 }

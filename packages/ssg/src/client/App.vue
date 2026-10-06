@@ -18,7 +18,15 @@
         >
           <SiteIcon name="github" />
         </a>
-        <button type="button" aria-label="搜索" @click="searchOpen = true">⌕</button>
+        <button
+          type="button"
+          class="tn-site-search-button"
+          aria-label="搜索"
+          title="搜索"
+          @click="searchOpen = true"
+        >
+          <SiteIcon name="search" />
+        </button>
         <button type="button" aria-label="切换主题" @click="toggleTheme">◐</button>
         <button
           type="button"
