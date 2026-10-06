@@ -7,7 +7,10 @@ const mocks = vi.hoisted(() => {
     setZoomFactor: vi.fn(),
     isDestroyed: () => false,
     loadURL: vi.fn(async () => undefined),
-    selectAll: vi.fn()
+    selectAll: vi.fn(),
+    getURL: vi.fn(() => ''),
+    isLoading: vi.fn(() => false),
+    navigationHistory: { canGoBack: () => false, canGoForward: () => false }
   }
   const view = {
     webContents: contents,
@@ -32,7 +35,12 @@ vi.mock('electron', () => ({
   shell: { openExternal: mocks.openExternal }
 }))
 
-import { externalDownloadUrl, scaledWebBounds, WebContentsManager } from './webContentsManager'
+import {
+  externalDownloadUrl,
+  isAbortedLoadError,
+  scaledWebBounds,
+  WebContentsManager
+} from './webContentsManager'
 
 describe('native embedded web view app zoom', () => {
   it.each([0.5, 1, 1.1, 2])('converts CSS bounds to native coordinates at %sx', (factor) => {
@@ -205,5 +213,97 @@ describe('will-download 白名单', () => {
     handler(event, { getURL: () => 'https://example.com/a.zip' })
     expect(event.preventDefault).toHaveBeenCalledOnce()
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith('https://example.com/a.zip')
+  })
+})
+
+describe('ERR_ABORTED (-3) 不作为粘滞错误', () => {
+  // 模拟 Electron loadURL 的 reject：Error 上带 errno / code
+  const loadError = (message: string, errno: number, code: string): Error =>
+    Object.assign(new Error(message), { errno, code })
+  const aborted = (url: string): Error =>
+    loadError(`ERR_ABORTED (-3) loading '${url}'`, -3, 'ERR_ABORTED')
+
+  const setup = () => {
+    mocks.contents.on.mockClear()
+    mocks.contents.loadURL.mockReset()
+    mocks.contents.loadURL.mockResolvedValue(undefined)
+    mocks.contents.getURL.mockReturnValue('')
+    const manager = new WebContentsManager()
+    manager.attachWindow({
+      on: vi.fn(),
+      isDestroyed: () => false,
+      webContents: { setZoomFactor: vi.fn() },
+      contentView: { addChildView: vi.fn() }
+    } as unknown as Electron.BrowserWindow)
+    const states: Array<{ url: string; error?: string; loading: boolean }> = []
+    manager.onStateChanged((state) => states.push(state))
+    const handler = (name: string) =>
+      mocks.contents.on.mock.calls.filter(([event]) => event === name).at(-1)?.[1] as (
+        ...args: unknown[]
+      ) => void
+    return { manager, states, handler }
+  }
+
+  it('识别 Electron 的中断错误', () => {
+    expect(isAbortedLoadError(aborted('http://localhost:9193/notes/1'))).toBe(true)
+    expect(isAbortedLoadError(new Error("ERR_ABORTED (-3) loading 'x'"))).toBe(true)
+    expect(
+      isAbortedLoadError(
+        loadError("ERR_CONNECTION_REFUSED (-102) loading 'x'", -102, 'ERR_CONNECTION_REFUSED')
+      )
+    ).toBe(false)
+    expect(isAbortedLoadError('ERR_ABORTED')).toBe(false)
+    expect(isAbortedLoadError(null)).toBe(false)
+  })
+
+  it('create / navigate 的 loadURL 被中断时不写 error', async () => {
+    const { manager } = setup()
+    mocks.contents.loadURL.mockRejectedValueOnce(aborted('http://localhost:9193/notes/1'))
+    const created = await manager.create('web-abort', 'http://localhost:9193/notes/1')
+    expect(created.error).toBeUndefined()
+    mocks.contents.loadURL.mockRejectedValueOnce(aborted('http://localhost:9193/notes/2'))
+    const navigated = await manager.navigate('web-abort', 'http://localhost:9193/notes/2')
+    expect(navigated.error).toBeUndefined()
+  })
+
+  it('真实加载失败仍然显示', async () => {
+    const { manager } = setup()
+    mocks.contents.loadURL.mockRejectedValueOnce(
+      loadError(
+        "ERR_CONNECTION_REFUSED (-102) loading 'http://localhost:9193/'",
+        -102,
+        'ERR_CONNECTION_REFUSED'
+      )
+    )
+    const state = await manager.create('web-down', 'http://localhost:9193/')
+    expect(state.error).toContain('ERR_CONNECTION_REFUSED')
+    expect(state.loading).toBe(false)
+  })
+
+  it('did-fail-load 的真实失败在 did-stop-loading 后仍保留，成功 did-navigate 后清除', async () => {
+    const { manager, states, handler } = setup()
+    await manager.create('web-recover', 'http://localhost:9193/notes/1')
+    handler('did-fail-load')(
+      {},
+      -102,
+      'ERR_CONNECTION_REFUSED',
+      'http://localhost:9193/notes/1',
+      true
+    )
+    handler('did-stop-loading')()
+    expect(states.at(-1)?.error).toBe('ERR_CONNECTION_REFUSED')
+
+    // 页面内跳到另一个地址并成功提交：地址栏与错误条保持一致
+    mocks.contents.getURL.mockReturnValue('http://localhost:9193/notes/2')
+    handler('did-navigate')({}, 'http://localhost:9193/notes/2', 200, 'OK')
+    expect(states.at(-1)).toMatchObject({ url: 'http://localhost:9193/notes/2', error: undefined })
+  })
+
+  it('did-fail-load 忽略 -3', async () => {
+    const { manager, states, handler } = setup()
+    await manager.create('web-ignore', 'http://localhost:9193/notes/1')
+    const before = states.length
+    handler('did-fail-load')({}, -3, 'ERR_ABORTED', 'http://localhost:9193/notes/1', true)
+    expect(states.length).toBe(before)
   })
 })

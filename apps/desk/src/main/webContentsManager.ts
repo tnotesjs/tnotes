@@ -42,6 +42,18 @@ export function externalDownloadUrl(value: string | undefined | null): string | 
   }
 }
 
+/**
+ * Chromium 的 ERR_ABORTED（-3）：导航被新的导航、重定向或 stop() 取代。
+ * 它不是用户可见的加载失败，`did-fail-load` 已忽略；`loadURL` 的 reject
+ * 也必须同样忽略，否则旧的中断信息会粘在页面上（后续成功导航不会清掉）。
+ */
+export function isAbortedLoadError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const { errno, code, message } = error as { errno?: unknown; code?: unknown; message?: unknown }
+  if (errno === -3 || code === 'ERR_ABORTED') return true
+  return typeof message === 'string' && /\bERR_ABORTED\b/.test(message)
+}
+
 export function scaledWebBounds(bounds: WebBounds, zoomFactor: number): Electron.Rectangle {
   return {
     x: Math.max(0, Math.round(bounds.x * zoomFactor)),
@@ -155,9 +167,7 @@ export class WebContentsManager {
     try {
       await view.webContents.loadURL(url)
     } catch (error) {
-      handle.state.error = error instanceof Error ? error.message : String(error)
-      handle.state.loading = false
-      this.emitState(handle)
+      this.handleLoadUrlError(handle, error)
     }
     return { ...handle.state }
   }
@@ -203,9 +213,7 @@ export class WebContentsManager {
     try {
       await handle.view.webContents.loadURL(url)
     } catch (error) {
-      handle.state.error = error instanceof Error ? error.message : String(error)
-      handle.state.loading = false
-      this.emitState(handle)
+      this.handleLoadUrlError(handle, error)
     }
     return { ...handle.state }
   }
@@ -260,10 +268,21 @@ export class WebContentsManager {
     return handle
   }
 
+  /**
+   * `loadURL` reject 的统一处理：中断（-3）通常意味着已有更新的导航接手，
+   * 不写 error、也不改 loading（交给新导航的事件维护）；真实失败照常显示。
+   */
+  private handleLoadUrlError(handle: WebHandle, error: unknown): void {
+    if (isAbortedLoadError(error)) return
+    handle.state.error = error instanceof Error ? error.message : String(error)
+    handle.state.loading = false
+    this.emitState(handle)
+  }
+
   private bindWebContents(handle: WebHandle): void {
     const contents = handle.view.webContents
     const shortcutResolver = new TabShortcutResolver()
-    const refresh = (): void => {
+    const refresh = (options: { navigated?: boolean } = {}): void => {
       if (contents.isDestroyed()) return
       const navigation = contents.navigationHistory
       handle.state = {
@@ -271,10 +290,14 @@ export class WebContentsManager {
         url: contents.getURL() || handle.state.url,
         canGoBack: navigation.canGoBack(),
         canGoForward: navigation.canGoForward(),
-        loading: contents.isLoading()
+        loading: contents.isLoading(),
+        // 成功提交了新导航（Electron 对错误页不发 did-navigate），旧错误作废。
+        // did-start/stop-loading 不清：did-stop-loading 紧随 did-fail-load，清了会吞掉真实失败。
+        ...(options.navigated ? { error: undefined } : {})
       }
       this.emitState(handle)
     }
+    const refreshAfterNavigate = (): void => refresh({ navigated: true })
 
     contents.setWindowOpenHandler(({ url }) => {
       try {
@@ -299,11 +322,11 @@ export class WebContentsManager {
       handle.state.faviconUrl = favicons.find((url) => /^https?:/i.test(url))
       this.emitState(handle)
     })
-    contents.on('did-start-loading', refresh)
-    contents.on('did-stop-loading', refresh)
-    contents.on('did-navigate', refresh)
+    contents.on('did-start-loading', () => refresh())
+    contents.on('did-stop-loading', () => refresh())
+    contents.on('did-navigate', refreshAfterNavigate)
     contents.on('did-finish-load', () => contents.setZoomFactor(this.zoomFactor))
-    contents.on('did-navigate-in-page', refresh)
+    contents.on('did-navigate-in-page', refreshAfterNavigate)
     contents.on('did-fail-load', (_event, code, description, validatedUrl, isMainFrame) => {
       if (!isMainFrame || code === -3) return
       handle.state = {
