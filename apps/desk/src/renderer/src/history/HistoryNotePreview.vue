@@ -81,7 +81,7 @@ function mountMermaidBlock(element: HTMLElement, mount: HistoryMount): void {
   if (!mount.text) return
   mountInto(element, () =>
     createApp({
-      render: () => h(Mermaid, { source: mount.text, enableCopy: false, enableFullscreen: false })
+      render: () => h(Mermaid, { source: mount.text, securityLevel: 'strict', enableCopy: false, enableFullscreen: false })
     })
   )
 }

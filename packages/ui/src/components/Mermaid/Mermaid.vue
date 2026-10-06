@@ -172,7 +172,7 @@ const props = defineProps({
   },
   securityLevel: {
     type: String,
-    default: 'loose'
+    default: 'strict'
   },
   enableCopy: {
     type: Boolean,
