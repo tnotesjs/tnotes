@@ -85,4 +85,16 @@ describe('swiperSlides', () => {
     expect(wrapSlideIndex(2, 3, 1)).toBe(0)
     expect(wrapSlideIndex(1, 3, 1)).toBe(2)
   })
+
+  describe('swiper slide delete', () => {
+    it('removes the Nth slide line and one surrounding blank line', () => {
+      const fence = '::: swiper\n\n![a](./a.png)\n\n![b](./b.png) {w=200px}\n\n![c](./c.png)\n\n:::'
+      expect(updateSwiperSlideAttrs(fence, 1, { remove: true })).toBe(
+        '::: swiper\n\n![a](./a.png)\n\n![c](./c.png)\n\n:::'
+      )
+      expect(
+        updateSwiperSlideAttrs('::: swiper\n![a](./a.png)\n![b](./b.png)\n:::', 0, { remove: true })
+      ).toBe('::: swiper\n![b](./b.png)\n:::')
+    })
+  })
 })

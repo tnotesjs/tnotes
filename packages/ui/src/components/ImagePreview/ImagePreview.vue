@@ -1,9 +1,25 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
-const props = withDefaults(defineProps<{ selector?: string }>(), {
-  selector: '.tn-prose img, .vp-doc img'
-})
+const props = withDefaults(
+  defineProps<{
+    /** 点击哪些图直接打开预览（文档级 click 委托用）。 */
+    selector?: string
+    /** 打开后左右翻页的图集；只在 `scope` 命中的同一根节点里收集。缺省同 `selector`。 */
+    gallerySelector?: string
+    /**
+     * 图集的根：从被点的图往上找最近的匹配节点，只收它里面的图。
+     * Desk 多标签 / 分栏同时挂着好几个编辑器（`.cm-editor`），不能扫整页 document，
+     * 否则会把别的笔记的图串进来。找不到时退回 document（站点单页）。
+     */
+    scope?: string
+  }>(),
+  {
+    selector: '.tn-prose img, .vp-doc img',
+    gallerySelector: '',
+    scope: '[data-tn-preview-scope], .cm-editor, .vp-doc'
+  }
+)
 const visible = ref(false)
 const images = ref<string[]>([])
 const index = ref(0)
@@ -31,10 +47,17 @@ function reset(): void {
   y.value = 0
 }
 
+/** 当前图所在的预览根（笔记 / 编辑器），而不是整页 document。 */
+function previewRoot(image: HTMLImageElement): ParentNode {
+  return (props.scope ? image.closest(props.scope) : null) ?? image.ownerDocument ?? document
+}
+
 function open(image: HTMLImageElement): void {
-  const candidates = [...document.querySelectorAll<HTMLImageElement>(props.selector)].filter(
-    eligible
-  )
+  const candidates = [
+    ...previewRoot(image).querySelectorAll<HTMLImageElement>(
+      props.gallerySelector || props.selector
+    )
+  ].filter(eligible)
   images.value = candidates.map((item) => item.currentSrc || item.src).filter(Boolean)
   const selected = image.currentSrc || image.src
   const selectedIndex = images.value.indexOf(selected)

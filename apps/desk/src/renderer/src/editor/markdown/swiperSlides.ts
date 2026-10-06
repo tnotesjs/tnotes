@@ -30,6 +30,8 @@ export interface SwiperSlideChange {
   width?: string
   /** `null` removes a written `align=`. */
   align?: ImageAlign | null
+  /** 删掉这张幻灯片（整行；两侧都是空行时顺带去掉一个空行） */
+  remove?: true
 }
 
 const IMAGE_LINE =
@@ -91,7 +93,7 @@ export function parseSwiperSlides(body: string): SwiperSlideEntry[] {
   return slides
 }
 
-/** 只改第 `index` 张幻灯片的宽度或对齐，其它行（包括非图片文字）原样保留。 */
+/** 只改第 `index` 张幻灯片的宽度或对齐（或删掉它），其它行（包括非图片文字）原样保留。 */
 export function updateSwiperSlideAttrs(
   fence: string,
   index: number,
@@ -99,18 +101,28 @@ export function updateSwiperSlideAttrs(
 ): string {
   const newline = fence.includes('\r\n') ? '\r\n' : '\n'
   let seen = -1
+  let removedAt = -1
   const lines = fence
     .replace(/\r\n?/g, '\n')
     .split('\n')
-    .map((line) => {
+    .map((line, lineIndex) => {
       const parsed = parseImageLine(line)
       if (!parsed) return line
       seen += 1
       if (seen !== index) return line
+      if (next.remove) {
+        removedAt = lineIndex
+        return line
+      }
       const entry = applySlideChange(parsed.entry, next)
       const attrs = formatSwiperAttrs(entry)
       return `${parsed.head}${attrs ? ` ${attrs}` : ''}`
     })
+  if (removedAt >= 0) {
+    const blank = (line: string | undefined): boolean => line !== undefined && line.trim() === ''
+    const count = blank(lines[removedAt - 1]) && blank(lines[removedAt + 1]) ? 2 : 1
+    lines.splice(removedAt, count)
+  }
   return lines.join(newline)
 }
 

@@ -130,6 +130,34 @@ describe('Markdown compatibility helpers', () => {
     expect(html).toContain('a == b')
   })
 
+  it('applies {w=} inside a GFM table cell and hides the attr text', async () => {
+    const compiler = await createMarkdownCompiler(compilerConfig)
+    const { html } = compiler.compile(
+      ['| pic |', '| --- |', '| ![](../assets/pic.png) {w=366px} |', ''].join('\n'),
+      'n.md',
+      '/n',
+      'n'
+    )
+    expect(html).toContain('style="width:366px;max-width:100%;height:auto"')
+    expect(html).not.toContain('{w=366px}')
+    expect(html).toContain('<td>')
+  })
+
+  it('centers a table-cell image when align=center is set', async () => {
+    const compiler = await createMarkdownCompiler(compilerConfig)
+    const { html } = compiler.compile(
+      '| a |\n| --- |\n| ![](../assets/pic.png) {w=50% align=center} |\n',
+      'n.md',
+      '/n',
+      'n'
+    )
+    expect(html).toContain('width:50%')
+    expect(html).toContain('margin-left:auto')
+    expect(html).toContain('margin-right:auto')
+    expect(html).not.toContain('{w=50%')
+    expect(html).not.toContain('align=center')
+  })
+
   it('renders standalone image width, caption, and alignment', async () => {
     const compiler = await createMarkdownCompiler(compilerConfig)
     const { html } = compiler.compile(
@@ -177,7 +205,9 @@ describe('Markdown compatibility helpers', () => {
     expect(html).toContain('class="tn-custom-block warning"')
     expect(html).toContain('class="tn-custom-block danger"')
     expect(html).toContain('<details class="tn-custom-block details">')
-    expect(html).toContain('<summary>细节</summary>')
+    expect(html).toContain('tn-details-fold')
+    expect(html).toContain('<summary>')
+    expect(html).toContain('细节</summary>')
   })
 
   it('emits hydratable island hosts for mermaid, mindmap, and code', async () => {

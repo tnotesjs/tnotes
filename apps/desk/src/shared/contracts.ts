@@ -529,6 +529,12 @@ export type ContextMenuAction =
   | 'add-after'
   | 'request-delete'
   | 'add-to-agent'
+  | 'image-preview'
+  | 'image-align-left'
+  | 'image-align-center'
+  | 'image-align-right'
+  | 'image-reset-size'
+  | 'image-delete'
 export type ContextMenuRequest =
   | { kind: 'note'; pinned: boolean; tocPinned: boolean; completed: boolean }
   | { kind: 'group' }
@@ -541,6 +547,15 @@ export type ContextMenuRequest =
       othersClosable?: boolean
     }
   | { kind: 'code-group-tab' }
+  /** 可视化编辑里图片右上角「⋯」：预览、对齐、原始大小、删除。 */
+  | {
+      kind: 'image'
+      align: 'left' | 'center' | 'right'
+      /** 写了 `{w=…}` 才能「原始大小」 */
+      hasWidth: boolean
+      /** 只读时只留「预览」可用 */
+      editable: boolean
+    }
 
 export interface KnowledgeSidebarMenuRequest {
   hasWorkspace: boolean

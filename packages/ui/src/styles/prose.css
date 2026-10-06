@@ -268,7 +268,31 @@
   :where(details.tn-custom-block > summary::-webkit-details-marker) {
   display: none;
 }
-:is(.tn-prose, .vp-doc, .cm-lp-card) :where(details.tn-custom-block > summary::before) {
+/* 左侧折叠折线：与 Desk 标题折叠同一套 SVG（.tn-details-fold），展开旋转 90° */
+:is(.tn-prose, .vp-doc, .cm-lp-card) :where(details.tn-custom-block > summary > .tn-details-fold) {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  color: var(--tn-c-text-2);
+  line-height: 0;
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card) :where(details.tn-custom-block > summary > .tn-details-fold svg) {
+  width: 12px;
+  height: 12px;
+  transform: none;
+  transform-origin: 50% 50%;
+  transition: transform 120ms ease;
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card)
+  :where(details.tn-custom-block[open] > summary > .tn-details-fold svg) {
+  transform: rotate(90deg);
+}
+/* 旧版无 SVG 的 summary（缓存页等）仍用 CSS 折线，避免裸标题 */
+:is(.tn-prose, .vp-doc, .cm-lp-card)
+  :where(details.tn-custom-block > summary:not(:has(.tn-details-fold))::before) {
   content: '';
   flex: none;
   box-sizing: border-box;
@@ -282,7 +306,8 @@
   transform-origin: 50% 50%;
   transition: transform 120ms ease;
 }
-:is(.tn-prose, .vp-doc, .cm-lp-card) :where(details.tn-custom-block[open] > summary::before) {
+:is(.tn-prose, .vp-doc, .cm-lp-card)
+  :where(details.tn-custom-block[open] > summary:not(:has(.tn-details-fold))::before) {
   margin-top: -0.05em;
   transform: rotate(45deg);
 }

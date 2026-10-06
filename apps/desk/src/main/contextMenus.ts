@@ -38,6 +38,28 @@ export function contextMenuTemplate(
   if (request.kind === 'group') {
     return [item('rename', '重命名'), ...creationAndDeletion]
   }
+  if (request.kind === 'image') {
+    const editable = request.editable
+    const align = (
+      id: ContextMenuAction,
+      label: string,
+      value: typeof request.align
+    ): MenuItemConstructorOptions => ({
+      ...item(id, label),
+      type: 'checkbox',
+      checked: request.align === value,
+      enabled: editable
+    })
+    return [
+      item('image-preview', '预览'),
+      align('image-align-left', '左对齐', 'left'),
+      align('image-align-center', '居中对齐', 'center'),
+      align('image-align-right', '右对齐', 'right'),
+      { type: 'separator' },
+      { ...item('image-reset-size', '原始大小'), enabled: editable && request.hasWidth },
+      { ...item('image-delete', '删除'), enabled: editable }
+    ]
+  }
   if (request.kind === 'code-group-tab') {
     return [item('rename', '重命名'), item('request-delete', '删除代码块')]
   }

@@ -137,7 +137,7 @@ function configureContainers(md: MarkdownIt) {
           .trim()
         const title = escapeHtml(rawTitle || (name === 'details' ? '详情' : name.toUpperCase()))
         return name === 'details'
-          ? `<details class="tn-custom-block details"><summary>${title}</summary>\n`
+          ? `<details class="tn-custom-block details"><summary><span class="tn-details-fold" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="m4 2 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" /></svg></span>${title}</summary>\n`
           : `<div class="tn-custom-block ${name}"><p class="tn-custom-block-title">${title}</p>\n`
       }
     })
@@ -578,6 +578,10 @@ function configureImages(md: MarkdownIt, base: string, lazy: boolean) {
   const fallback = md.renderer.rules.image
   md.core.ruler.after('inline', 'tn-image-figure', (state) => {
     const tokens = state.tokens
+    // 先消化所有 inline 里紧跟图片的 `{w=…}`（表格单元格等没有 paragraph 包裹）
+    for (const token of tokens) {
+      if (token.type === 'inline') consumeInlineImageAttrs(token)
+    }
     for (let index = 0; index < tokens.length; index += 1) {
       if (tokens[index].type !== 'paragraph_open') continue
       const inline = tokens[index + 1]
@@ -607,10 +611,15 @@ function configureImages(md: MarkdownIt, base: string, lazy: boolean) {
     }
     if (lazy) token.attrSet('loading', 'lazy')
     const width = token.attrGet('data-tn-w')
+    const align = token.attrGet('data-tn-align')
     if (token.attrGet('data-tn-figure') === '1') {
       if (width) token.attrSet('style', 'width:100%;max-width:100%;height:auto')
-    } else if (width) {
-      token.attrSet('style', `width:${width};max-width:100%;height:auto`)
+    } else {
+      const styles: string[] = []
+      if (width) styles.push(`width:${width}`, 'max-width:100%', 'height:auto')
+      if (align === 'center') styles.push('display:block', 'margin-left:auto', 'margin-right:auto')
+      else if (align === 'right') styles.push('display:block', 'margin-left:auto')
+      if (styles.length) token.attrSet('style', styles.join(';'))
     }
     const html = fallback
       ? fallback(tokens, index, options, env, self)
@@ -623,13 +632,35 @@ function configureImages(md: MarkdownIt, base: string, lazy: boolean) {
   }
 }
 
+type InlineChild = {
+  type: string
+  content: string
+  hidden?: boolean
+  attrGet?: (name: string) => string | null
+  attrSet?: (name: string, value: string) => void
+}
+
+/** 消化紧跟图片的 `{w=… align=…}` 文本节点（表格单元格、列表、段落共用）。 */
+function consumeInlineImageAttrs(inline: { children?: InlineChild[] | null }): void {
+  const children = inline.children ?? []
+  for (let index = 0; index < children.length; index += 1) {
+    const image = children[index]
+    if (image.type !== 'image') continue
+    const next = children[index + 1]
+    if (!next || next.type !== 'text') continue
+    const raw = next.content
+    if (!raw.includes('{')) continue
+    const parsed = parseImageAttrs(raw)
+    if (parsed.rest !== '') continue
+    if (parsed.width) image.attrSet?.('data-tn-w', parsed.width)
+    if (/(?:^|[\s,{])(?:align|a)\s*=/i.test(raw)) image.attrSet?.('data-tn-align', parsed.align)
+    next.hidden = true
+    next.content = ''
+  }
+}
+
 function markStandaloneImage(inline: {
-  children?: Array<{
-    type: string
-    content: string
-    hidden?: boolean
-    attrSet?: (name: string, value: string) => void
-  }> | null
+  children?: InlineChild[] | null
 }): { align: ImageAlign; width: string } | false {
   const children = inline.children ?? []
   const meaningful = children.filter(
@@ -637,20 +668,12 @@ function markStandaloneImage(inline: {
   )
   if (meaningful[0]?.type !== 'image') return false
   const image = meaningful[0]
-  let width = ''
-  let align: ImageAlign = 'left'
-  if (meaningful.length === 2 && meaningful[1].type === 'text') {
-    const raw = meaningful[1].content
-    const parsed = parseImageAttrs(raw)
-    if (parsed.rest) return false
-    width = parsed.width
-    align = parsed.align
-    if (/(?:^|[\s,{])(?:align|a)\s*=/i.test(raw)) image.attrSet?.('data-tn-align', parsed.align)
-    meaningful[1].hidden = true
-    meaningful[1].content = ''
-  } else if (meaningful.length !== 1) {
-    return false
-  }
+  // `{w=…}` 已由 consumeInlineImageAttrs 吃掉；若仍残留非属性文本则不是独立图
+  if (meaningful.length !== 1) return false
+  const width = image.attrGet?.('data-tn-w') || ''
+  const markedAlign = image.attrGet?.('data-tn-align') || ''
+  const align: ImageAlign =
+    markedAlign === 'center' || markedAlign === 'right' ? markedAlign : 'left'
   image.attrSet?.('data-tn-figure', '1')
   if (width) image.attrSet?.('data-tn-w', width)
   return { align, width }

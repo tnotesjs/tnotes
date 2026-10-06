@@ -212,3 +212,46 @@ describe('native context menus', () => {
     ).toBeNull()
   })
 })
+
+describe('image more menu', () => {
+  it('lists preview, aligns, separator, reset size and delete in product order', () => {
+    const selected = vi.fn()
+    const template = contextMenuTemplate(
+      { kind: 'image', align: 'center', hasWidth: true, editable: true },
+      selected
+    )
+    expect(template.map((item) => item.label ?? item.type)).toEqual([
+      '预览',
+      '左对齐',
+      '居中对齐',
+      '右对齐',
+      'separator',
+      '原始大小',
+      '删除'
+    ])
+    expect(template.find((item) => item.id === 'image-align-center')?.checked).toBe(true)
+    expect(template.find((item) => item.id === 'image-align-left')?.checked).toBe(false)
+    expect(template.every((item) => item.enabled !== false)).toBe(true)
+    template
+      .find((item) => item.id === 'image-delete')
+      ?.click?.({} as never, undefined, {} as never)
+    expect(selected).toHaveBeenCalledWith('image-delete')
+  })
+
+  it('keeps only preview usable when read-only, and reset size needs a written width', () => {
+    const readOnly = contextMenuTemplate(
+      { kind: 'image', align: 'left', hasWidth: true, editable: false },
+      vi.fn()
+    )
+    expect(
+      readOnly
+        .filter((item) => item.type !== 'separator' && item.enabled !== false)
+        .map((item) => item.id)
+    ).toEqual(['image-preview'])
+    const noWidth = contextMenuTemplate(
+      { kind: 'image', align: 'left', hasWidth: false, editable: true },
+      vi.fn()
+    )
+    expect(noWidth.find((item) => item.id === 'image-reset-size')?.enabled).toBe(false)
+  })
+})

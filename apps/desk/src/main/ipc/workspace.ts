@@ -47,7 +47,13 @@ export function registerWorkspace(getWindow: GetWindow): () => void {
         pinned: z.boolean(),
         othersClosable: z.boolean().optional()
       }),
-      z.object({ kind: z.literal('code-group-tab') })
+      z.object({ kind: z.literal('code-group-tab') }),
+      z.object({
+        kind: z.literal('image'),
+        align: z.enum(['left', 'center', 'right']),
+        hasWidth: z.boolean(),
+        editable: z.boolean()
+      })
     ]),
     (request) => {
       const window = getWindow()

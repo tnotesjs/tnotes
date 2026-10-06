@@ -639,9 +639,11 @@
 /* ---------- 图片 ---------- */
 
 .live-editor .cm-lp-image {
-  display: inline-flex;
+  /* 一律按块级图排：左对齐也独占一行（与 callout / 表格约定一致） */
+  display: flex;
   flex-direction: column;
   align-items: flex-start;
+  width: fit-content;
   max-width: 100%;
   vertical-align: bottom;
   cursor: default;
@@ -773,39 +775,56 @@
   transition: opacity 0.12s;
 }
 
-.live-editor .cm-lp-image-toolbar {
+.live-editor .cm-lp-image-actions {
   position: absolute;
   top: 6px;
   right: 6px;
   display: flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--tn-c-bg) 92%, transparent);
-  box-shadow: var(--tn-shadow-2);
+  gap: 4px;
   opacity: 0;
   line-height: 1;
   transition: opacity 0.12s;
 }
 
-.live-editor .cm-lp-image-toolbar button {
-  padding: 3px 7px;
+.live-editor .cm-lp-image-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 7px;
   border: 0;
-  border-radius: 4px;
-  background: transparent;
+  border-radius: 6px;
+  /* 半透明底，避免挡住图内容；悬停再略实一点 */
+  background: color-mix(in srgb, var(--tn-c-bg) 55%, transparent);
+  box-shadow: var(--tn-shadow-2);
+  backdrop-filter: blur(4px);
   color: var(--tn-c-text);
   font: 12px/1.4 var(--tn-font-sans);
   cursor: pointer;
 }
 
-.live-editor .cm-lp-image-toolbar button:hover,
-.live-editor .cm-lp-image-toolbar button.is-active {
-  background: var(--tn-c-hover);
+.live-editor .cm-lp-image-actions button[hidden] {
+  display: none;
+}
+
+.live-editor .cm-lp-image-actions .cm-lp-image-more {
+  width: 24px;
+  padding: 0;
+}
+
+.live-editor .cm-lp-image-more svg {
+  width: 16px;
+  height: 16px;
+}
+
+.live-editor .cm-lp-image-actions button:hover {
+  background: color-mix(in srgb, var(--tn-c-bg) 82%, transparent);
   color: var(--tn-c-brand);
 }
 
 .live-editor .cm-editor:not(.cm-lp-readonly) .cm-lp-image-frame:hover .cm-lp-image-handle,
-.live-editor .cm-lp-image-frame:hover .cm-lp-image-toolbar {
+.live-editor .cm-lp-image-frame:hover .cm-lp-image-actions,
+.live-editor .cm-lp-image-actions:focus-within {
   opacity: 1;
 }
 
@@ -846,39 +865,8 @@
   transition: opacity 0.12s;
 }
 
-.live-editor .tn-swiper-image-toolbar {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--tn-c-bg) 92%, transparent);
-  box-shadow: var(--tn-shadow-2);
-  opacity: 0;
-  line-height: 1;
-  transition: opacity 0.12s;
-}
-
-.live-editor .tn-swiper-image-toolbar button {
-  padding: 3px 7px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--tn-c-text);
-  font: 12px/1.4 var(--tn-font-sans);
-  cursor: pointer;
-}
-
-.live-editor .tn-swiper-image-toolbar button:hover,
-.live-editor .tn-swiper-image-toolbar button.is-active {
-  background: var(--tn-c-hover);
-  color: var(--tn-c-brand);
-}
-
 .live-editor .cm-editor:not(.cm-lp-readonly) .tn-swiper-frame:hover .tn-swiper-resize,
-.live-editor .tn-swiper-frame:hover .tn-swiper-image-toolbar {
+.live-editor .tn-swiper-frame:hover .cm-lp-image-actions {
   opacity: 1;
 }
 
@@ -1613,8 +1601,41 @@
   height: auto;
 }
 
+/* 提示块（info / tip / warning / danger / details）正文图片复用正文 .cm-lp-image / frame / handle / 「⋯」；
+   一律按块级图排（不区分段落内行内图），左对齐也独占一行，与正文图一致 */
+.live-editor .cm-lp-card .tn-custom-block .cm-lp-image {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.live-editor .cm-lp-card .tn-custom-block .cm-lp-image-frame img {
+  margin: 0;
+}
+
+.live-editor .cm-lp-card .tn-custom-block .cm-lp-image-frame:not([style*='width']) img {
+  width: auto;
+}
+
 .live-editor .cm-lp-table-card table {
   margin: 0;
+}
+
+/* 表格单元格图片复用正文 .cm-lp-image / frame / handle / 「⋯」；把手收进单元格避免被裁切 */
+.live-editor .cm-lp-table-card :where(td, th) {
+  overflow: visible;
+}
+
+.live-editor .cm-lp-table-card .cm-lp-image {
+  vertical-align: middle;
+}
+
+.live-editor .cm-lp-table-card .cm-lp-image-frame img {
+  margin: 0;
+}
+
+.live-editor .cm-lp-table-card .cm-lp-image-handle {
+  right: 6px;
 }
 
 .live-editor .cm-lp-diagram {

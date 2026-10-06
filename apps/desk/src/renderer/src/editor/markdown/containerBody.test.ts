@@ -94,6 +94,32 @@ describe('renderContainerFromSource', () => {
     expect(el.textContent ?? '').not.toContain('align=')
   })
 
+  it('table inside a callout renders one image per cell; body images outside tables untouched', () => {
+    const el = renderContainerFromSource(
+      [
+        '::: tip',
+        '',
+        '![p](https://e.com/p.png) ![q](https://e.com/q.png)',
+        '',
+        '| pics |',
+        '| --- |',
+        '| ![a](https://e.com/a.png) ![b](https://e.com/b.png) ![c](https://e.com/c.png) |',
+        '',
+        ':::'
+      ].join('\n'),
+      (src) => src
+    )
+    const cell = el.querySelector('td')
+    expect(cell).not.toBeNull()
+    expect(cell!.querySelectorAll('img')).toHaveLength(1)
+    expect(cell!.querySelector('img')?.getAttribute('src')).toBe('https://e.com/a.png')
+    const outside = [...el.querySelectorAll('img')].filter((img) => !img.closest('td, th'))
+    expect(outside.map((img) => img.getAttribute('src'))).toEqual([
+      'https://e.com/p.png',
+      'https://e.com/q.png'
+    ])
+  })
+
   it('leaves a brace run that is not an image attr', () => {
     const el = renderContainerFromSource(
       '::: tip\n\n![](https://example.com/a.webp) {not-an-attr}\n\n:::',
@@ -145,7 +171,7 @@ describe('renderContainerFromSource', () => {
     )
     expect(sized.querySelector('img')?.style.width).toBe('640px')
     expect(sized.querySelector('.swiper-slide')?.classList.contains('is-align-left')).toBe(false)
-    expect(sized.querySelector('.tn-swiper-image-toolbar')).toBeNull()
+    expect(sized.querySelector('.cm-lp-image-more')).toBeNull()
     expect(sized.textContent).not.toContain('{w=640px}')
 
     const aligned = renderContainerFromSource(
@@ -155,32 +181,49 @@ describe('renderContainerFromSource', () => {
     expect(aligned.querySelector('.swiper-slide')?.classList.contains('is-align-right')).toBe(true)
   })
 
-  it('edits swiper width and alignment from the hover controls', () => {
-    const commits: Array<{ index: number; align?: string | null; width?: string }> = []
-    const el = renderContainerFromSource(
-      '::: swiper\n\n![](./a.webp) {w=640px}\n\n:::',
-      (src) => src,
-      undefined,
-      {
-        readOnly: false,
-        commit: (index, next) => commits.push({ index, ...next })
+  it('edits swiper alignment / size / delete from the ⋯ native menu (no old toolbar)', async () => {
+    const choices = ['image-align-left', 'image-reset-size', 'image-delete', 'image-align-center']
+    const showContextMenu = vi.fn(async () => ({ ok: true, value: choices.shift() ?? null }))
+    vi.stubGlobal('desk', { app: { showContextMenu } })
+    try {
+      const commits: Array<{
+        index: number
+        align?: string | null
+        width?: string
+        remove?: true
+      }> = []
+      const el = renderContainerFromSource(
+        '::: swiper\n\n![](./a.webp) {w=640px}\n\n:::',
+        (src) => src,
+        undefined,
+        {
+          readOnly: false,
+          commit: (index, next) => commits.push({ index, ...next })
+        }
+      )
+      expect(el.querySelector('.tn-swiper-image-toolbar')).toBeNull()
+      const more = el.querySelector<HTMLButtonElement>('.tn-swiper-frame .cm-lp-image-more')!
+      for (let i = 0; i < 4; i += 1) {
+        more.click()
+        await Promise.resolve()
+        await Promise.resolve()
       }
-    )
-    const buttons = [...el.querySelectorAll('.tn-swiper-image-toolbar button')]
-    expect(
-      buttons.find((button) => button.textContent === '中')?.classList.contains('is-active')
-    ).toBe(true)
-    buttons
-      .find((button) => button.textContent === '左')
-      ?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-    buttons
-      .find((button) => button.textContent === '原始大小')
-      ?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-    expect(commits).toEqual([
-      { index: 0, align: 'left' },
-      { index: 0, width: '' }
-    ])
-    expect(el.querySelector('.tn-swiper-frame')?.getAttribute('style')).toContain('640px')
+      expect(showContextMenu).toHaveBeenCalledWith({
+        kind: 'image',
+        align: 'center',
+        hasWidth: true,
+        editable: true
+      })
+      expect(commits).toEqual([
+        { index: 0, align: 'left' },
+        { index: 0, width: '' },
+        { index: 0, remove: true },
+        { index: 0, align: null }
+      ])
+      expect(el.querySelector('.tn-swiper-frame')?.getAttribute('style')).toContain('640px')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('omits swiper tab nav for a single slide', () => {

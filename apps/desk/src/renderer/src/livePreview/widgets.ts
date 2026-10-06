@@ -22,7 +22,8 @@ import {
 } from '../editor/excalidraw/canvasImage'
 import { subscribeExcalidrawSession } from '../editor/excalidraw/sessionRegistry'
 import { resolveNoteAssetRelPath } from '../markdown/noteAssetPath'
-import { imageAt, imageBefore, imageAttrChange } from './images'
+import { imageAt, imageBefore, imageAttrChange, imageDeleteChange } from './images'
+import { createImageMoreButton } from './imageMenu'
 import { livePreviewHost } from './host'
 
 import type { ImageAlign } from '@tnotesjs/ui/image-markdown'
@@ -624,35 +625,9 @@ export class ImageWidget extends WidgetType {
     handle.title = '拖动调整宽度'
     frame.append(handle)
 
-    const toolbar = document.createElement('span')
-    toolbar.className = 'cm-lp-image-toolbar'
-    const aligns: Array<[ImageAlign, string]> = [
-      ['left', '左'],
-      ['center', '中'],
-      ['right', '右']
-    ]
-    for (const [align, label] of aligns) {
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.textContent = label
-      button.title = `${label}对齐`
-      if (align === this.align) button.classList.add('is-active')
-      button.addEventListener('mousedown', (event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        this.applyAttrs(view, figure, { align })
-      })
-      toolbar.append(button)
-    }
-    const reset = document.createElement('button')
-    reset.type = 'button'
-    reset.textContent = '原始大小'
-    reset.addEventListener('mousedown', (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      this.applyAttrs(view, figure, { width: '' })
-    })
-    toolbar.append(reset)
+    // 右上角动作区：画布图的「编辑」+ 统一的「⋯」系统菜单（预览 / 对齐 / 原始大小 / 删除）
+    const actions = document.createElement('span')
+    actions.className = 'cm-lp-image-actions'
 
     const edit = document.createElement('button')
     edit.type = 'button'
@@ -665,13 +640,26 @@ export class ImageWidget extends WidgetType {
       const sourceRelPath = edit.dataset.sourceRelPath
       if (sourceRelPath) host.openCanvas(sourceRelPath)
     })
-    toolbar.append(edit)
+    const more = createImageMoreButton(
+      img,
+      () => ({
+        align: this.align,
+        hasWidth: Boolean(this.width),
+        editable: !view.state.readOnly && !host.isReadOnly()
+      }),
+      {
+        align: (align) => this.applyAttrs(view, figure, { align }),
+        resetSize: () => this.applyAttrs(view, figure, { width: '' }),
+        remove: () => this.removeImage(view, figure)
+      }
+    )
+    actions.append(edit, more)
 
     const editingBadge = document.createElement('span')
     editingBadge.className = 'cm-lp-image-editing'
     editingBadge.textContent = '编辑中'
     editingBadge.hidden = true
-    frame.append(toolbar, editingBadge)
+    frame.append(actions, editingBadge)
 
     if (this.alt) {
       const caption = document.createElement('span')
@@ -799,6 +787,18 @@ export class ImageWidget extends WidgetType {
     const image = imageBefore(view.state, pos)
     if (!image) return
     view.dispatch({ changes: imageAttrChange(image, next), userEvent: 'input.image-attrs' })
+  }
+
+  private removeImage(view: EditorView, dom: HTMLElement): void {
+    if (view.state.readOnly) return
+    const pos = widgetPos(view, dom)
+    if (pos == null) return
+    const image = imageBefore(view.state, pos)
+    if (!image) return
+    view.dispatch({
+      changes: imageDeleteChange(view.state, image),
+      userEvent: 'delete.image'
+    })
   }
 
   ignoreEvent(): boolean {

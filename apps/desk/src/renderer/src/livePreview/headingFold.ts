@@ -139,8 +139,11 @@ export function headingFoldKey(state: EditorState): string {
   return parts.join('|')
 }
 
-const CHEVRON =
+/** 标题 / details 折叠共用的向右折线（展开时旋转 90° 朝下）。 */
+export const FOLD_CHEVRON_SVG =
   '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="m4 2 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>'
+
+const CHEVRON = FOLD_CHEVRON_SVG
 
 /** 标题左侧的折叠箭头，交互对齐站点：展开时悬停才出现，折叠后一直显示。 */
 export class HeadingFoldToggle extends WidgetType {

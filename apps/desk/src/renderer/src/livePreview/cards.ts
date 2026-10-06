@@ -1,10 +1,14 @@
 import { syntaxTree } from '@codemirror/language'
-import { StateEffect } from '@codemirror/state'
+import { EditorState, StateEffect } from '@codemirror/state'
+import { markdownLanguage } from '@codemirror/lang-markdown'
 import { EditorView, WidgetType } from '@codemirror/view'
 import DOMPurify from 'dompurify'
+import type { SyntaxNode } from '@lezer/common'
 import MarkdownIt from 'markdown-it'
 
 import {
+  allowDataUrlsInParser,
+  applyImageSizeAttrs,
   destroyContainerPreview,
   renderContainerFromSource,
   withLinkDefinitions
@@ -32,6 +36,14 @@ import { mindmapPreviewMarkdown, rebuildMindmapFence } from '../editor/markdown/
 import { clampMindmapHeight, deskWordListStorageScope, parseFootprintsSource } from '@tnotesjs/ui'
 import { installMarkdownMath } from '../agent/agentMarkdown'
 import { livePreviewHost, type LivePreviewHost } from './host'
+import {
+  enhanceCardImages,
+  keepFirstImagePerCell,
+  numberMarkdownImages,
+  type CardImageChange,
+  type CardImageEditor
+} from './cardImages'
+import { imageAttrChange, imageDeleteChange, readImage, type ImageSyntax } from './images'
 import { revealAt } from './widgets'
 
 export type CardKind = 'container' | 'mermaid' | 'mindmap' | 'component' | 'html' | 'table'
@@ -56,13 +68,15 @@ function markdownRenderer(): InstanceType<typeof MarkdownIt> {
   if (!inlineRenderer) {
     inlineRenderer = new MarkdownIt({ html: true, linkify: true, breaks: false })
     installMarkdownMath(inlineRenderer)
+    allowDataUrlsInParser(inlineRenderer)
+    numberMarkdownImages(inlineRenderer)
   }
   return inlineRenderer
 }
 
 /** 卡片里这些元素有自己的交互，点它们不应该把光标移进源码。 */
 const INTERACTIVE =
-  'button, a, input, select, textarea, summary, video, iframe, [role="tab"], .tn-swiper-tabs, .tn-swiper-resize, .tn-swiper-image-toolbar, .swiper-button-prev, .swiper-button-next, .rightClickMenu'
+  'button, a, input, select, textarea, summary, video, iframe, [role="tab"], .tn-swiper-tabs, .tn-swiper-resize, .cm-lp-image-handle, .cm-lp-image-more, .swiper-button-prev, .swiper-button-next, .rightClickMenu'
 
 interface Mounted {
   destroy(): void
@@ -72,23 +86,73 @@ interface Mounted {
 
 const mounted = new WeakMap<HTMLElement, Mounted>()
 
-function renderTable(
+/**
+ * details 折叠开合：会话内记忆（不写回笔记）。
+ * key 去掉 `{w=… align=…}`，图片改宽/对齐后仍命中，避免卡片重建后自动收起。
+ */
+const detailsOpenSession = new Map<string, boolean>()
+
+export function detailsSessionKey(noteUuid: string, source: string): string {
+  const normalized = source.replace(/\r\n?/g, '\n')
+  const nl = normalized.indexOf('\n')
+  const head = nl < 0 ? normalized : normalized.slice(0, nl)
+  // 去掉 `{w=… align=…}` 及其两侧空白，改图宽/对齐后 key 仍稳定
+  const rest = (nl < 0 ? '' : normalized.slice(nl + 1))
+    .replace(/\s*\{[^}\n]*\}/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+  return `${noteUuid}\0${head}\0${rest}`
+}
+
+/** 单测用：清空会话折叠记忆 */
+export function clearDetailsOpenSession(): void {
+  detailsOpenSession.clear()
+}
+
+export function rewriteResolvedImages(
+  root: ParentNode,
+  resolveImage: (src: string) => string
+): void {
+  root.querySelectorAll('img').forEach((image) => {
+    const resolved = resolveImage(image.getAttribute('src') ?? '')
+    if (resolved) image.setAttribute('src', resolved)
+    else image.removeAttribute('src')
+    // 与容器卡片一致：markdown-it 不会吃掉 ` {w=…}`，表格/HTML 卡片要在 DOM 里剥掉并套宽度
+    applyImageSizeAttrs(image)
+  })
+}
+
+/** 表格卡片图片的改动：宽度 / 对齐写回 `{w=… align=…}`，或删掉整张图。 */
+export type TableImageChange = CardImageChange
+
+/** Desk 可视化里表格单元格图片的拖拽宽度 + 「⋯」菜单。 */
+export type TableImageEditor = CardImageEditor
+
+/** `:::` 提示块（info / tip / warning / danger / details …）正文图片的改动，同表格。 */
+export type ContainerImageChange = CardImageChange
+
+export function renderTable(
   source: string,
   resolveImage: (src: string) => string,
-  definitions: ReadonlyMap<string, string> = new Map()
+  definitions: ReadonlyMap<string, string> = new Map(),
+  editor?: TableImageEditor
 ): HTMLElement {
   const wrapper = document.createElement('div')
   wrapper.className = 'cm-lp-table-card tn-prose'
   // 表格卡片单独渲染，需拼上笔记级 LinkReference，否则 `[文字][1]` 无 href
-  const html = DOMPurify.sanitize(
-    markdownRenderer().render(withLinkDefinitions(source, definitions))
-  )
+  // DOMPurify（happy-dom / 部分环境）会剥掉 <table> 只留 thead/tbody，
+  // 再赋给 innerHTML 时浏览器会丢掉单元格；包回 <table> 保住 td/th，「一格一图」才认得出格。
+  const rendered = markdownRenderer().render(withLinkDefinitions(source, definitions))
+  const cleaned = DOMPurify.sanitize(rendered)
+  const html =
+    !/<table\b/i.test(cleaned) && /<(?:thead|tbody|tr)\b/i.test(cleaned)
+      ? `<table>${cleaned}</table>`
+      : cleaned
   wrapper.innerHTML = html
-  wrapper.querySelectorAll('img').forEach((image) => {
-    const resolved = resolveImage(image.getAttribute('src') ?? '')
-    if (resolved) image.setAttribute('src', resolved)
-    else image.removeAttribute('src')
-  })
+  rewriteResolvedImages(wrapper, resolveImage)
+  // 一格一图（同思维导图节点）：每格只留第一张可用 markdown 图，其余直接不渲染（只读也一样）
+  keepFirstImagePerCell(wrapper)
+  if (editor)
+    enhanceCardImages(wrapper, editor, 'cm-lp-table-image', { firstPassablePerCell: true })
   return wrapper
 }
 
@@ -96,10 +160,7 @@ function renderHtml(source: string, resolveImage: (src: string) => string): HTML
   const wrapper = document.createElement('div')
   wrapper.className = 'cm-lp-html-card tn-prose'
   wrapper.innerHTML = DOMPurify.sanitize(source)
-  wrapper.querySelectorAll('img').forEach((image) => {
-    const resolved = resolveImage(image.getAttribute('src') ?? '')
-    if (resolved) image.setAttribute('src', resolved)
-  })
+  rewriteResolvedImages(wrapper, resolveImage)
   return wrapper
 }
 
@@ -244,10 +305,27 @@ export class CardWidget extends WidgetType {
     const resolveImage = host.resolveImage.bind(host)
     switch (this.kind) {
       case 'container': {
-        const element = renderContainerFromSource(this.source, resolveImage, this.definitions, {
-          readOnly: host.isReadOnly(),
-          commit: (index, next) => commitSwiperSlide(view, card, index, next)
-        })
+        const detailsKey = detailsSessionKey(this.noteUuid, this.source)
+        const element = renderContainerFromSource(
+          this.source,
+          resolveImage,
+          this.definitions,
+          {
+            readOnly: host.isReadOnly(),
+            commit: (index, next) => commitSwiperSlide(view, card, index, next)
+          },
+          {
+            readOnly: host.isReadOnly(),
+            commit: (index, next, expectedSrc) =>
+              commitContainerImage(view, card, index, next, expectedSrc)
+          },
+          {
+            open: detailsOpenSession.get(detailsKey) ?? false,
+            onOpenChange: (open) => {
+              detailsOpenSession.set(detailsKey, open)
+            }
+          }
+        )
         if (element.dataset.footprints === '1') {
           const payload = parseFootprintsSource(this.source)
           const handle = mountFootprintsPreview(element, {
@@ -290,7 +368,11 @@ export class CardWidget extends WidgetType {
       case 'html':
         return renderHtml(this.source, resolveImage)
       case 'table':
-        return renderTable(this.source, resolveImage, this.definitions)
+        return renderTable(this.source, resolveImage, this.definitions, {
+          readOnly: host.isReadOnly(),
+          commit: (index, next, expectedSrc) =>
+            commitTableImage(view, card, index, next, expectedSrc)
+        })
     }
   }
 
@@ -337,6 +419,140 @@ function commitSwiperSlide(
   view.dispatch({
     changes: { from, to, insert: updated },
     userEvent: 'input.swiper'
+  })
+}
+
+/** `pos` 所在表格里第 `index` 个 Image 语法节点（与 markdown-it 的图片编号同序）。 */
+function tableImageAt(state: EditorState, pos: number, index: number): ImageSyntax | null {
+  let table: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1)
+  while (table && table.name !== 'Table') table = table.parent
+  if (!table) return null
+  let seen = -1
+  let found: ImageSyntax | null = null
+  syntaxTree(state).iterate({
+    from: table.from,
+    to: table.to,
+    enter(node) {
+      if (found) return false
+      if (node.name !== 'Image') return
+      seen += 1
+      if (seen === index) found = readImage(state, node.node)
+      return false
+    }
+  })
+  return found
+}
+
+/**
+ * 表格卡片第 `index` 张 markdown 图片的写回修改；对不上（找不到 / 地址核对失败 / 无变化）返回 null。
+ * `pos` 是卡片在文档里的起点（表格首行）。
+ */
+export function tableImageChange(
+  state: EditorState,
+  pos: number,
+  index: number,
+  next: TableImageChange,
+  expectedSrc = ''
+): { from: number; to: number; insert: string } | null {
+  const image = tableImageAt(state, pos, index)
+  if (!image) return null
+  // 引用式 `![a][id]` 读不到行内地址，跳过核对；行内地址按 markdown-it 同样归一化后比较
+  if (expectedSrc && image.src && markdownRenderer().normalizeLink(image.src) !== expectedSrc) {
+    return null
+  }
+  const changes =
+    'remove' in next
+      ? imageDeleteChange(state, image, { wholeLine: false })
+      : imageAttrChange(image, next)
+  if (state.doc.sliceString(changes.from, changes.to) === changes.insert) return null
+  return changes
+}
+
+function commitTableImage(
+  view: EditorView,
+  card: HTMLElement,
+  index: number,
+  next: TableImageChange,
+  expectedSrc = ''
+): void {
+  const host = view.state.facet(livePreviewHost)
+  if (host.isReadOnly() || view.state.readOnly) return
+  let pos: number
+  try {
+    pos = view.posAtDOM(card)
+  } catch {
+    return
+  }
+  const changes = tableImageChange(view.state, pos, index, next, expectedSrc)
+  if (!changes) return
+  view.dispatch({
+    changes,
+    userEvent: 'remove' in next ? 'delete.image' : 'input.image-attrs'
+  })
+}
+
+/**
+ * `:::` 提示块正文第 `index` 张 markdown 图片的写回修改；对不上返回 null。`pos` 是卡片起点（开启行）。
+ *
+ * 容器在语法树里是叶子（正文不做行内解析），这里把 ContainerBody 单独按 GFM 解析一遍找 Image 节点。
+ * 卡片渲染用的 markdown-it 同样没装容器插件，嵌套 `:::` 两边都当普通段落，图片编号一致。
+ */
+export function containerImageChange(
+  state: EditorState,
+  pos: number,
+  index: number,
+  next: ContainerImageChange,
+  expectedSrc = ''
+): { from: number; to: number; insert: string } | null {
+  let container: SyntaxNode | null = syntaxTree(state).resolveInner(pos, 1)
+  while (container && container.name !== 'Container') container = container.parent
+  const body = container?.getChild('ContainerBody')
+  if (!body) return null
+  const text = state.doc.sliceString(body.from, body.to)
+  const bodyState = EditorState.create({ doc: text })
+  let seen = -1
+  let image: ImageSyntax | null = null
+  markdownLanguage.parser.parse(text).iterate({
+    enter(node) {
+      if (image) return false
+      if (node.name !== 'Image') return
+      seen += 1
+      if (seen === index) image = readImage(bodyState, node.node)
+      return false
+    }
+  })
+  const found = image as ImageSyntax | null
+  if (!found) return null
+  if (expectedSrc && found.src && markdownRenderer().normalizeLink(found.src) !== expectedSrc) {
+    return null
+  }
+  // 独占一行的图删掉整行；和文字同段 / 在表格里只删图本身（imageDeleteChange 自己判断）
+  const local =
+    'remove' in next ? imageDeleteChange(bodyState, found) : imageAttrChange(found, next)
+  if (bodyState.doc.sliceString(local.from, local.to) === local.insert) return null
+  return { from: body.from + local.from, to: body.from + local.to, insert: local.insert }
+}
+
+function commitContainerImage(
+  view: EditorView,
+  card: HTMLElement,
+  index: number,
+  next: ContainerImageChange,
+  expectedSrc = ''
+): void {
+  const host = view.state.facet(livePreviewHost)
+  if (host.isReadOnly() || view.state.readOnly) return
+  let pos: number
+  try {
+    pos = view.posAtDOM(card)
+  } catch {
+    return
+  }
+  const changes = containerImageChange(view.state, pos, index, next, expectedSrc)
+  if (!changes) return
+  view.dispatch({
+    changes,
+    userEvent: 'remove' in next ? 'delete.image' : 'input.image-attrs'
   })
 }
 

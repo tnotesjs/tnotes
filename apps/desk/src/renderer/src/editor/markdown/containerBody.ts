@@ -4,8 +4,16 @@ import linkAttributes from 'markdown-it-link-attributes'
 import { installMarkdownMath } from '../../agent/agentMarkdown'
 import DOMPurify from 'dompurify'
 import CodeGroup from '@tnotesjs/ui/code-group'
-import { parseImageAttrs, type ImageAlign } from '@tnotesjs/ui/image-markdown'
+import { parseImageAttrs } from '@tnotesjs/ui/image-markdown'
 import { createApp, h, type App } from 'vue'
+import { createImageMoreButton } from '../../livePreview/imageMenu'
+import {
+  enhanceCardImages,
+  keepFirstImagePerCell,
+  numberMarkdownImages,
+  type CardImageEditor
+} from '../../livePreview/cardImages'
+import { FOLD_CHEVRON_SVG } from '../../livePreview/headingFold'
 
 import {
   hydrateTnSwipers,
@@ -147,12 +155,37 @@ export function preservedContainerSource(
 
 let markdownIt: InstanceType<typeof MarkdownIt> | null = null
 
+/**
+ * markdown-it 默认 validateLink 只放行 data:image/(gif|png|jpeg|webp)，其余 data:（如 svg）
+ * 会让 `![](data:…)` 解析失败、整段源码当纯文本显示出来。卡片里图片地址统一交给
+ * resolveImage 白名单处理（拒绝即去掉 src、显示裂图），所以解析阶段对 data: 放行；
+ * 普通链接若被默认规则拒绝，则去掉 href（DOMPurify 不会剥 a 上的 data: href）。
+ * javascript:/vbscript:/file: 照旧解析失败。
+ */
+export function allowDataUrlsInParser(instance: InstanceType<typeof MarkdownIt>): void {
+  const defaultValidate = instance.validateLink.bind(instance)
+  instance.validateLink = (url: string) => defaultValidate(url) || /^data:/i.test(url.trim())
+  instance.core.ruler.push('tn_strip_data_link_href', (state) => {
+    for (const block of state.tokens) {
+      for (const token of block.children ?? []) {
+        if (token.type !== 'link_open') continue
+        const href = token.attrGet('href')
+        if (href !== null && !defaultValidate(String(href))) {
+          token.attrs = (token.attrs ?? []).filter(([name]) => name !== 'href')
+        }
+      }
+    }
+  })
+}
+
 function getMarkdownIt(): InstanceType<typeof MarkdownIt> {
   if (markdownIt) return markdownIt
   const instance = new MarkdownIt({ html: true, linkify: true, breaks: false })
   instance.use(taskLists)
   instance.use(linkAttributes, { attrs: { target: '_self', rel: 'noopener' } })
   installMarkdownMath(instance)
+  allowDataUrlsInParser(instance)
+  numberMarkdownImages(instance)
 
   markdownIt = instance
   return instance
@@ -171,8 +204,8 @@ function rewriteImageSources(html: string, resolveImage: ResolveImage): string {
   return host.innerHTML
 }
 
-/** 块外图片由 `readImage` 吃掉 ` {w=…}`。容器正文是整段 markdown-it，同一段语法会留在图后面。 */
-function applyImageSizeAttrs(image: HTMLImageElement): void {
+/** 块外图片由 `readImage` 吃掉 ` {w=…}`。markdown-it 卡片（容器/表格）同一段语法会留在图后面。 */
+export function applyImageSizeAttrs(image: HTMLImageElement): void {
   const text = image.nextSibling
   if (!text || text.nodeType !== Node.TEXT_NODE) return
   const raw = text.textContent ?? ''
@@ -192,7 +225,10 @@ function applyImageSizeAttrs(image: HTMLImageElement): void {
 }
 
 /** 把笔记级链接定义拼到片段末尾，供单独渲染的卡片（容器/表格）解析引用链接。 */
-export function withLinkDefinitions(body: string, definitions?: ReadonlyMap<string, string>): string {
+export function withLinkDefinitions(
+  body: string,
+  definitions?: ReadonlyMap<string, string>
+): string {
   if (!definitions || definitions.size === 0) return body
   const lines = [...definitions.entries()].map(([label, url]) => {
     const destination = /[\s()]/.test(url) ? `<${url.replaceAll('>', '%3E')}>` : url
@@ -315,37 +351,26 @@ function buildEditableSlide(
     window.addEventListener('mouseup', up)
   })
 
-  const toolbar = document.createElement('span')
-  toolbar.className = 'tn-swiper-image-toolbar'
-  const shown: ImageAlign = slide.align ?? 'center'
-  const aligns: Array<[ImageAlign, string]> = [
-    ['left', '左'],
-    ['center', '中'],
-    ['right', '右']
-  ]
-  for (const [align, label] of aligns) {
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.textContent = label
-    button.title = `${label}对齐`
-    if (align === shown) button.classList.add('is-active')
-    button.addEventListener('mousedown', (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      editor.commit(index, { align: align === 'center' ? null : align })
-    })
-    toolbar.append(button)
-  }
-  const reset = document.createElement('button')
-  reset.type = 'button'
-  reset.textContent = '原始大小'
-  reset.addEventListener('mousedown', (event) => {
-    event.preventDefault()
-    event.stopPropagation()
-    editor.commit(index, { width: '' })
-  })
-  toolbar.append(reset)
-  frame.append(handle, toolbar)
+  // 与正文 / 表格图片同一套「⋯」系统菜单（预览 / 对齐 / 原始大小 / 删除）
+  const actions = document.createElement('span')
+  actions.className = 'cm-lp-image-actions'
+  actions.append(
+    createImageMoreButton(
+      img,
+      () => ({
+        align: slide.align ?? 'center',
+        hasWidth: Boolean(slide.width),
+        editable: !editor.readOnly
+      }),
+      {
+        // 幻灯片默认居中：选「居中」时去掉写出来的 align=
+        align: (align) => editor.commit(index, { align: align === 'center' ? null : align }),
+        resetSize: () => editor.commit(index, { width: '' }),
+        remove: () => editor.commit(index, { remove: true })
+      }
+    )
+  )
+  frame.append(handle, actions)
   return frame
 }
 
@@ -406,17 +431,34 @@ function buildSwiper(
   return root
 }
 
-function buildContainerDom(name: string, title: string, bodyHtml: string): HTMLElement {
+/** Desk / SSG details 折叠块的开合会话（不写回源码）。 */
+export interface DetailsSessionOptions {
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+}
+
+function buildContainerDom(
+  name: string,
+  title: string,
+  bodyHtml: string,
+  detailsSession?: DetailsSessionOptions
+): HTMLElement {
   if (COLLAPSIBLE_TYPES.has(name)) {
     const details = document.createElement('details')
     details.className = 'tn-custom-block details'
+    if (detailsSession?.open) details.open = true
     const summary = document.createElement('summary')
-    summary.textContent = title || '详情'
+    const fold = document.createElement('span')
+    fold.className = 'tn-details-fold'
+    fold.setAttribute('aria-hidden', 'true')
+    fold.innerHTML = FOLD_CHEVRON_SVG
+    summary.append(fold, document.createTextNode(title || '详情'))
     // Keep the toggle deterministic inside the non-editable atom rather than
     // relying on the browser default (which ProseMirror can swallow).
     summary.addEventListener('click', (event) => {
       event.preventDefault()
       details.open = !details.open
+      detailsSession?.onOpenChange?.(details.open)
     })
     details.append(summary)
     appendHtml(details, bodyHtml)
@@ -459,7 +501,11 @@ export function renderContainerFromSource(
   resolveImage: ResolveImage = defaultResolveImage,
   /** 围栏外的链接定义。容器正文单独渲染，看不到笔记末尾的 `[1]: url`。 */
   definitions?: ReadonlyMap<string, string>,
-  swiperEditor?: SwiperSlideEditor
+  swiperEditor?: SwiperSlideEditor,
+  /** Desk 可视化：提示块正文图片的拖拽宽度 + 「⋯」菜单（与正文 / 表格图片一致）。站点 / 只读投影不传。 */
+  imageEditor?: CardImageEditor,
+  /** details：会话内开合记忆（卡片因改图重建时保持展开）。 */
+  detailsSession?: DetailsSessionOptions
 ): HTMLElement {
   const { name, title, body, hasBody } = parseContainerSource(source)
   if (name === 'code-group') return buildCodeGroup(body)
@@ -472,5 +518,9 @@ export function renderContainerFromSource(
     return host
   }
   const bodyHtml = hasBody ? renderBody(body, resolveImage, definitions) : ''
-  return buildContainerDom(name, title, bodyHtml)
+  const element = buildContainerDom(name, title, bodyHtml, detailsSession)
+  // 提示块里的表格同样「一格一图」：每格只留第一张可用 markdown 图
+  keepFirstImagePerCell(element)
+  if (imageEditor) enhanceCardImages(element, imageEditor, 'cm-lp-container-image')
+  return element
 }

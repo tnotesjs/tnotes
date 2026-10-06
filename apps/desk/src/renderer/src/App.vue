@@ -1555,7 +1555,8 @@ onUnmounted(() => {
   </div>
 
   <ToastHost />
-  <ImagePreview />
+  <!-- 图集只在被点图所在的编辑器（.cm-editor）里收，避免多标签 / 分栏串图 -->
+  <ImagePreview gallery-selector=".tn-prose img, .cm-lp-image-frame img, .tn-swiper-frame img" />
   <div
     v-if="store.closingTabs"
     class="tab-close-blocker"

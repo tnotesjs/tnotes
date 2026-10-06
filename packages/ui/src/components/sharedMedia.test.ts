@@ -98,6 +98,46 @@ describe('shared code and media components', () => {
     expect(document.documentElement.style.overflow).toBe('')
   })
 
+  it('only collects images inside the clicked image\'s editor scope (no cross-tab gallery)', async () => {
+    const tabA = document.createElement('div')
+    tabA.className = 'cm-editor'
+    tabA.innerHTML =
+      '<div class="tn-prose"><img src="/a-1.png"></div><span class="cm-lp-image-frame"><img src="/a-2.png"></span>'
+    const tabB = document.createElement('div')
+    tabB.className = 'cm-editor'
+    tabB.innerHTML = '<div class="tn-prose"><img src="/b-1.png"><img src="/b-2.png"></div>'
+    document.body.append(tabA, tabB)
+    cleanups.push(() => {
+      tabA.remove()
+      tabB.remove()
+    })
+    mount(ImagePreview, { gallerySelector: '.tn-prose img, .cm-lp-image-frame img' })
+
+    document.dispatchEvent(
+      new CustomEvent('tn:preview-image', { detail: tabA.querySelector('.cm-lp-image-frame img') })
+    )
+    await nextTick()
+    const shown = (): string =>
+      document.body.querySelector<HTMLImageElement>('.tn-image-preview > img')?.src ?? ''
+    expect(shown()).toContain('/a-2.png')
+    expect(document.body.querySelector('.tn-image-preview__counter')?.textContent).toBe('2 / 2')
+    document.body.querySelector<HTMLButtonElement>('[aria-label="下一张"]')!.click()
+    await nextTick()
+    expect(shown()).toContain('/a-1.png')
+    document.body.querySelector<HTMLButtonElement>('[aria-label="下一张"]')!.click()
+    await nextTick()
+    expect(shown()).toContain('/a-2.png')
+    document.body.querySelector<HTMLButtonElement>('[aria-label="关闭"]')!.click()
+    await nextTick()
+
+    tabB.querySelectorAll('img')[1]!.click()
+    await nextTick()
+    expect(shown()).toContain('/b-2.png')
+    expect(document.body.querySelector('.tn-image-preview__counter')?.textContent).toBe('2 / 2')
+    document.body.querySelector<HTMLButtonElement>('[aria-label="关闭"]')!.click()
+    await nextTick()
+  })
+
   it('opens from a programmatic preview request', async () => {
     const prose = document.createElement('div')
     prose.className = 'tn-prose tn-preview-ignore'

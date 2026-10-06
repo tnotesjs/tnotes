@@ -183,7 +183,11 @@ describe('live preview editing', () => {
     const block = view.dom.querySelector('.tn-custom-block.tip')
     const image = block?.querySelector('img')
     expect(image?.getAttribute('src')).toBe('https://example.com/a.webp')
-    expect(image?.style.width).toBe('596px')
+    // 宽度与正文 / 表格图一致落在 .cm-lp-image-frame 上（img 自身铺满外框），并带「⋯」与拖拽把手
+    const frame = image?.closest<HTMLElement>('.cm-lp-image-frame')
+    expect(frame?.style.width).toBe('596px')
+    expect(frame?.querySelector('.cm-lp-image-more')).not.toBeNull()
+    expect(frame?.querySelector('.cm-lp-image-handle')).not.toBeNull()
     expect(block?.textContent ?? '').not.toContain('w=596')
   })
 

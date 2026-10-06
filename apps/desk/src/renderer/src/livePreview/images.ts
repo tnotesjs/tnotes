@@ -107,3 +107,27 @@ export function imageAttrChange(
     insert: attrs ? ` ${attrs}` : ''
   }
 }
+
+/**
+ * 删除整张图（`![…](…)` 连同属性块）。正文里这一行只剩这张图时整行一起删，
+ * 不留空行；表格单元格里只删图本身，避免破坏表格行。
+ */
+export function imageDeleteChange(
+  state: EditorState,
+  image: ImageSyntax,
+  options: { wholeLine?: boolean } = {}
+): { from: number; to: number; insert: string } {
+  const doc = state.doc
+  const end = Math.max(image.to, image.attrTo)
+  if (options.wholeLine !== false) {
+    const line = doc.lineAt(image.from)
+    const before = doc.sliceString(line.from, image.from)
+    const after = doc.sliceString(end, line.to)
+    if (!before.trim() && !after.trim()) {
+      if (line.to < doc.length) return { from: line.from, to: line.to + 1, insert: '' }
+      if (line.from > 0) return { from: line.from - 1, to: line.to, insert: '' }
+      return { from: line.from, to: line.to, insert: '' }
+    }
+  }
+  return { from: image.from, to: end, insert: '' }
+}
