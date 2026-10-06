@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_PUSH_COMMIT_MESSAGE,
@@ -16,30 +16,29 @@ import {
 
 const execFileAsync = promisify(execFile)
 
-async function git(args: string[], cwd: string): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, { cwd, encoding: 'utf8' })
-  return stdout.trim()
-}
+let root: string
+let remote: string
 
-async function write(root: string, rel: string, content: string): Promise<void> {
+async function write(rel: string, content: string): Promise<void> {
   const full = path.join(root, rel)
   await fs.mkdir(path.dirname(full), { recursive: true })
   await fs.writeFile(full, content)
 }
 
-/** Per-test fixtures — never share module-level dirs (CI workers race on them). */
-async function setupRepo(): Promise<{ root: string; remote: string; remoteUrl: string }> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'tnotes-kb-sync-'))
-  const remote = await fs.mkdtemp(path.join(os.tmpdir(), 'tnotes-kb-sync-remote-'))
-  const remoteUrl = `file://${remote}`
+async function git(args: string[], cwd = root): Promise<string> {
+  const { stdout } = await execFileAsync('git', args, { cwd, encoding: 'utf8' })
+  return stdout.trim()
+}
+
+beforeEach(async () => {
+  root = await fs.mkdtemp(path.join(os.tmpdir(), 'tnotes-kb-sync-'))
+  remote = await fs.mkdtemp(path.join(os.tmpdir(), 'tnotes-kb-sync-remote-'))
   await execFileAsync('git', ['init', '--bare'], { cwd: remote })
 
-  await git(['init'], root)
-  await git(['config', 'user.email', 'test@example.com'], root)
-  await git(['config', 'user.name', 'Test'], root)
-  await git(['config', 'protocol.file.allow', 'always'], root)
+  await git(['init'])
+  await git(['config', 'user.email', 'test@example.com'])
+  await git(['config', 'user.name', 'Test'])
   await write(
-    root,
     'tnotes.json',
     JSON.stringify(
       {
@@ -52,21 +51,19 @@ async function setupRepo(): Promise<{ root: string; remote: string; remoteUrl: s
       2
     )
   )
-  await write(root, 'TOC.md', '- [ ] 0001. hello\n')
-  await write(root, 'notes/0001. hello.md', '---\nid: note-1\n---\n\nbody\n')
-  await git(['add', '.'], root)
-  await git(['commit', '-m', 'init'], root)
-  await git(['branch', '-M', 'main'], root)
-  await git(['remote', 'add', 'origin', remoteUrl], root)
-  await git(['push', '-u', 'origin', 'main'], root)
-  return { root, remote, remoteUrl }
-}
+  await write('TOC.md', '- [ ] 0001. hello\n')
+  await write('notes/0001. hello.md', '---\nid: note-1\n---\n\nbody\n')
+  await git(['add', '.'])
+  await git(['commit', '-m', 'init'])
+  await git(['branch', '-M', 'main'])
+  await git(['remote', 'add', 'origin', remote])
+  await git(['push', '-u', 'origin', 'main'])
+})
 
-async function cleanup(dirs: { root: string; remote: string }, other?: string): Promise<void> {
-  await fs.rm(dirs.root, { recursive: true, force: true })
-  await fs.rm(dirs.remote, { recursive: true, force: true })
-  if (other) await fs.rm(other, { recursive: true, force: true })
-}
+afterEach(async () => {
+  await fs.rm(root, { recursive: true, force: true })
+  await fs.rm(remote, { recursive: true, force: true })
+})
 
 describe('shouldRunUpdateBeforePush', () => {
   it('defaults to true and respects config / override', () => {
@@ -80,95 +77,64 @@ describe('shouldRunUpdateBeforePush', () => {
 
 describe('pushKnowledgeBase', () => {
   it('commits with the short sentence and pushes', async () => {
-    const dirs = await setupRepo()
-    try {
-      await write(dirs.root, 'notes/0001. hello.md', '---\nid: note-1\n---\n\nchanged\n')
-      const result = await pushKnowledgeBase(dirs.root)
-      expect(result.committed).toBe(true)
-      expect(result.pushed).toBe(true)
-      expect(result.commitMessage).toBe(DEFAULT_PUSH_COMMIT_MESSAGE)
-      const log = await git(['log', '-1', '--pretty=%s'], dirs.root)
-      expect(log).toBe(DEFAULT_PUSH_COMMIT_MESSAGE)
-    } finally {
-      await cleanup(dirs)
-    }
+    await write('notes/0001. hello.md', '---\nid: note-1\n---\n\nchanged\n')
+    const result = await pushKnowledgeBase(root)
+    expect(result.committed).toBe(true)
+    expect(result.pushed).toBe(true)
+    expect(result.commitMessage).toBe(DEFAULT_PUSH_COMMIT_MESSAGE)
+    const log = await git(['log', '-1', '--pretty=%s'])
+    expect(log).toBe(DEFAULT_PUSH_COMMIT_MESSAGE)
   })
 
   it('reports nothing to do when clean', async () => {
-    const dirs = await setupRepo()
-    try {
-      const result = await pushKnowledgeBase(dirs.root)
-      expect(result.committed).toBe(false)
-      expect(result.pushed).toBe(false)
-      expect(result.message).toContain('没有需要')
-    } finally {
-      await cleanup(dirs)
-    }
+    const result = await pushKnowledgeBase(root)
+    expect(result.committed).toBe(false)
+    expect(result.pushed).toBe(false)
+    expect(result.message).toContain('没有需要')
   })
 
   it('skips update when stats.enabled is false even if runUpdateBefore', async () => {
-    const dirs = await setupRepo()
-    try {
-      await write(dirs.root, 'notes/0001. hello.md', '---\nid: note-1\n---\n\nagain\n')
-      const result = await pushKnowledgeBase(dirs.root, { runUpdateBefore: true })
-      expect(result.updated).toBe(false)
-      expect(result.pushed).toBe(true)
-    } finally {
-      await cleanup(dirs)
-    }
+    await write('notes/0001. hello.md', '---\nid: note-1\n---\n\nagain\n')
+    const result = await pushKnowledgeBase(root, { runUpdateBefore: true })
+    expect(result.updated).toBe(false)
+    expect(result.pushed).toBe(true)
   })
 })
 
 describe('pullKnowledgeBase', () => {
+  // Avoid a second clone (file:// / local hardlink quirks on CI). Simulate
+  // remote-ahead / diverge with push + reset --hard in the same work tree.
   it('fast-forwards when remote is ahead', async () => {
-    const dirs = await setupRepo()
-    const other = await fs.mkdtemp(path.join(os.tmpdir(), 'tnotes-kb-sync-other-'))
-    try {
-      await execFileAsync('git', ['clone', dirs.remoteUrl, other])
-      await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: other })
-      await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: other })
-      await execFileAsync('git', ['config', 'protocol.file.allow', 'always'], { cwd: other })
-      await fs.writeFile(path.join(other, 'extra.txt'), 'from remote\n')
-      await execFileAsync('git', ['add', '.'], { cwd: other })
-      await execFileAsync('git', ['commit', '-m', 'remote change'], { cwd: other })
-      await execFileAsync('git', ['push', 'origin', 'HEAD:main'], { cwd: other })
+    await write('extra.txt', 'from remote\n')
+    await git(['add', '.'])
+    await git(['commit', '-m', 'remote change'])
+    await git(['push'])
+    await git(['reset', '--hard', 'HEAD~1'])
 
-      const result = await pullKnowledgeBase(dirs.root)
-      expect(result.ok).toBe(true)
-      expect(result.conflict).toBe(false)
-      expect(result.message).toMatch(/快进/)
-      await expect(fs.readFile(path.join(dirs.root, 'extra.txt'), 'utf8')).resolves.toContain(
-        'from remote'
-      )
-    } finally {
-      await cleanup(dirs, other)
-    }
+    const result = await pullKnowledgeBase(root)
+    expect(result.ok).toBe(true)
+    expect(result.conflict).toBe(false)
+    expect(result.message).toMatch(/快进/)
+    await expect(fs.readFile(path.join(root, 'extra.txt'), 'utf8')).resolves.toContain(
+      'from remote'
+    )
   })
 
   it('fails clearly when local diverged', async () => {
-    const dirs = await setupRepo()
-    const other = await fs.mkdtemp(path.join(os.tmpdir(), 'tnotes-kb-sync-diverge-'))
-    try {
-      await execFileAsync('git', ['clone', dirs.remoteUrl, other])
-      await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: other })
-      await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: other })
-      await execFileAsync('git', ['config', 'protocol.file.allow', 'always'], { cwd: other })
-      await fs.writeFile(path.join(other, 'clash.txt'), 'remote\n')
-      await execFileAsync('git', ['add', '.'], { cwd: other })
-      await execFileAsync('git', ['commit', '-m', 'remote clash'], { cwd: other })
-      await execFileAsync('git', ['push', 'origin', 'HEAD:main'], { cwd: other })
+    await write('clash.txt', 'remote\n')
+    await git(['add', '.'])
+    await git(['commit', '-m', 'remote clash'])
+    await git(['push'])
+    await git(['reset', '--hard', 'HEAD~1'])
 
-      await write(dirs.root, 'clash.txt', 'local\n')
-      await git(['add', '.'], dirs.root)
-      await git(['commit', '-m', 'local clash'], dirs.root)
+    await write('clash.txt', 'local\n')
+    await git(['add', '.'])
+    await git(['commit', '-m', 'local clash'])
 
-      const result = await pullKnowledgeBase(dirs.root)
-      expect(result.ok).toBe(false)
-      expect(result.conflict).toBe(true)
-      expect(result.message).toBe(PULL_CONFLICT_USER_MESSAGE)
-    } finally {
-      await cleanup(dirs, other)
-    }
+    const result = await pullKnowledgeBase(root)
+    expect(result.ok).toBe(false)
+    expect(result.conflict).toBe(true)
+    expect(result.message).toBe(PULL_CONFLICT_USER_MESSAGE)
   })
 })
 
