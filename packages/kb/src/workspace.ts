@@ -313,8 +313,8 @@ export interface TNotesKbWorkspace {
   }
 
   stats: {
-    /** Rewrite `stats.completedNotesCount` when enabled; requires a git repo. */
-    update(): Promise<MutationResult<KbStats>>
+    /** Rewrite `tnotes.stats.json` when enabled; requires a git repo. */
+    update(options?: { rebuild?: boolean }): Promise<MutationResult<KbStats>>
   }
 }
 
@@ -894,7 +894,7 @@ export function createWorkspace(options: CreateWorkspaceOptions): TNotesKbWorksp
     },
 
     stats: {
-      update: () => updateCompletedNotesStats(rootPath)
+      update: (options) => updateCompletedNotesStats(rootPath, options)
     }
   }
 

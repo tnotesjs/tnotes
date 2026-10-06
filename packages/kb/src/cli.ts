@@ -2,7 +2,7 @@
  * tnotes-kb — knowledge-base maintenance CLI.
  *
  * Commands:
- *   update   Refresh stats.completedNotesCount from TOC.md git history
+ *   update   Refresh completion stats from TOC.md git history
  *   init     Create a minimal knowledge base under the current (or given) parent
  */
 
@@ -13,7 +13,7 @@ import { createWorkspace } from './workspace'
 
 function printHelp(): void {
   console.log(`用法:
-  tnotes-kb update [知识库目录]
+  tnotes-kb update [知识库目录] [--rebuild-stats]
   tnotes-kb init <文件夹名> [选项]
 
 选项:
@@ -23,23 +23,32 @@ function printHelp(): void {
   --github-pages             写入 deploy.yml（并附带 package.json）
   --readme                   写入根 README.md
   --git-init                 在知识库目录执行 git init
+  --rebuild-stats            update 时全量重建 tnotes.stats.json（见待办 10）
 
 说明:
-  update  根据 Git 中 TOC.md 的历史回填 tnotes.json → stats.completedNotesCount。
-          需要先在 tnotes.json 中设置 "stats": { "enabled": true }。
+  update  根据 Git 中 TOC.md 历史写入 tnotes.stats.json（需 stats.enabled）；
+          并清除 tnotes.json 中旧的 stats.completedNotesCount。
   init    创建最小知识库（tnotes.json / TOC.md / notes/0001. 开始使用.md）。
-          可选脚手架默认关闭；Desk 预览不需要 package.json。
 `)
 }
 
-async function runUpdate(rootPath: string): Promise<void> {
+function resolveTargetDir(args: string[]): string {
+  const targetArg = args.find((arg) => !arg.startsWith('--')) ?? process.cwd()
+  return path.resolve(targetArg)
+}
+
+async function runUpdate(rootPath: string, rebuildStats: boolean): Promise<void> {
   const ws = createWorkspace({ rootPath })
-  const { value } = await ws.stats.update()
+  const { value, changedFiles } = await ws.stats.update({ rebuild: rebuildStats })
   const counts = value.completedNotesCount ?? {}
   const keys = Object.keys(counts).sort()
   const latest = keys[keys.length - 1]
+  const files = changedFiles.map((f) => f.path).join('、') || '无变更'
   console.log(
-    `完成趋势已更新: ${keys.length} 个月` + (latest ? `，当前 ${latest} = ${counts[latest]}` : '')
+    `完成趋势已更新: ${keys.length} 个月` +
+      (latest ? `，当前 ${latest} = ${counts[latest]}` : '') +
+      (rebuildStats ? '（全量重建）' : '') +
+      `；写入 ${files}`
   )
 }
 
@@ -119,8 +128,9 @@ async function main(): Promise<void> {
   }
 
   if (command === 'update') {
-    const targetArg = args.find((arg, i) => i > 0 && !arg.startsWith('--')) ?? process.cwd()
-    await runUpdate(path.resolve(targetArg))
+    const rest = args.slice(1)
+    const rebuildStats = rest.includes('--rebuild-stats')
+    await runUpdate(resolveTargetDir(rest), rebuildStats)
     return
   }
 

@@ -111,10 +111,23 @@ export type {
 export {
   parseCompletedNoteIndexes,
   computeCompletedNotesCount,
+  computeStatsFile,
   updateCompletedNotesStats,
   fillCompletedNotesCount,
-  toMonthKey
+  toMonthKey,
+  readStatsFile,
+  writeStatsFile,
+  emptyStatsFile,
+  flattenDayStats,
+  latestTotal,
+  monthlyTotalsFromByYear,
+  lastCommitPerDay,
+  countCommitsPerDay,
+  buildByYear,
+  STATS_FILE_VERSION
 } from './stats'
+export type { DayStat, DayRow, KbStatsFile, StatsUpdateResult, UpdateStatsOptions } from './stats'
+export { STATS_FILE } from './constants'
 export {
   KB_TEXT_MAX_BYTES,
   classifyKbPath,

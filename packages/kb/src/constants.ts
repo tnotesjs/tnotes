@@ -8,6 +8,7 @@ export const NOTES_DIR = 'notes'
 export const ASSETS_DIR = 'assets'
 export const TOC_FILE = 'TOC.md'
 export const CONFIG_FILE = 'tnotes.json'
+export const STATS_FILE = 'tnotes.stats.json'
 
 /**
  * Fixed basename for the knowledge-base icon (extension varies).

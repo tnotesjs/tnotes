@@ -85,6 +85,24 @@ export async function listCommitsOldestFirst(rootPath: string): Promise<GitCommi
     .filter((item) => Boolean(item.hash))
 }
 
+/** All commits after `sinceCommit` (exclusive) on HEAD, oldest first. */
+export async function listCommitsAfter(
+  rootPath: string,
+  sinceCommit: string
+): Promise<GitCommitMeta[]> {
+  const result = await git(rootPath, ['log', '--reverse', '--format=%H %aI', `${sinceCommit}..HEAD`])
+  if (!result.ok) return []
+  return result.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [hash, authorDate] = line.split(/\s+/, 2)
+      return { hash, authorDate: authorDate ?? '' }
+    })
+    .filter((item) => Boolean(item.hash))
+}
+
 /** Blob contents of `filePath` at `commit`, or null if missing. */
 export async function readFileAtCommit(
   rootPath: string,
@@ -94,4 +112,68 @@ export async function readFileAtCommit(
   const result = await git(rootPath, ['show', `${commit}:${filePath}`])
   if (!result.ok) return null
   return result.stdout
+}
+
+/** Commits that touched `filePath`, oldest first (`%H %aI`). */
+export async function listFileCommitsOldestFirst(
+  rootPath: string,
+  filePath: string
+): Promise<GitCommitMeta[]> {
+  const result = await git(rootPath, [
+    'log',
+    '--reverse',
+    '--format=%H %aI',
+    'HEAD',
+    '--',
+    filePath
+  ])
+  if (!result.ok) return []
+  return result.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [hash, authorDate] = line.split(/\s+/, 2)
+      return { hash, authorDate: authorDate ?? '' }
+    })
+    .filter((item) => Boolean(item.hash))
+}
+
+/** Commits after `sinceCommit` (exclusive) that touched `filePath`, oldest first. */
+export async function listFileCommitsAfter(
+  rootPath: string,
+  sinceCommit: string,
+  filePath: string
+): Promise<GitCommitMeta[]> {
+  const result = await git(rootPath, [
+    'log',
+    '--reverse',
+    '--format=%H %aI',
+    `${sinceCommit}..HEAD`,
+    '--',
+    filePath
+  ])
+  if (!result.ok) return []
+  return result.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [hash, authorDate] = line.split(/\s+/, 2)
+      return { hash, authorDate: authorDate ?? '' }
+    })
+    .filter((item) => Boolean(item.hash))
+}
+
+/** Current HEAD sha, or null. */
+export async function readHeadCommit(rootPath: string): Promise<string | null> {
+  const result = await git(rootPath, ['rev-parse', 'HEAD'])
+  if (!result.ok || !result.stdout) return null
+  return result.stdout
+}
+
+/** True when `commit` is an ancestor of HEAD (or is HEAD). */
+export async function isCommitInHistory(rootPath: string, commit: string): Promise<boolean> {
+  const result = await git(rootPath, ['merge-base', '--is-ancestor', commit, 'HEAD'])
+  return result.ok
 }

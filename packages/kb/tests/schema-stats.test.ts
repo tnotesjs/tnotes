@@ -180,7 +180,30 @@ describe('completed notes stats', () => {
 
     const saved = JSON.parse(await fs.readFile(path.join(root, 'tnotes.json'), 'utf8'))
     expect(saved.stats.enabled).toBe(true)
-    expect(saved.stats.completedNotesCount).toEqual(counts)
+    expect(saved.stats.completedNotesCount).toBeUndefined()
+
+    const statsFile = JSON.parse(await fs.readFile(path.join(root, 'tnotes.stats.json'), 'utf8'))
+    expect(statsFile.version).toBe(2)
+    expect(typeof statsFile.sourceCommit).toBe('string')
+    expect(statsFile.sourceCommit.length).toBeGreaterThan(0)
+    // latest day total should be 2
+    const years = Object.keys(statsFile.byYear)
+    expect(years.length).toBeGreaterThanOrEqual(1)
+    let lastTotal = 0
+    for (const y of years.sort()) {
+      for (const m of Object.keys(statsFile.byYear[y]).sort()) {
+        for (const d of Object.keys(statsFile.byYear[y][m]).sort()) {
+          lastTotal = statsFile.byYear[y][m][d].total
+        }
+      }
+    }
+    expect(lastTotal).toBe(2)
+    let commitSum = 0
+    for (const y of Object.keys(statsFile.byYear))
+      for (const m of Object.keys(statsFile.byYear[y]))
+        for (const d of Object.keys(statsFile.byYear[y][m]))
+          commitSum += statsFile.byYear[y][m][d].commits ?? 0
+    expect(commitSum).toBeGreaterThan(0)
   })
 
   it('refuses to write when stats.enabled is false', async () => {
@@ -188,5 +211,25 @@ describe('completed notes stats', () => {
     await write('tnotes.json', JSON.stringify({ stats: { enabled: false } }) + '\n')
     await write('TOC.md', '- [x] 0001. A\n')
     await expect(updateCompletedNotesStats(root)).rejects.toThrow(/未开启/)
+  })
+})
+
+describe('buildByYear (commits per day)', () => {
+  it('carries total on commit-only days and recomputes delta', async () => {
+    const { buildByYear } = await import('../src/stats')
+    const byYear = buildByYear(
+      new Map([
+        ['2026-01-01', 3],
+        ['2026-01-03', 2]
+      ]),
+      new Map([
+        ['2026-01-01', 4],
+        ['2026-01-02', 5],
+        ['2026-01-03', 1]
+      ])
+    )
+    expect(byYear['2026']['01']['01']).toEqual({ delta: 3, total: 3, commits: 4 })
+    expect(byYear['2026']['01']['02']).toEqual({ delta: 0, total: 3, commits: 5 })
+    expect(byYear['2026']['01']['03']).toEqual({ delta: -1, total: 2, commits: 1 })
   })
 })

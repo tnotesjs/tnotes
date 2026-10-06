@@ -61,11 +61,14 @@ export interface KbIcon {
   letter?: string
 }
 
-/** Optional completion-trend statistics (populated by `tnotes-kb update`). */
+/** Optional completion-trend switch in `tnotes.json` (counts live in `tnotes.stats.json`). */
 export interface KbStats {
   /** When false/undefined, update skips rewriting counts. Default off. */
   enabled?: boolean
-  /** Monthly completed-note counts keyed by `YY.MM` (deduped by note index). */
+  /**
+   * @deprecated No longer written to `tnotes.json`. Present only on in-memory
+   * return values from `updateCompletedNotesStats` for transitional callers.
+   */
   completedNotesCount?: Record<string, number>
 }
 
