@@ -326,6 +326,20 @@ function toggleAgentPanel(): void {
   if (agentStore.open) void nextTick(() => agentPanel.value?.focusInput())
 }
 
+function askAgentForPullConflict(): void {
+  const attention = store.gitAttention
+  if (!attention) return
+  const kb = store.overview.allKnowledgeBases.find((item) => item.id === attention.knowledgeBaseId)
+  const name = attention.knowledgeBaseName || kb?.displayName || attention.knowledgeBaseId
+  const rootPath = kb?.rootPath ?? ''
+  const prompt =
+    `本地知识库 ${name}:${rootPath} 在 git pull 时发生冲突或无法快进合并。` +
+    `请分析冲突原因，必要时协助解决冲突并完成拉取（可先查看 git status / 冲突文件，再提出或直接修复方案）。`
+  store.gitAttention = null
+  void agentStore.preparePrompt(prompt)
+}
+
+
 function toggleTerminalPanel(): void {
   terminalStore.toggle()
   if (terminalStore.open) void terminalPanel.value?.createOrFocus()
@@ -1506,10 +1520,18 @@ onUnmounted(() => {
           <button
             v-if="store.gitAttention.kind === 'conflict'"
             type="button"
-            class="primary"
+            class="secondary"
             @click="store.openKnowledgeBaseInIde(store.gitAttention!.knowledgeBaseId)"
           >
             在 {{ store.settings?.ide === 'cursor' ? 'Cursor' : 'VSCode' }} 中打开
+          </button>
+          <button
+            v-if="store.gitAttention.kind === 'conflict'"
+            type="button"
+            class="primary"
+            @click="askAgentForPullConflict"
+          >
+            让 Agent 处理
           </button>
           <button
             v-else

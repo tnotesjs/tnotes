@@ -163,3 +163,21 @@ export type {
   WriteExcalidrawDerivedSvgInput,
   WriteExcalidrawDocumentInput
 } from './excalidraw'
+
+export {
+  pushKnowledgeBase,
+  pullKnowledgeBase,
+  shouldRunUpdateBeforePush,
+  buildPullConflictAgentPrompt,
+  DEFAULT_PUSH_COMMIT_MESSAGE,
+  PULL_CONFLICT_USER_MESSAGE
+} from './sync'
+export type {
+  KbGitCommandResult,
+  KbGitRunner,
+  PushOptions,
+  PushResult,
+  PullOptions,
+  PullLocalState,
+  PullResult
+} from './sync'

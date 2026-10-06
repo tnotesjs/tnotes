@@ -3,17 +3,26 @@
  *
  * Commands:
  *   update   Refresh completion stats from TOC.md git history
+ *   push     Optional update → add/commit/push
+ *   pull     Thin fetch + ff-only pull (fails clearly on conflict)
  *   init     Create a minimal knowledge base under the current (or given) parent
  */
 
 import path from 'node:path'
 
 import { createKnowledgeBase } from './create'
+import {
+  DEFAULT_PUSH_COMMIT_MESSAGE,
+  pullKnowledgeBase,
+  pushKnowledgeBase
+} from './sync'
 import { createWorkspace } from './workspace'
 
 function printHelp(): void {
   console.log(`用法:
   tnotes-kb update [知识库目录] [--rebuild-stats]
+  tnotes-kb push [知识库目录] [--no-update]
+  tnotes-kb pull [知识库目录]
   tnotes-kb init <文件夹名> [选项]
 
 选项:
@@ -23,11 +32,15 @@ function printHelp(): void {
   --github-pages             写入 deploy.yml（并附带 package.json）
   --readme                   写入根 README.md
   --git-init                 在知识库目录执行 git init
+  --no-update                push 时跳过推送前 update（覆盖 tnotes.json）
   --rebuild-stats            update 时全量重建 tnotes.stats.json（见待办 10）
 
 说明:
   update  根据 Git 中 TOC.md 历史写入 tnotes.stats.json（需 stats.enabled）；
           并清除 tnotes.json 中旧的 stats.completedNotesCount。
+  push    按 tnotes.json → push.runUpdateBefore（默认 true）可选先 update，
+          再 git add . / commit（「${DEFAULT_PUSH_COMMIT_MESSAGE}」）/ push。
+  pull    fetch + pull --ff-only；冲突或无法快进时失败。
   init    创建最小知识库（tnotes.json / TOC.md / notes/0001. 开始使用.md）。
 `)
 }
@@ -50,6 +63,24 @@ async function runUpdate(rootPath: string, rebuildStats: boolean): Promise<void>
       (rebuildStats ? '（全量重建）' : '') +
       `；写入 ${files}`
   )
+}
+
+async function runPush(rootPath: string, noUpdate: boolean): Promise<void> {
+  const result = await pushKnowledgeBase(rootPath, {
+    runUpdateBefore: noUpdate ? false : undefined
+  })
+  const bits = [
+    result.updated ? '已 update' : null,
+    result.committed ? '已 commit' : null,
+    result.pushed ? '已 push' : null
+  ].filter(Boolean)
+  console.log(result.message + (bits.length ? `（${bits.join('，')}）` : ''))
+}
+
+async function runPull(rootPath: string): Promise<void> {
+  const result = await pullKnowledgeBase(rootPath)
+  console.log(result.message)
+  if (!result.ok) process.exit(1)
 }
 
 async function runInit(args: string[]): Promise<void> {
@@ -131,6 +162,18 @@ async function main(): Promise<void> {
     const rest = args.slice(1)
     const rebuildStats = rest.includes('--rebuild-stats')
     await runUpdate(resolveTargetDir(rest), rebuildStats)
+    return
+  }
+
+  if (command === 'push') {
+    const rest = args.slice(1)
+    const noUpdate = rest.includes('--no-update')
+    await runPush(resolveTargetDir(rest), noUpdate)
+    return
+  }
+
+  if (command === 'pull') {
+    await runPull(resolveTargetDir(args.slice(1)))
     return
   }
 

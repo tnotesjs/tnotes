@@ -35,6 +35,7 @@ export interface GitRepositoryDescriptor {
   rootPath: string
   /** 库级约定（tnotes.json）：自动提交推送。undefined = 未启用。 */
   autoPush?: { enabled: boolean; idleMinutes: number }
+  push?: { runUpdateBefore?: boolean }
   notes: Array<{
     uuid: string
     index: string

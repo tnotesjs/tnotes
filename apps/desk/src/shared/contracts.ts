@@ -268,6 +268,8 @@ export interface KnowledgeBaseSettingsDto {
   /** Suggested name when `name` is empty (origin / directory). */
   suggestedName: string | null
   autoPush: { enabled: boolean; idleMinutes: number } | null
+  /** 推送前是否自动 update；缺省 true（与 kb 默认一致）。 */
+  pushRunUpdateBefore: boolean
   headingNumberMaxDepth: number | null
 }
 
@@ -281,6 +283,8 @@ export interface KnowledgeBaseSettingsWriteRequest {
   pageUrl?: string
   statsEnabled: boolean
   autoPush?: { enabled: boolean; idleMinutes: number } | null
+  /** null → 删键（回退 kb 默认 true）；boolean → 写入 tnotes.json push.runUpdateBefore */
+  pushRunUpdateBefore?: boolean | null
   headingNumberMaxDepth?: number | null
 }
 

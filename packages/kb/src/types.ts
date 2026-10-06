@@ -103,6 +103,11 @@ export interface KbConfig {
    */
   autoPush?: { enabled: boolean; idleMinutes: number }
   /**
+   * Push workflow (Desk / CLI `tnotes-kb push`)。
+   * `runUpdateBefore` defaults to true when omitted — kb runs `update` before add/commit/push.
+   */
+  push?: { runUpdateBefore?: boolean }
+  /**
    * Heading numbering depth cap (1–6) for this repo (Desk 标题编号)。
    * 超过该层级的标题不加编号前缀。
    */

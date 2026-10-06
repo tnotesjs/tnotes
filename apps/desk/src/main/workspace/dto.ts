@@ -146,6 +146,7 @@ export async function toSettingsDto(
     originUrl,
     suggestedName,
     autoPush: config.autoPush ?? null,
+    pushRunUpdateBefore: config.push?.runUpdateBefore !== false,
     headingNumberMaxDepth: config.headingNumberMaxDepth ?? null
   }
 }

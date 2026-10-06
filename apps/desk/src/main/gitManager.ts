@@ -5,6 +5,12 @@ import { spawn } from 'node:child_process'
 import { deskLog } from './log'
 import { loadSettings } from './settings'
 import { BackgroundFetchScheduler, BACKGROUND_FETCH_INTERVAL_MS } from './backgroundFetchScheduler'
+import {
+  pullKnowledgeBase,
+  pushKnowledgeBase,
+  readKbConfig,
+  updateCompletedNotesStats
+} from '@tnotesjs/kb'
 
 import type { BackgroundFetchRequest } from './backgroundFetchScheduler'
 import type { GitRepositoryDescriptor } from './workspaceManager'
@@ -994,35 +1000,44 @@ export class GitManager {
       knowledgeBaseId,
       async (repository, runExtras) => {
         this.setBusy(knowledgeBaseId, 'pull')
-        const fetchResult = await this.execute(
-          repository.rootPath,
-          ['fetch', '--prune'],
-          MANUAL_FETCH_TIMEOUT_MS,
-          runExtras
-        )
-        if (fetchResult.code !== 0) throw commandError(fetchResult, '无法获取远端状态')
         const before = await this.readState(repository, new Date().toISOString())
-        if (before.conflict || (before.behind > 0 && before.changes.length > 0)) {
+        const result = await pullKnowledgeBase(repository.rootPath, {
+          assumeGitRepo: true,
+          local: {
+            behind: before.behind,
+            hasChanges: before.changes.length > 0,
+            conflict: before.conflict
+          },
+          runGit: async (args, timeoutMs) => {
+            const timeout =
+              args[0] === 'fetch'
+                ? MANUAL_FETCH_TIMEOUT_MS
+                : args[0] === 'pull'
+                  ? 90_000
+                  : (timeoutMs ?? 30_000)
+            const command = await this.execute(repository.rootPath, args, timeout, runExtras)
+            return {
+              code: command.code,
+              stdout: command.stdout,
+              stderr: command.stderr
+            }
+          }
+        })
+        if (!result.ok) {
           const state = this.storeState({
             ...before,
             busy: null,
-            error: '本地存在未提交变更，无法安全快进；请在 IDE 中处理后重试'
+            error: result.message
           })
-          return { state, message: state.error!, conflict: true }
-        }
-        const result = await this.execute(
-          repository.rootPath,
-          ['pull', '--ff-only'],
-          90_000,
-          runExtras
-        )
-        if (result.code !== 0) {
-          const message = operationMessage(commandError(result, 'Git pull 失败'))
-          const state = await this.refreshRepository(repository, message)
-          return { state, message, conflict: true }
+          // Refresh after a failed pull attempt that may have fetched
+          if (result.message && !before.conflict && !(before.behind > 0 && before.changes.length > 0)) {
+            const refreshed = await this.refreshRepository(repository, result.message)
+            return { state: refreshed, message: result.message, conflict: true }
+          }
+          return { state, message: result.message, conflict: true }
         }
         const state = await this.refreshRepository(repository)
-        return { state, message: '已快进到远端最新版本', conflict: false }
+        return { state, message: result.message, conflict: false }
       },
       // 工厂：真正开始执行时才读观察者与取消信号
       () => extras
@@ -1253,44 +1268,42 @@ export class GitManager {
     const current = await this.readState(repository)
     if (current.conflict) throw new Error('仓库存在冲突，请先在 IDE 中处理')
     if (current.behind > 0) throw new Error('本地版本落后于远端，请先拉取最新版本')
-    const add = await this.execute(repository.rootPath, ['add', '-A'], 30_000, extras)
-    if (add.code !== 0) throw commandError(add, 'Git 暂存失败')
-    const staged = await this.execute(
-      repository.rootPath,
-      ['diff', '--cached', '--quiet'],
-      30_000,
-      extras
-    )
-    let committed = false
-    if (staged.code === 1) {
-      const timestamp = new Intl.DateTimeFormat('sv-SE', {
-        dateStyle: 'short',
-        timeStyle: 'short',
-        hour12: false
-      }).format(new Date())
-      const commit = await this.execute(
-        repository.rootPath,
-        ['commit', '-m', `docs: update notes ${timestamp}`],
-        120_000,
-        // 漏传 extras 会让 commit 阶段既看不到输出、也收不到取消信号：
-        // 取消 push 任务时 commit 子进程会一直跑到自己结束。
-        extras
-      )
-      if (commit.code !== 0) throw commandError(commit, 'Git commit 失败')
-      committed = true
-    } else if (staged.code !== 0) {
-      throw commandError(staged, '无法检查待提交变更')
+
+    let config = {} as Awaited<ReturnType<typeof readKbConfig>>['config']
+    try {
+      config = (await readKbConfig(repository.rootPath)).config
+    } catch {
+      config = {}
     }
-    const stateBeforePush = await this.readState(repository)
-    if (!stateBeforePush.upstream) throw new Error('当前分支没有配置上游仓库，Desk 未执行 push')
-    if (!committed && stateBeforePush.ahead === 0) {
-      const state = this.storeState({ ...stateBeforePush, busy: null, error: null })
-      return { state, message: '没有需要提交或推送的变更', conflict: false }
-    }
-    const push = await this.execute(repository.rootPath, ['push'], 120_000, extras)
-    if (push.code !== 0) throw commandError(push, 'Git push 失败')
+
+    const pushResult = await pushKnowledgeBase(repository.rootPath, {
+      assumeGitRepo: true,
+      config,
+      runUpdate: async () => {
+        if (!config.stats?.enabled) return false
+        await updateCompletedNotesStats(repository.rootPath)
+        return true
+      },
+      runGit: async (args, timeoutMs) => {
+        const timeout =
+          args[0] === 'commit' || args[0] === 'push'
+            ? 120_000
+            : (timeoutMs ?? 30_000)
+        const command = await this.execute(repository.rootPath, args, timeout, extras)
+        return {
+          code: command.code,
+          stdout: command.stdout,
+          stderr: command.stderr
+        }
+      }
+    })
+
     const state = await this.refreshRepository(repository)
-    return { state, message: '变更已提交并推送到远端', conflict: false }
+    return {
+      state,
+      message: pushResult.message,
+      conflict: false
+    }
   }
 
   private async refreshRepository(

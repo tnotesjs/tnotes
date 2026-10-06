@@ -414,6 +414,14 @@ export class WorkspaceManager {
       stats,
       // 库级约定：null → 删键；undefined → 不动
       ...(request.autoPush !== undefined ? { autoPush: request.autoPush ?? undefined } : {}),
+      ...(request.pushRunUpdateBefore !== undefined
+        ? {
+            push:
+              request.pushRunUpdateBefore === null
+                ? undefined
+                : { runUpdateBefore: request.pushRunUpdateBefore }
+          }
+        : {}),
       ...(request.headingNumberMaxDepth !== undefined
         ? { headingNumberMaxDepth: request.headingNumberMaxDepth ?? undefined }
         : {})

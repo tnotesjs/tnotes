@@ -42,6 +42,7 @@ const draft = reactive({
   letter: '',
   autoPushEnabled: false,
   autoPushIdleMinutes: 5,
+  pushRunUpdateBefore: true,
   headingNumberMaxDepth: null as number | null
 })
 
@@ -113,6 +114,7 @@ function formSnapshot(): string {
     letter: draft.letter.trim(),
     autoPushEnabled: draft.autoPushEnabled,
     autoPushIdleMinutes: draft.autoPushIdleMinutes,
+    pushRunUpdateBefore: draft.pushRunUpdateBefore,
     headingNumberMaxDepth: draft.headingNumberMaxDepth,
     pending: pendingIcon.value
       ? pendingIcon.value.kind === 'file'
@@ -142,6 +144,7 @@ function applyLoaded(settings: KnowledgeBaseSettingsDto): void {
   draft.letter = settings.icon?.letter ?? ''
   draft.autoPushEnabled = settings.autoPush?.enabled === true
   draft.autoPushIdleMinutes = settings.autoPush?.idleMinutes ?? 5
+  draft.pushRunUpdateBefore = settings.pushRunUpdateBefore !== false
   draft.headingNumberMaxDepth = settings.headingNumberMaxDepth
   pendingIcon.value = null
   baseline.value = formSnapshot()
@@ -234,6 +237,7 @@ async function persistSettings(): Promise<void> {
         autoPush: draft.autoPushEnabled
           ? { enabled: true, idleMinutes: draft.autoPushIdleMinutes }
           : null,
+        pushRunUpdateBefore: draft.pushRunUpdateBefore,
         headingNumberMaxDepth: draft.headingNumberMaxDepth
       })
     )
@@ -416,12 +420,16 @@ onUnmounted(() => {
           <input v-model.number="draft.autoPushIdleMinutes" type="number" min="1" max="1440" />
           <small v-if="autoPushIdleError" class="hint error">{{ autoPushIdleError }}</small>
         </label>
+        <label class="switch-field">
+          <input v-model="draft.pushRunUpdateBefore" type="checkbox" />
+          <span>推送前自动 update（写入 tnotes.json → push.runUpdateBefore，默认开启）</span>
+        </label>
       </section>
 
       <section class="settings-section">
         <header class="section-heading">
           <strong>完成趋势统计</strong>
-          <span>数据在执行 tnotes-kb update（tn:update）时回填</span>
+          <span>数据写入 tnotes.stats.json（tn:update / 推送前自动 update）</span>
         </header>
         <label class="switch-field" :class="{ disabled: !isGitRepo }">
           <input v-model="draft.statsEnabled" type="checkbox" :disabled="!isGitRepo" />

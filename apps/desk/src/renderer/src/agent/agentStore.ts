@@ -759,6 +759,18 @@ export const useAgentStore = defineStore('agent', () => {
     reject: (knowledgeBaseId, noteUuid) => void reject({ knowledgeBaseId, uuid: noteUuid })
   })
 
+  /**
+   * Open the Agent panel and preset the composer draft.
+   * Does **not** send — the user must click send.
+   */
+  async function preparePrompt(text: string): Promise<void> {
+    if (!active.value) startChat()
+    draft.value = text
+    open.value = true
+    await nextTick()
+    document.querySelector<HTMLTextAreaElement>('.agent-dock textarea')?.focus()
+  }
+
   return {
     open,
     width,
@@ -786,6 +798,7 @@ export const useAgentStore = defineStore('agent', () => {
     ensureListening,
     loadChats,
     startChat,
+    preparePrompt,
     selectChat,
     renameChat,
     removeChat,
