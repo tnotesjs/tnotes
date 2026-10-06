@@ -125,7 +125,7 @@ try {
     assert.ok(normalizedTitle.length > 0, `第 ${k + 1} 篇笔记的标题不应为空`)
     await win.waitForFunction(
       (text) =>
-        [...document.querySelectorAll('.milkdown .ProseMirror')].some(
+        [...document.querySelectorAll('.live-editor .cm-content')].some(
           (el) => el.innerText.replace(/[^\p{L}\p{N}]/gu, '').includes(text) === true
         ),
       normalizedTitle,

@@ -423,10 +423,10 @@ try {
       const row = page.locator('.toc-row', { hasText: title }).first()
       await row.click()
       try {
-        await page.locator('.milkdown:visible').first().waitFor({ timeout: 5000 })
+        await page.locator('.live-editor:visible').first().waitFor({ timeout: 5000 })
       } catch {
         await row.dblclick()
-        await page.locator('.milkdown:visible').first().waitFor({ timeout: 30000 })
+        await page.locator('.live-editor:visible').first().waitFor({ timeout: 30000 })
       }
       await page.waitForTimeout(600)
       await page.locator('.editor-surface:visible').first().click()
@@ -493,7 +493,7 @@ try {
   const scrollerInfo = () =>
     page.evaluate(() => {
       const host =
-        [...document.querySelectorAll('.milkdown')].find((el) => el.getClientRects().length > 0) ??
+        [...document.querySelectorAll('.live-editor')].find((el) => el.getClientRects().length > 0) ??
         document.body
       let node = host
       while (node && node !== document.body) {
@@ -509,7 +509,7 @@ try {
     'F7 · 有未保存文档时 apply 被拒绝且不改文件',
     async () => {
       await page.locator('.toc-row', { hasText: '重复与合并' }).first().click()
-      await page.locator('.milkdown:visible').first().waitFor({ timeout: 30000 })
+      await page.locator('.live-editor:visible').first().waitFor({ timeout: 30000 })
       await page.waitForTimeout(600)
       await page.locator('.editor-surface:visible').first().click()
       await page.keyboard.type('门禁测试：这段不应被保存')
@@ -544,10 +544,10 @@ try {
     'F6 · 重开后位置大致保留且不凭空变 dirty',
     async () => {
       await page.locator('.toc-row', { hasText: '重复与合并' }).first().click()
-      await page.locator('.milkdown:visible').first().waitFor({ timeout: 30000 })
+      await page.locator('.live-editor:visible').first().waitFor({ timeout: 30000 })
       await page.waitForTimeout(800)
       const before = await page.evaluate(() => {
-        const host = [...document.querySelectorAll('.milkdown')].find(
+        const host = [...document.querySelectorAll('.live-editor')].find(
           (el) => el.getClientRects().length > 0
         )
         let current = host
@@ -588,7 +588,7 @@ try {
       assert(dirtyDots === 0, `应用后不应有标签变 dirty，实际 ${dirtyDots} 个`)
       // 回到笔记标签再测量：否则取到的是隐藏编辑器，滚动断言会变成空断言
       await page.locator('.tab', { hasText: '重复与合并' }).first().click()
-      await page.locator('.milkdown:visible').first().waitFor({ timeout: 20000 })
+      await page.locator('.live-editor:visible').first().waitFor({ timeout: 20000 })
       await page.waitForTimeout(1200)
       const after = await scrollerInfo()
       await page.screenshot({ path: join(shots, 'F6-reopen.png') })

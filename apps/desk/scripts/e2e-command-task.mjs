@@ -203,12 +203,18 @@ try {
   record('T0b Git 状态就绪', Boolean(gitReady))
 
   // 打开底部面板：命令任务标签就长在这里
-  await page.locator('.terminal-toggle').click()
+  await page.getByRole('button', { name: '切换终端面板' }).click()
   await waitFor(async () => (await page.locator('.terminal-panel').count()) > 0, 8000)
   record('T1 底部面板可以打开', (await page.locator('.terminal-panel').count()) > 0)
 
+  /** 变更区「…」菜单里的 Git 操作（旧工具条 aria-label 按钮已迁到这里） */
+  const runGitMenu = async (itemName) => {
+    await page.getByRole('button', { name: '变更操作' }).click()
+    await page.getByRole('menuitem', { name: itemName }).click()
+  }
+
   // ── T2 拉取：面板里出现任务标签，显示 git 的真实输出，成功结算 ──
-  await page.locator('button[aria-label="获取并拉取远端更新"]').click()
+  await runGitMenu('拉取远端更新')
   const pullTab = await waitFor(
     async () => (await page.locator('.terminal-tab.command-tab').count()) > 0,
     20000
@@ -233,7 +239,7 @@ try {
 
   // ── T3 推送：完整流程（保存 → 提交 → push），提交真的进了裸远端 ──
   const noteBefore = inKb('rev-parse', 'HEAD')
-  await page.locator('button[aria-label="提交并推送当前变更"]').click()
+  await runGitMenu('提交并推送')
   const pushDone = await waitFor(async () => {
     const task = await taskOf('git-push')
     return task && task.status === 'done' ? task : null
@@ -250,7 +256,7 @@ try {
 
   // ── T4 同库同种操作复用同一个标签：再次拉取不会多出一个标签 ──
   const tabsBefore = await page.locator('.terminal-tab.command-tab').count()
-  await page.locator('button[aria-label="获取并拉取远端更新"]').click()
+  await runGitMenu('拉取远端更新')
   await waitFor(async () => {
     const task = await taskOf('git-pull')
     return task && task.status === 'done' && task.finishedAt
@@ -275,7 +281,7 @@ try {
   )
   const remoteMoved = `${remote}.hidden`
   execFileSync('mv', [remote, remoteMoved])
-  await page.locator('button[aria-label="提交并推送当前变更"]').click()
+  await runGitMenu('提交并推送')
   const pushFailed = await waitFor(async () => {
     const task = await taskOf('git-push')
     return task && task.status === 'failed' ? task : null
@@ -326,7 +332,7 @@ try {
   // 与这里触发通知的形态完全一致。
   inKb('remote', 'set-url', 'origin', join(fixture, 'no-such-remote.git'))
   // 用界面上的「获取并拉取」按钮制造失败（真实用户流程：任务 + 错误原文 + 通知）
-  await page.locator('button[aria-label="获取并拉取远端更新"]').click()
+  await runGitMenu('拉取远端更新')
   const failedTask = await waitFor(async () => {
     const task = await taskOf('git-pull')
     return task && task.status === 'failed' ? task : null
@@ -369,7 +375,6 @@ try {
     join(notes, '0042. 有未提交改动.md'),
     `${noteBody('11111111-1111-4111-8111-111111111111', '有未提交改动')}\n超时测试的一笔\n`
   )
-  const pushButton = page.locator('button[aria-label="提交并推送当前变更"]')
   // T6 那次失败 pull 会弹出「GIT 需要处理」（拉取冲突提醒），它挡住后面的点击。
   // 按产品自己的出口收起来：footer 里的「稍后处理」。
   const attentionDialog = page.locator('.dialog-backdrop')
@@ -387,7 +392,7 @@ try {
       console.log(`调试：第 ${attempt} 次关对话框后仍在`)
     }
   }
-  await pushButton.click({ timeout: 10000 })
+  await runGitMenu('提交并推送')
   // 先确认它真的跑起来了（有命令行输出），再等它超时
   const running = await waitFor(async () => {
     const task = await taskOf('git-push')

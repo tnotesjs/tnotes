@@ -59,7 +59,7 @@ try {
   await page.getByText('acceptance-kb', { exact: true }).first().click()
   await page.waitForTimeout(1500)
   await page.locator('.toc-row', { hasText: '重复与合并' }).first().click()
-  await page.locator('.milkdown:visible').first().waitFor({ timeout: 30000 })
+  await page.locator('.live-editor .cm-content').first().waitFor({ timeout: 30000 })
   await page.waitForTimeout(600)
   await page.locator('.editor-surface:visible').first().click()
   await page.keyboard.type(TYPED)

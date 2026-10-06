@@ -107,7 +107,7 @@ try {
 
   const editorText = await page.evaluate(
     () =>
-      [...document.querySelectorAll('.ProseMirror')].find((el) => el.offsetParent !== null)
+      [...document.querySelectorAll('.live-editor .cm-content')].find((el) => el.offsetParent !== null)
         ?.textContent ?? ''
   )
   check(

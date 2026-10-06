@@ -90,10 +90,10 @@ page.on('console', (message) => {
 await page.waitForLoadState('domcontentloaded')
 
 const conflictBanner = () => page.locator('.conflict-banner')
-const notePathBar = () => page.locator('.note-path-bar')
+const notePathBar = () => page.locator('.live-editor .cm-content, .kb-path-breadcrumb')
 const editorText = async () =>
   (await page
-    .locator('.ProseMirror, .milkdown')
+    .locator('.live-editor .cm-content')
     .first()
     .innerText()
     .catch(() => '')) || ''
@@ -114,7 +114,7 @@ try {
 
   // ── E2a 先在编辑器里真的输入：冲突场景要求 Desk 侧有未保存编辑 ──
   // （文档不脏时保存是空操作，不会去比对 revision——那不是冲突场景）
-  await page.locator('.ProseMirror, .milkdown').first().click()
+  await page.locator('.live-editor .cm-content').first().click()
   await page.keyboard.press('ControlOrMeta+End')
   await page.keyboard.type('本地未保存的一笔')
   const dirty = await waitFor(

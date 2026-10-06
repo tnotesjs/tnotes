@@ -102,12 +102,12 @@ try {
   await page.getByText('kb-files', { exact: true }).first().click()
   await page.waitForTimeout(1200)
   await page.locator('.toc-row', { hasText: '笔记' }).first().click()
-  const pane = page.locator('.tab-content:visible .milkdown .ProseMirror').first()
+  const pane = page.locator('.tab-content:visible .live-editor .cm-content').first()
   await pane.waitFor({ timeout: 30000 })
   await page.waitForTimeout(500)
 
-  // class 是加在组件根元素上的：真实 DOM 是 <nav class="kb-path-breadcrumb note-path-bar">
-  const breadcrumb = () => page.locator('.note-path-bar:visible').first()
+  // 笔记页面包屑：KbPathBreadcrumb 根 class 为 kb-path-breadcrumb（挂在 .document-path 下）
+  const breadcrumb = () => page.locator('.document-path .kb-path-breadcrumb:visible').first()
   /** Monaco 把空格渲染成 \u00a0，读文本前先归一 */
   const textOf = async (locator) => (await locator.innerText()).replace(/\u00a0/g, ' ')
   const segments = () => breadcrumb().locator('.kb-path-segment')
@@ -232,7 +232,7 @@ try {
   // 上一步打开的是文本文件标签页：先回到笔记标签页，再从面包屑逐层进入 notes/
   await page.locator('.toc-row', { hasText: '笔记' }).first().click()
   await pane.waitFor({ timeout: 20000 })
-  const noteBreadcrumb = page.locator('.note-path-bar:visible').first()
+  const noteBreadcrumb = page.locator('.document-path .kb-path-breadcrumb:visible').first()
   const tabsBeforeNote = await page.locator('.tab').count()
   // 点库名 → 列库根 → 点 notes 目录（目录项是"继续进入"）→ 列 notes/ → 点笔记文件
   await noteBreadcrumb.locator('.kb-path-segment').first().click()
@@ -251,7 +251,7 @@ try {
   )
 
   // 9) 笔记源码视图是同一个 CodeMirror，且不因文本文件功能回归
-  await page.getByRole('button', { name: '源码视图', exact: true }).first().click()
+  await page.locator('[data-testid="view-toggle"]').first().click()
   const sourceEditor = page.locator('.live-editor:visible').first()
   const sourceReady = await waitFor(
     async () => (await sourceEditor.locator('.cm-editor.cm-lp-source').count()) === 1,

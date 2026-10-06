@@ -73,7 +73,7 @@ try {
   await page.waitForLoadState('domcontentloaded')
   await page.getByText('note-header', { exact: true }).first().click()
   await page.getByText('概述', { exact: true }).first().click()
-  const pm = page.locator('.milkdown .ProseMirror')
+  const pm = page.locator('.live-editor .cm-content')
   await pm.waitFor()
   const title = page.getByRole('button', { name: '重命名笔记', exact: true })
   const input = page.getByRole('textbox', { name: '笔记名称', exact: true })
@@ -135,7 +135,7 @@ try {
   await page.locator('[data-testid="view-toggle"]').click()
   await pm.waitFor({ timeout: 20000 })
   await page.locator('[data-testid="view-toggle"]').click()
-  await page.locator('.markdown-source-editor .view-lines').first().waitFor({ timeout: 20000 })
+  await page.locator('.live-editor .cm-editor.cm-lp-source').first().waitFor({ timeout: 20000 })
   assert.equal(
     await page.locator('[data-testid="view-toggle"]').getAttribute('aria-label'),
     '源码视图'
@@ -153,14 +153,14 @@ try {
 
   await title.click()
   assert.equal(await input.inputValue(), '概述')
-  assert.equal(await page.locator('.document-path .note-index').innerText(), '0001.')
+  assert.equal(await page.locator('.note-doc-title .note-index').innerText(), '0001.')
   assert.equal(await input.evaluate((element) => document.activeElement === element), true)
   await input.fill('取消的名称')
   await input.press('Escape')
   assert.equal(await title.innerText(), '概述')
   await title.click()
   await input.fill('   ')
-  await page.locator('.note-path-bar').click()
+  await page.locator('.kb-path-breadcrumb, .live-editor .cm-content').first().click()
   assert.equal(await title.innerText(), '概述')
 
   // Make a real unsaved body edit, then rename on blur. Renaming must save it first.
@@ -173,7 +173,7 @@ try {
   await input.fill('  新的名称  ')
   await page.screenshot({ path: join(shots, 'inline-title.png') })
   assert.equal(existsSync(noteFile), true)
-  await page.locator('.note-path-bar').click()
+  await page.locator('.kb-path-breadcrumb, .live-editor .cm-content').first().click()
   const renamedNoteFile = join(kb, 'notes', '0001. 新的名称.md')
   await waitUntil(() => existsSync(renamedNoteFile))
   await page.waitForFunction(
@@ -188,7 +188,7 @@ try {
     (await page.locator('.toc-nodes .node-label').filter({ hasText: '新的名称' }).count()) > 0,
     true
   )
-  assert.equal(await page.locator('.document-path .note-index').innerText(), '0001.')
+  assert.equal(await page.locator('.note-doc-title .note-index').innerText(), '0001.')
   console.log(
     '✓ blur trims/renames the note file, TOC and tab; index/UUID and unsaved text preserved'
   )
