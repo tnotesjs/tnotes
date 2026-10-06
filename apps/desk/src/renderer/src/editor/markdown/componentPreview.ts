@@ -19,6 +19,8 @@ export interface BilibiliVideoPreviewProps {
 export interface WordListPreviewProps {
   words: string[]
   needSort?: boolean
+  /** 勾选态 localStorage 作用域（知识库 + 笔记）；Desk 单页多笔记，缺了会跨笔记串用。 */
+  storageScope?: string
 }
 
 export interface MermaidPreviewProps {
@@ -44,7 +46,8 @@ function normalizeBilibili(props: BilibiliVideoPreviewProps): Required<BilibiliV
 function normalizeWordList(props: WordListPreviewProps): Required<WordListPreviewProps> {
   return {
     words: Array.isArray(props.words) ? [...props.words] : [],
-    needSort: Boolean(props.needSort)
+    needSort: Boolean(props.needSort),
+    storageScope: props.storageScope ?? ''
   }
 }
 
@@ -118,6 +121,7 @@ export function mountWordListPreview(
     const nb = normalizeWordList(b as WordListPreviewProps)
     return (
       na.needSort === nb.needSort &&
+      na.storageScope === nb.storageScope &&
       na.words.length === nb.words.length &&
       na.words.every((w, i) => w === nb.words[i])
     )

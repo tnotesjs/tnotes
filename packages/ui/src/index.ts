@@ -11,6 +11,7 @@ export {
   resolveWordListFeatures
 } from './components/WordList/wordListFeatures'
 export type { WordListFeatures } from './components/WordList/wordListFeatures'
+export { deskWordListStorageScope, wordListStorageKey } from './components/WordList/wordListStorage'
 export {
   clampMindmapHeight,
   MINDMAP_MAX_HEIGHT,

@@ -40,7 +40,7 @@ import { codeLineDecorations, fenceLineDigits } from './codeLines'
 import { CodeHScrollWidget, codeBlockScrollSync } from './codeBlockScroll'
 import { CardWidget, isKnownComponent, setCodeGroupTab, type CardKind } from './cards'
 import { headingFoldKey, headingSections, HeadingFoldToggle, isHeadingFolded } from './headingFold'
-import { livePreviewEnabled } from './host'
+import { livePreviewEnabled, livePreviewHost } from './host'
 import { listWrapIndent } from './listWrap'
 import { hrefForLink, linkDefinitions } from './referenceLinks'
 import { readImage } from './images'
@@ -991,11 +991,16 @@ function build(state: EditorState): LivePreviewState {
     }
   }
   const kbId = state.facet(cardKnowledgeBase)
+  const noteUuid = state.facet(livePreviewHost).noteUuid
   const definitions = linkDefinitions(state)
   const card = (node: SyntaxNode, kind: CardKind, revealOffset: number): void => {
     const start = doc.lineAt(node.from)
     const source = doc.sliceString(start.from, node.to)
-    replaceBlock(node.from, node.to, new CardWidget(kind, source, revealOffset, kbId, definitions))
+    replaceBlock(
+      node.from,
+      node.to,
+      new CardWidget(kind, source, revealOffset, kbId, definitions, noteUuid)
+    )
   }
   const listDepth = (node: SyntaxNode): number => {
     let depth = -1
@@ -1589,6 +1594,8 @@ const livePreviewStateField = StateField.define<LivePreviewState>({
       modeChanged ||
       interactionChanged ||
       syntaxTree(tr.state) !== syntaxTree(tr.startState) ||
+      tr.startState.facet(cardKnowledgeBase) !== tr.state.facet(cardKnowledgeBase) ||
+      tr.startState.facet(livePreviewHost).noteUuid !== tr.state.facet(livePreviewHost).noteUuid ||
       headingFoldKey(tr.startState) !== headingFoldKey(tr.state) ||
       tr.startState.field(codeBlockChrome, false) !== tr.state.field(codeBlockChrome, false) ||
       tr.startState.field(codeHighlightEpoch, false) !==

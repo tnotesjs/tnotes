@@ -1,9 +1,10 @@
 <script setup>
 import { marked } from 'marked'
-import { computed, ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { computed, ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 
 import RightClickMenu from './RightClickMenu.vue'
 import { WORD_LIST_FEATURES_FULL, resolveWordListFeatures } from './wordListFeatures'
+import { wordListStorageKey } from './wordListStorage'
 
 const DEFAULT_WORDS_BASE_URL = 'https://github.com/tnotesjs/en-words/blob/main/'
 const DEFAULT_WORDS_RAW_BASE_URL =
@@ -30,6 +31,14 @@ const props = defineProps({
   features: {
     type: Object,
     default: () => ({ ...WORD_LIST_FEATURES_FULL })
+  },
+  /**
+   * 勾选态 localStorage 键的作用域。不传时用 `window.location.pathname`（SSG 一页一路径）；
+   * Desk 单页承载多篇笔记，需注入知识库 + 笔记维度，避免勾选态跨笔记串用。
+   */
+  storageScope: {
+    type: String,
+    default: ''
   }
 })
 
@@ -51,8 +60,18 @@ const sortedWords = computed(() => {
 const islandWords = computed(() => encodeURIComponent(JSON.stringify(sortedWords.value)))
 const checkedStates = ref({})
 
+const storageKey = (word) => wordListStorageKey(props.storageScope, pathname, word)
+
+const loadCheckedStates = () => {
+  const next = {}
+  sortedWords.value.forEach((word) => {
+    next[word] = localStorage.getItem(storageKey(word)) === 'true'
+  })
+  checkedStates.value = next
+}
+
 const updateCheckedState = (word, isChecked) => {
-  const key = `${pathname}-${word}`
+  const key = storageKey(word)
   checkedStates.value[word] = isChecked
   localStorage.setItem(key, isChecked)
 }
@@ -66,8 +85,7 @@ const checkAll = () => {
 
 const reset = () => {
   sortedWords.value.forEach((word) => {
-    const key = `${pathname}-${word}`
-    localStorage.removeItem(key)
+    localStorage.removeItem(storageKey(word))
     checkedStates.value[word] = false
   })
   hideContextMenu()
@@ -448,11 +466,7 @@ const handlePronounce = (word, lang = 'en-GB') => {
 // hooks ----------------------------------------------------------
 
 onMounted(() => {
-  sortedWords.value.forEach((word) => {
-    const key = `${pathname}-${word}`
-    const storedState = localStorage.getItem(key)
-    checkedStates.value[word] = storedState === 'true'
-  })
+  loadCheckedStates()
 
   if (!isMobile.value && features.value.enableWordData) preloadWords()
 
@@ -461,6 +475,12 @@ onMounted(() => {
     document.body.addEventListener('click', hideContextMenu)
   }
 })
+
+// 作用域或词表变了（同一实例换了笔记 / 词表）就按新键重新回读，不沿用旧勾选态
+watch(
+  () => [props.storageScope, islandWords.value],
+  () => loadCheckedStates()
+)
 
 /**
  * 销毁时清理定时器

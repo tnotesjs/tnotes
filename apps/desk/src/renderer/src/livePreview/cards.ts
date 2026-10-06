@@ -28,7 +28,7 @@ import {
 } from '../editor/markdown/componentPreview'
 import { parseFencedCode, rebuildMermaidFence } from '../editor/markdown/diagramRenderer'
 import { mindmapPreviewMarkdown, rebuildMindmapFence } from '../editor/markdown/mindmapFence'
-import { clampMindmapHeight, parseFootprintsSource } from '@tnotesjs/ui'
+import { clampMindmapHeight, deskWordListStorageScope, parseFootprintsSource } from '@tnotesjs/ui'
 import { installMarkdownMath } from '../agent/agentMarkdown'
 import { livePreviewHost, type LivePreviewHost } from './host'
 import { expandReferenceLinks } from './referenceLinks'
@@ -99,7 +99,8 @@ function renderHtml(source: string, resolveImage: (src: string) => string): HTML
 function mountComponent(
   host: HTMLElement,
   source: string,
-  knowledgeBaseId: string
+  knowledgeBaseId: string,
+  noteUuid: string
 ): Mounted | null {
   if (isBilibiliVideoSource(source)) {
     const parsed = parseBilibiliVideoSource(source)
@@ -114,7 +115,9 @@ function mountComponent(
     const parsed = parseWordListSource(source)
     const handle = mountWordListPreview(host, {
       words: parsed?.words ?? [],
-      needSort: parsed?.needSort
+      needSort: parsed?.needSort,
+      // 勾选态按「知识库 + 笔记」隔离：Desk 所有笔记共用一个 index.html，pathname 不区分笔记
+      storageScope: deskWordListStorageScope(knowledgeBaseId, noteUuid)
     })
     return { destroy: () => handle.unmount() }
   }
@@ -171,7 +174,9 @@ export class CardWidget extends WidgetType {
     private readonly revealOffset: number,
     private readonly knowledgeBaseId: string,
     /** 围栏外的链接定义。容器和导图单独渲染，源码没变时定义变了也要重画。 */
-    private readonly definitions: ReadonlyMap<string, string> = new Map()
+    private readonly definitions: ReadonlyMap<string, string> = new Map(),
+    /** 当前笔记；WordList 勾选态按「知识库 + 笔记」存，换笔记要重画。 */
+    private readonly noteUuid: string = ''
   ) {
     super()
   }
@@ -180,6 +185,8 @@ export class CardWidget extends WidgetType {
     return (
       other.kind === this.kind &&
       other.source === this.source &&
+      other.knowledgeBaseId === this.knowledgeBaseId &&
+      other.noteUuid === this.noteUuid &&
       definitionKey(other.definitions) === definitionKey(this.definitions)
     )
   }
@@ -269,7 +276,7 @@ export class CardWidget extends WidgetType {
       case 'component': {
         const hostEl = document.createElement('div')
         hostEl.className = 'cm-lp-component'
-        const handle = mountComponent(hostEl, this.source, this.knowledgeBaseId)
+        const handle = mountComponent(hostEl, this.source, this.knowledgeBaseId, this.noteUuid)
         if (handle) mounted.set(card, handle)
         return hostEl
       }
