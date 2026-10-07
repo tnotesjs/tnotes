@@ -104,7 +104,10 @@ describe('applyNoteMutation', () => {
 describe('markInternalWrites', () => {
   it('stores absolute normalized paths so watcher events match', () => {
     const state = {
-      internalWriteUntil: new Map<string, number>()
+      internalWriteUntil: new Map<string, number>(),
+      internalWriteBaseline: new Map(),
+      reconcileTimers: new Map(),
+      handles: new Map()
     } as unknown as WorkspaceScanState
     markInternalWrites(state, '/kb/root', [
       { path: 'notes/0001. 第一篇.md', previousPath: 'notes/0000. 旧.md' }

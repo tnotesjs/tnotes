@@ -141,7 +141,29 @@ export function createDocuments(ctx: DocumentsContext) {
   ): Promise<DocumentSession> {
     const key = documentKey(knowledgeBaseId, noteUuid)
     const existing = ctx.documents.value[key]
-    if (existing) return existing
+    if (existing) {
+      // Dirty / saving / conflict: keep the in-memory session (user must choose).
+      // Clean: re-check disk revision so reopen after a swallowed external write
+      // (or a missed watcher event) cannot forever serve a behind-disk cache.
+      if (existing.dirty || existing.saving || existing.externalConflict) return existing
+      try {
+        const next = resultValue(await window.desk.notes.read(knowledgeBaseId, noteUuid))
+        if (next.revision === existing.document.revision) return existing
+        const session: DocumentSession = {
+          document: next,
+          content: next.content,
+          dirty: false,
+          unsavedDraft: false,
+          externalConflict: false,
+          saving: false
+        }
+        ctx.setDocumentSession(key, session)
+        ctx.editor.setNoteDirty(next.knowledgeBaseId, next.uuid, false)
+        return session
+      } catch {
+        return existing
+      }
+    }
     const next = resultValue(await window.desk.notes.read(knowledgeBaseId, noteUuid))
     const session: DocumentSession = {
       document: next,

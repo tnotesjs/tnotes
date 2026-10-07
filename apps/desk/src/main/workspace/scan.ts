@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { promisify } from 'node:util'
-import { watch, type FSWatcher } from 'node:fs'
+import { watch, statSync, type FSWatcher } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { createWorkspace, isKnowledgeBaseRoot, type AssetStorePaths } from '@tnotesjs/kb'
@@ -15,6 +15,16 @@ import { knowledgeBaseAssetStore } from './assetStore'
 import { knowledgeBaseId } from './dto'
 import type { KnowledgeBaseHandle, WorkspaceManagerEvents } from './types'
 
+/** Disk fingerprint captured right after Desk wrote a path. */
+export interface InternalWriteBaseline {
+  mtimeMs: number
+  size: number
+  rootPath: string
+}
+
+/** Ignore-window length for Desk's own write echoes (fs.watch). */
+export const INTERNAL_WRITE_WINDOW_MS = 1500
+
 /** Mutable runtime state shared between WorkspaceManager and scan/watch helpers. */
 export interface WorkspaceScanState {
   handles: Map<string, KnowledgeBaseHandle>
@@ -23,6 +33,10 @@ export interface WorkspaceScanState {
   refreshTimer: NodeJS.Timeout | null
   scanTail: Promise<void>
   internalWriteUntil: Map<string, number>
+  /** mtime/size at markInternalWrites time; used to detect real external overwrites inside the ignore window. */
+  internalWriteBaseline: Map<string, InternalWriteBaseline>
+  /** One reconcile timer per absolute path, fires when that path's ignore window ends. */
+  reconcileTimers: Map<string, NodeJS.Timeout>
   lastWatcherError: string
   lastWatcherErrorAt: number
   events: EventEmitter<WorkspaceManagerEvents>
@@ -56,6 +70,83 @@ function pruneInternalWrites(state: WorkspaceScanState, now: number): void {
   }
 }
 
+function captureBaseline(
+  state: WorkspaceScanState,
+  absolutePath: string,
+  rootPath: string
+): void {
+  try {
+    const st = statSync(absolutePath)
+    state.internalWriteBaseline.set(absolutePath, {
+      mtimeMs: st.mtimeMs,
+      size: st.size,
+      rootPath
+    })
+  } catch {
+    // Rename/delete targets may already be gone; nothing to reconcile against.
+    state.internalWriteBaseline.delete(absolutePath)
+  }
+}
+
+function scheduleInternalWriteReconcile(
+  state: WorkspaceScanState,
+  absolutePath: string,
+  until: number
+): void {
+  const previous = state.reconcileTimers.get(absolutePath)
+  if (previous) clearTimeout(previous)
+  const delay = Math.max(0, until - Date.now())
+  const timer = setTimeout(() => {
+    state.reconcileTimers.delete(absolutePath)
+    void reconcileInternalWrite(state, absolutePath)
+  }, delay)
+  // Unref so a pending reconcile alone cannot keep the process alive in tests.
+  timer.unref?.()
+  state.reconcileTimers.set(absolutePath, timer)
+}
+
+/**
+ * After the ignore window, compare disk to the fingerprint Desk recorded at write
+ * time. Echo-only → match → silent. Real external overwrite during the window →
+ * diverge → emit noteExternalChanged (previously permanently swallowed).
+ */
+export async function reconcileInternalWrite(
+  state: WorkspaceScanState,
+  absolutePath: string
+): Promise<void> {
+  const until = state.internalWriteUntil.get(absolutePath) ?? 0
+  if (until >= Date.now()) {
+    // A newer markInternalWrites extended the window; that timer will reconcile.
+    return
+  }
+  state.internalWriteUntil.delete(absolutePath)
+  const baseline = state.internalWriteBaseline.get(absolutePath)
+  state.internalWriteBaseline.delete(absolutePath)
+  if (!baseline) return
+
+  let current: { mtimeMs: number; size: number }
+  try {
+    const st = await fs.stat(absolutePath)
+    current = { mtimeMs: st.mtimeMs, size: st.size }
+  } catch {
+    // Path gone (Desk rename/delete). Structure refresh is enough.
+    scheduleRefresh(state)
+    return
+  }
+
+  if (current.mtimeMs === baseline.mtimeMs && current.size === baseline.size) {
+    return
+  }
+
+  const handle = [...state.handles.values()].find((item) => item.rootPath === baseline.rootPath)
+  if (!handle) {
+    scheduleRefresh(state)
+    return
+  }
+  emitNoteExternalChanged(state, handle, absolutePath)
+  scheduleRefresh(state)
+}
+
 export function markInternalWrites(
   state: WorkspaceScanState,
   rootPath: string,
@@ -63,12 +154,18 @@ export function markInternalWrites(
 ): void {
   const now = Date.now()
   pruneInternalWrites(state, now)
-  const until = now + 1500
+  const until = now + INTERNAL_WRITE_WINDOW_MS
   for (const changed of changedFiles) {
     // changedFiles are kb-root-relative; the watcher compares absolute paths.
-    state.internalWriteUntil.set(path.normalize(path.join(rootPath, changed.path)), until)
+    const absolutePath = path.normalize(path.join(rootPath, changed.path))
+    state.internalWriteUntil.set(absolutePath, until)
+    captureBaseline(state, absolutePath, rootPath)
+    scheduleInternalWriteReconcile(state, absolutePath, until)
     if (changed.previousPath) {
-      state.internalWriteUntil.set(path.normalize(path.join(rootPath, changed.previousPath)), until)
+      const previousPath = path.normalize(path.join(rootPath, changed.previousPath))
+      state.internalWriteUntil.set(previousPath, until)
+      captureBaseline(state, previousPath, rootPath)
+      scheduleInternalWriteReconcile(state, previousPath, until)
     }
   }
 }
@@ -279,18 +376,11 @@ function shouldIgnoreKnowledgeBasePath(relativePath: string): boolean {
  * 或直接改笔记，对这里来说就是普通的外部变更——必须发事件，让渲染端去刷新或提示
  * 冲突（终端不受 Desk 的写入门禁约束，不能拿门禁当保护）。
  */
-export function handleWatchedPath(
+function emitNoteExternalChanged(
   state: WorkspaceScanState,
   handle: KnowledgeBaseHandle,
-  changedPath: string
+  normalizedPath: string
 ): void {
-  const normalizedPath = path.normalize(changedPath)
-  const internalUntil = state.internalWriteUntil.get(normalizedPath) ?? 0
-  if (internalUntil >= Date.now()) {
-    return
-  }
-  state.internalWriteUntil.delete(normalizedPath)
-
   if (normalizedPath === path.join(handle.rootPath, 'README.md')) {
     state.events.emit('noteExternalChanged', {
       knowledgeBaseId: handle.id,
@@ -306,6 +396,25 @@ export function handleWatchedPath(
       break
     }
   }
+}
+
+export function handleWatchedPath(
+  state: WorkspaceScanState,
+  handle: KnowledgeBaseHandle,
+  changedPath: string
+): void {
+  const normalizedPath = path.normalize(changedPath)
+  const internalUntil = state.internalWriteUntil.get(normalizedPath) ?? 0
+  if (internalUntil >= Date.now()) {
+    // Desk's own echo (or a real external write racing the window). Do not emit
+    // now — reconcileInternalWrite will compare disk to the write baseline when
+    // the window ends and emit only if the file actually diverged.
+    return
+  }
+  state.internalWriteUntil.delete(normalizedPath)
+  state.internalWriteBaseline.delete(normalizedPath)
+
+  emitNoteExternalChanged(state, handle, normalizedPath)
   scheduleRefresh(state)
 }
 
@@ -322,6 +431,10 @@ export function scheduleRefresh(state: WorkspaceScanState): void {
 export async function stopWatcher(state: WorkspaceScanState): Promise<void> {
   for (const watcher of state.watchers.values()) watcher.close()
   state.watchers.clear()
+  for (const timer of state.reconcileTimers.values()) clearTimeout(timer)
+  state.reconcileTimers.clear()
+  state.internalWriteBaseline.clear()
+  state.internalWriteUntil.clear()
 }
 
 export async function disposeHandles(state: WorkspaceScanState): Promise<void> {

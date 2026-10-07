@@ -8,9 +8,11 @@ import { createWorkspace } from '@tnotesjs/kb'
 
 import { README_NOTE_UUID } from '../../shared/contracts'
 import {
+  INTERNAL_WRITE_WINDOW_MS,
   backfillMissingNoteIds,
   handleWatchedPath,
   markInternalWrites,
+  reconcileInternalWrite,
   type WorkspaceScanState
 } from './scan'
 import type { KnowledgeBaseHandle } from './types'
@@ -42,7 +44,18 @@ async function makeHandleWithoutNoteId(): Promise<KnowledgeBaseHandle> {
 }
 
 function makeState(): WorkspaceScanState {
-  return { internalWriteUntil: new Map() } as unknown as WorkspaceScanState
+  return {
+    internalWriteUntil: new Map(),
+    internalWriteBaseline: new Map(),
+    reconcileTimers: new Map(),
+    handles: new Map(),
+    workspacePath: null,
+    watchers: new Map(),
+    refreshTimer: null,
+    events: { emit: () => {} },
+    emitChanged: () => {},
+    scanTail: Promise.resolve()
+  } as unknown as WorkspaceScanState
 }
 
 describe('backfillMissingNoteIds', () => {
@@ -98,15 +111,25 @@ describe('内部写入标记的过期清理', () => {
 })
 
 describe('终端写入磁盘笔记（外部变更）', () => {
-  function makeEventState(): { state: WorkspaceScanState; events: Array<Record<string, unknown>> } {
+  function makeEventState(
+    handle?: KnowledgeBaseHandle
+  ): { state: WorkspaceScanState; events: Array<Record<string, unknown>> } {
     const events: Array<Record<string, unknown>> = []
+    const handles = new Map<string, KnowledgeBaseHandle>()
+    if (handle) handles.set(handle.id, handle)
     const state = {
       internalWriteUntil: new Map<string, number>(),
+      internalWriteBaseline: new Map(),
+      reconcileTimers: new Map(),
+      handles,
+      workspacePath: null,
+      watchers: new Map(),
       // 只用到 events / refresh 调度相关字段，其余按需替换
       refreshTimer: null,
       events: {
         emit: (name: string, payload: Record<string, unknown>) => events.push({ name, ...payload })
       },
+      emitChanged: () => {},
       scanTail: Promise.resolve()
     } as unknown as WorkspaceScanState
     return { state, events }
@@ -136,12 +159,73 @@ describe('终端写入磁盘笔记（外部变更）', () => {
 
   it('Desk 自己刚写过的路径被忽略（内部写入不当作外部变更）', async () => {
     const handle = await makeHandleWithoutNoteId()
-    const { state, events } = makeEventState()
+    const { state, events } = makeEventState(handle)
     const changedNote = path.join(handle.rootPath, 'notes', '0001. 手写笔记.md')
     markInternalWrites(state, handle.rootPath, [{ path: 'notes/0001. 手写笔记.md' }])
 
     handleWatchedPath(state, handle, changedNote)
 
     expect(events.find((event) => event.name === 'noteExternalChanged')).toBeUndefined()
+  })
+
+  it('仅 Desk 写盘回声：窗口结束后磁盘与 baseline 一致 → 不补发', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-07T00:00:00Z'))
+    const handle = await makeHandleWithoutNoteId()
+    const { state, events } = makeEventState(handle)
+    const changedNote = path.join(handle.rootPath, 'notes', '0001. 手写笔记.md')
+
+    markInternalWrites(state, handle.rootPath, [{ path: 'notes/0001. 手写笔记.md' }])
+    handleWatchedPath(state, handle, changedNote)
+    expect(events).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(INTERNAL_WRITE_WINDOW_MS)
+    await Promise.resolve()
+
+    expect(events.find((event) => event.name === 'noteExternalChanged')).toBeUndefined()
+    vi.useRealTimers()
+  })
+
+  it('save 后窗口内被外部覆盖：窗口结束后磁盘与 baseline 不一致 → 补发 noteExternalChanged', async () => {
+    const handle = await makeHandleWithoutNoteId()
+    const { state, events } = makeEventState(handle)
+    const rel = 'notes/0001. 手写笔记.md'
+    const changedNote = path.normalize(path.join(handle.rootPath, rel))
+
+    markInternalWrites(state, handle.rootPath, [{ path: rel }])
+    expect(state.internalWriteBaseline.has(changedNote)).toBe(true)
+
+    // 真实外部覆盖（Agent / 终端）落在 ignore 窗口内：watch 事件被吞
+    await fs.writeFile(changedNote, '# 手写笔记\n\nEXTERNAL_OVERWRITE\n')
+    handleWatchedPath(state, handle, changedNote)
+    expect(events.find((event) => event.name === 'noteExternalChanged')).toBeUndefined()
+
+    // 模拟窗口结束：清掉 until，走与定时器相同的 reconcile 路径
+    for (const timer of state.reconcileTimers.values()) clearTimeout(timer)
+    state.reconcileTimers.clear()
+    state.internalWriteUntil.set(changedNote, 0)
+    await reconcileInternalWrite(state, changedNote)
+
+    const external = events.find((event) => event.name === 'noteExternalChanged')
+    expect(external).toBeDefined()
+    expect(external?.knowledgeBaseId).toBe(handle.id)
+  })
+
+  it('reconcileInternalWrite：mtime/size 相对 baseline 变化时发出事件', async () => {
+    const handle = await makeHandleWithoutNoteId()
+    const { state, events } = makeEventState(handle)
+    const rel = 'notes/0001. 手写笔记.md'
+    const changedNote = path.normalize(path.join(handle.rootPath, rel))
+
+    markInternalWrites(state, handle.rootPath, [{ path: rel }])
+    // 清掉定时器，改为手动 reconcile，避免和 fake/real timer 纠缠
+    for (const timer of state.reconcileTimers.values()) clearTimeout(timer)
+    state.reconcileTimers.clear()
+    state.internalWriteUntil.set(changedNote, 0) // 窗口已过
+
+    await fs.writeFile(changedNote, '# 手写笔记\n\nMANUAL_RECONCILE\n')
+    await reconcileInternalWrite(state, changedNote)
+
+    expect(events.find((event) => event.name === 'noteExternalChanged')).toBeDefined()
   })
 })

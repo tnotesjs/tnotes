@@ -82,6 +82,68 @@ function recoveryRecord(overrides: Partial<RecoveryRecord> = {}): RecoveryRecord
   }
 }
 
+describe('ensureDocument 干净会话跟盘', () => {
+  it('干净会话 revision 未变 → 复用缓存，不换内容', async () => {
+    const session = makeSession()
+    const { ctx, documents } = makeContext(session)
+    const read = vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        uuid: 'note-1',
+        title: '笔记',
+        content: '# 原文\n',
+        revision: 'r1',
+        knowledgeBaseId: 'kb'
+      }
+    }))
+    ;(window as unknown as { desk: { notes: { read: typeof read } } }).desk.notes.read = read
+    const docs = createDocuments(ctx)
+
+    const result = await docs.ensureDocument('kb', 'note-1')
+
+    expect(read).toHaveBeenCalledTimes(1)
+    expect(result.content).toBe('# 原文\n')
+    expect(documents.value['kb:note-1']?.content).toBe('# 原文\n')
+  })
+
+  it('干净会话磁盘 revision 已变 → 换上磁盘内容', async () => {
+    const session = makeSession()
+    const { ctx, documents, editor } = makeContext(session)
+    const read = vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        uuid: 'note-1',
+        title: '笔记',
+        content: '# 外部稿\n',
+        revision: 'r2',
+        knowledgeBaseId: 'kb'
+      }
+    }))
+    ;(window as unknown as { desk: { notes: { read: typeof read } } }).desk.notes.read = read
+    const docs = createDocuments(ctx)
+
+    const result = await docs.ensureDocument('kb', 'note-1')
+
+    expect(result.content).toBe('# 外部稿\n')
+    expect(documents.value['kb:note-1']?.document.revision).toBe('r2')
+    expect(editor.setNoteDirty).toHaveBeenCalledWith('kb', 'note-1', false)
+  })
+
+  it('脏会话不跟盘（保留本地编辑）', async () => {
+    const session = makeSession({ dirty: true, content: '# 本地\n' })
+    const { ctx, documents } = makeContext(session)
+    const read = vi.fn()
+    ;(window as unknown as { desk: { notes: { read: typeof read } } }).desk.notes.read = read
+    const docs = createDocuments(ctx)
+
+    const result = await docs.ensureDocument('kb', 'note-1')
+
+    expect(read).not.toHaveBeenCalled()
+    expect(result.content).toBe('# 本地\n')
+    expect(documents.value['kb:note-1']?.dirty).toBe(true)
+  })
+})
+
 describe('外部冲突标记', () => {
   it('用户继续输入不会清掉外部冲突标记（需要显式选择载入磁盘/保留编辑）', () => {
     const session = makeSession({ dirty: true, externalConflict: true })

@@ -100,6 +100,8 @@ export class WorkspaceManager {
     refreshTimer: null,
     scanTail: Promise.resolve(),
     internalWriteUntil: new Map(),
+    internalWriteBaseline: new Map(),
+    reconcileTimers: new Map(),
     lastWatcherError: '',
     lastWatcherErrorAt: 0,
     events: this.events,
