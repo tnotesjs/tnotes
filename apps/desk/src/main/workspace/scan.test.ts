@@ -111,9 +111,10 @@ describe('内部写入标记的过期清理', () => {
 })
 
 describe('终端写入磁盘笔记（外部变更）', () => {
-  function makeEventState(
-    handle?: KnowledgeBaseHandle
-  ): { state: WorkspaceScanState; events: Array<Record<string, unknown>> } {
+  function makeEventState(handle?: KnowledgeBaseHandle): {
+    state: WorkspaceScanState
+    events: Array<Record<string, unknown>>
+  } {
     const events: Array<Record<string, unknown>> = []
     const handles = new Map<string, KnowledgeBaseHandle>()
     if (handle) handles.set(handle.id, handle)

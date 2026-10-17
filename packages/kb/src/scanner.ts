@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
-import { CONFIG_FILE, NOTE_FILE_REGEX, NOTES_DIR, TOC_FILE } from './constants'
+import { CONFIG_FILE, isRemoteIconSrc, NOTE_FILE_REGEX, NOTES_DIR, TOC_FILE } from './constants'
 import { parseNoteContent } from './frontmatter'
 import { flattenTocLines, parseTocToTree } from './toc'
 
@@ -81,7 +81,14 @@ export async function readKbConfig(
   try {
     const parsed = JSON.parse(raw) as unknown
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return { config: parsed as KbConfig, diagnostic: null }
+      const config = parsed as KbConfig
+      const src = config.icon?.src
+      if (typeof src === 'string' && isRemoteIconSrc(src)) {
+        const icon = { ...config.icon }
+        delete icon.src
+        config.icon = icon
+      }
+      return { config, diagnostic: null }
     }
     throw new Error('not an object')
   } catch {

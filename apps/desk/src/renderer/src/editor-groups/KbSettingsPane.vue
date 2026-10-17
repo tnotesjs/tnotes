@@ -288,6 +288,32 @@ function clearIcon(): void {
   syncDirty()
 }
 
+const canRevealIcon = computed(() => {
+  if (pendingIcon.value || draft.letter.trim()) return false
+  return Boolean(loaded.value?.icon?.src?.startsWith('tnotes-asset:'))
+})
+
+const revealIconLabel = computed(() => {
+  switch (workspace.runtimePlatform) {
+    case 'win32':
+      return '在资源管理器中显示'
+    case 'linux':
+      return '在文件管理器中显示'
+    default:
+      return '在访达中显示'
+  }
+})
+
+async function revealIcon(): Promise<void> {
+  if (!canRevealIcon.value) return
+  error.value = null
+  try {
+    resultValue(await window.desk.knowledgeBases.revealIcon(props.tab.knowledgeBaseId))
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause)
+  }
+}
+
 onMounted(() => {
   void load()
   registerKbSettingsCloseHandler(props.tab.id, {
@@ -332,9 +358,16 @@ onUnmounted(() => {
         </header>
 
         <div class="icon-row">
-          <div class="icon-preview">
+          <button
+            type="button"
+            class="icon-preview"
+            :disabled="!canRevealIcon"
+            :aria-label="canRevealIcon ? revealIconLabel : undefined"
+            :data-tooltip="canRevealIcon ? revealIconLabel : undefined"
+            @click="revealIcon"
+          >
             <KnowledgeBaseIcon :icon="displayIcon" :fallback="draft.title || draft.name || 'T'" />
-          </div>
+          </button>
           <div class="icon-controls">
             <div class="icon-actions">
               <label class="file-button">
@@ -514,11 +547,22 @@ onUnmounted(() => {
 .icon-preview {
   width: 72px;
   height: 72px;
+  padding: 0;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--panel-2, var(--panel));
   overflow: hidden;
   flex-shrink: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.icon-preview:not(:disabled) {
+  cursor: pointer;
+}
+
+.icon-preview:disabled {
+  cursor: default;
 }
 
 .icon-controls {

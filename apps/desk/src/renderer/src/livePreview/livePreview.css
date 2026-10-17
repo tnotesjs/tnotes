@@ -22,25 +22,43 @@
 }
 
 .live-editor .cm-lp-doc-head {
+  /* min-width:100% 让这一项独占一行。只靠 flex-basis:100% 时，max-width:860px
+     会把实际宽度缩到 860，宽视口里正文会挤到标题右边。 */
   flex: 1 0 100%;
   box-sizing: border-box;
   width: 100%;
+  min-width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 16px 0 0;
+}
+
+.live-editor .cm-lp-doc-head .note-doc-title {
+  box-sizing: border-box;
+  width: 100%;
   max-width: 860px;
-  margin: 0 auto;
-  padding: 16px 48px 0;
+  margin-left: auto;
+  margin-right: auto;
+  padding: 0 48px;
 }
 
 .live-editor .cm-lp-doc-head.is-hidden {
   display: none;
 }
 
-.live-editor.is-wide .cm-lp-doc-head {
+.live-editor.is-wide .cm-lp-doc-head .note-doc-title {
   max-width: none;
 }
 
 .live-editor .cm-editor.cm-lp-source .cm-lp-doc-head {
-  max-width: none;
   padding: 12px 32px 0 8px;
+}
+
+.live-editor .cm-editor.cm-lp-source .cm-lp-doc-head .note-doc-title {
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
+  padding: 0;
 }
 
 .live-editor .cm-editor.cm-lp-source .cm-content {
@@ -79,10 +97,16 @@
 }
 
 /* 选区背景由 glyphSelectionLayer 画（只盖住选中的字），drawSelection 的整行背景和原生选区都不再上色。
-   只管笔记编辑器自己的行：卡片（导图大纲、节点编辑框、嵌套编辑器）里的选区照常显示。 */
+   只管笔记编辑器自己的行：卡片（导图大纲、节点编辑框、嵌套编辑器）里的选区照常显示。
+   行里的 input / textarea（代码块标题、语言标识）用原生选区，不能一起抹掉。 */
 .live-editor__canvas > .cm-editor > .cm-scroller > .cm-selectionLayer .cm-selectionBackground,
 .live-editor__canvas > .cm-editor > .cm-scroller > .cm-content > .cm-line::selection,
-.live-editor__canvas > .cm-editor > .cm-scroller > .cm-content > .cm-line ::selection {
+.live-editor__canvas
+  > .cm-editor
+  > .cm-scroller
+  > .cm-content
+  > .cm-line
+  :not(input, textarea)::selection {
   background: transparent !important;
 }
 
@@ -681,6 +705,23 @@
   line-height: 0;
 }
 
+.live-editor .cm-lp-image-size {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 62%);
+  color: #fff;
+  font-family: var(--tn-font-sans);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .live-editor .cm-lp-image-frame img {
   display: block;
   width: 100%;
@@ -1147,6 +1188,20 @@
   font: inherit;
 }
 
+.live-editor .cm-content input.cm-lp-code-title,
+.live-editor .cm-content input.cm-lp-code-lang-input,
+.live-editor .cm-content input.cm-lp-code-tab-rename {
+  /* .cm-content 把原生光标设成透明，聚焦时又重置成 initial；这些输入框要自己的光标。 */
+  caret-color: var(--tn-c-brand);
+}
+
+.live-editor .cm-content input.cm-lp-code-title::selection,
+.live-editor .cm-content input.cm-lp-code-lang-input::selection,
+.live-editor .cm-content input.cm-lp-code-tab-rename::selection {
+  background: var(--tn-c-selection) !important;
+  color: inherit;
+}
+
 .live-editor .cm-lp-code-title {
   flex: 1;
 }
@@ -1559,6 +1614,9 @@
 
 .live-editor .cm-lp-card {
   position: relative;
+  /* 包住内部表格/轮播的上下外边距。塌到卡片外时，高度图不含这段空白，
+     卡片后一行的 Cmd+→ / End 会按视觉坐标落到更下一行。 */
+  display: flow-root;
   margin: 0;
   padding: 0;
   border-radius: 8px;

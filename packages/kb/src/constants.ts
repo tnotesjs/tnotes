@@ -32,6 +32,12 @@ export function isKbIconFileName(fileName: string): boolean {
   return KB_ICON_BASENAMES.some((basename) => fileName.startsWith(basename))
 }
 
+/** 知识库图标只认本地路径。http(s) 和协议相对地址都不是图标。 */
+export function isRemoteIconSrc(src: string): boolean {
+  const value = src.trim()
+  return /^https?:\/\//i.test(value) || value.startsWith('//')
+}
+
 /** Allowed extensions for knowledge-base icon uploads. */
 export const KB_ICON_EXTENSIONS = ['.svg', '.png', '.jpg', '.jpeg', '.webp', '.gif'] as const
 

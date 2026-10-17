@@ -14,6 +14,9 @@ describe('fenceInfo', () => {
     expect(applyFenceTitle('```ts {30-51} [TypeScript]', 'App')).toBe('```ts {30-51} [App]')
     expect(applyFenceTitle('```js', 'demo')).toBe('```js [demo]')
     expect(applyFenceTitle('```js [old]', '')).toBe('```js')
+    expect(applyFenceTitle('```', '哈哈哈')).toBe('```text [哈哈哈]')
+    expect(applyFenceTitle('```[哈哈哈]', '哈哈哈')).toBe('```text [哈哈哈]')
+    expect(applyFenceTitle('```', '')).toBe('```')
   })
 
   it('rewrites the language token and leaves the title', () => {

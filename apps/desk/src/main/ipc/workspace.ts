@@ -1,4 +1,5 @@
 import { dialog, shell } from 'electron'
+import { readKbConfig } from '@tnotesjs/kb'
 import { z } from 'zod'
 
 import { previewManager } from '../preview'
@@ -187,6 +188,19 @@ export function registerWorkspace(getWindow: GetWindow): () => void {
   )
   handle(IPC_CHANNELS.knowledgeBaseWriteIcon, getWindow, knowledgeBaseIconWriteSchema, (request) =>
     workspaceManager.writeIcon(request)
+  )
+  handle(
+    IPC_CHANNELS.knowledgeBaseRevealIcon,
+    getWindow,
+    z.string().min(1),
+    async (knowledgeBaseId) => {
+      const { rootPath } = workspaceManager.getLocation(knowledgeBaseId)
+      const { config } = await readKbConfig(rootPath)
+      const src = config.icon?.src?.trim()
+      if (!src) throw new Error('当前图标不是本地文件')
+      const absolutePath = await workspaceManager.resolveNoteAsset(knowledgeBaseId, src)
+      shell.showItemInFolder(absolutePath)
+    }
   )
   handle(IPC_CHANNELS.kbBuild, getWindow, z.string().min(1), (knowledgeBaseId) =>
     workspaceManager.buildKnowledgeBase(knowledgeBaseId)

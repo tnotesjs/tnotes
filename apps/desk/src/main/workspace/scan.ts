@@ -70,11 +70,7 @@ function pruneInternalWrites(state: WorkspaceScanState, now: number): void {
   }
 }
 
-function captureBaseline(
-  state: WorkspaceScanState,
-  absolutePath: string,
-  rootPath: string
-): void {
+function captureBaseline(state: WorkspaceScanState, absolutePath: string, rootPath: string): void {
   try {
     const st = statSync(absolutePath)
     state.internalWriteBaseline.set(absolutePath, {

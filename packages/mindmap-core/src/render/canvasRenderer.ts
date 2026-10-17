@@ -40,6 +40,8 @@ export interface CanvasRenderState {
   selection: Set<string>
   matches: Set<string>
   imageAspects: ReadonlyMap<string, number>
+  /** 正在拖拽改宽的图片节点。画布在图片中央画出 `W x H`。 */
+  resizingImageId?: string | null
 }
 
 export type CanvasNodeTier = 'root' | 'primary' | 'secondary' | 'tertiary'
@@ -396,6 +398,35 @@ export class CanvasRenderer {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   }
 
+  private drawImageSizeMask(
+    ir: { x: number; y: number; w: number; h: number },
+    nodeId: string
+  ): void {
+    if (this.state?.resizingImageId !== nodeId) return
+    const width = Math.round(ir.w)
+    const height = Math.round(ir.h)
+    if (width < 88 || height < 32) return
+    const ctx = this.ctx
+    const label = `${width} x ${height}`
+    const scale = Math.max(this.transform.k, 0.01)
+    ctx.save()
+    ctx.font = `${12 / scale}px sans-serif`
+    const padX = 8 / scale
+    const textWidth = ctx.measureText(label).width
+    const boxW = textWidth + padX * 2
+    const boxH = 18 / scale
+    const x = ir.x + (ir.w - boxW) / 2
+    const y = ir.y + (ir.h - boxH) / 2
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.62)'
+    ctx.beginPath()
+    ctx.roundRect(x, y, boxW, boxH, 6 / scale)
+    ctx.fill()
+    ctx.fillStyle = '#fff'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(label, x + padX, y + boxH / 2)
+    ctx.restore()
+  }
+
   private drawNode(
     box: NodeBox,
     options: {
@@ -569,6 +600,7 @@ export class CanvasRenderer {
         ctx.stroke()
         ctx.setLineDash([])
       }
+      this.drawImageSizeMask(ir, node.id)
       // resize 手柄
       if (geo.resizeHandle) {
         ctx.beginPath()

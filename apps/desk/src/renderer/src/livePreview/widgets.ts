@@ -25,6 +25,7 @@ import { resolveNoteAssetRelPath } from '../markdown/noteAssetPath'
 import { imageAt, imageBefore, imageAttrChange, imageDeleteChange } from './images'
 import { createImageMoreButton } from './imageMenu'
 import { livePreviewHost } from './host'
+import { clearImageSizeMask, syncImageSizeMask } from './imageSizeMask'
 
 import type { ImageAlign } from '@tnotesjs/ui/image-markdown'
 
@@ -264,7 +265,17 @@ export class CodeFenceHeaderWidget extends WidgetType {
         selection: EditorSelection.range(range.from, range.to)
       })
     }
-    title.addEventListener('input', commitTitle)
+    title.addEventListener('compositionstart', () => {
+      title.dataset.composing = '1'
+    })
+    title.addEventListener('compositionend', () => {
+      delete title.dataset.composing
+      commitTitle()
+    })
+    title.addEventListener('input', () => {
+      if (title.dataset.composing) return
+      commitTitle()
+    })
 
     const lang = document.createElement('input')
     lang.type = 'text'
@@ -287,7 +298,17 @@ export class CodeFenceHeaderWidget extends WidgetType {
         selection: EditorSelection.range(span.from, span.to)
       })
     }
-    lang.addEventListener('input', commitLang)
+    lang.addEventListener('compositionstart', () => {
+      lang.dataset.composing = '1'
+    })
+    lang.addEventListener('compositionend', () => {
+      delete lang.dataset.composing
+      commitLang()
+    })
+    lang.addEventListener('input', () => {
+      if (lang.dataset.composing) return
+      commitLang()
+    })
 
     const wrap = codeWrapButton(this.wrapped, () => {
       const line = view.state.doc.lineAt(this.openFrom)
@@ -750,10 +771,12 @@ export class ImageWidget extends WidgetType {
           Math.max(MIN_IMAGE_WIDTH, startWidth + moveEvent.clientX - startX)
         )
         frame.style.width = `${Math.round(width / zoom)}px`
+        syncImageSizeMask(frame)
       }
       const up = (): void => {
         window.removeEventListener('mousemove', move)
         window.removeEventListener('mouseup', up)
+        clearImageSizeMask(frame)
         this.applyAttrs(view, figure, { width: `${Math.round(width / zoom)}px` })
       }
       window.addEventListener('mousemove', move)

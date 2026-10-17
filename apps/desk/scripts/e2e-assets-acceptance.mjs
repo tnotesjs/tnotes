@@ -493,8 +493,9 @@ try {
   const scrollerInfo = () =>
     page.evaluate(() => {
       const host =
-        [...document.querySelectorAll('.live-editor')].find((el) => el.getClientRects().length > 0) ??
-        document.body
+        [...document.querySelectorAll('.live-editor')].find(
+          (el) => el.getClientRects().length > 0
+        ) ?? document.body
       let node = host
       while (node && node !== document.body) {
         if (node.scrollHeight > node.clientHeight + 40) {

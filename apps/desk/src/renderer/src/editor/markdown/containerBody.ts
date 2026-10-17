@@ -7,6 +7,7 @@ import CodeGroup from '@tnotesjs/ui/code-group'
 import { parseImageAttrs } from '@tnotesjs/ui/image-markdown'
 import { createApp, h, type App } from 'vue'
 import { createImageMoreButton } from '../../livePreview/imageMenu'
+import { clearImageSizeMask, syncImageSizeMask } from '../../livePreview/imageSizeMask'
 import {
   enhanceCardImages,
   keepFirstImagePerCell,
@@ -341,10 +342,12 @@ function buildEditableSlide(
     const move = (moveEvent: MouseEvent): void => {
       width = Math.min(maxWidth, Math.max(MIN_SLIDE_WIDTH, startWidth + moveEvent.clientX - startX))
       frame.style.width = `${Math.round(width / zoom)}px`
+      syncImageSizeMask(frame)
     }
     const up = (): void => {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
+      clearImageSizeMask(frame)
       editor.commit(index, { width: `${Math.round(width / zoom)}px` })
     }
     window.addEventListener('mousemove', move)

@@ -13,8 +13,12 @@ export function parseFenceTitleFromMeta(meta?: string | null): string {
 export function applyFenceTitle(opening: string, title: string): string {
   const match = opening.match(/^( {0,3}(?:`{3,}|~{3,}))([ \t]*)(\S+)?([\s\S]*)$/)
   if (!match) return opening
-  const [, fence, whitespace, language = '', remaining = ''] = match
-  let rest = remaining
+  const [, fence, whitespace, rawLanguage = '', remaining = ''] = match
+  // `[标题]` / `{高亮}` 贴在围栏上时不是语言。没有语言又要写标题时，补上 text，
+  // 避免 ```[标题] 被解析成语言标识。
+  const tokenIsMeta = !rawLanguage || rawLanguage.startsWith('[') || rawLanguage.startsWith('{')
+  const language = tokenIsMeta ? '' : rawLanguage
+  let rest = `${tokenIsMeta ? rawLanguage : ''}${remaining}`
     .replace(/\s*\[[^\]]*\]\s*(?=$)/, '')
     .replace(/[ \t]+$/g, '')
     // A trailing mindmap level (` ```mindmap [demo] 3 `) is a separate channel —
@@ -22,10 +26,15 @@ export function applyFenceTitle(opening: string, title: string): string {
     .replace(/(?<=^|[ \t])\d+[ \t]*$/, '')
     .replace(/[ \t]+$/g, '')
   const trimmedTitle = title.trim()
+  const lang = language || (trimmedTitle ? 'text' : '')
   if (trimmedTitle) {
-    rest = `${rest} [${trimmedTitle}]`.replace(/^\s+/, language ? ' ' : '')
+    rest = `${rest} [${trimmedTitle}]`.replace(/^\s+/, ' ')
   }
-  return `${fence}${whitespace}${language}${rest}`
+  if (!lang) {
+    const tail = rest.replace(/^[ \t]+/, '')
+    return tail ? `${fence}${whitespace}${tail}` : fence
+  }
+  return `${fence}${whitespace}${lang}${rest}`
 }
 
 /**

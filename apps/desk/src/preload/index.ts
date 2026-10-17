@@ -192,6 +192,8 @@ const api: DeskApi = {
       invoke<KnowledgeBaseDetail>(IPC_CHANNELS.knowledgeBaseWriteSettings, request),
     writeIcon: (request) =>
       invoke<KnowledgeBaseDetail>(IPC_CHANNELS.knowledgeBaseWriteIcon, request),
+    revealIcon: (knowledgeBaseId) =>
+      invoke<void>(IPC_CHANNELS.knowledgeBaseRevealIcon, knowledgeBaseId),
     onOpenSettingsRequested: (callback) => {
       const listener = (_event: Electron.IpcRendererEvent, knowledgeBaseId: string): void =>
         callback(knowledgeBaseId)

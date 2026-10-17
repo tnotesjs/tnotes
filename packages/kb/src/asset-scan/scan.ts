@@ -12,6 +12,7 @@ import {
   ASSETS_DIR,
   CONFIG_FILE,
   isKbIconFileName,
+  isRemoteIconSrc,
   NOTE_FILE_REGEX,
   NOTES_DIR,
   TOC_FILE
@@ -347,7 +348,7 @@ export async function scanAssets(
       try {
         const parsed = JSON.parse(text) as { icon?: { src?: unknown } }
         const src = typeof parsed.icon?.src === 'string' ? parsed.icon.src : ''
-        if (src) {
+        if (src && !isRemoteIconSrc(src)) {
           const ref = extractConfigIcon(src, text)
           if (ref) {
             references.push(ref)

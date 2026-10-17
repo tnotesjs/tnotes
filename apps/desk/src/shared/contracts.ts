@@ -18,6 +18,7 @@ export const IPC_CHANNELS = {
   knowledgeBaseReadSettings: 'knowledge-base:read-settings',
   knowledgeBaseWriteSettings: 'knowledge-base:write-settings',
   knowledgeBaseWriteIcon: 'knowledge-base:write-icon',
+  knowledgeBaseRevealIcon: 'knowledge-base:reveal-icon',
   kbOpenAssetsRequested: 'kb:open-assets-requested',
   excalidrawCreate: 'excalidraw:create',
   excalidrawRead: 'excalidraw:read',
@@ -2418,6 +2419,8 @@ export interface DeskApi {
       request: KnowledgeBaseSettingsWriteRequest
     ): Promise<DeskResult<KnowledgeBaseDetail>>
     writeIcon(request: KnowledgeBaseIconWriteRequest): Promise<DeskResult<KnowledgeBaseDetail>>
+    /** 在系统文件管理器中定位已保存的本地图标文件。 */
+    revealIcon(knowledgeBaseId: string): Promise<DeskResult<void>>
     /** main → renderer：右键菜单点了「知识库配置」。 */
     onOpenSettingsRequested(callback: (knowledgeBaseId: string) => void): () => void
     /** main → renderer：右键菜单点了「资源」。 */

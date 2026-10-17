@@ -107,8 +107,9 @@ try {
 
   const editorText = await page.evaluate(
     () =>
-      [...document.querySelectorAll('.live-editor .cm-content')].find((el) => el.offsetParent !== null)
-        ?.textContent ?? ''
+      [...document.querySelectorAll('.live-editor .cm-content')].find(
+        (el) => el.offsetParent !== null
+      )?.textContent ?? ''
   )
   check(
     '打包后可视化编辑器可用',

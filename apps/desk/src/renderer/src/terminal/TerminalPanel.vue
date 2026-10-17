@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import CommandTaskPane from './CommandTaskPane.vue'
+import TerminalIcon from './TerminalIcon.vue'
 import TerminalPane from './TerminalPane.vue'
 import { useCommandTaskStore } from '../stores/commandTask'
 import { useTerminalStore } from '../stores/terminal'
@@ -420,25 +421,44 @@ defineExpose({
         <button
           v-if="store.activeSession?.status === 'exited'"
           type="button"
+          aria-label="重新启动会话"
           data-tooltip="重新启动会话"
           @click="store.activeSession && restartSession(store.activeSession.id)"
         >
-          重启
+          <TerminalIcon name="refresh" />
         </button>
-        <button type="button" data-tooltip="在输出中查找（⌘F）" @click="openSearch">查找</button>
         <button
           type="button"
+          aria-label="在输出中查找"
+          data-tooltip="在输出中查找（⌘F）"
+          @click="openSearch"
+        >
+          <TerminalIcon name="search" />
+        </button>
+        <button
+          type="button"
+          aria-label="清屏"
           data-tooltip="清屏"
           :disabled="!store.activeSession"
           @click="activePane()?.clear()"
         >
-          清屏
+          <TerminalIcon name="clear" />
         </button>
-        <button type="button" data-tooltip="缩小字号（⌘-）" @click="store.adjustFontSize(-1)">
-          A−
+        <button
+          type="button"
+          aria-label="缩小字号"
+          data-tooltip="缩小字号（⌘-）"
+          @click="store.adjustFontSize(-1)"
+        >
+          <TerminalIcon name="zoomOut" />
         </button>
-        <button type="button" data-tooltip="放大字号（⌘+）" @click="store.adjustFontSize(1)">
-          A+
+        <button
+          type="button"
+          aria-label="放大字号"
+          data-tooltip="放大字号（⌘+）"
+          @click="store.adjustFontSize(1)"
+        >
+          <TerminalIcon name="zoomIn" />
         </button>
         <button
           type="button"
@@ -446,7 +466,7 @@ defineExpose({
           :data-tooltip="store.maximized ? '还原' : '最大化'"
           @click="store.toggleMaximize()"
         >
-          {{ store.maximized ? '❐' : '□' }}
+          <TerminalIcon :name="store.maximized ? 'restore' : 'maximize'" />
         </button>
         <button
           type="button"
@@ -454,7 +474,7 @@ defineExpose({
           data-tooltip="收起"
           @click="store.toggle(false)"
         >
-          ×
+          <TerminalIcon name="close" />
         </button>
       </div>
     </header>
@@ -703,12 +723,16 @@ body.is-resizing .terminal-resize-handle::before {
 }
 
 .terminal-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   border: 0;
   background: none;
   color: var(--muted);
   cursor: pointer;
-  font-size: 11px;
-  padding: 2px 6px;
+  padding: 0;
   border-radius: 4px;
 }
 

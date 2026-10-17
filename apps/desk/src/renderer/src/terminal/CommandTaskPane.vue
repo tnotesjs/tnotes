@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 
+import TerminalIcon from './TerminalIcon.vue'
 import { useCommandTaskStore } from '../stores/commandTask'
 import { useTerminalStore } from '../stores/terminal'
 
@@ -114,7 +115,7 @@ async function openTerminalHere(): Promise<void> {
       </p>
     </header>
 
-    <div ref="logHost" class="command-task-log" @scroll="onScroll">
+    <div ref="logHost" class="command-task-log" :data-status="task.status" @scroll="onScroll">
       <p v-if="dropped > 0" class="command-task-truncated">
         输出过多，已丢弃最早的 {{ Math.round(dropped / 1024) }}KB（保留最近部分）
       </p>
@@ -135,19 +136,42 @@ async function openTerminalHere(): Promise<void> {
         <template v-if="task.finishedAt"> · 结束 {{ formatTime(task.finishedAt) }}</template>
       </span>
       <span class="command-task-spacer" />
-      <button type="button" @click="openTerminalHere">在此目录打开终端</button>
-      <button v-if="running" type="button" class="danger" @click="store.cancel(task.id)">
-        停止任务
+      <button
+        type="button"
+        aria-label="在此目录打开终端"
+        data-tooltip="在此目录打开终端"
+        @click="openTerminalHere"
+      >
+        <TerminalIcon name="terminal" />
+      </button>
+      <button
+        v-if="running"
+        type="button"
+        class="danger"
+        aria-label="停止任务"
+        data-tooltip="停止任务"
+        @click="store.cancel(task.id)"
+      >
+        <TerminalIcon name="stop" />
       </button>
       <button
         v-else
         type="button"
+        aria-label="重试"
+        data-tooltip="重试"
         :disabled="Boolean(store.retrying[task.id])"
         @click="store.retry(task.id)"
       >
-        重试
+        <TerminalIcon name="refresh" />
       </button>
-      <button type="button" @click="store.closeTask(task.id)">关闭标签</button>
+      <button
+        type="button"
+        aria-label="关闭标签"
+        data-tooltip="关闭标签"
+        @click="store.closeTask(task.id)"
+      >
+        <TerminalIcon name="close" />
+      </button>
     </footer>
   </div>
 </template>
@@ -241,7 +265,7 @@ async function openTerminalHere(): Promise<void> {
   word-break: break-word;
 }
 
-.command-task-row[data-stream='stderr'] {
+.command-task-log[data-status='failed'] .command-task-row[data-stream='stderr'] {
   color: var(--danger, #e06c75);
 }
 
@@ -263,6 +287,15 @@ async function openTerminalHere(): Promise<void> {
   padding: 4px 8px;
   border-top: 1px solid var(--border);
   font-size: 11px;
+}
+
+.command-task-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
 }
 
 .command-task-times {

@@ -114,7 +114,7 @@ export interface CreateNotesInput {
   placement?: Placement
 }
 
-export function assertNoteBatchCapacity(fileCount: number, maxIndex: number, count: number): void {
+export function assertNoteBatchCapacity(fileCount: number, freeCount: number, count: number): void {
   if (!Number.isInteger(count) || count < 1 || count > NOTE_BATCH_LIMIT) {
     throw new KbError('INVALID_OPERATION', `一次最多新建 ${NOTE_BATCH_LIMIT} 篇笔记`, { count })
   }
@@ -124,12 +124,32 @@ export function assertNoteBatchCapacity(fileCount: number, maxIndex: number, cou
       count
     })
   }
-  if (maxIndex + count > NOTE_COUNT_LIMIT) {
+  if (freeCount < count) {
     throw new KbError('INVALID_OPERATION', `笔记编号已用尽（> ${NOTE_COUNT_LIMIT}）`, {
-      maxIndex,
+      freeCount,
       count
     })
   }
+}
+
+/** 在 0001–9999 里按从小到大取 `count` 个还没占用的编号。没有足够空闲号时抛出。 */
+export function allocateNoteIndexes(used: Iterable<string>, count: number): string[] {
+  const taken = new Set<number>()
+  for (const index of used) {
+    const value = Number.parseInt(index, 10)
+    if (value >= 1 && value <= NOTE_COUNT_LIMIT) taken.add(value)
+  }
+  const indexes: string[] = []
+  for (let value = 1; value <= NOTE_COUNT_LIMIT && indexes.length < count; value += 1) {
+    if (!taken.has(value)) indexes.push(String(value).padStart(4, '0'))
+  }
+  if (indexes.length < count) {
+    throw new KbError('INVALID_OPERATION', `笔记编号已用尽（> ${NOTE_COUNT_LIMIT}）`, {
+      count,
+      freeCount: indexes.length
+    })
+  }
+  return indexes
 }
 
 export interface RenameNoteInput {
@@ -359,13 +379,10 @@ export function createWorkspace(options: CreateWorkspaceOptions): TNotesKbWorksp
 
   async function nextIndex(): Promise<string> {
     const files = await scanNoteFiles(rootPath)
-    let max = 0
-    for (const file of files) max = Math.max(max, Number.parseInt(file.index, 10))
-    const next = max + 1
-    if (next > NOTE_COUNT_LIMIT) {
-      throw new KbError('INVALID_OPERATION', `笔记编号已用尽（> ${NOTE_COUNT_LIMIT}）`)
-    }
-    return String(next).padStart(4, '0')
+    return allocateNoteIndexes(
+      files.map((file) => file.index),
+      1
+    )[0]
   }
 
   const workspace: TNotesKbWorkspace = {
@@ -447,9 +464,14 @@ export function createWorkspace(options: CreateWorkspaceOptions): TNotesKbWorksp
       async createMany(input) {
         const title = validateTitle(input.title)
         const files = await scanNoteFiles(rootPath)
-        let max = 0
-        for (const file of files) max = Math.max(max, Number.parseInt(file.index, 10) || 0)
-        assertNoteBatchCapacity(files.length, max, input.count)
+        const used = files.map((file) => file.index)
+        const taken = new Set(
+          used
+            .map((index) => Number.parseInt(index, 10))
+            .filter((value) => value >= 1 && value <= NOTE_COUNT_LIMIT)
+        )
+        assertNoteBatchCapacity(files.length, NOTE_COUNT_LIMIT - taken.size, input.count)
+        const indexes = allocateNoteIndexes(used, input.count)
 
         const lines = await readTocLines(rootPath)
         const { lineIndex, indentLevel, where } = placementLineIndex(lines, input.placement)
@@ -459,7 +481,8 @@ export function createWorkspace(options: CreateWorkspaceOptions): TNotesKbWorksp
         const changedFiles: Array<{ path: string; kind: 'created' | 'updated' }> = []
 
         for (let offset = 0; offset < input.count; offset += 1) {
-          const index = String(max + 1 + offset).padStart(4, '0')
+          const index = indexes[offset]
+          if (!index) break
           const fileName = noteFileName(index, title)
           const relPath = `${NOTES_DIR}/${fileName}`
           const frontmatter: NoteFrontmatter = { id: randomUUID() }

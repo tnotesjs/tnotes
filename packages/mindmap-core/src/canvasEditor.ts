@@ -320,7 +320,8 @@ export class CanvasEditor {
       root: this.session.focusRootNode,
       selection: this.readOnly ? new Set() : new Set(this.session.selectionIds),
       matches: new Set(this.session.matches),
-      imageAspects: this.imageAspects
+      imageAspects: this.imageAspects,
+      resizingImageId: this.resizeState?.moved ? this.resizeState.id : null
     })
     this.emitSelectionPosition()
   }

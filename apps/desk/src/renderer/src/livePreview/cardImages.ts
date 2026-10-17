@@ -2,6 +2,7 @@ import type MarkdownIt from 'markdown-it'
 import type { ImageAlign } from '@tnotesjs/ui/image-markdown'
 
 import { createImageMoreButton } from './imageMenu'
+import { clearImageSizeMask, syncImageSizeMask } from './imageSizeMask'
 
 /**
  * markdown-it 渲染的卡片（表格、`:::` 提示块）里的图片，与正文 ImageWidget 共用同一套外观：
@@ -164,10 +165,12 @@ export function enhanceCardImages(
             Math.max(MIN_CARD_IMAGE_WIDTH, startWidth + moveEvent.clientX - startX)
           )
           frame.style.width = layoutPx()
+          syncImageSizeMask(frame)
         }
         const up = (): void => {
           window.removeEventListener('mousemove', move)
           window.removeEventListener('mouseup', up)
+          clearImageSizeMask(frame)
           editor.commit(index, { width: layoutPx() }, expectedSrc)
         }
         window.addEventListener('mousemove', move)

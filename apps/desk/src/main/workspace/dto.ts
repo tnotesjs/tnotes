@@ -4,6 +4,7 @@ import path from 'node:path'
 import {
   DEFAULT_PREVIEW_PORT,
   isGitRepository,
+  isRemoteIconSrc,
   readOriginRemoteUrl,
   resolveKbName,
   type KbSnapshot,
@@ -35,11 +36,8 @@ export function resolveIconDisplaySrc(
 ): string | undefined {
   if (!src?.trim()) return undefined
   const value = src.trim()
-  if (
-    /^https?:\/\//i.test(value) ||
-    value.startsWith('data:') ||
-    value.startsWith('tnotes-asset:')
-  ) {
+  if (isRemoteIconSrc(value)) return undefined
+  if (value.startsWith('data:') || value.startsWith('tnotes-asset:')) {
     return value
   }
   const params = new URLSearchParams({ knowledgeBaseId, path: value.split(/[?#]/, 1)[0] })

@@ -134,10 +134,21 @@ describe('notes', () => {
     await expect(ws.notes.createMany({ title: 'new', count: 0 })).rejects.toThrow('999')
   })
 
-  it('refuses a batch that would pass index 9999', async () => {
+  it('allocates the smallest free index, including when 9999 is taken', async () => {
     const ws = createWorkspace({ rootPath: root })
     await write('notes/9999. 末号.md', `---\nid: uuid-last\n---\n\n# 末号\n`)
-    await expect(ws.notes.createMany({ title: 'new', count: 1 })).rejects.toThrow('编号已用尽')
+    const { value } = await ws.notes.create({ title: '空闲号' })
+    expect(value.index).toBe('0004')
+    await fs.rm(path.join(root, 'notes/0002. 第二篇.md'))
+    const gap = await ws.notes.create({ title: '补洞' })
+    expect(gap.value.index).toBe('0002')
+  })
+
+  it('refuses a batch only when no free index remains', async () => {
+    const { allocateNoteIndexes } = await import('../src/workspace')
+    expect(allocateNoteIndexes(['0001', '0002', '0005'], 2)).toEqual(['0003', '0004'])
+    const full = Array.from({ length: 9999 }, (_, index) => String(index + 1).padStart(4, '0'))
+    expect(() => allocateNoteIndexes(full, 1)).toThrow('编号已用尽')
   })
 
   it('creates a root-level note by default', async () => {

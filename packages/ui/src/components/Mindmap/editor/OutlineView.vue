@@ -116,6 +116,15 @@ function measureTextBlockHeight(
   return Math.max(minHeight, lines.length * lineHeight + 8)
 }
 
+function imageSizeLabel(node: MindmapNode): string {
+  if (!liveImageWidth.value.has(node.id) || !node.content.image) return ''
+  const width = displayImageWidth(node)
+  const aspect = imageAspects.value.get(node.content.image.src) ?? 1
+  const height = Math.min(Math.round(width / Math.max(aspect, 0.15)), IMG_MAX_H)
+  if (width < 88 || height < 32) return ''
+  return `${Math.round(width)} x ${height}`
+}
+
 function displayImageWidth(node: MindmapNode): number {
   const live = liveImageWidth.value.get(node.id)
   if (live != null) return live
@@ -2047,6 +2056,9 @@ function onDragUp() {
             @load="onOutlineImageLoad(focusRoot.content.image.src, $event)"
             @click="onImageClick(focusRoot, $event)"
           />
+          <span v-if="imageSizeLabel(focusRoot)" class="row-image-size">{{
+            imageSizeLabel(focusRoot)
+          }}</span>
           <span
             class="row-image-handle"
             title="拖动调节宽度"
@@ -2193,6 +2205,9 @@ function onDragUp() {
               @load="onOutlineImageLoad(row.node.content.image.src, $event)"
               @click="onImageClick(row.node, $event)"
             />
+            <span v-if="imageSizeLabel(row.node)" class="row-image-size">{{
+              imageSizeLabel(row.node)
+            }}</span>
             <span
               class="row-image-handle"
               title="拖动调节宽度"
@@ -2371,6 +2386,21 @@ function onDragUp() {
   object-position: left top;
   cursor: zoom-in;
   user-select: none;
+}
+.row-image-size {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 62%);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
 }
 .row-image-handle {
   position: absolute;

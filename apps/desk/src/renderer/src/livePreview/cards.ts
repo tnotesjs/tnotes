@@ -273,6 +273,16 @@ export class CardWidget extends WidgetType {
       // 思维导图在卡片里直接编辑，点它不进源码；要看源码用导图自己的「源码」视图。
       if (this.kind === 'mindmap') return
       const target = event.target as HTMLElement | null
+      const anchor = target?.closest<HTMLAnchorElement>('a[href]')
+      if (anchor) {
+        const href = anchor.getAttribute('href') ?? ''
+        if (href && href !== '#') {
+          event.preventDefault()
+          event.stopPropagation()
+          host.openLink(href)
+        }
+        return
+      }
       if (target?.closest(INTERACTIVE)) return
       event.preventDefault()
       let pos: number

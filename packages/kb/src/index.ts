@@ -35,6 +35,7 @@ export {
   createWorkspace,
   validateTitle,
   assertNoteBatchCapacity,
+  allocateNoteIndexes,
   NOTE_BATCH_LIMIT,
   NOTE_COUNT_LIMIT
 } from './workspace'

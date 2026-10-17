@@ -17,6 +17,7 @@ import {
 } from 'vite'
 
 import { resolveConfig } from './config'
+import { isRemoteIconSrc } from '@tnotesjs/kb'
 import { jsonScript } from './jsonScript'
 import { normalizeSearchTerm, tokenizeSearch } from './client/search'
 import {
@@ -99,9 +100,10 @@ const ICON_TYPES: Record<string, string> = {
  * the same href asks for `/assets/…` and 404s. Rebasing onto `base` makes every
  * page agree, which matters most for the entry point.
  *
- * Absolute URLs and `data:` URIs are the kb's own business and pass through.
+ * Remote http(s) URLs are not knowledge-base icons.
  */
 export function resolveIconHref(src: string, base: string): string {
+  if (isRemoteIconSrc(src)) return ''
   if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(src)) return src
   const prefix = base.endsWith('/') ? base : `${base}/`
   const relative = src.replace(/^(?:\.\.?\/)+/, '').replace(/^\/+/, '')
@@ -114,6 +116,7 @@ function iconLink(icon: ResolvedSsgConfig['icon'], base: string) {
   const extension = (icon.src.split(/[?#]/)[0]?.split('.').pop() ?? '').toLowerCase()
   const type = ICON_TYPES[extension]
   const href = resolveIconHref(icon.src, base)
+  if (!href) return ''
   return `<link rel="icon"${type ? ` type="${type}"` : ''} href="${htmlEscape(href)}">`
 }
 

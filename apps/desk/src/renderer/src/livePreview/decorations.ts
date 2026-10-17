@@ -1206,11 +1206,18 @@ function build(state: EditorState): LivePreviewState {
           const image = readImage(state, node)
           if (!image) return false
           if (!touches(image.from, image.attrTo)) {
-            ranges.push(
-              Decoration.replace({
-                widget: new ImageWidget(image.src, image.alt, image.width, image.align, false)
-              }).range(image.from, image.attrTo)
-            )
+            const widget = new ImageWidget(image.src, image.alt, image.width, image.align, false)
+            const start = doc.lineAt(image.from)
+            const end = doc.lineAt(image.attrTo)
+            const alone =
+              start.number === end.number &&
+              doc.sliceString(start.from, image.from).trim() === '' &&
+              doc.sliceString(image.attrTo, end.to).trim() === ''
+            if (alone) {
+              ranges.push(Decoration.replace({ widget, block: true }).range(start.from, end.to))
+            } else {
+              ranges.push(Decoration.replace({ widget }).range(image.from, image.attrTo))
+            }
           } else {
             ranges.push(
               Decoration.widget({
@@ -1249,7 +1256,9 @@ function build(state: EditorState): LivePreviewState {
         case 'FencedCode': {
           const info = node.getChild('CodeInfo')
           const infoText = info ? doc.sliceString(info.from, info.to).trim() : ''
-          const lang = infoText.split(/\s+/)[0]?.toLowerCase() ?? ''
+          const token = infoText.split(/\s+/)[0] ?? ''
+          const lang =
+            !token || token.startsWith('[') || token.startsWith('{') ? '' : token.toLowerCase()
           const openLine = doc.lineAt(from)
           const closeLine = doc.lineAt(to)
           if (lang === 'mermaid' || lang === 'mindmap') {
@@ -1315,7 +1324,7 @@ function build(state: EditorState): LivePreviewState {
               (range.from < from || range.to > to)
           )
           if (spansOutside) return false
-          const meta = infoText.slice(lang.length).trim()
+          const meta = (lang ? infoText.slice(token.length) : infoText).trim()
           const title = parseFenceTitleFromMeta(meta) || /\[([^\]]+)\]/.exec(meta)?.[1] || ''
           const codeText = node.getChild('CodeText')
           const code = codeText ? doc.sliceString(codeText.from, codeText.to) : ''

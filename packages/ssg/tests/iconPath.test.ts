@@ -59,10 +59,8 @@ describe('kb-declared icon resolves for every page depth', () => {
     expect(resolveIconHref('./assets/icon.png', '/kb/')).toBe('/kb/assets/icon.png')
     expect(resolveIconHref('assets/icon.png', '/kb/')).toBe('/kb/assets/icon.png')
     expect(resolveIconHref('/assets/icon.png', '/kb/')).toBe('/kb/assets/icon.png')
-    expect(resolveIconHref('https://cdn.example.com/icon.svg', '/kb/')).toBe(
-      'https://cdn.example.com/icon.svg'
-    )
-    expect(resolveIconHref('//cdn.example.com/icon.svg', '/kb/')).toBe('//cdn.example.com/icon.svg')
+    expect(resolveIconHref('https://cdn.example.com/icon.svg', '/kb/')).toBe('')
+    expect(resolveIconHref('//cdn.example.com/icon.svg', '/kb/')).toBe('')
     expect(resolveIconHref('data:image/svg+xml,%3Csvg/%3E', '/kb/')).toBe(
       'data:image/svg+xml,%3Csvg/%3E'
     )
