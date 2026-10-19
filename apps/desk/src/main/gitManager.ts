@@ -29,7 +29,7 @@ const FOCUSED_FETCH_FRESH_MS = 60_000
  *
  * 与手动 fetch 的 60s 不同：后台抓取不该长时间占着队列，但 15s 也意味着
  * **慢于 15s 的远端在后台一定会失败**（终端里没有这个上限）。这是应用内与
- * 终端 `git fetch` 最确定的一处行为差异，诊断记录见报告。
+ * 终端 `git fetch` 最确定的一处行为差异。
  */
 export const BACKGROUND_FETCH_TIMEOUT_MS = 15_000
 export const MANUAL_FETCH_TIMEOUT_MS = 60_000
@@ -1258,9 +1258,8 @@ export class GitManager {
    * `dispose()` 每轮等待队列结算的上界。
    *
    * 退出流程不允许被单个操作无限拖住：CI 上实测过 `dispose()` 卡在
-   * `Promise.allSettled(operationTails)` 超过 20s 仍不返回（本地从未复现，
-   * 详见 `docs/round-fixes-report.md`）。到点不再干等，改为如实记录"谁还没结算"
-   * 后继续/结束退出——宁可留下一条可诊断的日志，也不让应用退不掉。
+   * `Promise.allSettled(operationTails)` 超过 20s 仍不返回（本地从未复现）。
+   * 到点不再干等，改为如实记录"谁还没结算"后继续退出。
    */
   static readonly DISPOSE_TAIL_TIMEOUT_MS = 5000
 
