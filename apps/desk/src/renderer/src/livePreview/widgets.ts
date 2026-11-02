@@ -25,7 +25,7 @@ import { resolveNoteAssetRelPath } from '../markdown/noteAssetPath'
 import { imageAt, imageBefore, imageAttrChange, imageDeleteChange, imageSrcChange } from './images'
 import { createImageMoreButton, type ImageAssetContext } from './imageMenu'
 import { livePreviewHost } from './host'
-import { clearImageSizeMask, syncImageSizeMask } from './imageSizeMask'
+import { createImageResizeHandles } from './imageResize'
 
 import type { ImageAlign } from '@tnotesjs/ui/image-markdown'
 
@@ -652,10 +652,14 @@ export class ImageWidget extends WidgetType {
     if (this.width) frame.style.width = this.width
     frame.append(img)
 
-    const handle = document.createElement('span')
-    handle.className = 'cm-lp-image-handle'
-    handle.title = '拖动调整宽度'
-    frame.append(handle)
+    frame.append(
+      ...createImageResizeHandles(frame, {
+        minWidth: MIN_IMAGE_WIDTH,
+        maxWidth: () => view.contentDOM.getBoundingClientRect().width,
+        enabled: () => !view.state.readOnly,
+        commit: (width) => this.applyAttrs(view, figure, { width })
+      })
+    )
 
     // 右上角动作区：画布图的「编辑」+ 统一的「⋯」系统菜单（预览 / 对齐 / 原始大小 / 删除）
     const actions = document.createElement('span')
@@ -685,7 +689,8 @@ export class ImageWidget extends WidgetType {
         align: (align) => this.applyAttrs(view, figure, { align }),
         resetSize: () => this.applyAttrs(view, figure, { width: '' }),
         remove: () => this.removeImage(view, figure),
-        replaceSrc: (src) => this.replaceSrc(view, figure, src)
+        replaceSrc: (src) => this.replaceSrc(view, figure, src),
+        resize: (width) => this.applyAttrs(view, figure, { width })
       }
     )
     actions.append(edit, more)
@@ -769,33 +774,6 @@ export class ImageWidget extends WidgetType {
       }
     }
     if (!img.getAttribute('src')) applyImageSrc()
-
-    handle.addEventListener('mousedown', (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      if (view.state.readOnly) return
-      const startX = event.clientX
-      const startWidth = frame.getBoundingClientRect().width
-      const maxWidth = Math.max(MIN_IMAGE_WIDTH, view.contentDOM.getBoundingClientRect().width)
-      const zoom = startWidth / Math.max(1, frame.offsetWidth)
-      let width = startWidth
-      const move = (moveEvent: MouseEvent): void => {
-        width = Math.min(
-          maxWidth,
-          Math.max(MIN_IMAGE_WIDTH, startWidth + moveEvent.clientX - startX)
-        )
-        frame.style.width = `${Math.round(width / zoom)}px`
-        syncImageSizeMask(frame)
-      }
-      const up = (): void => {
-        window.removeEventListener('mousemove', move)
-        window.removeEventListener('mouseup', up)
-        clearImageSizeMask(frame)
-        this.applyAttrs(view, figure, { width: `${Math.round(width / zoom)}px` })
-      }
-      window.addEventListener('mousemove', move)
-      window.addEventListener('mouseup', up)
-    })
 
     figure.addEventListener('mousedown', (event) => {
       if (this.revealed) return

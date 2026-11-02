@@ -2,7 +2,7 @@ import type MarkdownIt from 'markdown-it'
 import type { ImageAlign } from '@tnotesjs/ui/image-markdown'
 
 import { createImageMoreButton, type ImageAssetContext } from './imageMenu'
-import { clearImageSizeMask, syncImageSizeMask } from './imageSizeMask'
+import { createImageResizeHandles } from './imageResize'
 
 /**
  * markdown-it 渲染的卡片（表格、`:::` 提示块）里的图片，与正文 ImageWidget 共用同一套外观：
@@ -145,41 +145,14 @@ export function enhanceCardImages(
     figure.append(frame)
 
     if (!editor.readOnly) {
-      const handle = document.createElement('span')
-      handle.className = 'cm-lp-image-handle'
-      handle.title = '拖动调整宽度'
-      handle.addEventListener('mousedown', (event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        const startX = event.clientX
-        const measured = frame.getBoundingClientRect().width || frame.offsetWidth
-        const startWidth = Math.max(MIN_CARD_IMAGE_WIDTH, measured || MIN_CARD_IMAGE_WIDTH)
-        // 编辑区可能带 CSS 缩放：拖动距离按屏幕像素算，写回布局像素
-        const zoom = startWidth / Math.max(1, frame.offsetWidth || startWidth)
-        const maxWidth = Math.max(
-          MIN_CARD_IMAGE_WIDTH,
-          root.getBoundingClientRect().width || startWidth * 4
-        )
-        let nextWidth = startWidth
-        const layoutPx = (): string => `${Math.round(nextWidth / zoom)}px`
-        const move = (moveEvent: MouseEvent): void => {
-          nextWidth = Math.min(
-            maxWidth,
-            Math.max(MIN_CARD_IMAGE_WIDTH, startWidth + moveEvent.clientX - startX)
-          )
-          frame.style.width = layoutPx()
-          syncImageSizeMask(frame)
-        }
-        const up = (): void => {
-          window.removeEventListener('mousemove', move)
-          window.removeEventListener('mouseup', up)
-          clearImageSizeMask(frame)
-          editor.commit(index, { width: layoutPx() }, expectedSrc)
-        }
-        window.addEventListener('mousemove', move)
-        window.addEventListener('mouseup', up)
-      })
-      frame.append(handle)
+      frame.append(
+        ...createImageResizeHandles(frame, {
+          minWidth: MIN_CARD_IMAGE_WIDTH,
+          maxWidth: () =>
+            root.getBoundingClientRect().width || (frame.offsetWidth || MIN_CARD_IMAGE_WIDTH) * 4,
+          commit: (next) => editor.commit(index, { width: next }, expectedSrc)
+        })
+      )
     }
 
     const actions = document.createElement('span')
@@ -198,7 +171,8 @@ export function enhanceCardImages(
           align: (next) => editor.commit(index, { align: next }, expectedSrc),
           resetSize: () => editor.commit(index, { width: '' }, expectedSrc),
           remove: () => editor.commit(index, { remove: true }, expectedSrc),
-          replaceSrc: (src) => editor.commit(index, { src }, expectedSrc)
+          replaceSrc: (src) => editor.commit(index, { src }, expectedSrc),
+          resize: (next) => editor.commit(index, { width: next }, expectedSrc)
         }
       )
     )

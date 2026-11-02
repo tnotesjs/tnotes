@@ -52,7 +52,7 @@ describe('table card image chrome', () => {
       figures.map((figure) => figure.querySelector('.cm-lp-image-caption')?.textContent)
     ).toEqual(['one', 'two'])
     expect(figures[1]?.querySelector<HTMLElement>('.cm-lp-image-frame')?.style.width).toBe('120px')
-    expect(card.querySelectorAll('.cm-lp-image-handle')).toHaveLength(2)
+    expect(card.querySelectorAll('.cm-lp-image-handle.is-se')).toHaveLength(2)
     expect(card.querySelectorAll('.cm-lp-image-more')).toHaveLength(2)
     // 旧的「左 / 中 / 右 / 原始大小」横条已移除
     expect(card.querySelector('.cm-lp-image-toolbar')).toBeNull()
@@ -107,7 +107,7 @@ describe('table card image chrome', () => {
       commit: (index, next, src) => commits.push([index, next, src])
     })
     document.body.append(card)
-    const handle = card.querySelectorAll('.cm-lp-image-handle')[1]!
+    const handle = card.querySelectorAll('.cm-lp-image-handle.is-se')[1]!
     handle.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 100 }))
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 180 }))
     window.dispatchEvent(new MouseEvent('mouseup', { clientX: 180 }))
@@ -199,10 +199,10 @@ describe('table cell one image slot (first passable only)', () => {
     expect(card.querySelector('img[src="https://e.com/b.png"]')).toBeNull()
     expect(card.querySelector('img[src="https://e.com/c.png"]')).toBeNull()
     expect(card.querySelector('td')?.textContent).not.toMatch(/!\[|\]\(/)
-    expect(card.querySelectorAll('.cm-lp-image-handle')).toHaveLength(1)
+    expect(card.querySelectorAll('.cm-lp-image-handle.is-se')).toHaveLength(1)
     expect(card.querySelectorAll('.cm-lp-image-more')).toHaveLength(1)
 
-    const handle = card.querySelector('.cm-lp-image-handle')!
+    const handle = card.querySelector('.cm-lp-image-handle.is-se')!
     handle.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 100 }))
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 160 }))
     window.dispatchEvent(new MouseEvent('mouseup', { clientX: 160 }))
@@ -253,7 +253,7 @@ describe('table cell one image slot (first passable only)', () => {
       commit: (index, next, src) => commits.push([index, next, src])
     })
     expect(card.querySelectorAll('img')).toHaveLength(2)
-    const handles = [...card.querySelectorAll('.cm-lp-image-handle')]
+    const handles = [...card.querySelectorAll('.cm-lp-image-handle.is-se')]
     expect(handles).toHaveLength(2)
     handles[1]!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 100 }))
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 150 }))

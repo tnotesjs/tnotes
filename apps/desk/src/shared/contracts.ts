@@ -549,6 +549,7 @@ export type ContextMenuAction =
   | 'image-push-local'
   | 'image-copy'
   | 'image-export'
+  | 'image-resize'
 export type ContextMenuRequest =
   | { kind: 'note'; pinned: boolean; tocPinned: boolean; completed: boolean }
   | { kind: 'group' }

@@ -373,7 +373,8 @@ function buildEditableSlide(
         align: (align) => editor.commit(index, { align: align === 'center' ? null : align }),
         resetSize: () => editor.commit(index, { width: '' }),
         remove: () => editor.commit(index, { remove: true }),
-        replaceSrc: (src) => editor.commit(index, { src })
+        replaceSrc: (src) => editor.commit(index, { src }),
+        resize: (width) => editor.commit(index, { width })
       }
     )
   )

@@ -1,6 +1,7 @@
 import type { ImageAlign } from '@tnotesjs/ui/image-markdown'
 
 import { pushToast } from '../stores/toast'
+import { openImageSizePopover } from './imageResize'
 
 import type { ContextMenuAction } from '../../../shared/contracts'
 
@@ -28,6 +29,8 @@ export interface ImageMenuHandlers {
   remove(): void
   /** 只换地址，其它保持不变 */
   replaceSrc?(src: string): void
+  /** 「调整尺寸…」确定后写回宽度，如 `320px` */
+  resize?(width: string): void
 }
 
 export function isRemoteImageSrc(src: string): boolean {
@@ -165,6 +168,11 @@ export function runImageMenuAction(
   state?: ImageMenuState
 ): void | Promise<void> {
   switch (action) {
+    case 'image-resize': {
+      const frame = image.closest<HTMLElement>('.cm-lp-image-frame, .tn-swiper-frame')
+      if (handlers.resize) openImageSizePopover(image, frame ?? image, handlers.resize)
+      return
+    }
     case 'image-copy':
       if (state?.src && state.asset) return copyImage(image, state.src, state.asset)
       return

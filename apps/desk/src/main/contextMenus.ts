@@ -68,6 +68,7 @@ export function contextMenuTemplate(
       align('image-align-center', '居中对齐', 'center'),
       align('image-align-right', '右对齐', 'right'),
       { type: 'separator' },
+      { ...item('image-resize', '调整尺寸…'), enabled: editable },
       { ...item('image-reset-size', '原始大小'), enabled: editable && request.hasWidth },
       ...transfer,
       { ...item('image-delete', '删除'), enabled: editable }

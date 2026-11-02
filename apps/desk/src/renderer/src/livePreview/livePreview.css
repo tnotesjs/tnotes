@@ -802,18 +802,43 @@
   white-space: nowrap;
 }
 
+/* 四角等比缩放把手：长图时任一角都在视区附近 */
 .live-editor .cm-lp-image-handle {
   position: absolute;
-  top: 50%;
-  right: -5px;
-  width: 8px;
-  height: 36px;
-  margin-top: -18px;
-  border-radius: 4px;
+  z-index: 1;
+  width: 10px;
+  height: 10px;
+  box-sizing: border-box;
+  border: 2px solid var(--tn-c-bg);
+  border-radius: 50%;
   background: var(--tn-c-brand);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tn-c-brand) 40%, transparent);
   opacity: 0;
-  cursor: ew-resize;
   transition: opacity 0.12s;
+}
+
+.live-editor .cm-lp-image-handle.is-se {
+  right: -5px;
+  bottom: -5px;
+  cursor: nwse-resize;
+}
+
+.live-editor .cm-lp-image-handle.is-nw {
+  top: -5px;
+  left: -5px;
+  cursor: nwse-resize;
+}
+
+.live-editor .cm-lp-image-handle.is-ne {
+  top: -5px;
+  right: -5px;
+  cursor: nesw-resize;
+}
+
+.live-editor .cm-lp-image-handle.is-sw {
+  bottom: -5px;
+  left: -5px;
+  cursor: nesw-resize;
 }
 
 .live-editor .cm-lp-image-actions {
@@ -1719,8 +1744,80 @@
   margin: 0;
 }
 
-.live-editor .cm-lp-table-card .cm-lp-image-handle {
-  right: 6px;
+/* 表格单元格会裁切溢出：把手收进图内 */
+.live-editor .cm-lp-table-card .cm-lp-image-handle.is-se,
+.live-editor .cm-lp-table-card .cm-lp-image-handle.is-ne {
+  right: 2px;
+}
+
+.live-editor .cm-lp-table-card .cm-lp-image-handle.is-sw,
+.live-editor .cm-lp-table-card .cm-lp-image-handle.is-nw {
+  left: 2px;
+}
+
+.live-editor .cm-lp-table-card .cm-lp-image-handle.is-ne,
+.live-editor .cm-lp-table-card .cm-lp-image-handle.is-nw {
+  top: 2px;
+}
+
+.live-editor .cm-lp-table-card .cm-lp-image-handle.is-se,
+.live-editor .cm-lp-table-card .cm-lp-image-handle.is-sw {
+  bottom: 2px;
+}
+
+/* 「调整尺寸…」浮层挂在 body 上 */
+.cm-lp-image-size-popover {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 8px;
+  background: var(--tn-c-bg);
+  box-shadow: var(--tn-shadow-3, 0 12px 40px rgb(0 0 0 / 28%));
+  color: var(--tn-c-text-1, inherit);
+  font: 12px/1.4 var(--tn-font-sans);
+}
+
+.cm-lp-image-size-popover label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cm-lp-image-size-popover input {
+  width: 72px;
+  padding: 3px 6px;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 4px;
+  background: var(--tn-c-bg-soft);
+  color: inherit;
+  font: inherit;
+}
+
+.cm-lp-image-size-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.cm-lp-image-size-actions button {
+  padding: 3px 10px;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 4px;
+  background: var(--tn-c-bg);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cm-lp-image-size-actions button.is-primary {
+  border-color: var(--tn-c-brand);
+  background: var(--tn-c-brand);
+  color: #fff;
 }
 
 .live-editor .cm-lp-diagram {

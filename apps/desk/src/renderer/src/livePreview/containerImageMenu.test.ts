@@ -68,7 +68,7 @@ describe('callout card image chrome', () => {
       expect(figures[0]?.classList.contains('is-center')).toBe(true)
       expect(figures[0]?.querySelector<HTMLElement>('.cm-lp-image-frame')?.style.width).toBe('50%')
       expect(figures[0]?.querySelector('.cm-lp-image-caption')?.textContent).toBe('a')
-      expect(el.querySelectorAll('.cm-lp-image-handle')).toHaveLength(1)
+      expect(el.querySelectorAll('.cm-lp-image-handle.is-se')).toHaveLength(1)
       expect(el.querySelectorAll('.cm-lp-image-more')).toHaveLength(1)
       expect(el.querySelector('.cm-lp-image-toolbar')).toBeNull()
       // 手写 <img> 不编号、不加控件
@@ -86,7 +86,7 @@ describe('callout card image chrome', () => {
       { readOnly: true, commit: () => undefined }
     )
     expect(ro.querySelectorAll('.cm-lp-image-more')).toHaveLength(1)
-    expect(ro.querySelectorAll('.cm-lp-image-handle')).toHaveLength(0)
+    expect(ro.querySelectorAll('.cm-lp-image-handle.is-se')).toHaveLength(0)
     const site = renderContainerFromSource('::: tip\n![a](https://e.com/a.png)\n:::')
     expect(site.querySelector('.cm-lp-image-frame')).toBeNull()
   })

@@ -227,6 +227,7 @@ describe('image more menu', () => {
       '居中对齐',
       '右对齐',
       'separator',
+      '调整尺寸…',
       '原始大小',
       '删除'
     ])
