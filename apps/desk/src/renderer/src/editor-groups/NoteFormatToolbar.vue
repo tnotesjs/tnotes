@@ -19,6 +19,8 @@ export interface FormatToolbarEditor {
   insertTable(): void
   addHeadingNumbers(maxDepth: number): void
   removeHeadingNumbers(): void
+  /** 光标所在 `:::` 容器类型；插入菜单据此隐藏不能嵌进去的块 */
+  containerAtCursor?(): string | null
 }
 
 const props = defineProps<{
@@ -111,6 +113,7 @@ function insertBlock(id: string): void {
           :disabled="disabled"
           :active="active"
           :exclude="excludeBlocks"
+          :resolve-parent="() => editor?.containerAtCursor?.() ?? null"
           @select="insertBlock"
         />
         <UiTooltip v-else-if="item === 'bold'" label="粗体" shortcut="⌘ B">

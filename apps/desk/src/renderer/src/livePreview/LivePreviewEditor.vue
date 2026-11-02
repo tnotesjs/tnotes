@@ -56,6 +56,7 @@ import {
   livePreviewField
 } from './decorations'
 import { codeBlockFullscreenClass } from './codeBlockChrome'
+import { containerAtCursor } from './containerAt'
 import { codeLineNumberClick, pruneStaleCodeHighlights } from './codeLines'
 import {
   applyHeadingFoldCommand,
@@ -559,6 +560,7 @@ defineExpose({
   prefixSelection: (prefix: string) => withView((v) => prefixSelectionCommand(v, prefix)),
   setLinePrefix: (prefix: string) => withView((v) => setLinePrefixCommand(v, prefix)),
   insertTable: () => withView((v) => insertText(v, '\n|  |  |\n| --- | --- |\n|  |  |\n')),
+  containerAtCursor: () => (view ? containerAtCursor(view.state) : null),
   addHeadingNumbers: (maxDepth: number) =>
     withView((v) => {
       const result = renumberHeadings(v.state.doc.toString(), maxDepth)

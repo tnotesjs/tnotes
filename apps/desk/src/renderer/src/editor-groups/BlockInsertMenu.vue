@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 
+import { blockTypeOfMenuItem, canNest } from '../markdown/blockSpecs'
 import { TN_NOTES_SLASH_ITEMS } from '../markdown/slashMenu'
 
 const props = defineProps<{
@@ -8,6 +9,8 @@ const props = defineProps<{
   active: boolean
   /** 宿主不支持的块（README 没有笔记索引，画布无处归属） */
   exclude?: readonly string[]
+  /** 打开菜单时读一次插入点所在的父块类型（null = 文档根） */
+  resolveParent?: () => string | null
 }>()
 
 const emit = defineEmits<{ select: [id: string] }>()
@@ -30,9 +33,11 @@ const menuIds = [
   'notes-table',
   'footprints'
 ] as const
+const parent = ref<string | null>(null)
 const items = computed(() =>
   menuIds
     .filter((id) => !props.exclude?.includes(id))
+    .filter((id) => canNest(parent.value, blockTypeOfMenuItem(id)))
     .map((id) => {
       if (id === 'canvas') return { id, label: '画布' }
       if (id === 'table') return { id, label: '表格' }
@@ -62,6 +67,7 @@ async function show(focusMenu = false): Promise<void> {
     if (focusMenu) focusAt(0)
     return
   }
+  parent.value = props.resolveParent?.() ?? null
   const rect = trigger.value.getBoundingClientRect()
   position.value = {
     left: `${Math.max(8, Math.min(rect.left, window.innerWidth - 308))}px`,
