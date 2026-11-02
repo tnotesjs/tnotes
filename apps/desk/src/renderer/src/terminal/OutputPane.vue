@@ -87,6 +87,7 @@ const statusTone = computed(() => {
  */
 async function openTerminalHere(): Promise<void> {
   await terminal.createSession(props.task.knowledgeBaseId, props.task.cwd)
+  terminal.view = 'terminal'
 }
 </script>
 

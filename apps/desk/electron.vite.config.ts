@@ -40,7 +40,8 @@ export default defineConfig({
         input: {
           index: resolve('src/main/index.ts'),
           searchWorker: resolve('src/main/searchWorker.ts'),
-          encodeWorker: resolve('src/main/encodeWorker.ts')
+          encodeWorker: resolve('src/main/encodeWorker.ts'),
+          askpassMain: resolve('src/main/askpass/askpassMain.ts')
         },
         // @cursor/sdk 自带各平台的可执行文件（rg、沙盒助手），运行时从 node_modules 按需加载
         external: ['sharp', '@cursor/sdk']

@@ -4,6 +4,7 @@ import { IPC_CHANNELS } from '../shared/contracts'
 
 import type {
   AppSettings,
+  AskpassPromptDto,
   AttachmentCopyImageResult,
   AttachmentExportImageResult,
   AttachmentPushLocalResult,
@@ -604,6 +605,21 @@ const api: DeskApi = {
       const listener = (_event: Electron.IpcRendererEvent, taskId: string): void => callback(taskId)
       ipcRenderer.on(IPC_CHANNELS.commandTaskRetryRequested, listener)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.commandTaskRetryRequested, listener)
+    }
+  },
+  askpass: {
+    answer: (id: string, value: string | null) =>
+      invoke<void>(IPC_CHANNELS.askpassAnswer, { id, value }),
+    onRequest: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, prompt: AskpassPromptDto): void =>
+        callback(prompt)
+      ipcRenderer.on(IPC_CHANNELS.askpassRequest, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.askpassRequest, listener)
+    },
+    onDismiss: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, id: string): void => callback(id)
+      ipcRenderer.on(IPC_CHANNELS.askpassDismiss, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.askpassDismiss, listener)
     }
   },
   terminal: {

@@ -4,6 +4,7 @@ import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 
 import icon from '../../resources/icon.png?asset'
 import { handleAssetProtocol, registerAssetScheme } from './assetProtocol'
+import { startAskpass, stopAskpass } from './askpass'
 import { CloseGuard } from './closeGuard'
 import {
   ensureQuitGuard,
@@ -237,6 +238,11 @@ if (!hasSingleInstanceLock) {
     )
     scheduleSearchRefresh()
     handleAssetProtocol()
+    // 凭据桥要先于 IPC 注册：registerAskpass 在注册时挂上转发
+    await startAskpass({
+      scriptDir: app.getPath('userData'),
+      mainPath: join(__dirname, 'askpassMain.js')
+    })
     unregisterIpc = registerIpc(() => mainWindow)
     // 本机 MCP：默认关闭，按设置启动（失败原因如实进状态，不影响主流程）
     void mcpManager.applySettings()
@@ -297,6 +303,7 @@ app.on('will-quit', () => {
   void workspaceManager.dispose()
   void searchManager.dispose()
   void gitManager.dispose()
+  void stopAskpass()
   webContentsManager.dispose()
   // 终端会话持有真实 shell 进程：退出时必须一起结束，否则会把预览服务之类的
   // 子进程留成孤儿

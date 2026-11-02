@@ -33,6 +33,8 @@ export const useTerminalStore = defineStore('terminal', () => {
   const sessions = ref<TerminalSessionDto[]>([])
   const activeSessionId = ref<string | null>(null)
   const open = ref(false)
+  /** 面板视图：交互终端，或 Git / 启动 IDE 等命令的输出（与 VS Code 的「终端 / 输出」一致） */
+  const view = ref<'terminal' | 'output'>('terminal')
   const maximized = ref(false)
   /** 最大化前的高度，还原时用 */
   const height = ref(DEFAULT_PANEL_HEIGHT)
@@ -331,6 +333,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     activeSession,
     runningCount,
     open,
+    view,
     maximized,
     height,
     creating,

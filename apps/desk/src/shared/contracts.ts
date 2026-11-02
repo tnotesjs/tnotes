@@ -158,6 +158,11 @@ export const IPC_CHANNELS = {
   clipboardSetPlainText: 'clipboard:set-plain-text',
   commandTaskLog: 'command-task:log',
   commandTaskReveal: 'command-task:reveal',
+  /** 主进程 → 界面：git 需要凭据，弹框询问 */
+  askpassRequest: 'askpass:request',
+  /** 主进程 → 界面：询问已失效（git 退出、任务取消），关掉对应的框 */
+  askpassDismiss: 'askpass:dismiss',
+  askpassAnswer: 'askpass:answer',
   gitStateChanged: 'git:state-changed',
   updateStatus: 'update:status',
   updateCheck: 'update:check',
@@ -1327,6 +1332,17 @@ export interface CommandTaskDto {
 }
 
 /** 分批推送的日志片段。`data` 里 `\u0000stderr\u0001` 前缀标记 stderr。 */
+/** git / ssh 的一次凭据询问（手动 Git 任务才会出现） */
+export interface AskpassPromptDto {
+  id: string
+  /** 提示原文，如 `Password for 'https://user@github.com': ` */
+  prompt: string
+  /** 密码、口令类：用密码框 */
+  secret: boolean
+  taskTitle: string | null
+  knowledgeBaseName: string | null
+}
+
 export interface CommandTaskLogEvent {
   taskId: string
   run: number
@@ -2815,6 +2831,12 @@ export interface DeskApi {
     onReveal(callback: (taskId: string) => void): () => void
     /** 主进程请求渲染端重跑某任务（重试必须复用渲染端的完整流程） */
     onRetryRequested(callback: (taskId: string) => void): () => void
+  }
+  askpass: {
+    /** 作答；`null` 表示取消（git 视为认证失败） */
+    answer(id: string, value: string | null): Promise<DeskResult<void>>
+    onRequest(callback: (prompt: AskpassPromptDto) => void): () => void
+    onDismiss(callback: (id: string) => void): () => void
   }
   terminal: {
     create(request: TerminalCreateRequest): Promise<DeskResult<TerminalSessionDto>>

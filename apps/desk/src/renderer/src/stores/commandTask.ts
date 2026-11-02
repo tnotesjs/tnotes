@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
+import { useTerminalStore } from './terminal'
 import { pushToast } from './toast'
 
 import type {
@@ -30,7 +31,7 @@ export const useCommandTaskStore = defineStore('commandTask', () => {
   const logs = ref<Record<string, CommandTaskLogLine[]>>({})
   const byteCounts = ref<Record<string, number>>({})
   const droppedBytes = ref<Record<string, number>>({})
-  /** 面板当前展示的任务：null 表示展示交互式 Shell */
+  /** 「输出」视图当前选中的任务 */
   const activeTaskId = ref<string | null>(null)
   const retrying = ref<Record<string, boolean>>({})
   /**
@@ -258,6 +259,7 @@ export const useCommandTaskStore = defineStore('commandTask', () => {
   /** 打开某任务的输出（后台失败通知的「查看输出」入口）。 */
   function reveal(taskId: string): void {
     activeTaskId.value = taskId
+    useTerminalStore().view = 'output'
   }
 
   function revealByKind(knowledgeBaseId: string, kind: CommandTaskKind): boolean {
@@ -265,7 +267,7 @@ export const useCommandTaskStore = defineStore('commandTask', () => {
       (item) => item.knowledgeBaseId === knowledgeBaseId && item.kind === kind
     )
     if (!task) return false
-    activeTaskId.value = task.id
+    reveal(task.id)
     return true
   }
 

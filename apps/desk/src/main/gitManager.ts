@@ -87,10 +87,25 @@ export interface GitRunObserver {
   outputTruncated?(droppedBytes: number): void
 }
 
+/** 手动任务的凭据提示桥（见 `askpass/askpassServer`）。 */
+export interface GitAskpassBridge {
+  /** 注入给 git 的 GIT_ASKPASS / SSH_ASKPASS 等环境变量 */
+  env: Record<string, string>
+  /** 凭据框打开时回调 true、全部作答或取消后回调 false；返回退订函数 */
+  onWaiting(listener: (waiting: boolean) => void): () => void
+  /** 关掉这一轮还没回答的凭据框 */
+  cancel(): void
+}
+
 export interface GitRunExtras {
   observer?: GitRunObserver
   signal?: AbortSignal
   onSpawn?: GitRunSpawnRegistry
+  /**
+   * 只有手动任务传：git 需要凭据时弹框询问，等待作答期间暂停超时计时。
+   * 后台 fetch / 自动推送没人值守，不传，仍按 `GIT_TERMINAL_PROMPT=0` 快速失败。
+   */
+  askpass?: GitAskpassBridge
   /**
    * 本项**刚进入队列**时回调（还没轮到执行就会触发）。
    *
@@ -173,7 +188,7 @@ export function runGit(
     const detached = process.platform !== 'win32'
     const child = spawn(gitExecutable(), args, {
       cwd: rootPath,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
+      env: { ...process.env, ...extras.askpass?.env, GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
       // 自成进程组：git 会再 fork 出 git-remote-http 之类的孙子进程。
@@ -224,6 +239,7 @@ export function runGit(
     let terminated = false
     let exitCode: number | null = null
     let timer: NodeJS.Timeout | null = null
+    let offAskpassWaiting: (() => void) | null = null
     let cleanupTimer: NodeJS.Timeout | null = null
     /** 强杀兜底定时器；确认清理完成就取消，仍有存活成员才保留 */
     let forceTimer: NodeJS.Timeout | null = null
@@ -278,6 +294,8 @@ export function runGit(
     const settle = (): void => {
       if (settled) return
       settled = true
+      offAskpassWaiting?.()
+      extras.askpass?.cancel()
       if (timer) clearTimeout(timer)
       if (cleanupTimer) clearTimeout(cleanupTimer)
       if (cleanupPoll) clearTimeout(cleanupPoll)
@@ -433,6 +451,7 @@ export function runGit(
     const onAbort = (): void => {
       if (settled || stopReason) return
       stopReason = 'canceled'
+      extras.askpass?.cancel()
       terminate()
     }
 
@@ -461,15 +480,35 @@ export function runGit(
     trackStream(child.stdout, true)
     trackStream(child.stderr, false)
 
-    timer = setTimeout(() => {
+    const onTimeout = (): void => {
+      timer = null
       if (settled || stopReason) return
       stopReason = 'timeout'
       terminate()
-    }, timeoutMs)
+    }
+    let deadline = Date.now() + timeoutMs
+    /** 凭据框打开期间暂停计时时剩余的毫秒数；null = 没在暂停 */
+    let pausedRemaining: number | null = null
+    timer = setTimeout(onTimeout, timeoutMs)
+    offAskpassWaiting =
+      extras.askpass?.onWaiting((waiting) => {
+        if (settled || stopReason) return
+        if (waiting && timer) {
+          clearTimeout(timer)
+          timer = null
+          pausedRemaining = Math.max(0, deadline - Date.now())
+        } else if (!waiting && pausedRemaining !== null) {
+          deadline = Date.now() + pausedRemaining
+          timer = setTimeout(onTimeout, pausedRemaining)
+          pausedRemaining = null
+        }
+      }) ?? null
 
     child.on('error', (error) => {
       if (settled) return
       settled = true
+      offAskpassWaiting?.()
+      extras.askpass?.cancel()
       if (timer) clearTimeout(timer)
       if (cleanupTimer) clearTimeout(cleanupTimer)
       if (forceTimer) clearTimeout(forceTimer)

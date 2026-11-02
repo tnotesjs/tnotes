@@ -1,6 +1,6 @@
 /**
  * ⌘W / Ctrl+W 在终端面板获得焦点时关掉终端标签，而不是上面的笔记标签。
- * 命令输出标签优先于交互式会话，和面板里原来的按键顺序一致。
+ * 调用方按当前视图只传其中一个：输出视图传任务，终端视图传会话。
  */
 export function terminalShortcutCloseTarget(input: {
   panelOpen: boolean

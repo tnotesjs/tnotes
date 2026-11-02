@@ -6,6 +6,7 @@ import {
   onBackgroundFailuresChanged,
   recordBackgroundFailureWithoutTask
 } from '../backgroundFailureLog'
+import { askpassBridgeFor } from '../askpass'
 import { commandTaskManager, TASK_TITLES } from '../commandTaskManager'
 import { gitManager } from '../gitManager'
 import { launchIde } from '../ide'
@@ -297,7 +298,9 @@ export async function runGitTask(
       // 一入队就拿到身份：排队中被取消时只让这一项失效，不碰正在跑的另一项
       onEnqueued: (id: string, cancel: () => void) => {
         execution?.attachOperation(id, cancel)
-      }
+      },
+      // 手动任务：git 需要凭据时弹框询问（后台任务不走这里，仍快速失败）
+      askpass: askpassBridgeFor(`${handleRef.id}:${handleRef.run}`)
     }
 
     let outcome: GitOperationResult

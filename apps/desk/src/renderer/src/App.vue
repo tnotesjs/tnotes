@@ -34,6 +34,8 @@ import { useCommandTaskStore } from './stores/commandTask'
 import { planFailureNotices } from './stores/failureNotice'
 import { useBackgroundFailureStore } from './stores/backgroundFailure'
 import { useTerminalStore } from './stores/terminal'
+import { useAskpassStore } from './stores/askpass'
+import CredentialDialog from './components/CredentialDialog.vue'
 import { useWorkspaceStore } from './stores/workspace'
 import { selectAllInRenderer } from './selectAll'
 import { APP_ZOOM_DEFAULT } from '../../shared/appZoom'
@@ -72,6 +74,7 @@ const activeNoteSource = computed<Parameters<typeof syncActiveNote>[0]>(() => {
 watch(activeNoteSource, (source) => syncActiveNote(source), { immediate: true })
 const terminalStore = useTerminalStore()
 const commandTaskStore = useCommandTaskStore()
+const askpassStore = useAskpassStore()
 const backgroundFailureStore = useBackgroundFailureStore()
 const agentStore = useAgentStore()
 const agentPanel = ref<{ focusInput: () => void } | null>(null)
@@ -132,6 +135,7 @@ const notifiedTaskRuns = new Set<string>()
 let failureNoticeTimer: ReturnType<typeof setTimeout> | null = null
 const FAILURE_NOTICE_DEBOUNCE_MS = 600
 let unsubscribeCommandTaskReveal: (() => void) | null = null
+let unsubscribeAskpass: (() => void) | null = null
 let unsubscribeCommandTaskRetry: (() => void) | null = null
 let unsubscribeTabShortcut: (() => void) | null = null
 let unsubscribeBeforeClose: (() => void) | null = null
@@ -773,6 +777,7 @@ watch(
     Boolean(recoveryCandidate.value) ||
     Boolean(store.gitAttention) ||
     Boolean(store.pendingGitPublishId) ||
+    Boolean(askpassStore.current) ||
     store.closingTabs,
   (modalOpen) => {
     editor.webViewsSuspended = modalOpen
@@ -882,6 +887,7 @@ onMounted(async () => {
     // 重试复用渲染端的完整业务流程（推送会先保存）
     void store.retryCommandTask(taskId)
   })
+  unsubscribeAskpass = askpassStore.subscribe()
   unsubscribeCommandTaskReveal = window.desk.commandTask.onReveal((taskId) => {
     // 手动 Git 操作：立即展开面板并定位到该任务
     terminalStore.toggle(true)
@@ -918,6 +924,8 @@ onUnmounted(() => {
   unsubscribeBackgroundFailures = null
   unsubscribeCommandTaskReveal?.()
   unsubscribeCommandTaskReveal = null
+  unsubscribeAskpass?.()
+  unsubscribeAskpass = null
   unsubscribeCommandTaskRetry?.()
   unsubscribeCommandTaskRetry = null
   unsubscribeTabShortcut?.()
@@ -1576,6 +1584,7 @@ onUnmounted(() => {
   </div>
 
   <ToastHost />
+  <CredentialDialog />
   <!-- 图集只在被点图所在的编辑器（.cm-editor）里收，避免多标签 / 分栏串图 -->
   <ImagePreview gallery-selector=".tn-prose img, .cm-lp-image-frame img, .tn-swiper-frame img" />
   <div

@@ -2,6 +2,7 @@ import { ipcMain, type BrowserWindow } from 'electron'
 
 import { IPC_CHANNELS } from '../shared/contracts'
 import { registerAgent } from './ipc/agent'
+import { registerAskpass } from './ipc/askpass'
 import { registerGit } from './ipc/git'
 import { registerNotes } from './ipc/notes'
 import { registerAssets } from './ipc/assets'
@@ -33,6 +34,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): () => void {
   const offUpdate = registerUpdate(getWindow)
   const offTerminal = registerTerminal(getWindow)
   const offCommandTask = registerCommandTask(getWindow)
+  const offAskpass = registerAskpass(getWindow)
   registerClipboard(getWindow)
   registerSelection(getWindow)
   registerContext(getWindow)
@@ -49,6 +51,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null): () => void {
     offUpdate()
     offTerminal()
     offCommandTask()
+    offAskpass()
     for (const channel of Object.values(IPC_CHANNELS)) {
       ipcMain.removeHandler(channel)
     }

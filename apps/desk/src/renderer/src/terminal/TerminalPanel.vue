@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
-import CommandTaskPane from './CommandTaskPane.vue'
+import OutputPane from './OutputPane.vue'
 import TerminalIcon from './TerminalIcon.vue'
 import TerminalPane from './TerminalPane.vue'
 import { useCommandTaskStore } from '../stores/commandTask'
@@ -44,15 +44,24 @@ function setPaneRef(sessionId: string, instance: unknown): void {
   else delete panes.value[sessionId]
 }
 
-/** 面板当前展示的是命令任务还是交互式 Shell */
-const showingTask = computed(() => Boolean(commandTasks.activeTaskId))
+const showingOutput = computed(() => store.view === 'output')
+
+/** 输出视图展示的任务：没有显式选中时落到最近一条 */
+const shownTask = computed(
+  () => commandTasks.active ?? commandTasks.tasks[commandTasks.tasks.length - 1] ?? null
+)
 
 function selectTask(taskId: string): void {
   commandTasks.select(taskId)
+  store.view = 'output'
 }
 
-function selectShell(): void {
-  commandTasks.select(null)
+function showOutput(): void {
+  store.view = 'output'
+}
+
+function showTerminal(): void {
+  store.view = 'terminal'
   focusActive()
 }
 
@@ -65,7 +74,7 @@ function focusActive(): void {
 async function createSession(): Promise<void> {
   const knowledgeBaseId = activeKnowledgeBaseId.value
   if (!knowledgeBaseId) return
-  commandTasks.select(null)
+  store.view = 'terminal'
   await store.createSession(knowledgeBaseId)
   focusActive()
 }
@@ -81,7 +90,7 @@ let shortcutClosePending = false
 
 /**
  * 焦点在终端面板里时关掉当前标签。
- * 命令输出只收起标签；交互式会话关掉进程。没有可关的标签时返回 false，
+ * 输出视图只收起任务输出；终端视图关掉会话进程。没有可关的标签时返回 false，
  * 让 ⌘W 继续去关笔记标签或窗口。
  */
 function closeFocusedTab(): boolean {
@@ -90,8 +99,8 @@ function closeFocusedTab(): boolean {
   const target = terminalShortcutCloseTarget({
     panelOpen: store.open,
     focusInsidePanel: Boolean(active && root.value?.contains(active)),
-    activeTaskId: commandTasks.activeTaskId,
-    activeSessionId: store.activeSessionId
+    activeTaskId: showingOutput.value ? (shownTask.value?.id ?? null) : null,
+    activeSessionId: showingOutput.value ? null : store.activeSessionId
   })
   if (!target) return false
   const session =
@@ -227,7 +236,7 @@ function onKeydownCapture(event: KeyboardEvent): void {
     // 终端里的查找：只在面板聚焦时接管，避免抢走编辑器/网页的 Cmd+F
     event.preventDefault()
     event.stopPropagation()
-    openSearch()
+    if (!showingOutput.value) openSearch()
     return
   }
   if (key === '=' || key === '+') {
@@ -257,21 +266,21 @@ function onKeydownCapture(event: KeyboardEvent): void {
 
 /** 展开面板：有会话就聚焦，没有就建一个。 */
 async function createOrFocus(): Promise<void> {
+  if (showingOutput.value) return
   if (store.sessions.length === 0) await createSession()
-  else if (commandTasks.activeTaskId) commandTasks.select(commandTasks.activeTaskId)
   else focusActive()
 }
 
 /**
- * 定位/展示某个命令任务（手动 Git 操作与后台失败入口都用它）。
+ * 在「输出」视图里定位某个命令任务（手动 Git 操作与后台失败入口都用它）。
  * 已存在的运行中任务只做定位，不重复提交命令。
  */
 function showTask(taskId: string): void {
-  commandTasks.select(taskId)
+  selectTask(taskId)
 }
 
 async function openForKnowledgeBase(knowledgeBaseId: string, cwd?: string): Promise<void> {
-  commandTasks.select(null)
+  store.view = 'terminal'
   await store.createSession(knowledgeBaseId, cwd)
   focusActive()
 }
@@ -313,14 +322,38 @@ defineExpose({
     />
 
     <header class="terminal-tabs">
-      <div class="terminal-tab-list" role="tablist">
+      <div class="terminal-views" role="tablist" aria-label="面板视图">
+        <button
+          type="button"
+          class="terminal-view"
+          :class="{ active: !showingOutput }"
+          role="tab"
+          :aria-selected="!showingOutput"
+          @click="showTerminal"
+        >
+          终端
+        </button>
+        <button
+          type="button"
+          class="terminal-view"
+          :class="{ active: showingOutput }"
+          role="tab"
+          :aria-selected="showingOutput"
+          @click="showOutput"
+        >
+          输出<span v-if="commandTasks.runningCount > 0" class="terminal-view-badge">{{
+            commandTasks.runningCount
+          }}</span>
+        </button>
+      </div>
+      <div v-if="showingOutput" class="terminal-tab-list" role="tablist">
         <div
           v-for="task in commandTasks.tasks"
           :key="task.id"
           class="terminal-tab command-tab"
-          :class="{ active: task.id === commandTasks.activeTaskId }"
+          :class="{ active: task.id === shownTask?.id }"
           role="tab"
-          :aria-selected="task.id === commandTasks.activeTaskId"
+          :aria-selected="task.id === shownTask?.id"
           :title="`${task.title} — ${task.cwd}`"
           @click="selectTask(task.id)"
           @mousedown="preventMiddleClickAutoscroll"
@@ -338,17 +371,8 @@ defineExpose({
             ×
           </button>
         </div>
-        <button
-          v-if="commandTasks.tasks.length > 0"
-          type="button"
-          class="terminal-tab shell-tab"
-          :class="{ active: !showingTask }"
-          aria-label="切回交互式终端"
-          title="交互式终端"
-          @click="selectShell"
-        >
-          &gt;_
-        </button>
+      </div>
+      <div v-else class="terminal-tab-list" role="tablist">
         <div
           v-for="session in store.sessions"
           :key="session.id"
@@ -399,7 +423,7 @@ defineExpose({
         </button>
       </div>
 
-      <div v-if="searchOpen" class="terminal-search">
+      <div v-if="searchOpen && !showingOutput" class="terminal-search">
         <input
           ref="searchInput"
           v-model="searchTerm"
@@ -415,11 +439,14 @@ defineExpose({
       </div>
 
       <div class="terminal-actions">
-        <span v-if="store.activeSession?.status === 'exited'" class="terminal-exited-hint">
+        <span
+          v-if="!showingOutput && store.activeSession?.status === 'exited'"
+          class="terminal-exited-hint"
+        >
           进程已退出（{{ store.activeSession.exitCode ?? '—' }}）
         </span>
         <button
-          v-if="store.activeSession?.status === 'exited'"
+          v-if="!showingOutput && store.activeSession?.status === 'exited'"
           type="button"
           aria-label="重新启动会话"
           data-tooltip="重新启动会话"
@@ -427,23 +454,25 @@ defineExpose({
         >
           <TerminalIcon name="refresh" />
         </button>
-        <button
-          type="button"
-          aria-label="在输出中查找"
-          data-tooltip="在输出中查找（⌘F）"
-          @click="openSearch"
-        >
-          <TerminalIcon name="search" />
-        </button>
-        <button
-          type="button"
-          aria-label="清屏"
-          data-tooltip="清屏"
-          :disabled="!store.activeSession"
-          @click="activePane()?.clear()"
-        >
-          <TerminalIcon name="clear" />
-        </button>
+        <template v-if="!showingOutput">
+          <button
+            type="button"
+            aria-label="在终端中查找"
+            data-tooltip="在终端中查找（⌘F）"
+            @click="openSearch"
+          >
+            <TerminalIcon name="search" />
+          </button>
+          <button
+            type="button"
+            aria-label="清屏"
+            data-tooltip="清屏"
+            :disabled="!store.activeSession"
+            @click="activePane()?.clear()"
+          >
+            <TerminalIcon name="clear" />
+          </button>
+        </template>
         <button
           type="button"
           aria-label="缩小字号"
@@ -480,12 +509,15 @@ defineExpose({
     </header>
 
     <div class="terminal-bodies">
-      <div v-if="commandTasks.active" class="terminal-body">
-        <CommandTaskPane :task="commandTasks.active" />
+      <div v-if="showingOutput && shownTask" class="terminal-body">
+        <OutputPane :task="shownTask" />
       </div>
+      <p v-else-if="showingOutput" class="terminal-empty">
+        还没有命令输出。拉取、推送和启动 IDE 的过程会显示在这里。
+      </p>
       <div
         v-for="session in store.sessions"
-        v-show="!showingTask && session.id === store.activeSessionId"
+        v-show="!showingOutput && session.id === store.activeSessionId"
         :key="session.id"
         class="terminal-body"
       >
@@ -509,10 +541,7 @@ defineExpose({
           </button>
         </div>
       </div>
-      <p
-        v-if="store.sessions.length === 0 && commandTasks.tasks.length === 0"
-        class="terminal-empty"
-      >
+      <p v-if="!showingOutput && store.sessions.length === 0" class="terminal-empty">
         还没有终端会话。点「+」在当前知识库根目录新建一个。
       </p>
     </div>
@@ -643,9 +672,48 @@ body.is-resizing .terminal-resize-handle::before {
   background: var(--warning, #e5c07b);
 }
 
-.shell-tab {
-  font-family: var(--font-mono);
+.terminal-views {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 6px;
+  border-right: 1px solid var(--border);
+}
+
+.terminal-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 2px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.terminal-view:hover {
+  color: var(--text);
+}
+
+.terminal-view.active {
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+  border-radius: 0;
+}
+
+.terminal-view-badge {
+  min-width: 14px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg, #fff);
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
 }
 
 .terminal-tab-kb {
