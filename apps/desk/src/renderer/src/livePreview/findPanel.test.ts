@@ -141,6 +141,12 @@ describe('查找条', () => {
     expect(view.state.doc.toString()).toBe('dog dog | cat cat')
   })
 
+  it('打开时用选中的单行文本作为查询', () => {
+    const view = editor('foo bar foo', 4, 7)
+    openFind(view)
+    expect(panel(view).find.value).toBe('bar')
+  })
+
   it('Esc 关闭查找条并把焦点还给正文', () => {
     const view = editor('hello')
     openFind(view)
