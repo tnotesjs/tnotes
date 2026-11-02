@@ -324,6 +324,16 @@ function vueAlias(): { find: string; replacement: string } {
   }
 }
 
+/**
+ * `mermaid` resolves to `mermaid.core.mjs`, which imports raw `dayjs.min.js`
+ * (UMD, no ESM default export) and breaks in the browser when served unbundled.
+ * The prebundled ESM build ships its CJS deps inlined. Resolved from the
+ * importer (`@tnotesjs/ui`), so any install layout finds it.
+ */
+function mermaidAlias(): { find: RegExp; replacement: string } {
+  return { find: /^mermaid$/, replacement: 'mermaid/dist/mermaid.esm.min.mjs' }
+}
+
 function vuePlugin() {
   return vue({
     include: [/\.vue$/],
@@ -372,7 +382,7 @@ async function createSsrVite(config: ResolvedSsgConfig, store: PageSourceStore) 
     appType: 'custom',
     plugins: [tnotesPlugin(config, store), vuePlugin()],
     server: { middlewareMode: true, fs: { allow: [config.root, packageRoot] } },
-    resolve: { dedupe: ['vue'], alias: [vueAlias()] },
+    resolve: { dedupe: ['vue'], alias: [vueAlias(), mermaidAlias()] },
     ssr: { noExternal: ['@tnotesjs/ui'] },
     logLevel: 'warn'
   })
@@ -889,7 +899,7 @@ export async function createDevServer(
       // .pnpm store, and linked checkouts (ui/, ssg/, workspace .pnpm) when
       // developing ssg against a real KB.
     },
-    resolve: { dedupe: ['vue'], alias: [vueAlias()] },
+    resolve: { dedupe: ['vue'], alias: [vueAlias(), mermaidAlias()] },
     ssr: { noExternal: ['@tnotesjs/ui'] },
     logLevel: 'warn'
   })
