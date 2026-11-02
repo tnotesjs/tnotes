@@ -51,4 +51,22 @@ describe('Mermaid preview host', () => {
       true
     )
   })
+
+  it('flags the document as fullscreen in place, without moving the preview out of its host', async () => {
+    const host = mount(Mermaid, { source: 'graph TD\n  A --> B' })
+    await nextTick()
+    const root = host.querySelector<HTMLElement>('.tn-mermaid')!
+    const toggle = host.querySelector<HTMLButtonElement>('button[title="全屏查看图表"]')!
+    toggle.click()
+    await nextTick()
+    expect(root.classList.contains('is-fullscreen')).toBe(true)
+    expect(root.parentElement).toBe(host)
+    expect(root.dataset.tnFullscreenLayer).toBe('')
+    expect(document.body.dataset.tnFullscreen).toBe('')
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await nextTick()
+    expect(root.classList.contains('is-fullscreen')).toBe(false)
+    expect(document.body.dataset.tnFullscreen).toBeUndefined()
+  })
 })

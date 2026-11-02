@@ -32,6 +32,7 @@ export { default as CodeBlock } from './components/CodeBlock/CodeBlock.vue'
 export { default as CodeGroup } from './components/CodeGroup/CodeGroup.vue'
 export { default as ImagePreview } from './components/ImagePreview/ImagePreview.vue'
 export * from './browser/clipboard'
+export * from './browser/fullscreenLayer'
 export * from './browser/theme'
 export * from './code/highlight'
 export {

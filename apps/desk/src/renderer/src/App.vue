@@ -2316,3 +2316,14 @@ body.is-resizing-image {
   line-height: 1.65;
 }
 </style>
+
+<!-- Unscoped: 全屏层常嵌在编辑器层叠上下文里，z-index 盖不过壳层；整壳隐藏（不可见也点不中），只显示全屏层 -->
+<style>
+body[data-tn-fullscreen] .desk-shell {
+  visibility: hidden;
+}
+
+body[data-tn-fullscreen] .desk-shell [data-tn-fullscreen-layer] {
+  visibility: visible;
+}
+</style>

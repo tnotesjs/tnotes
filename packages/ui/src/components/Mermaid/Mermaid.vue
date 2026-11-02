@@ -85,6 +85,7 @@
 import mermaid from 'mermaid'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { setFullscreenLayer } from '../../browser/fullscreenLayer'
 import { adoptLiveSvg } from './adoptLiveSvg'
 import iconCenterOff from './icons/icon__center_off.svg?url'
 import iconCenterOn from './icons/icon__center_on.svg?url'
@@ -488,7 +489,10 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleDocumentKeydown, true)
   if (copyResetTimer) clearTimeout(copyResetTimer)
   if (isFullscreen.value) exitFullscreenOverlay()
+  setFullscreenLayer(rootRef.value, false)
 })
+
+watch(isFullscreen, (on) => setFullscreenLayer(rootRef.value, on), { flush: 'sync' })
 
 watch(
   () => [decodedSource.value, props.securityLevel, props.isDark],

@@ -6,7 +6,8 @@ import {
   StateField,
   Transaction
 } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
+import { EditorView, ViewPlugin } from '@codemirror/view'
+import { setFullscreenLayer } from '@tnotesjs/ui'
 
 import type { Extension, TransactionSpec } from '@codemirror/state'
 
@@ -158,8 +159,13 @@ function ViewPluginForFullscreen(): Extension {
     EditorView.updateListener.of((update) => {
       const marks = update.state.field(codeBlockChrome)
       const on = marks.some((mark) => mark.fullscreen)
+      if (update.view.dom.classList.contains('cm-lp-code-fs') === on) return
       update.view.dom.classList.toggle('cm-lp-code-fs', on)
+      setFullscreenLayer(update.view.dom, on)
     }),
+    ViewPlugin.define((view) => ({
+      destroy: () => setFullscreenLayer(view.dom, false)
+    })),
     EditorView.domEventHandlers({
       keydown(event, view) {
         if (event.key !== 'Escape') return false

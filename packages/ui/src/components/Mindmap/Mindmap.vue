@@ -11,6 +11,7 @@ import {
   resolvedExpandLevel,
   stepExpandLevel
 } from './expandLevel'
+import { setFullscreenLayer } from '../../browser/fullscreenLayer'
 import { FORCE_EXIT_FULLSCREEN_EVENT, reconcileMindmapFullscreen } from './fullscreenFlag'
 import { normalizeMindmapMarkdown } from './markdown'
 import { provideMindmapInlineOptions } from './inlineOptions'
@@ -743,9 +744,12 @@ onMounted(() => {
   createViewer()
 })
 
+watch(isFullscreen, (on) => setFullscreenLayer(previewRoot.value, on), { flush: 'sync' })
+
 onBeforeUnmount(() => {
   mounted = false
   exitFullscreenOverlay()
+  setFullscreenLayer(previewRoot.value, false)
   unregisterFullscreenOwner?.()
   unregisterFullscreenOwner = null
   themeObserver?.disconnect()
