@@ -224,6 +224,11 @@ describe('live preview editing', () => {
     expect(tabs.querySelector('.cm-lp-code-fold')).not.toBeNull()
     expect(tabs.querySelector('.cm-lp-code-copy')).not.toBeNull()
     expect(tabs.querySelector('.cm-lp-code-expand')).not.toBeNull()
+    // 窄时只有标签区滚动，工具按钮在标签区外、不随标签折行
+    const strip = tabs.querySelector('.cm-lp-code-tab-strip')!
+    expect(strip.querySelector('.cm-lp-code-tab')).not.toBeNull()
+    expect(strip.querySelector('.cm-lp-code-tab-add')).not.toBeNull()
+    expect(strip.querySelector('.cm-lp-code-expand, .cm-lp-code-copy')).toBeNull()
     expect(text).not.toContain('```')
   })
 

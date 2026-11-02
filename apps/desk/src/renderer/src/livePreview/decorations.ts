@@ -642,6 +642,9 @@ class CodeGroupTabsWidget extends WidgetType {
       })
     })
     bar.append(foldButtonSlot(fold, this.lineDigits))
+    const strip = document.createElement('span')
+    strip.className = 'cm-lp-code-tab-strip'
+    bar.append(strip)
 
     this.labels.forEach((label, index) => {
       const tab = document.createElement('button')
@@ -743,7 +746,7 @@ class CodeGroupTabsWidget extends WidgetType {
           }
         ])
       })
-      bar.append(tab)
+      strip.append(tab)
     })
     const add = document.createElement('button')
     add.type = 'button'
@@ -755,7 +758,7 @@ class CodeGroupTabsWidget extends WidgetType {
       event.preventDefault()
       insertCodeGroupPanel(view, openFrom())
     })
-    bar.append(add)
+    strip.append(add)
 
     const activeFence = (): { from: number; to: number; text: string; panelTo: number } | null => {
       const located = panelsNow(view.state, openFrom())

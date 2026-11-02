@@ -1117,9 +1117,11 @@
 
 .live-editor .cm-lp-code-header {
   display: flex;
+  flex-wrap: nowrap;
   width: 100%;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
   box-sizing: border-box;
   min-height: 28px;
   padding: 2px 4px 2px 0;
@@ -1130,6 +1132,7 @@
 
 .live-editor .cm-lp-code-header button {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 22px;
@@ -1391,14 +1394,38 @@
   display: none;
 }
 
+/* 窄时工具按钮不折行：标签区收窄后横向滚动，右侧语言 / 换行 / 复制 / 全屏固定宽度 */
 .live-editor .cm-lp-code-tabs {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   width: 100%;
   min-height: 28px;
   font: 13px/22px var(--tn-font-sans);
+  white-space: nowrap;
+}
+
+.live-editor .cm-lp-code-tabs > * {
+  flex: none;
+}
+
+.live-editor .cm-lp-code-tabs > .cm-lp-code-tab-strip {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.live-editor .cm-lp-code-tab-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.live-editor .cm-lp-code-tab-strip > * {
+  flex: none;
 }
 
 .live-editor .cm-lp-code-tabs .cm-lp-code-fold,
