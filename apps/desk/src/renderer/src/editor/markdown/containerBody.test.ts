@@ -71,6 +71,11 @@ describe('renderContainerFromSource', () => {
     expect(warning.querySelector('.tn-custom-block-title')?.textContent).toBe('WARNING')
   })
 
+  it('no longer treats ::: note as a callout', () => {
+    const note = renderContainerFromSource('::: note\n正文\n:::')
+    expect(note.querySelector('.tn-custom-block-title')).toBeNull()
+  })
+
   it('applies {w=} on an image inside a callout and drops the attr text', () => {
     const el = renderContainerFromSource(
       '::: tip\n\n![](https://example.com/a.webp) {w=596px}\n\n:::',

@@ -45,7 +45,7 @@ export interface ParsedContainerFences extends ParsedContainer {
 export type ResolveImage = (src: string) => string
 
 const COLLAPSIBLE_TYPES = new Set(['details'])
-const CALLOUT_TYPES = new Set(['info', 'tip', 'warning', 'danger', 'note'])
+const CALLOUT_TYPES = new Set(['info', 'tip', 'warning', 'danger'])
 
 /** Callouts that use structured title+body editing (fences stay locked). */
 export const STRUCTURED_CALLOUT_TYPES = new Set(['tip', 'info', 'warning', 'danger', 'details'])
