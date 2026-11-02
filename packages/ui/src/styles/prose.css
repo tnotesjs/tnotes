@@ -57,17 +57,17 @@
   color: var(--tn-c-link);
   text-decoration: none;
 }
-:is(.tn-prose, .vp-doc) :where(ul, ol) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(ul, ol) {
   padding-left: 1.5rem;
   margin: 16px 0;
 }
-:is(.tn-prose, .vp-doc) :where(li) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(li) {
   line-height: var(--tn-prose-line-height);
 }
-:is(.tn-prose, .vp-doc) :where(li::marker) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(li::marker) {
   color: var(--tn-c-text);
 }
-:is(.tn-prose, .vp-doc) :where(li > ul, li > ol) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(li > ul, li > ol) {
   margin: 0;
 }
 /* 任务列表复选框：对齐语雀的方框（16px / 圆角 4px / 选中填充品牌绿 + 白色对勾 /
@@ -75,10 +75,10 @@
    `appearance: none` 自绘；同时去掉 `.task-list-item` 的项目符号，避免出现
    「◦ ☐ 文本」两层符号。对勾用 data-URI 而不是 `::after`：`input` 是替换元素，
    Firefox 不生成伪元素。 */
-:is(.tn-prose, .vp-doc) :where(.task-list-item) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(.task-list-item) {
   list-style: none;
 }
-:is(.tn-prose, .vp-doc) :where(.task-list-item-checkbox) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(.task-list-item-checkbox) {
   appearance: none;
   -webkit-appearance: none;
   box-sizing: border-box;
@@ -97,15 +97,15 @@
   transition: all 0.3s;
   cursor: pointer;
 }
-:is(.tn-prose, .vp-doc) :where(.task-list-item-checkbox:hover) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(.task-list-item-checkbox:hover) {
   border-color: var(--tn-c-task-check);
 }
-:is(.tn-prose, .vp-doc) :where(.task-list-item-checkbox:checked) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(.task-list-item-checkbox:checked) {
   border-color: var(--tn-c-task-check);
   background-color: var(--tn-c-task-check);
   background-size: 12px 12px;
 }
-:is(.tn-prose, .vp-doc) :where(:not(pre) > code) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(:not(pre) > code) {
   color: inherit;
   background: var(--tn-c-inline-code-bg);
   border: 1px solid var(--tn-c-inline-code-border);
@@ -116,19 +116,19 @@
   font-size: 1em;
   font-weight: 400;
 }
-:is(.tn-prose, .vp-doc) :where(mark) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(mark) {
   color: inherit;
   background: var(--tn-c-mark-bg);
   border-radius: 2px;
   padding: 0 2px;
 }
-:is(.tn-prose, .vp-doc) :where(blockquote) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(blockquote) {
   margin: 16px 0;
   border-left: 2px solid var(--tn-c-divider);
   padding: 0 0 0 16px;
   color: var(--tn-c-text-2);
 }
-:is(.tn-prose, .vp-doc) :where(table) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(table) {
   border-collapse: collapse;
   margin: 16px 0;
   /* 铺满内容列：与 Desk 可视化编辑器里的表格宽度一致（编辑器里表格宽度 = 内容列宽）。
@@ -137,13 +137,13 @@
   width: 100%;
   max-width: 100%;
 }
-:is(.tn-prose, .vp-doc) :where(th, td) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(th, td) {
   border: 1px solid var(--tn-c-divider);
   padding: 8px 16px;
   font-size: 14px;
   line-height: 24px;
 }
-:is(.tn-prose, .vp-doc) :where(th) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(th) {
   font-weight: 600;
   background: var(--tn-c-bg-soft);
   /* 表头默认左对齐：浏览器对 <th> 的 UA 默认是居中，而编辑器里 Milkdown 给单元格写了
@@ -152,11 +152,11 @@
      因此显式对齐不受影响（实测保留 left / center / right）。 */
   text-align: left;
 }
-:is(.tn-prose, .vp-doc) :where(td p, th p) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(td p, th p) {
   margin: 0;
   line-height: 24px;
 }
-:is(.tn-prose, .vp-doc) :where(hr) {
+:is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(hr) {
   margin: 16px 0;
   border: 0;
   border-top: 1px solid var(--tn-c-divider);
