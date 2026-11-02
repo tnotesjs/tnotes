@@ -35,6 +35,7 @@ import { planFailureNotices } from './stores/failureNotice'
 import { useBackgroundFailureStore } from './stores/backgroundFailure'
 import { useTerminalStore } from './stores/terminal'
 import { useAskpassStore } from './stores/askpass'
+import { handleGlobalFindKey } from './livePreview/findTargets'
 import CredentialDialog from './components/CredentialDialog.vue'
 import { useWorkspaceStore } from './stores/workspace'
 import { selectAllInRenderer } from './selectAll'
@@ -279,6 +280,7 @@ function onKeydown(event: KeyboardEvent): void {
     void store.saveCurrentDocument().catch(() => undefined)
     return
   }
+  if (handleGlobalFindKey(event)) return
   if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'j') {
     // 面板获得焦点时它自己的 capture 处理器已经处理过（并阻止了冒泡）
     event.preventDefault()

@@ -147,6 +147,111 @@
   outline: 1px solid var(--tn-c-warning);
 }
 
+.live-editor .cm-searchMatch.cm-searchMatch-selected {
+  background: color-mix(in srgb, var(--tn-c-warning) 45%, transparent);
+  outline: 2px solid var(--tn-c-warning);
+}
+
+.live-editor .cm-find-scope {
+  background: color-mix(in srgb, var(--tn-c-brand-1, #5b8def) 10%, transparent);
+}
+
+/* ---------- 查找 / 替换条 ---------- */
+
+.live-editor .cm-find-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.live-editor .cm-find-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.live-editor .cm-find-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.live-editor .cm-find-row[hidden] {
+  display: none;
+}
+
+.live-editor .cm-find-input {
+  flex: 0 1 260px;
+  min-width: 80px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 4px;
+  background: var(--tn-c-bg);
+  color: var(--editor-text);
+  font: inherit;
+  outline: none;
+}
+
+.live-editor .cm-find-input:focus {
+  border-color: var(--tn-c-brand-1, #5b8def);
+}
+
+.live-editor .cm-find-input.is-missing {
+  border-color: var(--tn-c-danger, #e06c75);
+  background: color-mix(in srgb, var(--tn-c-danger, #e06c75) 10%, var(--tn-c-bg));
+}
+
+.live-editor .cm-find-count {
+  flex: none;
+  min-width: 64px;
+  padding: 0 6px;
+  color: var(--tn-c-text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.live-editor .cm-find-button,
+.live-editor .cm-find-toggle,
+.live-editor .cm-find-expand,
+.live-editor .cm-find-text-button {
+  flex: none;
+  height: 24px;
+  min-width: 24px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--tn-c-text-2);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.live-editor .cm-find-button:hover,
+.live-editor .cm-find-toggle:hover,
+.live-editor .cm-find-expand:hover,
+.live-editor .cm-find-text-button:hover {
+  background: var(--tn-c-hover);
+  color: var(--editor-text);
+}
+
+.live-editor .cm-find-toggle.is-active {
+  border-color: var(--tn-c-brand-1, #5b8def);
+  background: color-mix(in srgb, var(--tn-c-brand-1, #5b8def) 18%, transparent);
+  color: var(--editor-text);
+}
+
+.live-editor .cm-find-toggle {
+  font-family: var(--tn-font-mono);
+}
+
 .live-editor .cm-selectionMatch {
   background: var(--tn-c-hover);
 }

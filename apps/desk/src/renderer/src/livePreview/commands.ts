@@ -13,6 +13,7 @@ import {
   type TextEdit
 } from '../markdown/sourceEdits'
 import { collapsedCodeBodies } from './codeBlockChrome'
+import { openFind } from './findPanel'
 import { hiddenCodeGroupBodies } from './decorations'
 import { livePreviewEnabled } from './host'
 import { renumberOrderedLists } from './lists'
@@ -374,6 +375,7 @@ const altModByCode: Record<string, (view: EditorView) => void> = {
   KeyU: (view) => setLinePrefix(view, '> '),
   KeyT: (view) => setLinePrefix(view, '- [ ] '),
   KeyS: (view) => insertText(view, '\n---\n'),
+  KeyF: (view) => void openFind(view, true),
   Digit0: (view) => setLinePrefix(view, ''),
   Numpad0: (view) => setLinePrefix(view, '')
 }

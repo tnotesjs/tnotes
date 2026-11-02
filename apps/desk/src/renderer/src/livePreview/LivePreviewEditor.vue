@@ -14,7 +14,9 @@ import {
   syntaxHighlighting,
   syntaxTree
 } from '@codemirror/language'
-import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
+import { highlightSelectionMatches, searchKeymap } from '@codemirror/search'
+import { findExtension, openFind } from './findPanel'
+import { trackFindTarget } from './findTargets'
 import { Compartment, EditorSelection, EditorState, Prec, type Extension } from '@codemirror/state'
 import {
   EditorView,
@@ -317,7 +319,7 @@ function createState(doc: string): EditorState {
       keepCursorOnVisibleLine,
       codeFolding({ placeholderText: '…' }),
       livePreviewField,
-      search({ top: true }),
+      findExtension(),
       highlightSelectionMatches(),
       placeholder('开始写作…'),
       agentReviewExtension(),
@@ -370,6 +372,9 @@ function createState(doc: string): EditorState {
           run: (v: EditorView) => (setLinePrefixCommand(v, `${'#'.repeat(level)} `), true)
         })),
         { key: 'Mod-\\', run: clearLineStyles },
+        { key: 'Mod-f', run: (v) => openFind(v) },
+        { key: 'Mod-Alt-f', run: (v) => openFind(v, true) },
+        { win: 'Ctrl-h', linux: 'Ctrl-h', run: (v) => openFind(v, true) },
         ...searchKeymap,
         ...historyKeymap,
         ...foldKeymap,
@@ -576,8 +581,11 @@ defineExpose({
   selectAll,
   focus: () => view?.focus(),
   flush: () => undefined,
-  getView: () => view
+  getView: () => view,
+  openFind: (replace = false) => (view ? openFind(view, replace) : false)
 })
+
+let untrackFindTarget: (() => void) | null = null
 
 onMounted(() => {
   if (!host.value) return
@@ -585,6 +593,7 @@ onMounted(() => {
   if (props.documentHead) view.scrollDOM.prepend(props.documentHead)
   adoptArchivedReviews(view)
   registerLiveEditor(props.knowledgeBaseId, props.noteUuid, view)
+  untrackFindTarget = trackFindTarget(view)
   window.addEventListener(DESK_SELECT_ALL_EVENT, selectAll)
   refreshOutline()
   updateHeadingLevel(view.state)
@@ -594,6 +603,8 @@ onBeforeUnmount(() => {
   window.removeEventListener(DESK_SELECT_ALL_EVENT, selectAll)
   if (outlineTimer) clearTimeout(outlineTimer)
   if (view) unregisterLiveEditor(props.knowledgeBaseId, props.noteUuid, view)
+  untrackFindTarget?.()
+  untrackFindTarget = null
   view?.destroy()
   view = null
 })

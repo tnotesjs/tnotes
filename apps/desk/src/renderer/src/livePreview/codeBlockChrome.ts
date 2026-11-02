@@ -129,6 +129,25 @@ export function clampRangeAroundCollapsed(
 export const keepCursorOutOfCollapsedCode = EditorState.transactionFilter.of((tr) => {
   if (!tr.selection) return tr
   if (tr.annotation(Transaction.userEvent) === 'select.code-clamp') return tr
+  if (tr.isUserEvent('select.search') && !tr.docChanged) {
+    // 查找跳进收起的代码块：展开它，而不是把选区挤出去（否则「下一个」会原地打转）
+    const { from, to } = tr.newSelection.main
+    const toggled = new Set(
+      tr.effects.filter((effect) => effect.is(toggleCodeCollapse)).map((effect) => effect.value)
+    )
+    const expand = collapsedCodeBodies(tr.startState)
+      .filter((body) => from >= body.from && to <= body.to)
+      .map((body) => tr.startState.doc.lineAt(body.from - 1).from)
+      .filter((openFrom) => !toggled.has(openFrom))
+      .map((openFrom) => toggleCodeCollapse.of(openFrom))
+    if (expand.length === 0) return tr
+    return {
+      selection: tr.newSelection,
+      effects: [...tr.effects, ...expand],
+      scrollIntoView: tr.scrollIntoView,
+      userEvent: 'select.search'
+    } satisfies TransactionSpec
+  }
   const mapped = collapsedCodeBodies(tr.startState).map((body) => ({
     from: tr.changes.mapPos(body.from, 1),
     to: tr.changes.mapPos(body.to, -1)

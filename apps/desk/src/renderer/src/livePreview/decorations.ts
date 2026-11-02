@@ -392,18 +392,56 @@ function panelsNow(
   return { openFrom: group.openFrom, panels: codeGroupPanels(state, group.bodyFrom, group.bodyTo) }
 }
 
+/** 切到代码组的第 index 个标签；这个标签或整组收起着就一并展开 */
+function panelActivationEffects(
+  state: EditorState,
+  openFrom: number,
+  panel: FencePanel,
+  index: number
+): StateEffect<unknown>[] {
+  const panelOpenFrom = state.doc.lineAt(panel.from).from
+  const panelCollapsed = codeChromeAt(state, panelOpenFrom)?.collapsed === true
+  const groupCollapsed = codeChromeAt(state, openFrom)?.collapsed === true
+  return [
+    setCodeGroupTab.of({ pos: openFrom, index }),
+    ...(panelCollapsed ? [toggleCodeCollapse.of(panelOpenFrom)] : []),
+    ...(groupCollapsed ? [toggleCodeCollapse.of(openFrom)] : [])
+  ]
+}
+
+/** 查找命中代码组里没显示的标签（或收起的组）时，要切过去 / 展开的效果；不在代码组里返回 null */
+function codeGroupRevealForSearch(
+  state: EditorState,
+  from: number,
+  to: number
+): StateEffect<unknown>[] | null {
+  if (!state.facet(livePreviewEnabled)) return null
+  let container: SyntaxNode | null = syntaxTree(state).resolveInner(from, 1)
+  while (container) {
+    if (container.name === 'Container') {
+      const info = container.getChild('ContainerInfo')
+      const name = info
+        ? state.doc.sliceString(info.from, info.to).trim().split(/\s+/)[0]?.toLowerCase()
+        : ''
+      if (name === 'code-group') break
+    }
+    container = container.parent
+  }
+  const body = container?.getChild('ContainerBody')
+  if (!container || !body) return null
+  const openFrom = state.doc.lineAt(container.from).from
+  const panels = codeGroupPanels(state, body.from, body.to)
+  const index = panels.findIndex((panel) => from >= panel.from && to <= panel.to)
+  if (index < 0) return null
+  return panelActivationEffects(state, openFrom, panels[index], index)
+}
+
 function activatePanel(view: EditorView, openFrom: number, index: number): void {
   const located = panelsNow(view.state, openFrom)
   const panel = located?.panels[index]
   if (!located || !panel) return
   const openLine = view.state.doc.lineAt(panel.from)
-  const panelCollapsed = codeChromeAt(view.state, openLine.from)?.collapsed === true
-  const groupCollapsed = codeChromeAt(view.state, located.openFrom)?.collapsed === true
-  const effects = [
-    setCodeGroupTab.of({ pos: located.openFrom, index }),
-    ...(panelCollapsed ? [toggleCodeCollapse.of(openLine.from)] : []),
-    ...(groupCollapsed ? [toggleCodeCollapse.of(located.openFrom)] : [])
-  ]
+  const effects = panelActivationEffects(view.state, located.openFrom, panel, index)
   const firstCodeLine = openLine.number + 1
   const target =
     firstCodeLine <= view.state.doc.lines ? view.state.doc.line(firstCodeLine).from : panel.from
@@ -900,6 +938,18 @@ export const keepCursorOutOfHiddenCodeGroup = EditorStateValue.transactionFilter
   if (!tr.selection) return tr
   if (tr.annotation(Transaction.userEvent) === 'select.code-clamp') return tr
   const main = tr.newSelection.main
+  if (tr.isUserEvent('select.search') && !tr.docChanged) {
+    // 查找跳进没显示的标签：切过去，而不是把选区挤出去（否则「下一个」会原地打转）
+    const reveal = codeGroupRevealForSearch(tr.startState, main.from, main.to)
+    if (reveal) {
+      return {
+        selection: tr.newSelection,
+        effects: [...tr.effects, ...reveal],
+        scrollIntoView: tr.scrollIntoView,
+        userEvent: 'select.search'
+      } satisfies TransactionSpec
+    }
+  }
   const mapped = hiddenCodeGroupBodies(tr.startState).flatMap((body) => {
     const containerFrom = tr.changes.mapPos(body.containerFrom, 1)
     const containerTo = tr.changes.mapPos(body.containerTo, -1)
@@ -1646,6 +1696,15 @@ export const livePreviewField: Extension = [
     }
   })
 ]
+
+/**
+ * 编辑器内部的浮层（查找条）获得焦点时也算在编辑：选区所在处要展开源码，
+ * 查找跳到隐藏标记里的匹配才看得见。没有实时预览时什么也不做。
+ */
+export function setEditorInteracting(view: EditorView, focused: boolean): void {
+  const current = view.state.field(interactionField, false)
+  if (current && current.focused !== focused) view.dispatch({ effects: setFocused.of(focused) })
+}
 
 /** 当前被组件整块替换掉的源码范围 */
 export function hiddenBlocks(state: EditorState): HiddenBlock[] {
