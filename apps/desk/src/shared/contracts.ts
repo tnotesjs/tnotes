@@ -70,6 +70,8 @@ export const IPC_CHANNELS = {
   attachmentPullRemote: 'attachment:pull-remote',
   attachmentPushLocal: 'attachment:push-local',
   attachmentReleaseLocal: 'attachment:release-local',
+  attachmentCopyImage: 'attachment:copy-image',
+  attachmentExportImage: 'attachment:export-image',
   imageTokenStatus: 'image:token-status',
   imageTokenUpdate: 'image:token-update',
   imageSettingsValidate: 'image:settings-validate',
@@ -545,6 +547,8 @@ export type ContextMenuAction =
   | 'image-delete'
   | 'image-pull-remote'
   | 'image-push-local'
+  | 'image-copy'
+  | 'image-export'
 export type ContextMenuRequest =
   | { kind: 'note'; pinned: boolean; tocPinned: boolean; completed: boolean }
   | { kind: 'group' }
@@ -569,6 +573,8 @@ export type ContextMenuRequest =
       remote?: boolean
       /** `src` 是知识库 assets 里的本地图：图床配好时显示「推到图床」（由主进程判定） */
       local?: boolean
+      /** 有地址与知识库上下文：显示「复制」「导出」（只读也可用） */
+      copyable?: boolean
     }
 
 export interface KnowledgeSidebarMenuRequest {
@@ -1516,9 +1522,22 @@ export interface AttachmentReleaseLocalRequest {
   content: string
 }
 
+/** 图片「复制」：按地址取原图；或渲染端已转好的 PNG（原图格式系统剪贴板解不了时） */
+export type AttachmentCopyImageRequest =
+  { knowledgeBaseId: string; src: string } | { png: Uint8Array }
+
+export type AttachmentCopyImageResult = { copied: true } | { copied: false; reason: 'unsupported' }
+
+/** 图片「导出」：另存为原始字节 */
+export interface AttachmentExportImageRequest {
+  knowledgeBaseId: string
+  src: string
+}
+
+export type AttachmentExportImageResult = { saved: true; filePath: string } | { saved: false }
+
 export type AttachmentReleaseLocalResult =
-  | { deleted: true }
-  | { deleted: false; reason: 'referenced' | 'scan-failed' }
+  { deleted: true } | { deleted: false; reason: 'referenced' | 'scan-failed' }
 
 export interface ImageUploadResult {
   markdownPath: string
@@ -2565,11 +2584,17 @@ export interface DeskApi {
       request: AttachmentWriteLocalRequest
     ): Promise<DeskResult<AttachmentWriteLocalResult>>
     uploadImage(request: ImageUploadRequest): Promise<DeskResult<ImageUploadResult>>
-    pullRemote(request: AttachmentPullRemoteRequest): Promise<DeskResult<AttachmentWriteLocalResult>>
+    pullRemote(
+      request: AttachmentPullRemoteRequest
+    ): Promise<DeskResult<AttachmentWriteLocalResult>>
     pushLocal(request: AttachmentPushLocalRequest): Promise<DeskResult<AttachmentPushLocalResult>>
     releaseLocal(
       request: AttachmentReleaseLocalRequest
     ): Promise<DeskResult<AttachmentReleaseLocalResult>>
+    copyImage(request: AttachmentCopyImageRequest): Promise<DeskResult<AttachmentCopyImageResult>>
+    exportImage(
+      request: AttachmentExportImageRequest
+    ): Promise<DeskResult<AttachmentExportImageResult>>
   }
   build(knowledgeBaseId: string): Promise<DeskResult<KbBuildResult>>
   search(request: SearchRequest): Promise<DeskResult<SearchResultDto[]>>

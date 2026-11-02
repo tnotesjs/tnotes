@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { README_NOTE_UUID } from '../../shared/contracts'
 import {
   downloadRemoteImage,
+  loadImageBytes,
   MAX_REMOTE_IMAGE_BYTES,
   referencesAsset,
   releaseLocalAsset
@@ -61,6 +62,36 @@ describe('downloadRemoteImage', () => {
     const fetchImpl = vi.fn()
     await expect(downloadRemoteImage('file:///etc/passwd', fetchImpl)).rejects.toThrow('http')
     expect(fetchImpl).not.toHaveBeenCalled()
+  })
+})
+
+describe('loadImageBytes', () => {
+  it('reads assets from disk, decodes data: URIs and downloads online images', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'tn-bytes-'))
+    try {
+      await writeFile(path.join(dir, 'a b.png'), 'local')
+      const resolveLocal = vi.fn(async (src: string) => path.join(dir, path.basename(src)))
+      const fetchImpl = vi.fn(async () =>
+        response(new Uint8Array([9]), { 'content-type': 'image/gif' })
+      )
+
+      const local = await loadImageBytes('../assets/a%20b.png', { resolveLocal, fetchImpl })
+      expect(resolveLocal).toHaveBeenCalledWith('../assets/a b.png')
+      expect(local.fileName).toBe('a b.png')
+      expect(Buffer.from(local.data).toString()).toBe('local')
+
+      const inline = await loadImageBytes('data:image/svg+xml,%3Csvg%2F%3E', {
+        resolveLocal,
+        fetchImpl
+      })
+      expect(inline.fileName).toBe('image.svg')
+      expect(Buffer.from(inline.data).toString()).toBe('<svg/>')
+
+      const remote = await loadImageBytes('https://e.com/x.gif', { resolveLocal, fetchImpl })
+      expect(remote.fileName).toBe('x.gif')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })
 

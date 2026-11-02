@@ -276,4 +276,17 @@ describe('image more menu', () => {
     expect(ids({ remote: true, editable: false }, true)).not.toContain('image-pull-remote')
     expect(ids({}, true)).not.toContain('image-push-local')
   })
+
+  it('offers copy and export right after preview, even when read-only', () => {
+    const template = contextMenuTemplate(
+      { kind: 'image', align: 'left', hasWidth: false, editable: false, copyable: true },
+      vi.fn()
+    )
+    expect(template.slice(0, 3).map((item) => item.id)).toEqual([
+      'image-preview',
+      'image-copy',
+      'image-export'
+    ])
+    expect(template.slice(0, 3).every((item) => item.enabled !== false)).toBe(true)
+  })
 })

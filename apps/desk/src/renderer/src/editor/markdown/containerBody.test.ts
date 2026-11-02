@@ -219,7 +219,8 @@ describe('renderContainerFromSource', () => {
         hasWidth: true,
         editable: true,
         remote: false,
-        local: false
+        local: false,
+        copyable: false
       })
       expect(commits).toEqual([
         { index: 0, align: 'left' },

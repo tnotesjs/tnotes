@@ -600,10 +600,10 @@ export function bindImageLoadState(
 
 const imageCanvasTeardown = new WeakMap<HTMLElement, () => void>()
 
-/** 图片菜单「拉到本地 / 推到图床」用的笔记上下文；没有归属笔记时为 null */
+/** 图片菜单「拉 / 推 / 复制 / 导出」用的笔记上下文；没有归属笔记时为 null */
 export function imageAssetContext(view: EditorView): ImageAssetContext | null {
   const host = view.state.facet(livePreviewHost)
-  if (!host.knowledgeBaseId || !host.noteUuid || host.isReadOnly()) return null
+  if (!host.knowledgeBaseId || !host.noteUuid) return null
   return {
     knowledgeBaseId: host.knowledgeBaseId,
     noteUuid: host.noteUuid,

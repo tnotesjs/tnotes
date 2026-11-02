@@ -1,12 +1,12 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-import { clipboard, net, shell } from 'electron'
+import { clipboard, dialog, nativeImage, net, shell } from 'electron'
 import { z } from 'zod'
 
 import { gitManager } from '../gitManager'
 import { loadSettings } from '../settings'
-import { downloadRemoteImage } from '../workspace/imageTransfer'
+import { downloadRemoteImage, loadImageBytes } from '../workspace/imageTransfer'
 import { commitDeleteScope } from '../workspace/deleteScope'
 import { imageBedManager } from '../imageBed'
 import { maybeOptimizeUploadRequest } from '../imageUploadOptimize'
@@ -43,6 +43,8 @@ function withDeleteGitInfo(knowledgeBaseId: string, preview: DeletePreviewDto): 
 }
 
 import type {
+  AttachmentCopyImageResult,
+  AttachmentExportImageResult,
   AttachmentWriteLocalRequest,
   DeletePreviewDto,
   DeleteTargetDto,
@@ -172,6 +174,58 @@ export function registerNotes(getWindow: GetWindow): void {
       content: z.string()
     }),
     (input) => workspaceManager.releaseLocalAsset(input)
+  )
+  const imageBytes = (knowledgeBaseId: string, src: string): ReturnType<typeof loadImageBytes> =>
+    loadImageBytes(src, {
+      resolveLocal: (local) => workspaceManager.resolveNoteAsset(knowledgeBaseId, local),
+      fetchImpl: (input) => net.fetch(input)
+    })
+  handle(
+    IPC_CHANNELS.attachmentCopyImage,
+    getWindow,
+    z.union([
+      z.object({
+        knowledgeBaseId: z.string().min(1),
+        src: z
+          .string()
+          .min(1)
+          .max(8 * 1024 * 1024)
+      }),
+      z.object({
+        png: z.instanceof(Uint8Array).refine((data) => data.byteLength <= 50 * 1024 * 1024)
+      })
+    ]),
+    async (input): Promise<AttachmentCopyImageResult> => {
+      const bytes =
+        'png' in input ? input.png : (await imageBytes(input.knowledgeBaseId, input.src)).data
+      const image = nativeImage.createFromBuffer(Buffer.from(bytes))
+      if (image.isEmpty()) return { copied: false, reason: 'unsupported' }
+      clipboard.writeImage(image)
+      return { copied: true }
+    }
+  )
+  handle(
+    IPC_CHANNELS.attachmentExportImage,
+    getWindow,
+    z.object({
+      knowledgeBaseId: z.string().min(1),
+      src: z
+        .string()
+        .min(1)
+        .max(8 * 1024 * 1024)
+    }),
+    async ({ knowledgeBaseId, src }): Promise<AttachmentExportImageResult> => {
+      const image = await imageBytes(knowledgeBaseId, src)
+      const window = getWindow()
+      if (!window) throw new Error('Desk 主窗口不可用')
+      const { canceled, filePath } = await dialog.showSaveDialog(window, {
+        title: '导出图片',
+        defaultPath: image.fileName
+      })
+      if (canceled || !filePath) return { saved: false }
+      await writeFile(filePath, image.data)
+      return { saved: true, filePath }
+    }
   )
 
   handle(IPC_CHANNELS.tocMove, getWindow, tocMoveSchema, (input) =>

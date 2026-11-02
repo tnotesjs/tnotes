@@ -204,7 +204,9 @@ async function uploadToGitHub(
 }
 
 /** 图床可用：仓库地址能解析、分支非空、Token 已保存（不发网络请求）。 */
-export function imageBedReady(github: GitHubImageSettings = loadSettings().imageUpload.github): boolean {
+export function imageBedReady(
+  github: GitHubImageSettings = loadSettings().imageUpload.github
+): boolean {
   try {
     parseGitHubRepository(github.repository)
   } catch {

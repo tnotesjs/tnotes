@@ -11,9 +11,7 @@ import { clearImageSizeMask, syncImageSizeMask } from './imageSizeMask'
 
 /** 卡片图片的改动：宽度 / 对齐写回 `{w=… align=…}`，或删掉整张图。 */
 export type CardImageChange =
-  | { width?: string; align?: ImageAlign }
-  | { remove: true }
-  | { src: string }
+  { width?: string; align?: ImageAlign } | { remove: true } | { src: string }
 
 export interface CardImageEditor {
   readOnly: boolean

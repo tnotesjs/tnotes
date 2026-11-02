@@ -65,6 +65,39 @@ export async function downloadRemoteImage(
   return { fileName, data }
 }
 
+/** 复制 / 导出：按 Markdown 地址取图片原始字节（在线图下载、assets 图读盘、data: 直接解码） */
+export async function loadImageBytes(
+  src: string,
+  deps: {
+    resolveLocal: (src: string) => Promise<string>
+    fetchImpl: (input: string) => Promise<Response>
+  }
+): Promise<DownloadedImage> {
+  const trimmed = src.trim()
+  if (/^https?:\/\//i.test(trimmed)) return downloadRemoteImage(trimmed, deps.fetchImpl)
+  const data = /^data:(image\/[\w.+-]+)(;base64)?,(.*)$/is.exec(trimmed)
+  if (data) {
+    const bytes = data[2]
+      ? Buffer.from(data[3], 'base64')
+      : Buffer.from(decodeURIComponent(data[3]), 'utf8')
+    return {
+      fileName: `image${EXTENSION_BY_MIME[data[1].toLowerCase()] ?? '.png'}`,
+      data: new Uint8Array(bytes)
+    }
+  }
+  let local = trimmed
+  try {
+    local = decodeURI(trimmed)
+  } catch {
+    // 保留原样
+  }
+  const absolutePath = await deps.resolveLocal(local)
+  return {
+    fileName: path.basename(absolutePath),
+    data: new Uint8Array(await fs.readFile(absolutePath))
+  }
+}
+
 /**
  * Markdown 原文是否还引用 `assets/<relWithinAssets>`。前缀不限（`../assets/`、`./assets/`、
  * 裸 `assets/` 都算），也认 URL 编码写法；宁可多认，不误删。

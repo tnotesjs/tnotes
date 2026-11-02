@@ -180,6 +180,55 @@ describe('image transfer menu actions', () => {
     expect(toast).toHaveBeenCalledWith('已推到图床；知识库里还有其它引用，本地文件未删除', 'info')
   })
 
+  it('copies through the main process and falls back to a canvas PNG for formats it cannot decode', async () => {
+    const copyImage = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: { copied: false, reason: 'unsupported' } })
+      .mockResolvedValueOnce({ ok: true, value: { copied: true } })
+    desk({ copyImage })
+    const image = document.createElement('img')
+    Object.defineProperty(image, 'complete', { value: true })
+    Object.defineProperty(image, 'naturalWidth', { value: 4 })
+    Object.defineProperty(image, 'naturalHeight', { value: 2 })
+    const drawImage = vi.fn()
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage
+    } as unknown as CanvasRenderingContext2D)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (callback) {
+      callback(new Blob([new Uint8Array([7])], { type: 'image/png' }))
+    })
+    await runImageMenuAction('image-copy', image, handlers(), state('./assets/a.webp'))
+    expect(copyImage).toHaveBeenNthCalledWith(1, { knowledgeBaseId: 'kb', src: './assets/a.webp' })
+    expect(copyImage.mock.calls[1]?.[0].png).toBeInstanceOf(Uint8Array)
+    expect(drawImage).toHaveBeenCalledWith(image, 0, 0, 4, 2)
+    expect(toast).toHaveBeenCalledWith('已复制图片', 'success')
+    vi.restoreAllMocks()
+  })
+
+  it('exports through the save dialog and stays quiet when cancelled', async () => {
+    const exportImage = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: { saved: true, filePath: '/tmp/a.png' } })
+      .mockResolvedValueOnce({ ok: true, value: { saved: false } })
+    desk({ exportImage })
+    await runImageMenuAction(
+      'image-export',
+      document.createElement('img'),
+      handlers(),
+      state('https://e.com/a.png')
+    )
+    expect(exportImage).toHaveBeenCalledWith({ knowledgeBaseId: 'kb', src: 'https://e.com/a.png' })
+    expect(toast).toHaveBeenCalledWith('已导出到 /tmp/a.png', 'success')
+    toast.mockReset()
+    await runImageMenuAction(
+      'image-export',
+      document.createElement('img'),
+      handlers(),
+      state('https://e.com/a.png')
+    )
+    expect(toast).not.toHaveBeenCalled()
+  })
+
   it('does not touch the note or the file when pushing fails', async () => {
     const releaseLocal = vi.fn()
     desk({

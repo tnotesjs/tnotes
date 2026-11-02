@@ -58,8 +58,12 @@ export function contextMenuTemplate(
     if (editable && request.local && canPushToImageBed()) {
       transfer.push(item('image-push-local', '推到图床'))
     }
+    const share: MenuItemConstructorOptions[] = request.copyable
+      ? [item('image-copy', '复制图片'), item('image-export', '导出…')]
+      : []
     return [
       item('image-preview', '预览'),
+      ...share,
       align('image-align-left', '左对齐', 'left'),
       align('image-align-center', '居中对齐', 'center'),
       align('image-align-right', '右对齐', 'right'),

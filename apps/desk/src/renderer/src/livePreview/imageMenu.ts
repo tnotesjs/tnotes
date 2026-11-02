@@ -108,6 +108,56 @@ export function requestImagePreview(image: HTMLImageElement): void {
   image.dispatchEvent(new CustomEvent('tn:preview-image', { bubbles: true, detail: image }))
 }
 
+/** 系统剪贴板解不了的格式（webp / svg 等）：把页面上已显示的图画到 canvas 转成 PNG */
+async function rasterizeImage(image: HTMLImageElement): Promise<Uint8Array | null> {
+  try {
+    if (!image.complete || !image.naturalWidth) await image.decode()
+    const canvas = document.createElement('canvas')
+    canvas.width = image.naturalWidth || image.width || 300
+    canvas.height = image.naturalHeight || image.height || 150
+    const context = canvas.getContext('2d')
+    if (!context) return null
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    return blob ? new Uint8Array(await blob.arrayBuffer()) : null
+  } catch {
+    return null
+  }
+}
+
+async function copyImage(
+  image: HTMLImageElement,
+  src: string,
+  asset: ImageAssetContext
+): Promise<void> {
+  const api = window.desk?.attachments
+  if (!api) return
+  const result = await api.copyImage({ knowledgeBaseId: asset.knowledgeBaseId, src })
+  if (!result.ok) {
+    pushToast(`复制图片失败：${errorText(result)}`, 'error')
+    return
+  }
+  if (result.value.copied) {
+    pushToast('已复制图片', 'success')
+    return
+  }
+  const png = await rasterizeImage(image)
+  const fallback = png ? await api.copyImage({ png }) : null
+  if (fallback?.ok && fallback.value.copied) pushToast('已复制图片', 'success')
+  else pushToast('复制图片失败：无法转换这种图片格式', 'error')
+}
+
+async function exportImage(src: string, asset: ImageAssetContext): Promise<void> {
+  const api = window.desk?.attachments
+  if (!api) return
+  const result = await api.exportImage({ knowledgeBaseId: asset.knowledgeBaseId, src })
+  if (!result.ok) {
+    pushToast(`导出图片失败：${errorText(result)}`, 'error')
+    return
+  }
+  if (result.value.saved) pushToast(`已导出到 ${result.value.filePath}`, 'success')
+}
+
 export function runImageMenuAction(
   action: ContextMenuAction | null,
   image: HTMLImageElement,
@@ -115,6 +165,12 @@ export function runImageMenuAction(
   state?: ImageMenuState
 ): void | Promise<void> {
   switch (action) {
+    case 'image-copy':
+      if (state?.src && state.asset) return copyImage(image, state.src, state.asset)
+      return
+    case 'image-export':
+      if (state?.src && state.asset) return exportImage(state.src, state.asset)
+      return
     case 'image-pull-remote':
       if (state?.src && state.asset && handlers.replaceSrc) {
         return pullRemote(state.src, state.asset, handlers.replaceSrc)
@@ -161,7 +217,8 @@ async function openImageMenu(
     hasWidth: state.hasWidth,
     editable: state.editable,
     remote: transferable && isRemoteImageSrc(state.src!),
-    local: transferable && localAssetSrc(state.src!) !== null
+    local: transferable && localAssetSrc(state.src!) !== null,
+    copyable: Boolean(state.src && state.asset)
   })
   if (!result.ok) return
   await runImageMenuAction(result.value, image, handlers, state)
