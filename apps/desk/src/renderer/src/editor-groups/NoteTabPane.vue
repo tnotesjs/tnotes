@@ -526,6 +526,9 @@ function commitDescription(): void {
   if (!change) return
   if (view) {
     view.dispatch({ changes: change })
+    if (view.state.doc.toString() === current) {
+      workspace.error = '描述未能写入 frontmatter，请在源码中手动添加'
+    }
     return
   }
   workspace.updateDocumentContent(

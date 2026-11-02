@@ -1,6 +1,7 @@
 import { EditorState } from '@codemirror/state'
 import { describe, expect, it } from 'vitest'
 
+import { frontmatterDescriptionChange } from './frontmatterFields'
 import { externalSync, frontmatterIdGuard } from './frontmatterIdGuard'
 
 const doc = ['---', 'id: abc-123', 'description: 简介', '---', '', '正文'].join('\n')
@@ -34,6 +35,37 @@ describe('frontmatterIdGuard', () => {
 
   it('select-all delete keeps the id line and the frontmatter fences', () => {
     expect(edit(0, doc.length, '')).toBe('---\nid: abc-123\n---\n')
+  })
+
+  it('adds a whole field line before the closing fence when only id exists', () => {
+    const idOnly = ['---', 'id: abc-123', '---', '', '正文'].join('\n')
+    const closeFrom = idOnly.indexOf('---', 3)
+    const state = EditorState.create({ doc: idOnly, extensions: [frontmatterIdGuard()] })
+    const next = state.update({
+      changes: { from: closeFrom, to: closeFrom, insert: 'description: 新描述\n' }
+    }).state.doc
+    expect(next.toString()).toBe(
+      ['---', 'id: abc-123', 'description: 新描述', '---', '', '正文'].join('\n')
+    )
+  })
+
+  it('lets the settings panel add a missing description through the guard', () => {
+    const idOnly = ['---', 'id: abc-123', '---', '', '正文'].join('\n')
+    const change = frontmatterDescriptionChange(idOnly, 'Vue 官方的在线实验环境。')!
+    const state = EditorState.create({ doc: idOnly, extensions: [frontmatterIdGuard()] })
+    expect(state.update({ changes: change }).state.doc.toString()).toBe(
+      ['---', 'id: abc-123', 'description: Vue 官方的在线实验环境。', '---', '', '正文'].join('\n')
+    )
+  })
+
+  it('still rejects partial text or a fence typed at the closing fence', () => {
+    const idOnly = ['---', 'id: abc-123', '---', '', '正文'].join('\n')
+    const closeFrom = idOnly.indexOf('---', 3)
+    const state = EditorState.create({ doc: idOnly, extensions: [frontmatterIdGuard()] })
+    const typed = (insert: string) =>
+      state.update({ changes: { from: closeFrom, to: closeFrom, insert } }).state.doc.toString()
+    expect(typed('x')).toBe(idOnly)
+    expect(typed('---\n')).toBe(idOnly)
   })
 
   it('lets content synced from the session replace the frontmatter as is', () => {

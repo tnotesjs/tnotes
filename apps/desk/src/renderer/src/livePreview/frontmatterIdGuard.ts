@@ -69,6 +69,18 @@ function guardsBoundary(pos: number, ranges: number[]): boolean {
   return false
 }
 
+/**
+ * 在闭合围栏行首插入整行（以换行结尾、不含围栏行）只是在 frontmatter 末尾加字段，
+ * 围栏本身原样后移。设置面板给只有 `id` 的 frontmatter 补 description 就走这里。
+ */
+function insertsWholeLinesBeforeClose(pos: number, text: string, ranges: number[]): boolean {
+  if (pos !== ranges[4] || !text.endsWith('\n')) return false
+  return text
+    .slice(0, -1)
+    .split('\n')
+    .every((line) => !/^(?:---|\.\.\.)[ \t]*$/.test(line))
+}
+
 const lockedLine = Decoration.line({ class: 'cm-lp-locked' })
 
 function lockedDecorations(state: EditorState): DecorationSet {
@@ -95,6 +107,10 @@ export function frontmatterIdGuard(): Extension {
       const changes: ChangeSpec[] = []
       let rewritten = false
       tr.changes.iterChanges((from, to, _fromB, _toB, inserted) => {
+        if (from === to && insertsWholeLinesBeforeClose(from, inserted.toString(), ranges)) {
+          changes.push({ from, to, insert: inserted.toString() })
+          return
+        }
         if (from === to && guardsBoundary(from, ranges)) {
           rewritten = true
           return
