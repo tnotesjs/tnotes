@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { RecoveryRecord } from '../../../../shared/contracts'
 
+import { registerPendingEdit } from '../../editor/markdown/pendingEdits'
 import { createDocuments, type DocumentsContext } from './documents'
 import type { DocumentSession } from './helpers'
 
@@ -285,6 +286,93 @@ describe('外部修改与未保存冲突', () => {
 
     expect(documents.value['kb:note-1']?.externalConflict).toBe(true)
     expect(documents.value['kb:note-1']?.dirty).toBe(true)
+  })
+})
+
+describe('⌘S 保存与编辑器焦点', () => {
+  function saveContext() {
+    const session = makeSession({ content: '# 新内容\n', dirty: true })
+    const { ctx } = makeContext(session)
+    Object.defineProperty(window, 'desk', {
+      configurable: true,
+      value: {
+        recovery: { delete: vi.fn(async () => ({ ok: true, value: undefined })) },
+        notes: {
+          read: vi.fn(),
+          save: vi.fn(async () => ({
+            ok: true as const,
+            value: {
+              note: { ...session.document, content: '# 新内容\n', revision: 'r2' },
+              knowledgeBase: {}
+            }
+          }))
+        }
+      }
+    })
+    return createDocuments(ctx)
+  }
+
+  function editorBody(): HTMLElement {
+    const body = document.createElement('div')
+    body.className = 'cm-content'
+    body.tabIndex = 0
+    document.body.append(body)
+    return body
+  }
+
+  it('焦点在正文且没有块内草稿：不 blur，保存后光标还在', async () => {
+    const store = saveContext()
+    const body = editorBody()
+    const blur = vi.fn()
+    body.addEventListener('blur', blur)
+    body.focus()
+
+    await store.saveCurrentDocument()
+
+    expect(blur).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(body)
+    body.remove()
+  })
+
+  it('焦点在正文但有块内草稿：先 blur 让草稿落进文档，保存后还焦点', async () => {
+    const store = saveContext()
+    const body = editorBody()
+    let pending = true
+    const registration = registerPendingEdit({
+      knowledgeBaseId: () => 'kb',
+      noteUuid: () => 'note-1',
+      dirty: () => pending,
+      flush: () => {
+        pending = false
+      }
+    })
+    const blur = vi.fn()
+    body.addEventListener('blur', blur)
+    body.focus()
+    try {
+      await store.saveCurrentDocument()
+      expect(blur).toHaveBeenCalledOnce()
+      expect(pending).toBe(false)
+      expect(document.activeElement).toBe(body)
+    } finally {
+      registration.dispose()
+      body.remove()
+    }
+  })
+
+  it('焦点在块内输入框：照样 blur 让它提交，且不把焦点抢回输入框', async () => {
+    const store = saveContext()
+    const input = document.createElement('input')
+    document.body.append(input)
+    const blur = vi.fn()
+    input.addEventListener('blur', blur)
+    input.focus()
+
+    await store.saveCurrentDocument()
+
+    expect(blur).toHaveBeenCalledOnce()
+    expect(document.activeElement).not.toBe(input)
+    input.remove()
   })
 })
 

@@ -12,7 +12,7 @@ import type {
   WorkspaceOverview
 } from '../../../../shared/contracts'
 
-import { flushPendingEdits } from '../../editor/markdown/pendingEdits'
+import { flushPendingEdits, hasPendingEdits } from '../../editor/markdown/pendingEdits'
 import { documentDirty, documentKey, resultValue, type DocumentSession } from './helpers'
 import { createPendingSaves } from './pendingSaves'
 
@@ -404,24 +404,46 @@ export function createDocuments(ctx: DocumentsContext) {
   /**
    * 块内 Edit 面板里的草稿还不属于文档正文：⌘S 之前必须先 flush 并等一次
    * nextTick，否则落盘 / 提交的是不含该草稿的旧内容。
+   *
+   * 块内输入框（代码块标题等）靠 blur 提交，所以焦点不在正文时照样 blur；
+   * 焦点在正文 `.cm-content` 且没有块内草稿时，正文本身就是文档，不 blur。
+   * 返回被 blur 掉的正文编辑区，保存后由调用方还焦点。
    */
-  async function flushBlockDrafts(keys: string[]): Promise<void> {
-    if (keys.length === 0) return
-    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
-      document.activeElement.blur()
+  async function flushBlockDrafts(keys: string[]): Promise<HTMLElement | null> {
+    if (keys.length === 0) return null
+    const active =
+      typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null
+    const inEditorBody = Boolean(active?.classList.contains('cm-content'))
+    const pending = keys.some((key) => {
+      const session = ctx.documents.value[key]
+      return session
+        ? hasPendingEdits(session.document.knowledgeBaseId, session.document.uuid)
+        : false
+    })
+    let blurredBody: HTMLElement | null = null
+    if (active && (!inEditorBody || pending)) {
+      active.blur()
+      if (inEditorBody) blurredBody = active
     }
     for (const key of keys) {
       const session = ctx.documents.value[key]
       if (session) flushPendingEdits(session.document.knowledgeBaseId, session.document.uuid)
     }
     await nextTick()
+    return blurredBody
   }
 
   async function saveCurrentDocument(): Promise<void> {
     const key = ctx.activeDocumentKey.value
     if (!key) return
-    await flushBlockDrafts([key])
-    await saveDocument(key)
+    const blurredBody = await flushBlockDrafts([key])
+    try {
+      await saveDocument(key)
+    } finally {
+      if (blurredBody?.isConnected) blurredBody.focus({ preventScroll: true })
+    }
   }
 
   async function saveAllDocuments(): Promise<void> {
