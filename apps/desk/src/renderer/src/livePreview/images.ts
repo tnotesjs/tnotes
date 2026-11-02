@@ -16,6 +16,9 @@ export interface ImageSyntax {
   attrTo: number
   alt: string
   src: string
+  /** 行内地址（含 `<…>`）的范围；引用式图片没有行内地址时都为 -1 */
+  srcFrom: number
+  srcTo: number
   width: string
   align: ImageAlign
 }
@@ -25,10 +28,16 @@ export function readImage(state: EditorState, node: SyntaxNode): ImageSyntax | n
   if (node.name !== 'Image') return null
   const doc = state.doc
   let src = ''
+  let srcFrom = -1
+  let srcTo = -1
   let altFrom = node.from + 2
   let altTo = altFrom
   for (let child = node.firstChild; child; child = child.nextSibling) {
-    if (child.name === 'URL') src = doc.sliceString(child.from, child.to)
+    if (child.name === 'URL') {
+      src = doc.sliceString(child.from, child.to)
+      srcFrom = child.from
+      srcTo = child.to
+    }
     if (child.name === 'LinkMark' && doc.sliceString(child.from, child.to) === ']') {
       altTo = child.from
     }
@@ -52,7 +61,21 @@ export function readImage(state: EditorState, node: SyntaxNode): ImageSyntax | n
     }
   }
   if (altTo < altFrom) altFrom = altTo
-  return { from: node.from, to: node.to, attrFrom, attrTo, alt, src, width, align }
+  return { from: node.from, to: node.to, attrFrom, attrTo, alt, src, srcFrom, srcTo, width, align }
+}
+
+/** 写进 `![](…)` 的地址：含空白或括号时用 `<…>` 包起来 */
+export function markdownImageDestination(src: string): string {
+  return /[\s()<>]/.test(src) ? `<${src.replace(/[<>]/g, encodeURIComponent)}>` : src
+}
+
+/** 只换图片地址，alt / 标题 / 属性块原样保留；引用式图片返回 null */
+export function imageSrcChange(
+  image: ImageSyntax,
+  src: string
+): { from: number; to: number; insert: string } | null {
+  if (image.srcFrom < 0) return null
+  return { from: image.srcFrom, to: image.srcTo, insert: markdownImageDestination(src) }
 }
 
 /** 找到覆盖 `pos` 的图片语法（组件事件发生时按当前文档重新定位，不信任旧坐标）。 */

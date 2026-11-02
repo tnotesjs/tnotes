@@ -1,18 +1,102 @@
 import type { ImageAlign } from '@tnotesjs/ui/image-markdown'
 
+import { pushToast } from '../stores/toast'
+
 import type { ContextMenuAction } from '../../../shared/contracts'
+
+/** 拉到本地 / 推到图床需要的笔记上下文 */
+export interface ImageAssetContext {
+  knowledgeBaseId: string
+  noteUuid: string
+  /** 当前笔记编辑器里的最新全文（含未保存改动） */
+  content(): string
+}
 
 /** 正文图片与表格卡片图片共用的「⋯」更多菜单（系统菜单）。 */
 export interface ImageMenuState {
   align: ImageAlign
   hasWidth: boolean
   editable: boolean
+  /** Markdown 里写的图片地址 */
+  src?: string
+  asset?: ImageAssetContext | null
 }
 
 export interface ImageMenuHandlers {
   align(align: ImageAlign): void
   resetSize(): void
   remove(): void
+  /** 只换地址，其它保持不变 */
+  replaceSrc?(src: string): void
+}
+
+export function isRemoteImageSrc(src: string): boolean {
+  return /^https?:\/\//i.test(src.trim())
+}
+
+/** 知识库 assets 里的图（`../assets/…`、`./assets/…`）；已解码，可直接交给主进程解析 */
+export function localAssetSrc(src: string): string | null {
+  let decoded = src.trim()
+  try {
+    decoded = decodeURI(decoded)
+  } catch {
+    // 保留原样
+  }
+  return /^(?:\.\.\/|\.\/)?assets\/[^?#]+$/.test(decoded) ? decoded : null
+}
+
+function errorText(result: { ok: false; error: { message: string } }): string {
+  return result.error.message
+}
+
+async function pullRemote(
+  src: string,
+  asset: ImageAssetContext,
+  replaceSrc: (src: string) => void
+): Promise<void> {
+  const api = window.desk?.attachments
+  if (!api) return
+  const result = await api.pullRemote({
+    knowledgeBaseId: asset.knowledgeBaseId,
+    noteUuid: asset.noteUuid,
+    url: src.trim()
+  })
+  if (!result.ok) {
+    pushToast(`拉到本地失败：${errorText(result)}`, 'error')
+    return
+  }
+  replaceSrc(result.value.markdownPath)
+  pushToast('已拉到本地', 'success')
+}
+
+async function pushLocal(
+  src: string,
+  asset: ImageAssetContext,
+  replaceSrc: (src: string) => void
+): Promise<void> {
+  const api = window.desk?.attachments
+  const local = localAssetSrc(src)
+  if (!api || !local) return
+  const context = { knowledgeBaseId: asset.knowledgeBaseId, noteUuid: asset.noteUuid }
+  const pushed = await api.pushLocal({ ...context, src: local })
+  if (!pushed.ok) {
+    pushToast(`推到图床失败：${errorText(pushed)}`, 'error')
+    return
+  }
+  replaceSrc(pushed.value.markdownPath)
+  if (!pushed.value.deleteLocalAfterPush) {
+    pushToast('已推到图床', 'success')
+    return
+  }
+  const released = await api.releaseLocal({ ...context, src: local, content: asset.content() })
+  const outcome = released.ok ? released.value : null
+  if (outcome?.deleted) {
+    pushToast('已推到图床，本地文件已删除', 'success')
+  } else if (outcome && !outcome.deleted && outcome.reason === 'referenced') {
+    pushToast('已推到图床；知识库里还有其它引用，本地文件未删除', 'info')
+  } else {
+    pushToast('已推到图床，本地文件未删除', 'info')
+  }
 }
 
 /**
@@ -27,9 +111,20 @@ export function requestImagePreview(image: HTMLImageElement): void {
 export function runImageMenuAction(
   action: ContextMenuAction | null,
   image: HTMLImageElement,
-  handlers: ImageMenuHandlers
-): void {
+  handlers: ImageMenuHandlers,
+  state?: ImageMenuState
+): void | Promise<void> {
   switch (action) {
+    case 'image-pull-remote':
+      if (state?.src && state.asset && handlers.replaceSrc) {
+        return pullRemote(state.src, state.asset, handlers.replaceSrc)
+      }
+      return
+    case 'image-push-local':
+      if (state?.src && state.asset && handlers.replaceSrc) {
+        return pushLocal(state.src, state.asset, handlers.replaceSrc)
+      }
+      return
     case 'image-preview':
       requestImagePreview(image)
       return
@@ -59,9 +154,17 @@ async function openImageMenu(
 ): Promise<void> {
   const app = window.desk?.app
   if (!app) return
-  const result = await app.showContextMenu({ kind: 'image', ...state })
+  const transferable = Boolean(state.src && state.asset && handlers.replaceSrc)
+  const result = await app.showContextMenu({
+    kind: 'image',
+    align: state.align,
+    hasWidth: state.hasWidth,
+    editable: state.editable,
+    remote: transferable && isRemoteImageSrc(state.src!),
+    local: transferable && localAssetSrc(state.src!) !== null
+  })
   if (!result.ok) return
-  runImageMenuAction(result.value, image, handlers)
+  await runImageMenuAction(result.value, image, handlers, state)
 }
 
 const MORE_ICON =

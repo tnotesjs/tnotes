@@ -6,7 +6,7 @@ import DOMPurify from 'dompurify'
 import CodeGroup from '@tnotesjs/ui/code-group'
 import { parseImageAttrs } from '@tnotesjs/ui/image-markdown'
 import { createApp, h, type App } from 'vue'
-import { createImageMoreButton } from '../../livePreview/imageMenu'
+import { createImageMoreButton, type ImageAssetContext } from '../../livePreview/imageMenu'
 import { clearImageSizeMask, syncImageSizeMask } from '../../livePreview/imageSizeMask'
 import {
   enhanceCardImages,
@@ -303,6 +303,7 @@ function buildCodeGroup(bodyMarkdown: string): HTMLElement {
 export interface SwiperSlideEditor {
   readOnly: boolean
   commit(index: number, next: SwiperSlideChange): void
+  asset?(): ImageAssetContext | null
 }
 
 const MIN_SLIDE_WIDTH = 48
@@ -363,13 +364,16 @@ function buildEditableSlide(
       () => ({
         align: slide.align ?? 'center',
         hasWidth: Boolean(slide.width),
-        editable: !editor.readOnly
+        editable: !editor.readOnly,
+        src: slide.src,
+        asset: editor.asset?.() ?? null
       }),
       {
         // 幻灯片默认居中：选「居中」时去掉写出来的 align=
         align: (align) => editor.commit(index, { align: align === 'center' ? null : align }),
         resetSize: () => editor.commit(index, { width: '' }),
-        remove: () => editor.commit(index, { remove: true })
+        remove: () => editor.commit(index, { remove: true }),
+        replaceSrc: (src) => editor.commit(index, { src })
       }
     )
   )

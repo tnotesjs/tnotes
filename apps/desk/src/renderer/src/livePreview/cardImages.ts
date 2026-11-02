@@ -1,7 +1,7 @@
 import type MarkdownIt from 'markdown-it'
 import type { ImageAlign } from '@tnotesjs/ui/image-markdown'
 
-import { createImageMoreButton } from './imageMenu'
+import { createImageMoreButton, type ImageAssetContext } from './imageMenu'
 import { clearImageSizeMask, syncImageSizeMask } from './imageSizeMask'
 
 /**
@@ -10,12 +10,17 @@ import { clearImageSizeMask, syncImageSizeMask } from './imageSizeMask'
  */
 
 /** 卡片图片的改动：宽度 / 对齐写回 `{w=… align=…}`，或删掉整张图。 */
-export type CardImageChange = { width?: string; align?: ImageAlign } | { remove: true }
+export type CardImageChange =
+  | { width?: string; align?: ImageAlign }
+  | { remove: true }
+  | { src: string }
 
 export interface CardImageEditor {
   readOnly: boolean
   /** `expectedSrc` 是 markdown-it 归一化后的原始地址，写回前核对第 N 张图没对错 */
   commit(index: number, next: CardImageChange, expectedSrc?: string): void
+  /** 拉到本地 / 推到图床的笔记上下文 */
+  asset?(): ImageAssetContext | null
 }
 
 /**
@@ -184,11 +189,18 @@ export function enhanceCardImages(
     actions.append(
       createImageMoreButton(
         image,
-        () => ({ align, hasWidth: Boolean(width), editable: !editor.readOnly }),
+        () => ({
+          align,
+          hasWidth: Boolean(width),
+          editable: !editor.readOnly,
+          src: expectedSrc,
+          asset: editor.asset?.() ?? null
+        }),
         {
           align: (next) => editor.commit(index, { align: next }, expectedSrc),
           resetSize: () => editor.commit(index, { width: '' }, expectedSrc),
-          remove: () => editor.commit(index, { remove: true }, expectedSrc)
+          remove: () => editor.commit(index, { remove: true }, expectedSrc),
+          replaceSrc: (src) => editor.commit(index, { src }, expectedSrc)
         }
       )
     )

@@ -136,7 +136,8 @@ const groupDefaults: Record<string, Partial<AppSettings>> = {
         strength: 'medium',
         maxDimension: null,
         outputFormat: 'keep'
-      }
+      },
+      deleteLocalAfterPush: false
     }
   },
   mcp: {

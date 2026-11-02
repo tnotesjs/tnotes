@@ -167,7 +167,8 @@ const settingsSchema = z.object({
             maxDimension: null,
             outputFormat: 'keep'
           })
-      )
+      ),
+      deleteLocalAfterPush: z.boolean().default(false)
     })
     .default({
       defaultTarget: 'local',
@@ -183,7 +184,8 @@ const settingsSchema = z.object({
         strength: 'medium',
         maxDimension: null,
         outputFormat: 'keep'
-      }
+      },
+      deleteLocalAfterPush: false
     }),
   pinnedKnowledgeBaseIds: z.array(z.string()).default([]),
   pinnedNoteUuids: z.record(z.string(), z.array(z.string())).default({}),

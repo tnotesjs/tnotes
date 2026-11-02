@@ -9,6 +9,8 @@
 
 import { normalizeImageWidth, parseImageAttrs, type ImageAlign } from '@tnotesjs/ui/image-markdown'
 
+import { markdownImageDestination } from '../../livePreview/images'
+
 export {
   applySwiperTabsPadding,
   createSwiperTabNav,
@@ -32,6 +34,8 @@ export interface SwiperSlideChange {
   align?: ImageAlign | null
   /** 删掉这张幻灯片（整行；两侧都是空行时顺带去掉一个空行） */
   remove?: true
+  /** 换图片地址（拉到本地 / 推到图床） */
+  src?: string
 }
 
 const IMAGE_LINE =
@@ -116,7 +120,14 @@ export function updateSwiperSlideAttrs(
       }
       const entry = applySlideChange(parsed.entry, next)
       const attrs = formatSwiperAttrs(entry)
-      return `${parsed.head}${attrs ? ` ${attrs}` : ''}`
+      const head =
+        next.src === undefined
+          ? parsed.head
+          : parsed.head.replace(
+              /(\]\(\s*)(<[^>]*>|[^)\s]+)/,
+              (_match, open: string) => `${open}${markdownImageDestination(next.src!)}`
+            )
+      return `${head}${attrs ? ` ${attrs}` : ''}`
     })
   if (removedAt >= 0) {
     const blank = (line: string | undefined): boolean => line !== undefined && line.trim() === ''

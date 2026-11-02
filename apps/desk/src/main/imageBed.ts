@@ -203,11 +203,35 @@ async function uploadToGitHub(
   throw new Error(`GitHub 上传失败：${lastError}`)
 }
 
+/** 图床可用：仓库地址能解析、分支非空、Token 已保存（不发网络请求）。 */
+export function imageBedReady(github: GitHubImageSettings = loadSettings().imageUpload.github): boolean {
+  try {
+    parseGitHubRepository(github.repository)
+  } catch {
+    return false
+  }
+  return Boolean(github.branch.trim()) && Boolean(readGitHubToken())
+}
+
 class ImageBedManager {
   private queue: Promise<void> = Promise.resolve()
 
   upload(request: ImageUploadRequest): Promise<ImageUploadResult> {
-    const operation = this.queue.then(() => this.performUpload(request))
+    return this.enqueue(() => this.performUpload(request))
+  }
+
+  /** 「推到图床」：只传 GitHub，失败直接报错，不回退本地 */
+  pushToGitHub(request: ImageUploadRequest): Promise<ImageUploadResult> {
+    return this.enqueue(async () => {
+      const github = loadSettings().imageUpload.github
+      const token = readGitHubToken()
+      if (!token || !imageBedReady(github)) throw new Error('尚未配置 GitHub 图床')
+      return await uploadToGitHub(request, github, token)
+    })
+  }
+
+  private enqueue<T>(run: () => Promise<T>): Promise<T> {
+    const operation = this.queue.then(run)
     this.queue = operation.then(
       () => undefined,
       () => undefined

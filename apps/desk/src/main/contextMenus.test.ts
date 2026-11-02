@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
 }))
 vi.mock('electron', () => ({ Menu: { buildFromTemplate: mocks.build } }))
 vi.mock('./settings', () => ({ loadSettings: mocks.settings }))
+vi.mock('./imageBed', () => ({ imageBedReady: () => false }))
 import { contextMenuTemplate, showContextMenu } from './contextMenus'
 
 afterEach(() => {
@@ -253,5 +254,26 @@ describe('image more menu', () => {
       vi.fn()
     )
     expect(noWidth.find((item) => item.id === 'image-reset-size')?.enabled).toBe(false)
+  })
+
+  it('offers pull for online images and push for local ones only when the image bed is ready', () => {
+    const ids = (
+      request: Partial<{ remote: boolean; local: boolean; editable: boolean }>,
+      ready: boolean
+    ) =>
+      contextMenuTemplate(
+        { kind: 'image', align: 'left', hasWidth: false, editable: true, ...request },
+        vi.fn(),
+        'darwin',
+        () => ready
+      ).map((item) => item.id)
+
+    expect(ids({ remote: true }, true)).toContain('image-pull-remote')
+    expect(ids({ remote: true }, true)).not.toContain('image-push-local')
+    expect(ids({ local: true }, true)).toContain('image-push-local')
+    expect(ids({ local: true }, true)).not.toContain('image-pull-remote')
+    expect(ids({ local: true }, false)).not.toContain('image-push-local')
+    expect(ids({ remote: true, editable: false }, true)).not.toContain('image-pull-remote')
+    expect(ids({}, true)).not.toContain('image-push-local')
   })
 })

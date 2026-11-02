@@ -67,6 +67,9 @@ export const IPC_CHANNELS = {
   noteRevealInFileManager: 'note:reveal-in-file-manager',
   attachmentWriteLocal: 'attachment:write-local',
   attachmentUploadImage: 'attachment:upload-image',
+  attachmentPullRemote: 'attachment:pull-remote',
+  attachmentPushLocal: 'attachment:push-local',
+  attachmentReleaseLocal: 'attachment:release-local',
   imageTokenStatus: 'image:token-status',
   imageTokenUpdate: 'image:token-update',
   imageSettingsValidate: 'image:settings-validate',
@@ -540,6 +543,8 @@ export type ContextMenuAction =
   | 'image-align-right'
   | 'image-reset-size'
   | 'image-delete'
+  | 'image-pull-remote'
+  | 'image-push-local'
 export type ContextMenuRequest =
   | { kind: 'note'; pinned: boolean; tocPinned: boolean; completed: boolean }
   | { kind: 'group' }
@@ -560,6 +565,10 @@ export type ContextMenuRequest =
       hasWidth: boolean
       /** 只读时只留「预览」可用 */
       editable: boolean
+      /** `src` 是 http(s) 在线图：显示「拉到本地」 */
+      remote?: boolean
+      /** `src` 是知识库 assets 里的本地图：图床配好时显示「推到图床」（由主进程判定） */
+      local?: boolean
     }
 
 export interface KnowledgeSidebarMenuRequest {
@@ -634,6 +643,8 @@ export interface ImageUploadSettings {
   defaultTarget: ImageDefaultTarget
   github: GitHubImageSettings
   optimize: AssetOptimizeSettings
+  /** 图片「推到图床」成功后删除本地文件（其它笔记仍引用时不删） */
+  deleteLocalAfterPush: boolean
 }
 
 export type AssetOptimizeEncoder = 'sharp' | 'oxipng'
@@ -1474,6 +1485,40 @@ export interface AttachmentWriteLocalResult {
 }
 
 export interface ImageUploadRequest extends AttachmentWriteLocalRequest {}
+
+/** 图片「拉到本地」：下载在线图存进知识库 assets */
+export interface AttachmentPullRemoteRequest {
+  knowledgeBaseId: string
+  noteUuid: string
+  url: string
+}
+
+/** 图片「推到图床」：把 assets 里的本地图上传到 GitHub 图床（不回退本地） */
+export interface AttachmentPushLocalRequest {
+  knowledgeBaseId: string
+  noteUuid: string
+  /** 笔记里写的相对路径，如 `../assets/x.png` */
+  src: string
+}
+
+export interface AttachmentPushLocalResult {
+  markdownPath: string
+  /** 设置里开了「推完删本地」 */
+  deleteLocalAfterPush: boolean
+}
+
+/** 推送并改写 `src` 之后，知识库里没有其它引用才删本地文件 */
+export interface AttachmentReleaseLocalRequest {
+  knowledgeBaseId: string
+  noteUuid: string
+  src: string
+  /** 当前笔记编辑器里的最新内容（含未保存改动），替代磁盘上的旧版本参与引用扫描 */
+  content: string
+}
+
+export type AttachmentReleaseLocalResult =
+  | { deleted: true }
+  | { deleted: false; reason: 'referenced' | 'scan-failed' }
 
 export interface ImageUploadResult {
   markdownPath: string
@@ -2520,6 +2565,11 @@ export interface DeskApi {
       request: AttachmentWriteLocalRequest
     ): Promise<DeskResult<AttachmentWriteLocalResult>>
     uploadImage(request: ImageUploadRequest): Promise<DeskResult<ImageUploadResult>>
+    pullRemote(request: AttachmentPullRemoteRequest): Promise<DeskResult<AttachmentWriteLocalResult>>
+    pushLocal(request: AttachmentPushLocalRequest): Promise<DeskResult<AttachmentPushLocalResult>>
+    releaseLocal(
+      request: AttachmentReleaseLocalRequest
+    ): Promise<DeskResult<AttachmentReleaseLocalResult>>
   }
   build(knowledgeBaseId: string): Promise<DeskResult<KbBuildResult>>
   search(request: SearchRequest): Promise<DeskResult<SearchResultDto[]>>

@@ -22,8 +22,8 @@ import {
 } from '../editor/excalidraw/canvasImage'
 import { subscribeExcalidrawSession } from '../editor/excalidraw/sessionRegistry'
 import { resolveNoteAssetRelPath } from '../markdown/noteAssetPath'
-import { imageAt, imageBefore, imageAttrChange, imageDeleteChange } from './images'
-import { createImageMoreButton } from './imageMenu'
+import { imageAt, imageBefore, imageAttrChange, imageDeleteChange, imageSrcChange } from './images'
+import { createImageMoreButton, type ImageAssetContext } from './imageMenu'
 import { livePreviewHost } from './host'
 import { clearImageSizeMask, syncImageSizeMask } from './imageSizeMask'
 
@@ -600,6 +600,17 @@ export function bindImageLoadState(
 
 const imageCanvasTeardown = new WeakMap<HTMLElement, () => void>()
 
+/** 图片菜单「拉到本地 / 推到图床」用的笔记上下文；没有归属笔记时为 null */
+export function imageAssetContext(view: EditorView): ImageAssetContext | null {
+  const host = view.state.facet(livePreviewHost)
+  if (!host.knowledgeBaseId || !host.noteUuid || host.isReadOnly()) return null
+  return {
+    knowledgeBaseId: host.knowledgeBaseId,
+    noteUuid: host.noteUuid,
+    content: () => view.state.doc.toString()
+  }
+}
+
 function canvasSvgRelPath(noteRelPath: string, src: string): string {
   if (!src || src.startsWith('data:') || /^[a-z][a-z\d+.-]*:/i.test(src)) return ''
   if (!src.split(/[?#]/, 1)[0]?.toLowerCase().endsWith('.svg')) return ''
@@ -666,12 +677,15 @@ export class ImageWidget extends WidgetType {
       () => ({
         align: this.align,
         hasWidth: Boolean(this.width),
-        editable: !view.state.readOnly && !host.isReadOnly()
+        editable: !view.state.readOnly && !host.isReadOnly(),
+        src: this.src,
+        asset: imageAssetContext(view)
       }),
       {
         align: (align) => this.applyAttrs(view, figure, { align }),
         resetSize: () => this.applyAttrs(view, figure, { width: '' }),
-        remove: () => this.removeImage(view, figure)
+        remove: () => this.removeImage(view, figure),
+        replaceSrc: (src) => this.replaceSrc(view, figure, src)
       }
     )
     actions.append(edit, more)
@@ -810,6 +824,16 @@ export class ImageWidget extends WidgetType {
     const image = imageBefore(view.state, pos)
     if (!image) return
     view.dispatch({ changes: imageAttrChange(image, next), userEvent: 'input.image-attrs' })
+  }
+
+  private replaceSrc(view: EditorView, dom: HTMLElement, src: string): void {
+    if (view.state.readOnly) return
+    const pos = widgetPos(view, dom)
+    if (pos == null) return
+    const image = imageBefore(view.state, pos)
+    const changes = image && imageSrcChange(image, src)
+    if (!changes) return
+    view.dispatch({ changes, userEvent: 'input.image-src' })
   }
 
   private removeImage(view: EditorView, dom: HTMLElement): void {

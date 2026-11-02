@@ -1,7 +1,12 @@
-import { clipboard, shell } from 'electron'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+
+import { clipboard, net, shell } from 'electron'
 import { z } from 'zod'
 
 import { gitManager } from '../gitManager'
+import { loadSettings } from '../settings'
+import { downloadRemoteImage } from '../workspace/imageTransfer'
 import { commitDeleteScope } from '../workspace/deleteScope'
 import { imageBedManager } from '../imageBed'
 import { maybeOptimizeUploadRequest } from '../imageUploadOptimize'
@@ -119,6 +124,54 @@ export function registerNotes(getWindow: GetWindow): void {
   )
   handle(IPC_CHANNELS.attachmentUploadImage, getWindow, attachmentWriteLocalSchema, (input) =>
     imageBedManager.upload(input as ImageUploadRequest)
+  )
+  // 拉到本地保留原图字节，不走压缩
+  handle(
+    IPC_CHANNELS.attachmentPullRemote,
+    getWindow,
+    z.object({
+      knowledgeBaseId: z.string().min(1),
+      noteUuid: z.string().min(1),
+      url: z.string().min(1).max(4096)
+    }),
+    async ({ knowledgeBaseId, noteUuid, url }) => {
+      const image = await downloadRemoteImage(url, (input) => net.fetch(input))
+      return workspaceManager.writeLocalAttachment({ knowledgeBaseId, noteUuid, ...image })
+    }
+  )
+  handle(
+    IPC_CHANNELS.attachmentPushLocal,
+    getWindow,
+    z.object({
+      knowledgeBaseId: z.string().min(1),
+      noteUuid: z.string().min(1),
+      src: z.string().min(1).max(4096)
+    }),
+    async ({ knowledgeBaseId, noteUuid, src }) => {
+      const absolutePath = await workspaceManager.resolveNoteAsset(knowledgeBaseId, src)
+      const data = new Uint8Array(await readFile(absolutePath))
+      const uploaded = await imageBedManager.pushToGitHub({
+        knowledgeBaseId,
+        noteUuid,
+        fileName: path.basename(absolutePath),
+        data
+      })
+      return {
+        markdownPath: uploaded.markdownPath,
+        deleteLocalAfterPush: loadSettings().imageUpload.deleteLocalAfterPush
+      }
+    }
+  )
+  handle(
+    IPC_CHANNELS.attachmentReleaseLocal,
+    getWindow,
+    z.object({
+      knowledgeBaseId: z.string().min(1),
+      noteUuid: z.string().min(1),
+      src: z.string().min(1).max(4096),
+      content: z.string()
+    }),
+    (input) => workspaceManager.releaseLocalAsset(input)
   )
 
   handle(IPC_CHANNELS.tocMove, getWindow, tocMoveSchema, (input) =>

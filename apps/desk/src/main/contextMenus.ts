@@ -1,13 +1,15 @@
 import { Menu, type BrowserWindow, type MenuItemConstructorOptions } from 'electron'
 
 import type { ContextMenuAction, ContextMenuRequest } from '../shared/contracts'
+import { imageBedReady } from './imageBed'
 import { popupForChoice } from './menuPopup'
 import { loadSettings } from './settings'
 
 export function contextMenuTemplate(
   request: ContextMenuRequest,
   select: (action: ContextMenuAction) => void,
-  platform: NodeJS.Platform = process.platform
+  platform: NodeJS.Platform = process.platform,
+  canPushToImageBed: () => boolean = imageBedReady
 ): MenuItemConstructorOptions[] {
   const primary = platform === 'darwin' ? '⌘' : 'Ctrl'
   const revealLabel =
@@ -50,6 +52,12 @@ export function contextMenuTemplate(
       checked: request.align === value,
       enabled: editable
     })
+    // 条件不满足时整项不出现（不做灰显占位）
+    const transfer: MenuItemConstructorOptions[] = []
+    if (editable && request.remote) transfer.push(item('image-pull-remote', '拉到本地'))
+    if (editable && request.local && canPushToImageBed()) {
+      transfer.push(item('image-push-local', '推到图床'))
+    }
     return [
       item('image-preview', '预览'),
       align('image-align-left', '左对齐', 'left'),
@@ -57,6 +65,7 @@ export function contextMenuTemplate(
       align('image-align-right', '右对齐', 'right'),
       { type: 'separator' },
       { ...item('image-reset-size', '原始大小'), enabled: editable && request.hasWidth },
+      ...transfer,
       { ...item('image-delete', '删除'), enabled: editable }
     ]
   }

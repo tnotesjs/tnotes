@@ -141,6 +141,10 @@ onMounted(() => {
         />
         <small>{{ tokenHint }}</small>
       </label>
+      <label class="switch-field">
+        <input v-model="draft.imageUpload.deleteLocalAfterPush" type="checkbox" />
+        <span>图片「推到图床」后删除本地文件（其它笔记仍引用时保留）</span>
+      </label>
       <p
         v-if="!draft.imageUpload.github.repository.trim() || !tokenStatus.configured"
         class="warn-hint"

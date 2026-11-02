@@ -4,6 +4,8 @@ import { IPC_CHANNELS } from '../shared/contracts'
 
 import type {
   AppSettings,
+  AttachmentPushLocalResult,
+  AttachmentReleaseLocalResult,
   McpServerStatusDto,
   SelectionClearRequest,
   SelectionReportRequest,
@@ -354,7 +356,13 @@ const api: DeskApi = {
   attachments: {
     writeLocal: (request: AttachmentWriteLocalRequest) =>
       invoke<AttachmentWriteLocalResult>(IPC_CHANNELS.attachmentWriteLocal, request),
-    uploadImage: (request) => invoke<ImageUploadResult>(IPC_CHANNELS.attachmentUploadImage, request)
+    uploadImage: (request) => invoke<ImageUploadResult>(IPC_CHANNELS.attachmentUploadImage, request),
+    pullRemote: (request) =>
+      invoke<AttachmentWriteLocalResult>(IPC_CHANNELS.attachmentPullRemote, request),
+    pushLocal: (request) =>
+      invoke<AttachmentPushLocalResult>(IPC_CHANNELS.attachmentPushLocal, request),
+    releaseLocal: (request) =>
+      invoke<AttachmentReleaseLocalResult>(IPC_CHANNELS.attachmentReleaseLocal, request)
   },
   build: (knowledgeBaseId) => invoke<KbBuildResult>(IPC_CHANNELS.kbBuild, knowledgeBaseId),
   search: (request) => invoke<SearchResultDto[]>(IPC_CHANNELS.searchQuery, request),

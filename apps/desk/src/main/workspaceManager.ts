@@ -28,6 +28,7 @@ import { historyRestoreJournalDir, listRestoreJournals } from './history/restore
 import { knowledgeBaseAssetHashCache, knowledgeBaseAssetStore } from './workspace/assetStore'
 import { descriptor, toDetail, toSettingsDto } from './workspace/dto'
 import * as noteIo from './workspace/noteIo'
+import { releaseLocalAsset } from './workspace/imageTransfer'
 import {
   disposeHandles,
   enqueueScan,
@@ -60,6 +61,8 @@ import type {
   AssetScanReportDto,
   AttachmentWriteLocalRequest,
   AttachmentWriteLocalResult,
+  AttachmentReleaseLocalRequest,
+  AttachmentReleaseLocalResult,
   ExternalNoteChangeEvent,
   KbBuildResult,
   KnowledgeBaseCreateRequest,
@@ -655,6 +658,17 @@ export class WorkspaceManager {
 
   async resolveNoteAsset(knowledgeBaseId: string, requestedPath: string): Promise<string> {
     return noteIo.resolveNoteAsset(this.getHandle(knowledgeBaseId), requestedPath)
+  }
+
+  async releaseLocalAsset(
+    request: AttachmentReleaseLocalRequest
+  ): Promise<AttachmentReleaseLocalResult> {
+    this.assertWritable(request.knowledgeBaseId)
+    return releaseLocalAsset(
+      this.getHandle(request.knowledgeBaseId),
+      request,
+      this.mutationEffects()
+    )
   }
 
   async buildKnowledgeBase(knowledgeBaseId: string): Promise<KbBuildResult> {

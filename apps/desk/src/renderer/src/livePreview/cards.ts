@@ -43,8 +43,14 @@ import {
   type CardImageChange,
   type CardImageEditor
 } from './cardImages'
-import { imageAttrChange, imageDeleteChange, readImage, type ImageSyntax } from './images'
-import { revealAt } from './widgets'
+import {
+  imageAttrChange,
+  imageDeleteChange,
+  imageSrcChange,
+  readImage,
+  type ImageSyntax
+} from './images'
+import { imageAssetContext, revealAt } from './widgets'
 
 export type CardKind = 'container' | 'mermaid' | 'mindmap' | 'component' | 'html' | 'table'
 
@@ -322,12 +328,14 @@ export class CardWidget extends WidgetType {
           this.definitions,
           {
             readOnly: host.isReadOnly(),
-            commit: (index, next) => commitSwiperSlide(view, card, index, next)
+            commit: (index, next) => commitSwiperSlide(view, card, index, next),
+            asset: () => imageAssetContext(view)
           },
           {
             readOnly: host.isReadOnly(),
             commit: (index, next, expectedSrc) =>
-              commitContainerImage(view, card, index, next, expectedSrc)
+              commitContainerImage(view, card, index, next, expectedSrc),
+            asset: () => imageAssetContext(view)
           },
           {
             open: detailsOpenSession.get(detailsKey) ?? false,
@@ -381,7 +389,8 @@ export class CardWidget extends WidgetType {
         return renderTable(this.source, resolveImage, this.definitions, {
           readOnly: host.isReadOnly(),
           commit: (index, next, expectedSrc) =>
-            commitTableImage(view, card, index, next, expectedSrc)
+            commitTableImage(view, card, index, next, expectedSrc),
+          asset: () => imageAssetContext(view)
         })
     }
   }
@@ -473,9 +482,16 @@ export function tableImageChange(
   const changes =
     'remove' in next
       ? imageDeleteChange(state, image, { wholeLine: false })
-      : imageAttrChange(image, next)
-  if (state.doc.sliceString(changes.from, changes.to) === changes.insert) return null
+      : 'src' in next
+        ? imageSrcChange(image, next.src)
+        : imageAttrChange(image, next)
+  if (!changes || state.doc.sliceString(changes.from, changes.to) === changes.insert) return null
   return changes
+}
+
+function cardImageUserEvent(next: CardImageChange): string {
+  if ('remove' in next) return 'delete.image'
+  return 'src' in next ? 'input.image-src' : 'input.image-attrs'
 }
 
 function commitTableImage(
@@ -495,10 +511,7 @@ function commitTableImage(
   }
   const changes = tableImageChange(view.state, pos, index, next, expectedSrc)
   if (!changes) return
-  view.dispatch({
-    changes,
-    userEvent: 'remove' in next ? 'delete.image' : 'input.image-attrs'
-  })
+  view.dispatch({ changes, userEvent: cardImageUserEvent(next) })
 }
 
 /**
@@ -538,8 +551,12 @@ export function containerImageChange(
   }
   // 独占一行的图删掉整行；和文字同段 / 在表格里只删图本身（imageDeleteChange 自己判断）
   const local =
-    'remove' in next ? imageDeleteChange(bodyState, found) : imageAttrChange(found, next)
-  if (bodyState.doc.sliceString(local.from, local.to) === local.insert) return null
+    'remove' in next
+      ? imageDeleteChange(bodyState, found)
+      : 'src' in next
+        ? imageSrcChange(found, next.src)
+        : imageAttrChange(found, next)
+  if (!local || bodyState.doc.sliceString(local.from, local.to) === local.insert) return null
   return { from: body.from + local.from, to: body.from + local.to, insert: local.insert }
 }
 
@@ -560,10 +577,7 @@ function commitContainerImage(
   }
   const changes = containerImageChange(view.state, pos, index, next, expectedSrc)
   if (!changes) return
-  view.dispatch({
-    changes,
-    userEvent: 'remove' in next ? 'delete.image' : 'input.image-attrs'
-  })
+  view.dispatch({ changes, userEvent: cardImageUserEvent(next) })
 }
 
 /** 卡片所在的这段围栏（```mindmap / ```mermaid）在文档里的当前位置（卡片从行首起，到闭合围栏为止）。 */

@@ -217,7 +217,9 @@ describe('renderContainerFromSource', () => {
         kind: 'image',
         align: 'center',
         hasWidth: true,
-        editable: true
+        editable: true,
+        remote: false,
+        local: false
       })
       expect(commits).toEqual([
         { index: 0, align: 'left' },
