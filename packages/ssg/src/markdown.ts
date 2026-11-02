@@ -680,6 +680,36 @@ function markStandaloneImage(inline: {
 }
 
 /**
+ * Source lines outside fenced code. A fence closes only on the same character
+ * with at least the opening length and no info string, so ```` can wrap ```
+ * examples whose `## …` lines must not become page headings.
+ */
+function linesOutsideFences(raw: string): string[] {
+  const kept: string[] = []
+  let open: { char: string; length: number } | null = null
+  for (const line of raw.split(/\r?\n/)) {
+    const fence = /^\s*(`{3,}|~{3,})(.*)$/.exec(line)
+    if (open) {
+      if (
+        fence &&
+        fence[1][0] === open.char &&
+        fence[1].length >= open.length &&
+        !fence[2].trim()
+      ) {
+        open = null
+      }
+      continue
+    }
+    if (fence && !(fence[1][0] === '`' && fence[2].includes('`'))) {
+      open = { char: fence[1][0], length: fence[1].length }
+      continue
+    }
+    kept.push(line)
+  }
+  return kept
+}
+
+/**
  * Title/description/headings/text for search and <head>. Pure frontmatter +
  * regex extraction — deliberately independent of md.render so the dev server
  * can build a search index without paying for rendering (or Shiki).
@@ -692,13 +722,16 @@ export function extractPageData(
   titleHint?: string
 ): PageData {
   const parsed = matter(raw)
-  const titleMatch = raw.match(/^#\s+(.+)$/m)
+  const prose = linesOutsideFences(raw)
+  const titleMatch = prose.map((line) => /^#\s+(.+)$/.exec(line)).find(Boolean)
   const title = plainInline(String(titleHint || parsed.data.title || titleMatch?.[1] || route))
   const description = String(parsed.data.description ?? '')
-  const headings = [...raw.matchAll(/^(#{2,6})\s+(.+)$/gm)].map((match) => {
+  const headings = prose.flatMap((line) => {
+    const match = /^(#{2,6})\s+(.+)$/.exec(line)
+    if (!match) return []
     const level = match[1].length
     const text = plainInline(match[2] ?? '')
-    return { text, level, id: slugify(text) }
+    return [{ text, level, id: slugify(text) }]
   })
   const text = parsed.content
     .replace(/```[\s\S]*?```/g, ' ')

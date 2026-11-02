@@ -44,6 +44,56 @@ describe('note identity for the comments component', () => {
   })
 })
 
+describe('page outline headings', () => {
+  const headings = (body: string) =>
+    extractPageData(compilerConfig, body, '/kb/notes/0044.md', '/notes/44').headings.map(
+      (heading) => `${heading.level} ${heading.text}`
+    )
+
+  it('ignores heading lines inside a longer fence wrapping shorter fences', () => {
+    const body = [
+      '# 0044. 常用 Prompt',
+      '',
+      '## 3. 精读笔记生成 DEMO',
+      '',
+      '### 3.2. Prompt',
+      '',
+      '````md',
+      '# 精读笔记生成 DEMO',
+      '',
+      '## 💻 demos.1 - 知识点 1 的名称',
+      '',
+      '```html [App.vue]',
+      '```',
+      '',
+      '## 💻 demos.n - 知识点 n 的名称',
+      '````',
+      '',
+      '## 4. 分析对话记录优化笔记内容'
+    ].join('\n')
+    expect(headings(body)).toEqual([
+      '2 3. 精读笔记生成 DEMO',
+      '3 3.2. Prompt',
+      '2 4. 分析对话记录优化笔记内容'
+    ])
+  })
+
+  it('ignores headings in tilde fences and does not close on a fence with an info string', () => {
+    const body = ['~~~md', '## 示例', '```js', '~~~', '## 正文标题'].join('\n')
+    expect(headings(body)).toEqual(['2 正文标题'])
+  })
+
+  it('does not take the title from a code block', () => {
+    const data = extractPageData(
+      compilerConfig,
+      '```sh\n# 注释\n```\n\n# 真标题\n',
+      '/kb/notes/0001.md',
+      '/notes/1'
+    )
+    expect(data.title).toBe('真标题')
+  })
+})
+
 describe('heading sections for the fold-all control', () => {
   const render = async (body: string) => {
     const compiler = await createMarkdownCompiler(compilerConfig)
