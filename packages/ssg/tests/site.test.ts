@@ -25,12 +25,13 @@ beforeAll(async () => {
         title: 'Fixture',
         description: 'SSG fixture',
         repositoryUrl: 'https://github.com/tnotesjs/TNotes.fixture',
-        icon: { src: 'https://cdn.example.com/icon--fixture.svg' }
+        icon: { src: '../assets/kb-icon.svg' }
       },
       null,
       2
     )
   )
+  write('assets/kb-icon.svg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>')
   write(
     'TOC.md',
     `- 分组 A
@@ -213,12 +214,12 @@ describe('static site build', () => {
   })
 
   it('每页都带上 kb 声明的站标', () => {
-    // The kb already declares its icon; the site is what has to publish it, and
-    // every page needs it or the tab falls back to a blank favicon.
+    // The kb declares a local icon. Remote http(s) URLs are not site icons.
+    // Every page needs the rebased href or the tab falls back to a blank favicon.
     for (const page of ['index.html', 'notes/2.html']) {
       const html = fs.readFileSync(dist(page), 'utf8')
       expect(html).toContain('<link rel="icon" type="image/svg+xml"')
-      expect(html).toContain('href="https://cdn.example.com/icon--fixture.svg"')
+      expect(html).toContain('href="/fixture/assets/kb-icon.svg"')
     }
   })
 
