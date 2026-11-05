@@ -1,3 +1,5 @@
+import type { LineBreakMode } from '@tnotesjs/ui/line-breaks'
+
 /**
  * One row of the TOC sidebar. Notes carry `index`/`done` as separate fields
  * rather than being baked into `text`: the row renders them as a status dot
@@ -45,6 +47,8 @@ export interface MarkdownConfig {
   lineNumbers: boolean
   math: boolean
   imageLazyLoading: boolean
+  /** `visual`: single newline → `<br>`, extra blank lines kept as spacers. */
+  lineBreaks: LineBreakMode
 }
 
 /**

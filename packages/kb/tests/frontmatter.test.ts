@@ -17,6 +17,15 @@ describe('parseNoteContent', () => {
     expect(body).toBe('# 标题\n\n正文\n')
   })
 
+  it('keeps an unquoted numeric description as text', () => {
+    const { frontmatter } = parseNoteContent(`---\nid: abc\ndescription: 111\n---\n\n正文\n`)
+    expect(frontmatter.description).toBe('111')
+    const roundTrip = serializeNoteContent(frontmatter, '正文\n')
+    expect(roundTrip).toContain('description: 111\n')
+    expect(roundTrip).not.toContain("'111'")
+    expect(parseNoteContent(roundTrip).frontmatter.description).toBe('111')
+  })
+
   it('ignores empty strings and unknown keys', () => {
     const { frontmatter } = parseNoteContent(
       `---\nid: ""\ndescription: "  "\ndraft: true\n---\nx\n`

@@ -9,7 +9,8 @@
  * - renumberHeadings 是重排语义：先剥掉所有规范前缀，再重新编号；层级深度超过
  *   maxDepth 的标题不加前缀。
  * - stripHeadingNumbers 剥掉所有规范前缀。
- * - frontmatter 与围栏代码块（``` / ~~~）内的内容永远不碰。
+ * - frontmatter、围栏代码块（``` / ~~~）与 `:::` 容器内的内容永远不碰。
+ *   容器里的 `#` 只是排版，不占编号层级。
  */
 
 import {
@@ -20,6 +21,8 @@ import {
 const HEADING_RE = /^( {0,3})(#{1,6})(\s+)(.*)$/
 const NUMBER_PREFIX_RE = /^\d+(?:\.\d+)*\.\s+/
 const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/
+/** `::: tip` 开启；单独一行的 `:::` 且冒号不少于开启行时关闭。与实时预览的容器语法一致。 */
+const CONTAINER_MARK_RE = /^( {0,3})(:{3,})[ \t]*(.*)$/
 
 export interface HeadingNumberingResult {
   text: string
@@ -39,11 +42,13 @@ interface TrackedLine {
   heading: HeadingParts | null
 }
 
-/** 逐行拆解，跳过 frontmatter 与围栏代码块，标出可编号/可剥编号的标题行。 */
+/** 逐行拆解，跳过 frontmatter、围栏代码块和 `:::` 容器，标出可编号/可剥编号的标题行。 */
 function scanLines(markdown: string): TrackedLine[] {
   const lines = markdown.split('\n')
   const tracked: TrackedLine[] = []
   let fence: { char: string; length: number } | null = null
+  const containers: number[] = []
+  let containerFence: string | null = null
   let inFrontmatter = false
   let frontmatterChecked = false
 
@@ -75,8 +80,34 @@ function scanLines(markdown: string): TrackedLine[] {
       tracked.push({ raw, heading: null })
       continue
     }
+    if (containers.length > 0) {
+      tracked.push({ raw, heading: null })
+      if (containerFence) {
+        if (raw.trimEnd().startsWith(containerFence) && raw.trim().replace(/[`~]/g, '') === '') {
+          containerFence = null
+        }
+        continue
+      }
+      if (fenceMatch) {
+        containerFence = fenceMatch[1]
+        continue
+      }
+      const mark = CONTAINER_MARK_RE.exec(raw)
+      if (mark && !mark[3].trim() && mark[2].length >= containers[containers.length - 1]) {
+        containers.pop()
+      } else if (mark?.[3].trim()) {
+        containers.push(mark[2].length)
+      }
+      continue
+    }
     if (fenceMatch) {
       fence = { char: fenceMatch[1][0], length: fenceMatch[1].length }
+      tracked.push({ raw, heading: null })
+      continue
+    }
+    const containerOpen = CONTAINER_MARK_RE.exec(raw)
+    if (containerOpen?.[3].trim()) {
+      containers.push(containerOpen[2].length)
       tracked.push({ raw, heading: null })
       continue
     }

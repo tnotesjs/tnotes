@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { readKbConfig } from '@tnotesjs/kb'
+import { resolveLineBreakMode } from '@tnotesjs/ui/line-breaks'
 
 import type { ResolvedSsgConfig, SsgConfig } from './types'
 
@@ -48,7 +49,8 @@ export async function resolveConfig(root = process.cwd()): Promise<ResolvedSsgCo
     markdown: {
       lineNumbers: user.markdown?.lineNumbers !== false,
       math: user.markdown?.math !== false,
-      imageLazyLoading: user.markdown?.imageLazyLoading !== false
+      imageLazyLoading: user.markdown?.imageLazyLoading !== false,
+      lineBreaks: resolveLineBreakMode(user.markdown?.lineBreaks)
     }
   }
 }

@@ -147,6 +147,17 @@ describe('查找条', () => {
     expect(panel(view).find.value).toBe('bar')
   })
 
+  it('开关收在查找框内，替换用图标，条挂在顶部面板上', () => {
+    const view = editor('hello')
+    openFind(view)
+    const ui = panel(view)
+    expect(ui.find.closest('.cm-find-field')?.querySelector('.cm-find-toggle')).toBeTruthy()
+    expect(ui.root.querySelector('.cm-find-expand svg')).toBeTruthy()
+    expect(ui.button('替换').querySelector('svg')).toBeTruthy()
+    expect(ui.button('全部替换').querySelector('svg')).toBeTruthy()
+    expect(view.dom.querySelector('.cm-panels-top')?.contains(ui.root)).toBe(true)
+  })
+
   it('Esc 关闭查找条并把焦点还给正文', () => {
     const view = editor('hello')
     openFind(view)

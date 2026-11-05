@@ -29,7 +29,7 @@ export interface ImageMenuHandlers {
   remove(): void
   /** 只换地址，其它保持不变 */
   replaceSrc?(src: string): void
-  /** 「调整尺寸…」确定后写回宽度，如 `320px` */
+  /** 「调整尺寸…」写回宽度，如 `320px` */
   resize?(width: string): void
 }
 
@@ -111,18 +111,38 @@ export function requestImagePreview(image: HTMLImageElement): void {
   image.dispatchEvent(new CustomEvent('tn:preview-image', { bubbles: true, detail: image }))
 }
 
-/** 系统剪贴板解不了的格式（webp / svg 等）：把页面上已显示的图画到 canvas 转成 PNG */
+async function pngFromBitmap(bitmap: ImageBitmap): Promise<Uint8Array | null> {
+  try {
+    if (!bitmap.width || !bitmap.height) return null
+    const canvas = document.createElement('canvas')
+    canvas.width = bitmap.width
+    canvas.height = bitmap.height
+    const context = canvas.getContext('2d')
+    if (!context) return null
+    context.drawImage(bitmap, 0, 0)
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    return blob ? new Uint8Array(await blob.arrayBuffer()) : null
+  } finally {
+    bitmap.close()
+  }
+}
+
+/**
+ * 系统剪贴板解不了的格式（内容是 webp、扩展名却是 png，或 svg）：用原始字节让浏览器解码成 PNG。
+ * 不画页面上的 img。那张图从 tnotes-asset 加载，没有 CORS，画进 canvas 会直接失败。
+ */
+async function rasterizeBytes(bytes: Uint8Array): Promise<Uint8Array | null> {
+  try {
+    return await pngFromBitmap(await createImageBitmap(new Blob([new Uint8Array(bytes)])))
+  } catch {
+    return null
+  }
+}
+
 async function rasterizeImage(image: HTMLImageElement): Promise<Uint8Array | null> {
   try {
     if (!image.complete || !image.naturalWidth) await image.decode()
-    const canvas = document.createElement('canvas')
-    canvas.width = image.naturalWidth || image.width || 300
-    canvas.height = image.naturalHeight || image.height || 150
-    const context = canvas.getContext('2d')
-    if (!context) return null
-    context.drawImage(image, 0, 0, canvas.width, canvas.height)
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
-    return blob ? new Uint8Array(await blob.arrayBuffer()) : null
+    return await pngFromBitmap(await createImageBitmap(image))
   } catch {
     return null
   }
@@ -144,9 +164,21 @@ async function copyImage(
     pushToast('已复制图片', 'success')
     return
   }
-  const png = await rasterizeImage(image)
-  const fallback = png ? await api.copyImage({ png }) : null
-  if (fallback?.ok && fallback.value.copied) pushToast('已复制图片', 'success')
+  const raw = result.value.bytes
+  const png =
+    raw instanceof Uint8Array && raw.byteLength > 0
+      ? await rasterizeBytes(raw)
+      : await rasterizeImage(image)
+  if (!png) {
+    pushToast('复制图片失败：无法转换这种图片格式', 'error')
+    return
+  }
+  const fallback = await api.copyImage({ png })
+  if (!fallback.ok) {
+    pushToast(`复制图片失败：${errorText(fallback)}`, 'error')
+    return
+  }
+  if (fallback.value.copied) pushToast('已复制图片', 'success')
   else pushToast('复制图片失败：无法转换这种图片格式', 'error')
 }
 

@@ -50,14 +50,13 @@ beforeEach(() => {
 describe('RichInlineEditor', () => {
   it('编辑态直接渲染全部行内样式', () => {
     const { host, editor } = mountEditor(
-      '**粗体** *斜体* <u>下划线</u> ~~删除~~ ==高亮== `代码` [链接](https://example.com)'
+      '**粗体** *斜体* <u>下划线</u> ~~删除~~ `代码` [链接](https://example.com)'
     )
     expect(editor.isContentEditable).toBe(true)
     expect(host.querySelector('.bold')?.textContent).toBe('粗体')
     expect(host.querySelector('.italic')?.textContent).toBe('斜体')
     expect(host.querySelector('.underline')?.textContent).toBe('下划线')
     expect(host.querySelector('.strike')?.textContent).toBe('删除')
-    expect(host.querySelector('.highlight')?.textContent).toBe('高亮')
     expect(host.querySelector('.code')?.textContent).toBe('代码')
     expect(host.querySelector('.link')?.textContent).toBe('链接')
   })

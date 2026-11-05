@@ -114,38 +114,72 @@ describe('resize popover', () => {
     return [all[0]!, all[1]!]
   }
 
-  it('links width and height by the natural ratio and writes only the width', () => {
+  it('links width and height by the natural ratio and writes the width as it changes', () => {
     const commit = vi.fn()
     openImageSizePopover(imageOf(800, 400), frameOf(200, 100), commit)
     const [width, height] = inputs()
     expect(width.value).toBe('200')
     expect(height.value).toBe('100')
+    expect(document.querySelector('.cm-lp-image-size-actions')).toBeNull()
+    expect(
+      [...document.querySelectorAll('.cm-lp-image-size-presets button')].map(
+        (button) => button.textContent
+      )
+    ).toEqual(['25%', '50%', '75%', '100%'])
+    expect(document.querySelector('.cm-lp-image-size-presets button.is-active')?.textContent).toBe(
+      '25%'
+    )
 
     height.value = '150'
     height.dispatchEvent(new Event('input'))
     expect(width.value).toBe('300')
+    expect(commit).toHaveBeenLastCalledWith('300px')
 
     width.value = '120'
     width.dispatchEvent(new Event('input'))
     expect(height.value).toBe('60')
+    expect(commit).toHaveBeenLastCalledWith('120px')
+    expect(document.querySelector('.cm-lp-image-size-popover')).not.toBeNull()
+    const popover = document.querySelector<HTMLElement>('.cm-lp-image-size-popover')
+    expect(Number.parseFloat(popover?.style.top ?? '')).toBeLessThan(10)
+  })
 
-    width.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    expect(commit).toHaveBeenCalledWith('120px')
+  it('applies a preset as a fraction of the natural width', () => {
+    const commit = vi.fn()
+    openImageSizePopover(imageOf(800, 400), frameOf(200, 100), commit)
+    const half = [
+      ...document.querySelectorAll<HTMLButtonElement>('.cm-lp-image-size-presets button')
+    ].find((button) => button.textContent === '50%')
+    half?.click()
+    expect(inputs()[0].value).toBe('400')
+    expect(inputs()[1].value).toBe('200')
+    expect(commit).toHaveBeenCalledWith('400px')
+    expect(half?.classList.contains('is-active')).toBe(true)
+  })
+
+  it('closes when the editor scrolls', async () => {
+    const scroller = document.createElement('div')
+    const frame = frameOf(200, 100)
+    scroller.append(frame)
+    document.body.append(scroller)
+    openImageSizePopover(imageOf(800, 400), frame, vi.fn())
+    expect(document.querySelector('.cm-lp-image-size-popover')).not.toBeNull()
+    scroller.dispatchEvent(new Event('scroll'))
+    expect(document.querySelector('.cm-lp-image-size-popover')).not.toBeNull()
+    await Promise.resolve()
+    scroller.dispatchEvent(new Event('scroll'))
     expect(document.querySelector('.cm-lp-image-size-popover')).toBeNull()
   })
 
-  it('floors tiny widths at 16px and closes on Escape without writing', () => {
+  it('floors tiny widths at 16px and closes on Escape', () => {
     const commit = vi.fn()
     openImageSizePopover(imageOf(100, 100), frameOf(100, 100), commit)
     const [width] = inputs()
     width.value = '3'
-    width.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    width.dispatchEvent(new Event('input'))
     expect(commit).toHaveBeenCalledWith('16px')
 
-    const cancelled = vi.fn()
-    openImageSizePopover(imageOf(100, 100), frameOf(100, 100), cancelled)
     inputs()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    expect(cancelled).not.toHaveBeenCalled()
     expect(document.querySelector('.cm-lp-image-size-popover')).toBeNull()
   })
 })

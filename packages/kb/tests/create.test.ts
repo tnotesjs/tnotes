@@ -89,6 +89,17 @@ describe('createKnowledgeBase', () => {
     expect(snapshot.notes[0].frontmatter.id).toBeTruthy()
   })
 
+  it('writes markdown.lineBreaks only when visual is requested', async () => {
+    const parent = await makeParent()
+    const result = await createKnowledgeBase({
+      parentDir: parent,
+      folderName: 'visual-kb',
+      options: { lineBreaks: 'visual' }
+    })
+    const config = JSON.parse(await fs.readFile(path.join(result.rootPath, 'tnotes.json'), 'utf8'))
+    expect(config.markdown).toEqual({ lineBreaks: 'visual' })
+  })
+
   it('scaffolds package.json, pages workflow, readme, and git init when requested', async () => {
     const parent = await makeParent()
     const result = await createKnowledgeBase({

@@ -15,13 +15,14 @@ import { parseImageAttrs, type ImageAlign } from '@tnotesjs/ui/image-markdown'
 import { parseFootprintsDatetime, parseFootprintsSource } from '@tnotesjs/ui/footprints-parse'
 import { normalizeMindmapMarkdown, parseMindmapFence } from '@tnotesjs/ui/mindmap-parse'
 import { emptySwiperMarkup } from '@tnotesjs/ui/swiper'
+import { useLineBreaks } from '@tnotesjs/ui/line-breaks'
+import { alertIcon, ALERT_LABELS, isAlertType } from '@tnotesjs/ui/alerts'
 import GithubSlugger from 'github-slugger'
 import matter from 'gray-matter'
 import MarkdownIt from 'markdown-it'
 import anchor from 'markdown-it-anchor'
 import markdownItContainer from 'markdown-it-container'
 import { full as emoji } from 'markdown-it-emoji'
-import markdownItMark from 'markdown-it-mark'
 import markdownItMathjax from 'markdown-it-mathjax3'
 import markdownItTaskLists from 'markdown-it-task-lists'
 
@@ -135,10 +136,13 @@ function configureContainers(md: MarkdownIt) {
         const rawTitle = String(token.info || '')
           .replace(name, '')
           .trim()
-        const title = escapeHtml(rawTitle || (name === 'details' ? '详情' : name.toUpperCase()))
+        const title = escapeHtml(
+          rawTitle || (isAlertType(name) ? ALERT_LABELS[name] : name.toUpperCase())
+        )
+        const icon = `<span class="tn-alert-icon">${alertIcon(name)}</span>`
         return name === 'details'
-          ? `<details class="tn-custom-block details"><summary><span class="tn-details-fold" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="m4 2 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" /></svg></span>${title}</summary>\n`
-          : `<div class="tn-custom-block ${name}"><p class="tn-custom-block-title">${title}</p>\n`
+          ? `<details class="tn-custom-block details"><summary><span class="tn-details-fold" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="m4 2 4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5" /></svg></span>${icon}<span class="tn-alert-label">${title}</span></summary>\n`
+          : `<div class="tn-custom-block ${name}"><p class="tn-custom-block-title">${icon}<span class="tn-alert-label">${title}</span></p>\n`
       }
     })
   }
@@ -158,6 +162,99 @@ function configureContainers(md: MarkdownIt) {
       return `<CodeGroup :items="${bindJson(items)}">\n`
     }
   })
+}
+
+/**
+ * 容器里再写 `:::` 不再解析成内层容器（与 Desk 一致），整段按源码露出。
+ * `code-group` 仍走自己的容器规则。
+ */
+function installPlainNestedContainers(md: MarkdownIt): void {
+  md.block.ruler.before(
+    'container_info',
+    'tn_plain_nested_container',
+    (state, startLine, endLine, silent) => {
+      if (state.parentType !== 'container') return false
+      if (state.sCount[startLine] - state.blkIndent >= 4) return false
+      const start = state.bMarks[startLine] + state.tShift[startLine]
+      const max = state.eMarks[startLine]
+      if (state.src.charCodeAt(start) !== 58) return false
+      let pos = start
+      while (pos < max && state.src.charCodeAt(pos) === 58) pos += 1
+      const markerCount = pos - start
+      if (markerCount < 3) return false
+      const params = state.src.slice(pos, max).trim()
+      const name = params.split(/\s+/)[0]?.toLowerCase() ?? ''
+      if (!name || name === 'code-group') return false
+      if (silent) return true
+
+      let nextLine = startLine
+      let closed = false
+      for (;;) {
+        nextLine += 1
+        if (nextLine >= endLine) break
+        if (state.sCount[nextLine] - state.blkIndent >= 4) continue
+        const lineStart = state.bMarks[nextLine] + state.tShift[nextLine]
+        const lineMax = state.eMarks[nextLine]
+        if (state.src.charCodeAt(lineStart) !== 58) continue
+        let endPos = lineStart
+        while (endPos < lineMax && state.src.charCodeAt(endPos) === 58) endPos += 1
+        if (endPos - lineStart < markerCount) continue
+        if (state.skipSpaces(endPos) < lineMax) continue
+        closed = true
+        break
+      }
+      const to = closed ? nextLine + 1 : endLine
+      const token = state.push('html_block', '', 0)
+      const raw = state.getLines(startLine, to, 0, false).replace(/\n$/, '')
+      token.content = `<pre class="tn-container-source">${escapeHtml(raw)}</pre>\n`
+      token.map = [startLine, to]
+      state.line = to
+      return true
+    }
+  )
+}
+
+function markTokensInsideContainers(md: MarkdownIt): void {
+  md.core.ruler.push('tn_mark_inside_container', (state) => {
+    let depth = 0
+    for (const token of state.tokens) {
+      if (token.type.startsWith('container_') && token.type.endsWith('_open')) {
+        depth += 1
+        continue
+      }
+      if (token.type.startsWith('container_') && token.type.endsWith('_close')) {
+        depth = Math.max(0, depth - 1)
+        continue
+      }
+      if (depth > 0) {
+        token.meta ??= {}
+        token.meta.tnInsideContainer = true
+      }
+    }
+    return true
+  })
+}
+
+const SPECIAL_FENCE = /^(mermaid|mindmap|mmd)$/i
+
+function fenceSourceText(token: { markup: string; info: string; content: string }): string {
+  const mark = token.markup || '```'
+  const info = token.info.trim()
+  const body = token.content.endsWith('\n') ? token.content : `${token.content}\n`
+  return `${mark}${info ? ` ${info}` : ''}\n${body}${mark}`
+}
+
+/** 容器内的 mermaid / mindmap 不挂特殊块，把围栏原文露出来。 */
+function configureContainerFenceSource(md: MarkdownIt): void {
+  const fence = md.renderer.rules.fence!.bind(md.renderer.rules)
+  md.renderer.rules.fence = (tokens, index, options, env, self) => {
+    const token = tokens[index]
+    const lang = token.info.trim().split(/\s+/)[0] ?? ''
+    if (token.meta?.tnInsideContainer && SPECIAL_FENCE.test(lang)) {
+      return `<pre class="tn-container-source">${escapeHtml(fenceSourceText(token))}</pre>\n`
+    }
+    return fence(tokens, index, options, env, self)
+  }
 }
 
 const SWIPER_OPEN = '<!--tn-swiper-open-->'
@@ -680,28 +777,57 @@ function markStandaloneImage(inline: {
 }
 
 /**
- * Source lines outside fenced code. A fence closes only on the same character
- * with at least the opening length and no info string, so ```` can wrap ```
- * examples whose `## …` lines must not become page headings.
+ * Source lines that count as the note outline. Fenced code and `:::` containers
+ * are opaque: a `##` inside either is layout or an example, not a page heading.
+ * A fence closes only on the same character with at least the opening length
+ * and no info string, so ```` can wrap ``` examples. A container closes on a
+ * colon-only line at least as long as the line that opened it. Fences inside
+ * a container do not close it.
  */
 function linesOutsideFences(raw: string): string[] {
   const kept: string[] = []
-  let open: { char: string; length: number } | null = null
+  let fence: { char: string; length: number } | null = null
+  const containers: number[] = []
+  let containerFence: string | null = null
   for (const line of raw.split(/\r?\n/)) {
-    const fence = /^\s*(`{3,}|~{3,})(.*)$/.exec(line)
-    if (open) {
+    const fenceMatch = /^\s*(`{3,}|~{3,})(.*)$/.exec(line)
+    if (fence) {
       if (
-        fence &&
-        fence[1][0] === open.char &&
-        fence[1].length >= open.length &&
-        !fence[2].trim()
+        fenceMatch &&
+        fenceMatch[1][0] === fence.char &&
+        fenceMatch[1].length >= fence.length &&
+        !fenceMatch[2].trim()
       ) {
-        open = null
+        fence = null
       }
       continue
     }
-    if (fence && !(fence[1][0] === '`' && fence[2].includes('`'))) {
-      open = { char: fence[1][0], length: fence[1].length }
+    if (containers.length > 0) {
+      if (containerFence) {
+        if (line.trimEnd().startsWith(containerFence) && line.trim().replace(/[`~]/g, '') === '') {
+          containerFence = null
+        }
+        continue
+      }
+      if (fenceMatch && !(fenceMatch[1][0] === '`' && fenceMatch[2].includes('`'))) {
+        containerFence = fenceMatch[1]
+        continue
+      }
+      const mark = /^( {0,3})(:{3,})[ \t]*(.*)$/.exec(line)
+      if (mark && !mark[3].trim() && mark[2].length >= containers[containers.length - 1]) {
+        containers.pop()
+      } else if (mark?.[3].trim()) {
+        containers.push(mark[2].length)
+      }
+      continue
+    }
+    if (fenceMatch && !(fenceMatch[1][0] === '`' && fenceMatch[2].includes('`'))) {
+      fence = { char: fenceMatch[1][0], length: fenceMatch[1].length }
+      continue
+    }
+    const containerOpen = /^( {0,3})(:{3,})[ \t]*(.*)$/.exec(line)
+    if (containerOpen?.[3].trim()) {
+      containers.push(containerOpen[2].length)
       continue
     }
     kept.push(line)
@@ -774,17 +900,21 @@ export async function createMarkdownCompiler(
   md.use(sfcPlugin)
   md.use(anchor, { slugify })
   md.use(emoji)
-  md.use(markdownItMark)
   md.use(markdownItTaskLists, { enabled: true, label: true })
   if (config.markdown.math) md.use(markdownItMathjax)
   configureContainers(md)
   configureSwiperContainer(md, config.base)
   configureFootprintsContainer(md, config.base)
+  installPlainNestedContainers(md)
+  markTokensInsideContainers(md)
   configureLinks(md, config.base, notes)
   configureImages(md, config.base, config.markdown.imageLazyLoading)
   configureCodeBlocks(md, config.markdown.lineNumbers)
   configureMermaidFence(md)
   configureMindmapFence(md)
+  configureContainerFenceSource(md)
+  // Before heading sections: their wrapper divs carry no source map.
+  useLineBreaks(md, config.markdown.lineBreaks)
   configureHeadingSections(md)
 
   return {

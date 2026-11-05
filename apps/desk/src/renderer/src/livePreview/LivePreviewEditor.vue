@@ -29,6 +29,9 @@ import {
 import { classHighlighter } from '@lezer/highlight'
 
 import NoteOutline from '../markdown/NoteOutline.vue'
+import ImageInsertPopover from './ImageInsertPopover.vue'
+import { insertItem } from '../markdown/insertCatalog'
+import { availableItems, insertHost, runInsertItem, slashCommand } from './slashCommand'
 import { resolveMarkdownImageUrl } from '../markdown/markdownAssetUrl'
 import { renumberHeadings, stripHeadingNumbers } from '../editor/markdown/headingNumbering'
 import { useEditorStore } from '../stores/editor'
@@ -52,7 +55,15 @@ import {
   wrapSelection as wrapSelectionCommand
 } from './commands'
 import {
+  calloutArrowDown,
+  calloutArrowRight,
+  calloutBackspace,
+  calloutDelete,
+  calloutEnter
+} from './calloutView'
+import {
   cardKnowledgeBase,
+  cardLineBreaks,
   codeGroupTabs,
   keepCursorOutOfHiddenCodeGroup,
   livePreviewField
@@ -84,7 +95,7 @@ import { externalSync, frontmatterIdGuard } from './frontmatterIdGuard'
 import { registerLiveEditor, unregisterLiveEditor } from './editorRegistry'
 
 import type { EditorSelectionAnchor, EditorSelectionPayload } from '../selection/selectionReporter'
-import type { NotePageWidth, NoteViewMode } from '../../../shared/contracts'
+import type { LineBreakMode, NotePageWidth, NoteViewMode } from '../../../shared/contracts'
 
 import { DESK_SELECT_ALL_EVENT } from './events'
 
@@ -104,8 +115,19 @@ const props = withDefaults(
     outlineVisible?: boolean
     /** 插在正文滚动区域顶部的标题容器，和正文一起滚动 */
     documentHead?: HTMLElement | null
+    /** 宿主不支持插入的块（README 没有画布） */
+    excludeBlocks?: readonly string[]
+    /** 知识库的换行渲染方式；卡片里的 markdown 与站点同规则 */
+    lineBreaks?: LineBreakMode
   }>(),
-  { pageWidth: 'standard', outlineVisible: true, noteRelPath: '', documentHead: null }
+  {
+    pageWidth: 'standard',
+    outlineVisible: true,
+    noteRelPath: '',
+    documentHead: null,
+    excludeBlocks: () => [],
+    lineBreaks: 'commonmark'
+  }
 )
 
 const editorStore = useEditorStore()
@@ -119,9 +141,14 @@ const emit = defineEmits<{
   selectionChange: [payload: EditorSelectionPayload]
   pinSelection: []
   headingLevelChange: [level: number | null]
+  insertCanvas: []
 }>()
 
 const host = ref<HTMLElement | null>(null)
+const imageInsert = ref<{
+  pos: number
+  anchor: { left: number; top: number; bottom: number }
+} | null>(null)
 const headings = ref<OutlineHeading[]>([])
 const activeHeadingId = ref<string | null>(null)
 
@@ -186,8 +213,50 @@ function contextExtensions(): Extension[] {
       writeAsset
     }),
     cardKnowledgeBase.of(props.knowledgeBaseId),
-    agentReviewNote.of({ knowledgeBaseId: props.knowledgeBaseId, noteUuid: props.noteUuid })
+    cardLineBreaks.of(props.lineBreaks),
+    agentReviewNote.of({ knowledgeBaseId: props.knowledgeBaseId, noteUuid: props.noteUuid }),
+    insertHost.of({
+      exclude: props.excludeBlocks,
+      pickImage: (_view, pos) => openImageInsert(pos),
+      insertCanvas: () => emit('insertCanvas')
+    })
   ]
+}
+
+function openImageInsert(pos: number): void {
+  if (!view) return
+  const coords = view.coordsAtPos(pos)
+  const content = view.contentDOM.getBoundingClientRect()
+  imageInsert.value = {
+    pos,
+    anchor: coords
+      ? { left: coords.left, top: coords.top, bottom: coords.bottom }
+      : { left: content.left, top: content.top, bottom: content.top }
+  }
+}
+
+function closeImageInsert(): void {
+  imageInsert.value = null
+  view?.focus()
+}
+
+function insertPickedImage(file: File): void {
+  const pos = imageInsert.value?.pos
+  closeImageInsert()
+  if (pos != null) emit('pasteImage', file, pos)
+}
+
+function insertImageLink(url: string): void {
+  const pos = imageInsert.value?.pos
+  closeImageInsert()
+  if (!view || pos == null || view.state.readOnly) return
+  const at = Math.min(pos, view.state.doc.length)
+  const markdown = `![](${url})`
+  view.dispatch({
+    changes: { from: at, insert: markdown },
+    selection: { anchor: at + markdown.length },
+    userEvent: 'input.paste'
+  })
 }
 
 function openHref(href: string): void {
@@ -319,6 +388,7 @@ function createState(doc: string): EditorState {
       keepCursorOnVisibleLine,
       codeFolding({ placeholderText: '…' }),
       livePreviewField,
+      slashCommand,
       findExtension(),
       highlightSelectionMatches(),
       placeholder('开始写作…'),
@@ -342,21 +412,25 @@ function createState(doc: string): EditorState {
         })
       ),
       keymap.of([
+        { key: 'Enter', run: calloutEnter },
         { key: 'Enter', run: continueMarkup },
         { key: 'Enter', run: insertNewlineAndIndent },
+        { key: 'Backspace', run: calloutBackspace },
         { key: 'Backspace', run: headingBackspace },
+        { key: 'Delete', run: calloutDelete },
         { key: 'Backspace', run: deleteMarkup },
         { key: 'Tab', run: tabCommand },
         { key: 'Shift-Tab', run: shiftTabCommand },
+        { key: 'ArrowDown', run: calloutArrowDown },
         { key: 'ArrowDown', run: arrowDownIntoBlock },
         { key: 'ArrowUp', run: arrowUpIntoBlock },
         { key: 'ArrowLeft', run: arrowLeftToVisible },
+        { key: 'ArrowRight', run: calloutArrowRight },
         { key: 'ArrowRight', run: arrowRightToVisible },
         { key: 'Mod-b', run: (v) => (wrapSelectionCommand(v, '**', '**'), true) },
         { key: 'Mod-i', run: (v) => (wrapSelectionCommand(v, '*', '*'), true) },
         { key: 'Mod-e', run: (v) => (wrapSelectionCommand(v, '`', '`', '代码'), true) },
         { key: 'Mod-Shift-x', run: (v) => (wrapSelectionCommand(v, '~~', '~~'), true) },
-        { key: 'Mod-Shift-h', run: (v) => (wrapSelectionCommand(v, '==', '=='), true) },
         {
           key: 'Mod-Shift-k',
           run: (v) => (wrapSelectionCommand(v, '[', '](https://)', '链接'), true)
@@ -566,6 +640,12 @@ defineExpose({
   setLinePrefix: (prefix: string) => withView((v) => setLinePrefixCommand(v, prefix)),
   insertTable: () => withView((v) => insertText(v, '\n|  |  |\n| --- | --- |\n|  |  |\n')),
   containerAtCursor: () => (view ? containerAtCursor(view.state) : null),
+  /** 工具栏「插入」菜单此刻能插的块 */
+  availableBlocks: () => (view ? availableItems(view.state, 'toolbar') : []),
+  insertBlock: (id: string) => {
+    const item = insertItem(id)
+    if (view && item) runInsertItem(view, item)
+  },
   addHeadingNumbers: (maxDepth: number) =>
     withView((v) => {
       const result = renumberHeadings(v.state.doc.toString(), maxDepth)
@@ -629,7 +709,13 @@ watch(
 )
 
 watch(
-  () => [props.knowledgeBaseId, props.noteUuid, props.noteRelPath],
+  () => [
+    props.knowledgeBaseId,
+    props.noteUuid,
+    props.noteRelPath,
+    props.excludeBlocks,
+    props.lineBreaks
+  ],
   () => view?.dispatch({ effects: contextCompartment.reconfigure(contextExtensions()) })
 )
 
@@ -653,6 +739,13 @@ watch(
       :headings="headings"
       :active-id="activeHeadingId"
       @select="scrollToHeading"
+    />
+    <ImageInsertPopover
+      v-if="imageInsert"
+      :anchor="imageInsert.anchor"
+      @file="insertPickedImage"
+      @link="insertImageLink"
+      @close="closeImageInsert"
     />
   </div>
 </template>

@@ -7,6 +7,8 @@ import {
 } from '@codemirror/language'
 import { EditorView, WidgetType } from '@codemirror/view'
 
+import { calloutLayout } from './calloutLayout'
+
 import {
   EditorSelection,
   EditorState,
@@ -30,11 +32,15 @@ interface HeadingSection {
 export function headingSections(state: EditorState): HeadingSection[] {
   const doc = state.doc
   const headings: Array<{ level: number; from: number }> = []
+  const callouts = calloutLayout(state).blocks
   const cursor = syntaxTree(state).cursor()
   if (cursor.firstChild()) {
     do {
       const match = /^ATXHeading([1-6])$/.exec(cursor.name)
-      if (match) headings.push({ level: Number(match[1]), from: cursor.from })
+      const pos = cursor.from
+      // 提示块里的标题不进目录，也不分节折叠
+      if (match && !callouts.some((block) => pos > block.open.to && pos <= block.end))
+        headings.push({ level: Number(match[1]), from: pos })
     } while (cursor.nextSibling())
   }
   return headings.map((heading, index) => {

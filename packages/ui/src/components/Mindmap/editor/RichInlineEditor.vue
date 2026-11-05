@@ -63,7 +63,7 @@ function renderInlineDom() {
   for (const segment of parseInlineSegments(draftRaw.value, inlineOptions())) {
     const run = document.createElement('span')
     run.className = 'inline-run'
-    for (const format of ['bold', 'italic', 'underline', 'strike', 'highlight', 'code'] as const) {
+    for (const format of ['bold', 'italic', 'underline', 'strike', 'code'] as const) {
       if (segment.marks[format]) run.classList.add(format)
     }
     if (segment.link) {
@@ -451,11 +451,6 @@ onBeforeUnmount(emitCommit)
 }
 .rich-inline-editor :deep(.inline-run.underline.strike) {
   text-decoration-line: underline line-through;
-}
-.rich-inline-editor :deep(.inline-run.highlight:not(.code)) {
-  padding: 0 1px;
-  border-radius: 2px;
-  background: var(--tn-c-mark-bg, rgba(255, 221, 0, 0.45));
 }
 .rich-inline-editor :deep(.inline-run.code) {
   padding: 0 4px;

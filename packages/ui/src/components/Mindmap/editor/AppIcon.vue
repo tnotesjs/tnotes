@@ -66,9 +66,6 @@ defineProps<{ name: string; size?: number }>()
       <circle cx="9" cy="9" r="2" />
       <path d="m4 17 5-5 3 3 2-2 6 6" />
     </template>
-    <template v-else-if="name === 'highlight'">
-      <path d="m14.5 4.5 5 5-8.2 8.2-5.6.6.6-5.6zM12.5 6.5l5 5M4 21h16" />
-    </template>
     <template v-else-if="name === 'link'">
       <path
         d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.2 1.2M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.2-1.2"

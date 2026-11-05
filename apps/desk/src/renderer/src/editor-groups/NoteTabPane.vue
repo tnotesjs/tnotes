@@ -73,7 +73,10 @@ interface MarkdownEditorHandle {
   /** 侧栏改 description 时走编辑器事务，保留撤销栈 */
   getView?: () => {
     state: { doc: { toString(): string; length: number } }
-    dispatch(tr: { changes: { from: number; to: number; insert: string } }): void
+    dispatch(tr: {
+      changes: { from: number; to: number; insert: string }
+      scrollIntoView?: boolean
+    }): void
   } | null
 }
 
@@ -112,6 +115,11 @@ const headingNumberMaxDepth = computed(
     workspace.settings?.headingNumberMaxDepth ??
     HEADING_NUMBER_DEFAULT_MAX_DEPTH
 )
+const lineBreaks = computed(
+  () =>
+    workspace.overview.allKnowledgeBases.find((kb) => kb.id === props.tab.knowledgeBaseId)
+      ?.lineBreaks ?? 'commonmark'
+)
 /** 侧边属性栏开关：复用 tab.noteAssetsVisible（目录右键「本笔记资源」也会打开） */
 const propertiesOpen = computed(() => {
   const located = findTab(editor.layout, props.tab.id)
@@ -148,20 +156,54 @@ watch(
 const frontmatterFields = computed(() => readFrontmatterFields(session.value?.content ?? ''))
 const descriptionDraft = ref('')
 const descriptionFocused = ref(false)
+const descriptionEl = ref<HTMLTextAreaElement | null>(null)
+/** 最近一次已经交给编辑器的描述。文档若变成别的值，输入框要改跟源码。 */
+let lastCommittedDescription = ''
+let descriptionCommitQueued = false
 /** 侧栏页签：打开时默认「设置」 */
 const sideTab = ref<'settings' | 'assets'>('settings')
+
+function mirrorDescription(value: string): void {
+  descriptionDraft.value = value
+  lastCommittedDescription = value
+  const field = descriptionEl.value
+  if (!field || field.value === value) return
+  field.value = value
+}
 
 watch(
   () => frontmatterFields.value.description,
   (value) => {
-    if (!descriptionFocused.value) descriptionDraft.value = value
+    const field = descriptionEl.value
+    const editing = descriptionFocused.value || (field != null && document.activeElement === field)
+    // 这一轮按键还没写进文档时，不要用旧描述盖住输入框。
+    // 文档里的描述已经和刚提交的草稿不同，说明保存或外部同步改过，输入框要跟着源码走。
+    if (
+      editing &&
+      (descriptionCommitQueued || descriptionDraft.value !== lastCommittedDescription)
+    ) {
+      return
+    }
+    mirrorDescription(value)
+  },
+  { immediate: true }
+)
+
+watch(
+  propertiesOpen,
+  (open) => {
+    if (!open) return
+    void nextTick(() => {
+      if (descriptionFocused.value || descriptionCommitQueued) return
+      mirrorDescription(frontmatterFields.value.description)
+    })
   },
   { immediate: true }
 )
 
 watch(key, () => {
   descriptionFocused.value = false
-  descriptionDraft.value = readFrontmatterFields(session.value?.content ?? '').description
+  mirrorDescription(readFrontmatterFields(session.value?.content ?? '').description)
   sideTab.value = 'settings'
 })
 
@@ -511,10 +553,45 @@ function closeProperties(): void {
   editor.setNoteAssetsVisible(props.tab.id, false)
 }
 
-function onDescriptionInput(): void {
-  const single = descriptionDraft.value.replace(/[\r\n]+/g, ' ')
-  if (single !== descriptionDraft.value) descriptionDraft.value = single
+function descriptionValue(target: EventTarget | null): string {
+  const raw = target instanceof HTMLTextAreaElement ? target.value : descriptionDraft.value
+  return raw.replace(/[\r\n]+/g, ' ')
+}
+
+function onDescriptionFocus(): void {
+  descriptionFocused.value = true
+}
+
+function scheduleDescriptionCommit(): void {
+  if (descriptionCommitQueued) return
+  descriptionCommitQueued = true
+  queueMicrotask(() => {
+    descriptionCommitQueued = false
+    commitDescription()
+  })
+}
+
+function onDescriptionInput(event: Event): void {
+  const single = descriptionValue(event.target)
+  if (event.target instanceof HTMLTextAreaElement && event.target.value !== single) {
+    event.target.value = single
+  }
+  descriptionDraft.value = single
+  descriptionFocused.value = true
+  // 每个字母都立刻改文档时，文档回写会赶在下一个字母之前把输入框盖掉。
+  // 同一帧里的按键合成一次再写入。
+  scheduleDescriptionCommit()
+}
+
+function onDescriptionBlur(event: FocusEvent): void {
+  descriptionCommitQueued = false
+  descriptionDraft.value = descriptionValue(event.target)
   commitDescription()
+  void nextTick(() => {
+    if (descriptionEl.value && document.activeElement === descriptionEl.value) return
+    descriptionFocused.value = false
+    mirrorDescription(frontmatterFields.value.description)
+  })
 }
 
 /** 侧栏改摘要：只替换 frontmatter 里 description 那一行，经编辑器事务写入 */
@@ -523,10 +600,15 @@ function commitDescription(): void {
   const view = markdownEditor.value?.getView?.()
   const current = view?.state.doc.toString() ?? session.value?.content ?? ''
   const change = frontmatterDescriptionChange(current, descriptionDraft.value)
+  lastCommittedDescription = descriptionDraft.value
   if (!change) return
   if (view) {
-    view.dispatch({ changes: change })
-    if (view.state.doc.toString() === current) {
+    const field = descriptionEl.value
+    const keepFocus = document.activeElement === field
+    view.dispatch({ changes: change, scrollIntoView: false })
+    if (keepFocus && field && document.activeElement !== field) field.focus({ preventScroll: true })
+    const after = view.state.doc.toString()
+    if (after === current) {
       workspace.error = '描述未能写入 frontmatter，请在源码中手动添加'
     }
     return
@@ -672,6 +754,7 @@ function openLink(url: string): void {
           :read-only="session.document.readOnly"
           :knowledge-base-id="tab.knowledgeBaseId"
           :note-uuid="tab.noteUuid"
+          :line-breaks="lineBreaks"
           :note-rel-path="session.document.relPath"
           :active="active"
           :page-width="tab.pageWidth"
@@ -680,6 +763,7 @@ function openLink(url: string): void {
           @open-link="openLink"
           @open-note="workspace.openNoteByUuid(tab.knowledgeBaseId, $event)"
           @paste-image="pasteImage"
+          @insert-canvas="insertCanvas"
           @heading-level-change="headingLevel = $event"
           @selection-change="handleEditorSelection"
         />
@@ -729,13 +813,13 @@ function openLink(url: string): void {
             <label class="properties-label" for="note-description-input">描述</label>
             <textarea
               id="note-description-input"
-              v-model="descriptionDraft"
+              ref="descriptionEl"
               class="properties-description"
               rows="1"
               :disabled="session.document.readOnly"
               placeholder="描述信息"
-              @focus="descriptionFocused = true"
-              @blur="descriptionFocused = false"
+              @focus="onDescriptionFocus"
+              @blur="onDescriptionBlur"
               @keydown.enter.prevent
               @input="onDescriptionInput"
             />

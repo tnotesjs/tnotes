@@ -17,6 +17,8 @@ export type BlockSpec = {
   allowParents?: readonly string[]
 }
 
+const CALLOUT_TYPES = ['tip', 'info', 'warning', 'danger', 'details'] as const
+
 /** 未出现在此表中的块 → nest: 'ordinary' */
 export const BLOCK_SPECS: readonly BlockSpec[] = [
   { type: 'tip', nest: 'container' },
@@ -25,9 +27,9 @@ export const BLOCK_SPECS: readonly BlockSpec[] = [
   { type: 'danger', nest: 'container' },
   { type: 'details', nest: 'container' },
 
-  // 代码组的内容就是代码块
-  { type: 'code', nest: 'topLevel', allowParents: ['code-group'] },
-  { type: 'code-group', nest: 'topLevel' },
+  // 代码组的内容就是代码块；提示块里允许代码块和代码组（与静态站一致）
+  { type: 'code', nest: 'topLevel', allowParents: ['code-group', ...CALLOUT_TYPES] },
+  { type: 'code-group', nest: 'topLevel', allowParents: CALLOUT_TYPES },
   { type: 'mermaid', nest: 'topLevel' },
   { type: 'mindmap', nest: 'topLevel' },
   { type: 'excalidraw', nest: 'topLevel', allowParents: ['swiper'] },
@@ -51,7 +53,9 @@ export function canNest(parentType: string | null, childType: string): boolean {
   if (parentType == null) return true
   const child = specOf(childType)
   const childNest = child?.nest ?? 'ordinary'
-  if (nestOf(parentType) === 'container') return childNest === 'ordinary'
+  if (nestOf(parentType) === 'container') {
+    return childNest === 'ordinary' || (child?.allowParents?.includes(parentType) ?? false)
+  }
   if (childNest === 'topLevel' || childNest === 'container') {
     return child?.allowParents?.includes(parentType) ?? false
   }

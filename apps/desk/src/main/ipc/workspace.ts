@@ -53,7 +53,10 @@ export function registerWorkspace(getWindow: GetWindow): () => void {
         kind: z.literal('image'),
         align: z.enum(['left', 'center', 'right']),
         hasWidth: z.boolean(),
-        editable: z.boolean()
+        editable: z.boolean(),
+        remote: z.boolean().optional(),
+        local: z.boolean().optional(),
+        copyable: z.boolean().optional()
       })
     ]),
     (request) => {

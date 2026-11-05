@@ -1,0 +1,101 @@
+/* 插入块列表：斜杠菜单与工具栏「插入」菜单共用 */
+.tn-block-picker {
+  position: relative;
+  box-sizing: border-box;
+  width: 264px;
+  max-height: 336px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  color: var(--tn-c-text);
+  font: 13px/1.4 var(--tn-font-sans);
+  scrollbar-width: thin;
+}
+
+.tn-block-picker-group {
+  padding: 8px 8px 4px;
+  color: var(--tn-c-text-2);
+  font-size: 12px;
+  user-select: none;
+}
+
+.tn-block-picker-group:first-child {
+  padding-top: 4px;
+}
+
+.tn-block-picker-item {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 8px 0 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tn-block-picker-item.is-selected {
+  background: var(--tn-c-hover);
+}
+
+.tn-block-picker-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 6px;
+  background: var(--tn-c-bg);
+  color: var(--tn-c-text-2);
+}
+
+.tn-block-picker-icon svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.tn-block-picker-item.is-selected .tn-block-picker-icon {
+  border-color: var(--tn-c-divider-strong);
+  color: var(--tn-c-text);
+}
+
+.tn-block-picker-item[data-tone] .tn-block-picker-icon {
+  color: var(--tn-pick-tone);
+  border-color: color-mix(in srgb, var(--tn-pick-tone) 35%, transparent);
+  background: color-mix(in srgb, var(--tn-pick-tone) 10%, var(--tn-c-bg));
+}
+
+.tn-block-picker-item[data-tone='tip'] {
+  --tn-pick-tone: var(--tn-c-success);
+}
+.tn-block-picker-item[data-tone='info'] {
+  --tn-pick-tone: var(--tn-c-link);
+}
+.tn-block-picker-item[data-tone='warning'] {
+  --tn-pick-tone: var(--tn-c-warning);
+}
+.tn-block-picker-item[data-tone='danger'] {
+  --tn-pick-tone: var(--tn-c-danger);
+}
+.tn-block-picker-item[data-tone='details'] {
+  --tn-pick-tone: var(--tn-c-text-2);
+}
+
+.tn-block-picker-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tn-block-picker-alias {
+  color: var(--tn-c-text-2);
+  font: 11px var(--tn-font-mono);
+  opacity: 0.75;
+}
+
+.tn-block-picker-empty {
+  padding: 10px 10px;
+  color: var(--tn-c-text-2);
+}

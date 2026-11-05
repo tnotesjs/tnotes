@@ -297,7 +297,14 @@ export const knowledgeBaseSettingsWriteSchema = z.object({
   rootUrl: z.string().max(2048).optional(),
   port: z.number().int().min(1).max(65535),
   pageUrl: z.string().max(2048).optional(),
-  statsEnabled: z.boolean()
+  statsEnabled: z.boolean(),
+  autoPush: z
+    .object({ enabled: z.boolean(), idleMinutes: z.number().int().min(1) })
+    .nullable()
+    .optional(),
+  pushRunUpdateBefore: z.boolean().nullable().optional(),
+  headingNumberMaxDepth: z.number().int().min(1).max(6).nullable().optional(),
+  lineBreaks: z.enum(['commonmark', 'visual']).optional()
 })
 
 export const knowledgeBaseIconWriteSchema = z.discriminatedUnion('kind', [

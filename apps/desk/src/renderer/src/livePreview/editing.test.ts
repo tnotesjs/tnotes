@@ -26,6 +26,8 @@ import { codeBlockFullscreenClass } from './codeBlockChrome'
 import { matchDeskLanguage } from '../editor/markdown/codeMirrorLanguages'
 import { headingFoldService } from './headingFold'
 import { livePreviewEnabled } from './host'
+import { codeBlockFullscreenClass, toggleCodeFullscreen } from './codeBlockChrome'
+import { closeImageSizePopover } from './imageResize'
 import { sourceChrome } from './sourceChrome'
 import { CHECK_ICON, COPY_ICON } from '../markdown/copyIcons'
 import { flashCopied, iconButton } from './widgets'
@@ -54,6 +56,48 @@ function mount(doc: string, cursor: number): EditorView {
 }
 
 describe('live preview editing', () => {
+  it('renders mindmap and swiper cards outside code lines, so fullscreen must hide them directly', () => {
+    const doc = [
+      '::: tip',
+      '',
+      '提示',
+      '',
+      ':::',
+      '',
+      '```md',
+      '::: swiper',
+      '![1](a.png)',
+      ':::',
+      '```',
+      '',
+      '::: swiper',
+      '',
+      '![1](a.png)',
+      '',
+      ':::',
+      ''
+    ].join('\n')
+    const parent = document.createElement('div')
+    document.body.append(parent)
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc,
+        selection: EditorSelection.cursor(0),
+        extensions: [tnotesMarkdown(), codeGroupTabs, livePreviewField, codeBlockFullscreenClass]
+      })
+    })
+    view.dispatch({ effects: setFocused.of(true) })
+    views.push(view)
+    view.dispatch({ effects: toggleCodeFullscreen.of(doc.indexOf('```md')) })
+    const content = view.dom.querySelector('.cm-content')
+    const card = content?.querySelector(':scope > .cm-lp-card')
+    expect(view.dom.classList.contains('cm-lp-code-fs')).toBe(true)
+    expect(card).not.toBeNull()
+    expect(card?.classList.contains('cm-line')).toBe(false)
+    expect(card?.closest('.cm-line')).toBeNull()
+  })
+
   it('continues a bullet and an ordered item, and renumbers the ordered list', () => {
     const view = mount('- 苹果\n', 4)
     expect(continueMarkup(view)).toBe(true)
@@ -147,13 +191,26 @@ describe('live preview editing', () => {
     expect(card?.innerHTML ?? '').not.toContain('$1\\times2=2$')
   })
 
-  it('keeps an image inside a callout card', () => {
+  it('leaves an unknown ::: note block as source instead of a card', () => {
+    const doc = ['前文', '', '::: note', '', '123', '', ':::', ''].join('\n')
+    const view = mount(doc, 0)
+    expect(view.dom.querySelector('.cm-lp-card')).toBeNull()
+    expect(view.dom.querySelector('.tn-custom-block')).toBeNull()
+    expect(view.contentDOM.textContent).toContain('::: note')
+    expect(view.contentDOM.textContent).toContain('123')
+
+    view.dispatch({ selection: EditorSelection.cursor(doc.indexOf('123')) })
+    expect(view.dom.querySelector('.cm-lp-card')).toBeNull()
+    expect(view.contentDOM.textContent).toContain('::: note')
+  })
+
+  it('renders a callout in place: header widget, body as normal lines, hidden close fence', () => {
     const doc = [
       '前文。',
       '',
       '::: warning 注意',
       '',
-      '说明',
+      '说明 **加粗**',
       '',
       '![图](https://example.com/wide.png)',
       '',
@@ -161,14 +218,23 @@ describe('live preview editing', () => {
       ''
     ].join('\n')
     const view = mount(doc, 0)
-    const block = view.dom.querySelector('.tn-custom-block.warning')
-    const image = block?.querySelector('img')
-    expect(block).not.toBeNull()
-    expect(image?.getAttribute('src')).toBe('https://example.com/wide.png')
-    expect(image?.closest('.tn-custom-block')).toBe(block)
+    expect(view.dom.querySelector('.cm-lp-card')).toBeNull()
+    const header = view.dom.querySelector('.cm-lp-callout-header.tn-alert-warning')
+    expect(header?.querySelector<HTMLInputElement>('.tn-alert-title-input')?.value).toBe('注意')
+    const lines = Array.from(view.dom.querySelectorAll('.cm-line.cm-lp-callout-warning'))
+    expect(lines.some((line) => line.textContent?.includes('说明'))).toBe(true)
+    expect(view.contentDOM.textContent).not.toContain(':::')
+    expect(view.contentDOM.textContent).not.toContain('**')
+    expect(view.dom.querySelector('.cm-lp-image img')?.getAttribute('src')).toBe(
+      'https://example.com/wide.png'
+    )
+
+    // 光标进到正文里也不露出开启行 / 结束行
+    view.dispatch({ selection: EditorSelection.cursor(doc.indexOf('说明')) })
+    expect(view.contentDOM.textContent).not.toContain(':::')
   })
 
-  it('applies an image width attr inside a callout card', () => {
+  it('applies an image width attr inside a callout like body images', () => {
     const doc = [
       '前文。',
       '',
@@ -180,15 +246,11 @@ describe('live preview editing', () => {
       ''
     ].join('\n')
     const view = mount(doc, 0)
-    const block = view.dom.querySelector('.tn-custom-block.tip')
-    const image = block?.querySelector('img')
+    const image = view.dom.querySelector('.cm-lp-image img')
     expect(image?.getAttribute('src')).toBe('https://example.com/a.webp')
-    // 宽度与正文 / 表格图一致落在 .cm-lp-image-frame 上（img 自身铺满外框），并带「⋯」与拖拽把手
     const frame = image?.closest<HTMLElement>('.cm-lp-image-frame')
     expect(frame?.style.width).toBe('596px')
-    expect(frame?.querySelector('.cm-lp-image-more')).not.toBeNull()
-    expect(frame?.querySelector('.cm-lp-image-handle')).not.toBeNull()
-    expect(block?.textContent ?? '').not.toContain('w=596')
+    expect(view.contentDOM.textContent ?? '').not.toContain('w=596')
   })
 
   it('toggles a task marker from either side of the checkbox syntax', () => {
@@ -529,6 +591,122 @@ describe('live preview editing', () => {
       .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
     expect(revealed.state.selection.main.head).toBe(before)
     expect(revealed.state.selection.main.empty).toBe(true)
+  })
+
+  it('writes a size preset into the image markdown', async () => {
+    const showContextMenu = vi.fn(async () => ({ ok: true, value: 'image-resize' as const }))
+    vi.stubGlobal('desk', { app: { showContextMenu } })
+    const chooseHalf = async (view: EditorView): Promise<void> => {
+      const img = view.dom.querySelector('img')!
+      Object.defineProperty(img, 'naturalWidth', { configurable: true, value: 800 })
+      Object.defineProperty(img, 'naturalHeight', { configurable: true, value: 400 })
+      const more = view.dom.querySelector<HTMLButtonElement>('.cm-lp-image-more')!
+      more.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      more.click()
+      await Promise.resolve()
+      const half = [...document.querySelectorAll('button')].find(
+        (button) => button.textContent === '50%'
+      )
+      half?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      half?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }))
+      half?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    }
+
+    const hidden = mount('前文\n\n![图](https://example.com/a.png)\n', 0)
+    await chooseHalf(hidden)
+    expect(hidden.state.doc.toString()).toContain('{w=400px}')
+    const threeQuarters = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent === '75%'
+    )
+    threeQuarters?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    expect(hidden.state.doc.toString()).toContain('{w=600px}')
+    closeImageSizePopover()
+
+    const doc = '前文\n\n![图](https://example.com/a.png)\n'
+    const revealed = mount(doc, doc.indexOf('https'))
+    const more = revealed.dom.querySelector<HTMLButtonElement>('.cm-lp-image-more')!
+    const img = more.closest('.cm-lp-image-frame')!.querySelector('img')!
+    Object.defineProperty(img, 'naturalWidth', { configurable: true, value: 800 })
+    Object.defineProperty(img, 'naturalHeight', { configurable: true, value: 400 })
+    const figure = more.closest('.cm-lp-image')!
+    more.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    more.click()
+    await Promise.resolve()
+    const preset = (label: string): HTMLButtonElement => {
+      const button = [...document.querySelectorAll('button')].find(
+        (item) => item.textContent === label
+      )
+      if (!(button instanceof HTMLButtonElement)) throw new Error(`missing ${label}`)
+      return button
+    }
+    preset('50%').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    expect(revealed.state.doc.toString()).toContain('{w=400px}')
+    figure.remove()
+    preset('25%').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    expect(revealed.state.doc.toString()).toContain('{w=200px}')
+  })
+
+  it('applies a later size preset after the swiper card is rebuilt', async () => {
+    const doc = '前文\n\n::: swiper\n\n![1](https://example.com/a.png)\n\n:::\n'
+    const view = mount(doc, 0)
+    const showContextMenu = vi.fn(async () => ({ ok: true, value: 'image-resize' as const }))
+    vi.stubGlobal('desk', { app: { showContextMenu } })
+    const img = view.dom.querySelector<HTMLImageElement>('.tn-swiper img')!
+    Object.defineProperty(img, 'naturalWidth', { configurable: true, value: 800 })
+    Object.defineProperty(img, 'naturalHeight', { configurable: true, value: 400 })
+    const more = view.dom.querySelector<HTMLButtonElement>('.tn-swiper .cm-lp-image-more')!
+    more.click()
+    await Promise.resolve()
+    const preset = (label: string): HTMLButtonElement => {
+      const button = [...document.querySelectorAll('button')].find(
+        (item) => item.textContent === label
+      )
+      if (!(button instanceof HTMLButtonElement)) throw new Error(`missing ${label}`)
+      return button
+    }
+    preset('50%').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    expect(view.state.doc.toString()).toContain('{w=400px}')
+    preset('75%').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    expect(view.state.doc.toString()).toContain('{w=600px}')
+    closeImageSizePopover()
+  })
+
+  it('stays on the swiper slide that was resized', async () => {
+    const doc = [
+      '前文',
+      '',
+      '::: swiper',
+      '',
+      '![1](https://example.com/1.png)',
+      '',
+      '![2](https://example.com/2.png)',
+      '',
+      '![4](https://example.com/4.png)',
+      '',
+      ':::',
+      ''
+    ].join('\n')
+    const view = mount(doc, 0)
+    const showContextMenu = vi.fn(async () => ({ ok: true, value: 'image-resize' as const }))
+    vi.stubGlobal('desk', { app: { showContextMenu } })
+    const tab = [...view.dom.querySelectorAll('button')].find(
+      (button) => button.textContent === '4'
+    )
+    tab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    const img = view.dom.querySelector<HTMLImageElement>('.swiper-slide.is-active img')!
+    Object.defineProperty(img, 'naturalWidth', { configurable: true, value: 800 })
+    Object.defineProperty(img, 'naturalHeight', { configurable: true, value: 400 })
+    view.dom.querySelector<HTMLButtonElement>('.swiper-slide.is-active .cm-lp-image-more')!.click()
+    await Promise.resolve()
+    const half = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent === '50%'
+    )
+    half?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    const active = view.dom.querySelector<HTMLElement>('.swiper-slide.is-active')
+    expect(view.state.doc.toString()).toContain('![4](https://example.com/4.png) {w=400px}')
+    expect(active?.dataset.title).toBe('4')
+    expect(view.dom.querySelector<HTMLElement>('.swiper-slide')?.hidden).toBe(true)
+    closeImageSizePopover()
   })
 
   it('does not select the alt when the click is on an image toolbar button', () => {

@@ -4,11 +4,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { SHARED_CODE_GROUP_CONTRACT } from '@tnotesjs/ui/code'
 import {
+  isKnownContainerName,
   isStructuredCalloutSource,
   parseContainerSource,
   preservedContainerSource,
   rebuildContainerSource,
-  renderContainerFromSource
+  renderContainerFromSource,
+  destroyContainerPreview
 } from './containerBody'
 
 describe('parseContainerSource', () => {
@@ -65,15 +67,48 @@ describe('renderContainerFromSource', () => {
     expect(el.getAttribute('data-type')).toBeNull()
   })
 
+  it('strikes through checked task text inside a callout, not the checkbox', () => {
+    const el = renderContainerFromSource('::: tip\n\n- [x] 已完成\n- [ ] 未完成\n\n:::')
+    const done = el.querySelector('.cm-lp-task-done')
+    expect(done?.textContent).toContain('已完成')
+    expect(done?.querySelector('input')).toBeNull()
+    expect(done?.previousElementSibling).toHaveProperty('checked', true)
+    const open = [...el.querySelectorAll('.task-list-item')].find((item) =>
+      item.textContent?.includes('未完成')
+    )
+    expect(open?.querySelector('.cm-lp-task-done')).toBeNull()
+  })
+
   it('renders callouts with class and default title', () => {
     const warning = renderContainerFromSource('::: warning\ncareful\n:::')
     expect(warning.className).toBe('tn-custom-block warning')
-    expect(warning.querySelector('.tn-custom-block-title')?.textContent).toBe('WARNING')
+    expect(warning.querySelector('.tn-alert-label')?.textContent).toBe('警告')
   })
 
-  it('no longer treats ::: note as a callout', () => {
-    const note = renderContainerFromSource('::: note\n正文\n:::')
-    expect(note.querySelector('.tn-custom-block-title')).toBeNull()
+  it('renders callout bodies with the kb line-break mode', () => {
+    const source = '::: tip\n甲\n乙\n\n\n丙\n:::'
+    const plain = renderContainerFromSource(source)
+    expect(plain.querySelector('br')).toBeNull()
+    expect(plain.querySelector('.tn-blank-line')).toBeNull()
+
+    const visual = renderContainerFromSource(
+      source,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'visual'
+    )
+    expect(visual.innerHTML).toMatch(/甲<br>\s*乙/)
+    expect(visual.querySelectorAll('.tn-blank-line')).toHaveLength(1)
+  })
+
+  it('does not treat note as a known container', () => {
+    expect(isKnownContainerName('note')).toBe(false)
+    expect(isKnownContainerName('tip')).toBe(true)
+    expect(isKnownContainerName('code-group')).toBe(true)
   })
 
   it('applies {w=} on an image inside a callout and drops the attr text', () => {
@@ -207,6 +242,8 @@ describe('renderContainerFromSource', () => {
         }
       )
       expect(el.querySelector('.tn-swiper-image-toolbar')).toBeNull()
+      expect(el.querySelector('.tn-swiper-resize')).toBeNull()
+      expect(el.querySelectorAll('.cm-lp-image-handle')).toHaveLength(4)
       const more = el.querySelector<HTMLButtonElement>('.tn-swiper-frame .cm-lp-image-more')!
       for (let i = 0; i < 4; i += 1) {
         more.click()
@@ -281,7 +318,7 @@ describe('renderContainerFromSource', () => {
   it('sanitizes script tags in the body', () => {
     const el = renderContainerFromSource('::: tip\n<script>alert(1)</script>ok\n:::')
     expect(el.querySelector('script')).toBeNull()
-    expect(el.textContent).toBe('TIPalert(1)ok')
+    expect(el.textContent).toBe('提示alert(1)ok')
   })
 
   it('renders details with a working manual toggle', () => {
@@ -291,6 +328,46 @@ describe('renderContainerFromSource', () => {
       new Event('click', { bubbles: true, cancelable: true })
     )
     expect(el.open).toBe(true)
+  })
+
+  it('visualizes a code fence inside a tip and leaves mermaid and nested callouts as source', () => {
+    const el = renderContainerFromSource(
+      [
+        '::: tip',
+        '',
+        '```js',
+        'const a = 1',
+        '```',
+        '',
+        '```mermaid',
+        'graph TD',
+        '```',
+        '',
+        '::: warning',
+        '',
+        '内层',
+        '',
+        ':::',
+        '',
+        ':::'
+      ].join('\n')
+    )
+    expect(el.querySelector('[data-tn-vue-mount]')).not.toBeNull()
+    const source = [...el.querySelectorAll('.tn-container-source')].map(
+      (node) => node.textContent ?? ''
+    )
+    expect(source.some((text) => text.includes('```mermaid'))).toBe(true)
+    expect(source.some((text) => text.includes('::: warning'))).toBe(true)
+    expect(el.querySelector('.tn-custom-block.warning')).toBeNull()
+    destroyContainerPreview(el)
+  })
+
+  it('visualizes a code group nested in a tip', () => {
+    const el = renderContainerFromSource(
+      ['::: tip', '', '::: code-group', '```js [a.js]', 'aaa', '```', ':::', '', ':::'].join('\n')
+    )
+    expect(el.querySelector('.custom-block-code-group, [data-tn-vue-mount]')).not.toBeNull()
+    destroyContainerPreview(el)
   })
 
   it('builds a tabbed code group with the first tab active', async () => {

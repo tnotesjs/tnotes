@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import { INSERT_ITEMS } from '../../markdown/insertCatalog'
 import { useWorkspaceStore } from '../../stores/workspace'
 
 const store = useWorkspaceStore()
@@ -36,7 +37,6 @@ const shortcutGroups = computed(() => [
       ['正文', `${altKey.value} ${primaryKey.value} 0`],
       ['粗体 / 斜体', `${primaryKey.value} B / ${primaryKey.value} I`],
       ['删除线', `${primaryKey.value} Shift X`],
-      ['高亮', `${primaryKey.value} Shift H`],
       ['清除当前行 / 选中行的加粗、斜体、删除线（仅笔记）', `${primaryKey.value} \\`],
       ['行内代码', `${primaryKey.value} E`],
       ['插入链接', `${primaryKey.value} Shift K`],
@@ -45,6 +45,16 @@ const shortcutGroups = computed(() => [
       ['引用', `${altKey.value} ${primaryKey.value} U`],
       ['分割线', `${altKey.value} ${primaryKey.value} S`]
     ]
+  },
+  {
+    title: '斜杠快捷输入（可视化模式下，行首输入 / 后接简写，Enter 插入）',
+    items: INSERT_ITEMS.map((item) => [
+      item.label,
+      item.aliases
+        .slice(0, 3)
+        .map((alias) => `/${alias}`)
+        .join('  ')
+    ])
   }
 ])
 </script>

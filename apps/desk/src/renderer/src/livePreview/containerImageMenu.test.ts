@@ -1,57 +1,14 @@
 // @vitest-environment happy-dom
-import { ensureSyntaxTree } from '@codemirror/language'
-import { EditorState } from '@codemirror/state'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { renderContainerFromSource } from '../editor/markdown/containerBody'
-import {
-  clearDetailsOpenSession,
-  containerImageChange,
-  detailsSessionKey,
-  type ContainerImageChange
-} from './cards'
-import { tnotesMarkdown } from './language'
-
-function stateOf(doc: string): EditorState {
-  const state = EditorState.create({ doc, extensions: [tnotesMarkdown()] })
-  ensureSyntaxTree(state, doc.length, 5000)
-  return state
-}
-
-function apply(
-  doc: string,
-  index: number,
-  next: ContainerImageChange,
-  src = '',
-  at = ':::'
-): string | null {
-  const state = stateOf(doc)
-  const change = containerImageChange(state, doc.indexOf(at), index, next, src)
-  if (!change) return null
-  return state.update({ changes: change }).state.doc.toString()
-}
+import { clearDetailsOpenSession, detailsSessionKey } from './cards'
 
 afterEach(() => {
   document.body.replaceChildren()
 })
 
 const editor = { readOnly: false, commit: () => undefined }
-
-const INFO = [
-  '前文 ![out](https://e.com/out.png)',
-  '',
-  '::: info 标题',
-  '',
-  '说明 `![code](x.png)` <img src="raw.png">',
-  '',
-  '![one](https://e.com/1.png)',
-  '',
-  '行内 ![two](./two.png){w=120px} 图',
-  '',
-  ':::',
-  '',
-  '后文'
-].join('\n')
 
 describe('callout card image chrome', () => {
   it('wraps markdown images in info/tip/warning/danger/details like body images', () => {
@@ -89,41 +46,6 @@ describe('callout card image chrome', () => {
     expect(ro.querySelectorAll('.cm-lp-image-handle.is-se')).toHaveLength(0)
     const site = renderContainerFromSource('::: tip\n![a](https://e.com/a.png)\n:::')
     expect(site.querySelector('.cm-lp-image-frame')).toBeNull()
-  })
-
-  it('writes {w=…} / align back on the Nth image of the callout body only', () => {
-    const wide = apply(INFO, 1, { width: '240px' })
-    expect(wide).toContain('行内 ![two](./two.png) {w=240px} 图')
-    expect(wide).toContain('![one](https://e.com/1.png)\n')
-    expect(wide).toContain('前文 ![out](https://e.com/out.png)')
-    expect(apply(INFO, 0, { align: 'center' })).toContain(
-      '![one](https://e.com/1.png) {align=center}'
-    )
-    expect(apply(INFO, 1, { width: '' })).toContain('行内 ![two](./two.png) 图')
-  })
-
-  it('deletes a standalone image line, or only the image when it shares a line', () => {
-    const removed = apply(INFO, 0, { remove: true })
-    expect(removed).not.toContain('![one]')
-    expect(removed).toContain('::: info 标题')
-    expect(removed?.split('\n')).toHaveLength(INFO.split('\n').length - 1)
-    expect(apply(INFO, 1, { remove: true })).toContain('行内  图')
-  })
-
-  it('refuses to write when the expected src does not match or the index is out of range', () => {
-    expect(apply(INFO, 0, { width: '100px' }, 'https://e.com/OTHER.png')).toBeNull()
-    expect(apply(INFO, 0, { width: '100px' }, 'https://e.com/1.png')).toContain('{w=100px}')
-    expect(apply(INFO, 5, { width: '100px' })).toBeNull()
-  })
-
-  it('numbers images in the same order the renderer does (code, raw html, nested ::: text)', () => {
-    const src = '::: warning\n\n```md\n![no](n.png)\n```\n\n![first](https://e.com/f.png)\n\n:::'
-    const el = renderContainerFromSource(src, (s) => s, undefined, undefined, editor)
-    const img = el.querySelector<HTMLImageElement>('img[data-tn-md-image]')
-    expect(img?.dataset.tnMdImage).toBe('0')
-    expect(apply(src, 0, { width: '90px' }, img?.dataset.tnMdSrc)).toContain(
-      '![first](https://e.com/f.png) {w=90px}'
-    )
   })
 })
 

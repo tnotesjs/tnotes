@@ -10,6 +10,7 @@ import { TN_NOTES_SLASH_ITEMS } from '../markdown/slashMenu'
 import { useWorkspaceStore } from '../stores/workspace'
 
 import type { NoteViewMode } from '../../../shared/contracts'
+import type { InsertItem } from '../markdown/insertCatalog'
 
 /** 工具栏只用到编辑器句柄里的这几项；笔记和 README 两个宿主都满足 */
 export interface FormatToolbarEditor {
@@ -21,6 +22,10 @@ export interface FormatToolbarEditor {
   removeHeadingNumbers(): void
   /** 光标所在 `:::` 容器类型；插入菜单据此隐藏不能嵌进去的块 */
   containerAtCursor?(): string | null
+  /** 此刻能插入的块（与斜杠菜单同一套过滤） */
+  availableBlocks?(): InsertItem[]
+  /** 按菜单项插入一块（与斜杠菜单同一条插入路径） */
+  insertBlock?(id: string): void
 }
 
 const props = defineProps<{
@@ -52,7 +57,6 @@ const formatActions = [
   'bold',
   'italic',
   'strikethrough',
-  'highlight',
   'inline-code',
   'quote',
   'unordered-list',
@@ -69,6 +73,10 @@ const viewToggleHint = computed(() =>
 )
 
 function insertBlock(id: string): void {
+  if (props.editor?.insertBlock) {
+    props.editor.insertBlock(id)
+    return
+  }
   if (id === 'canvas') {
     emit('insertCanvas')
     return
@@ -114,6 +122,7 @@ function insertBlock(id: string): void {
           :active="active"
           :exclude="excludeBlocks"
           :resolve-parent="() => editor?.containerAtCursor?.() ?? null"
+          :resolve-items="() => editor?.availableBlocks?.() ?? []"
           @select="insertBlock"
         />
         <UiTooltip v-else-if="item === 'bold'" label="粗体" shortcut="⌘ B">
@@ -145,17 +154,6 @@ function insertBlock(id: string): void {
             @click="editor?.wrapSelection('~~', '~~')"
           >
             <FormatIcon name="strikethrough" />
-          </button>
-        </UiTooltip>
-        <UiTooltip v-else-if="item === 'highlight'" label="高亮" shortcut="⇧ ⌘ H">
-          <button
-            type="button"
-            aria-label="高亮"
-            :disabled="disabled"
-            @mousedown.prevent
-            @click="editor?.wrapSelection('==', '==')"
-          >
-            <FormatIcon name="highlight" />
           </button>
         </UiTooltip>
         <UiTooltip v-else-if="item === 'inline-code'" label="行内代码" shortcut="⌘ E">

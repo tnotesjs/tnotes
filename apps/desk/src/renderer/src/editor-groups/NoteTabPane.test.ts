@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import { DOMWrapper, flushPromises, shallowMount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NoteEditorTab } from '../../../shared/contracts'
@@ -111,6 +112,7 @@ describe('note header', () => {
     ).toEqual(['设置', '资源'])
     expect(wrapper.get('.properties-tab.active').text()).toBe('设置')
     expect(wrapper.get('#note-description-input').element.tagName).toBe('TEXTAREA')
+    expect((wrapper.get('#note-description-input').element as HTMLTextAreaElement).value).toBe('')
     await wrapper.get('.page-width-toggle').trigger('click')
     await wrapper.get('.outline-toggle').trigger('click')
     await wrapper.get('[data-testid="view-toggle"]').trigger('click')
@@ -129,6 +131,58 @@ describe('note header', () => {
       expect(wrapper.find('.save-button').exists()).toBe(false)
     }
     wrapper.unmount()
+  })
+
+  it('打字写入描述时，重绘不会把输入框退回上一次的 frontmatter', async () => {
+    const content = ['---', 'id: abc', 'description: 旧描述', '---', '', '正文'].join('\n')
+    let doc = content
+    const view = {
+      state: {
+        doc: {
+          toString: () => doc,
+          length: 0
+        }
+      },
+      dispatch(spec: { changes: { from: number; to: number; insert: string } }) {
+        const { from, to, insert } = spec.changes
+        doc = doc.slice(0, from) + insert + doc.slice(to)
+        workspace.documents['kb-a:note-a'].content = doc
+      }
+    }
+    const { wrapper, workspace } = setup(false, content)
+    const editorStub = defineComponent({
+      name: 'LivePreviewEditor',
+      setup(_, { expose }) {
+        expose({ getView: () => view })
+        return () => null
+      }
+    })
+    wrapper.unmount()
+    const mounted = shallowMount(NoteTabPane, {
+      attachTo: document.body,
+      props: { tab: { ...tab, noteAssetsVisible: true }, groupId: 'group-a', active: true },
+      global: {
+        renderStubDefaultSlot: true,
+        stubs: {
+          NoteDoneToggle: false,
+          NoteFormatToolbar: false,
+          LivePreviewEditor: editorStub
+        }
+      }
+    })
+    await flushPromises()
+    const field = mounted.get<HTMLTextAreaElement>('#note-description-input')
+    expect(field.element.value).toBe('旧描述')
+    field.element.focus()
+    await field.trigger('focus')
+    for (const value of ['2', '22', '222']) {
+      field.element.value = value
+      await field.trigger('input')
+      await flushPromises()
+      expect(field.element.value).toBe(value)
+      expect(workspace.documents['kb-a:note-a'].content).toContain(`description: ${value}\n`)
+    }
+    mounted.unmount()
   })
 
   it('没有标题时隐藏目录按钮', () => {

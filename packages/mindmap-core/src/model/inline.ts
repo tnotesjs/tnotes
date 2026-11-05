@@ -1,7 +1,7 @@
 /**
  * 轻量 Markdown 行内模型。
  * raw 是唯一持久化数据；segments 只用于渲染、选区格式化与链接编辑。
- * 支持 Markdown 原生标记以及项目方言 ==高亮==、<u>下划线</u>。
+ * 支持 Markdown 原生标记以及项目方言 <u>下划线</u>。
  */
 
 export interface ImageInfo {
@@ -23,14 +23,13 @@ export interface NodeContent {
   checked: boolean | null
 }
 
-export type InlineFormat = 'bold' | 'italic' | 'underline' | 'strike' | 'highlight' | 'code'
+export type InlineFormat = 'bold' | 'italic' | 'underline' | 'strike' | 'code'
 
 export interface InlineMarks {
   bold: boolean
   italic: boolean
   underline: boolean
   strike: boolean
-  highlight: boolean
   code: boolean
 }
 
@@ -109,7 +108,6 @@ const EMPTY_MARKS: InlineMarks = {
   italic: false,
   underline: false,
   strike: false,
-  highlight: false,
   code: false
 }
 
@@ -133,7 +131,6 @@ const FORMAT_DELIMITERS: FormatDelimiter[] = [
   { open: '**', close: '**', formats: ['bold'] },
   { open: '__', close: '__', formats: ['bold'] },
   { open: '~~', close: '~~', formats: ['strike'] },
-  { open: '==', close: '==', formats: ['highlight'] },
   { open: '<u>', close: '</u>', formats: ['underline'] },
   { open: '`', close: '`', formats: ['code'] },
   { open: '*', close: '*', formats: ['italic'] },
@@ -150,7 +147,6 @@ function sameMarks(a: InlineMarks, b: InlineMarks): boolean {
     a.italic === b.italic &&
     a.underline === b.underline &&
     a.strike === b.strike &&
-    a.highlight === b.highlight &&
     a.code === b.code
   )
 }
@@ -413,7 +409,6 @@ const SERIALIZED_MARKS: SerializedMark[] = [
   { format: 'italic', open: '*', close: '*' },
   { format: 'underline', open: '<u>', close: '</u>' },
   { format: 'strike', open: '~~', close: '~~' },
-  { format: 'highlight', open: '==', close: '==' },
   { format: 'code', open: '`', close: '`' }
 ]
 
@@ -730,9 +725,6 @@ export function setInlineFormat(
   const parts = splitSegmentsAtPlainRange(raw, from, to, options)
   parts.selected.forEach((segment) => {
     segment.marks[format] = enabled
-    // 幕布口径：高亮笔与行内代码是两个入口，但同一段文字不能叠加。
-    if (enabled && format === 'code') segment.marks.highlight = false
-    if (enabled && format === 'highlight') segment.marks.code = false
   })
   return serializeInlineSegments([...parts.before, ...parts.selected, ...parts.after])
 }

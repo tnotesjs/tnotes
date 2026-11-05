@@ -51,6 +51,17 @@ describe('hydrateTnSwipers', () => {
     root.remove()
   })
 
+  it('opens on the requested slide instead of the first', () => {
+    const root = swiperShell(['A', 'B', 'C', 'D'])
+    hydrateTnSwipers(root, { activeIndex: 3 })
+    const slides = [...root.querySelectorAll('.swiper-slide')] as HTMLElement[]
+    expect(slides[3]!.classList.contains('is-active')).toBe(true)
+    expect(slides[3]!.hidden).toBe(false)
+    expect(slides[0]!.hidden).toBe(true)
+    expect(root.querySelector('.tn-tab.active')?.textContent).toBe('D')
+    root.remove()
+  })
+
   it('leaves an empty swiper placeholder in place', () => {
     const root = document.createElement('div')
     root.innerHTML =

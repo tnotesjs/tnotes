@@ -4,7 +4,7 @@ import { EditorState } from '@codemirror/state'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { updateSwiperSlideAttrs } from '../editor/markdown/swiperSlides'
-import { containerImageChange, tableImageChange } from './cards'
+import { tableImageChange } from './cards'
 import { imageAt, imageSrcChange, markdownImageDestination } from './images'
 import {
   localAssetSrc,
@@ -46,18 +46,12 @@ describe('image src rewrite', () => {
     expect(markdownImageDestination('https://e.com/a.png')).toBe('https://e.com/a.png')
   })
 
-  it('rewrites table and container card images', () => {
+  it('rewrites table card images', () => {
     const table = '| a |\n| --- |\n| ![x](https://e.com/a.png) |\n'
     const tableState = stateOf(table)
     expect(
       applied(tableState, tableImageChange(tableState, 0, 0, { src: '../assets/a.png' }))
     ).toBe('| a |\n| --- |\n| ![x](../assets/a.png) |\n')
-
-    const tip = '::: tip\n\n![x](../assets/a.png){w=80px}\n\n:::\n'
-    const tipState = stateOf(tip)
-    expect(
-      applied(tipState, containerImageChange(tipState, 0, 0, { src: 'https://cdn/a.png' }))
-    ).toBe('::: tip\n\n![x](https://cdn/a.png){w=80px}\n\n:::\n')
   })
 
   it('rewrites swiper slide addresses', () => {
@@ -181,15 +175,18 @@ describe('image transfer menu actions', () => {
   })
 
   it('copies through the main process and falls back to a canvas PNG for formats it cannot decode', async () => {
+    const raw = new Uint8Array([1, 2, 3, 4])
     const copyImage = vi
       .fn()
-      .mockResolvedValueOnce({ ok: true, value: { copied: false, reason: 'unsupported' } })
+      .mockResolvedValueOnce({
+        ok: true,
+        value: { copied: false, reason: 'unsupported', bytes: raw }
+      })
       .mockResolvedValueOnce({ ok: true, value: { copied: true } })
     desk({ copyImage })
-    const image = document.createElement('img')
-    Object.defineProperty(image, 'complete', { value: true })
-    Object.defineProperty(image, 'naturalWidth', { value: 4 })
-    Object.defineProperty(image, 'naturalHeight', { value: 2 })
+    const bitmap = { width: 4, height: 2, close: vi.fn() }
+    const createBitmap = vi.fn(async () => bitmap)
+    vi.stubGlobal('createImageBitmap', createBitmap)
     const drawImage = vi.fn()
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
       drawImage
@@ -197,11 +194,19 @@ describe('image transfer menu actions', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (callback) {
       callback(new Blob([new Uint8Array([7])], { type: 'image/png' }))
     })
-    await runImageMenuAction('image-copy', image, handlers(), state('./assets/a.webp'))
+    await runImageMenuAction(
+      'image-copy',
+      document.createElement('img'),
+      handlers(),
+      state('./assets/a.webp')
+    )
     expect(copyImage).toHaveBeenNthCalledWith(1, { knowledgeBaseId: 'kb', src: './assets/a.webp' })
+    expect(createBitmap).toHaveBeenCalledTimes(1)
+    expect(createBitmap.mock.calls[0]?.[0]).toBeInstanceOf(Blob)
+    expect(drawImage).toHaveBeenCalledWith(bitmap, 0, 0)
     expect(copyImage.mock.calls[1]?.[0].png).toBeInstanceOf(Uint8Array)
-    expect(drawImage).toHaveBeenCalledWith(image, 0, 0, 4, 2)
     expect(toast).toHaveBeenCalledWith('已复制图片', 'success')
+    vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
 

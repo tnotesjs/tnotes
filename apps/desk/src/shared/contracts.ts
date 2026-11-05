@@ -253,6 +253,8 @@ export interface KnowledgeBaseDescriptor {
   autoPush?: { enabled: boolean; idleMinutes: number }
   /** 库级约定（tnotes.json）：标题编号层级上限（1-6）。 */
   headingNumberMaxDepth?: number
+  /** 库级约定（tnotes.json markdown.lineBreaks）：换行渲染方式，缺省 commonmark。 */
+  lineBreaks: LineBreakMode
   health: 'ready' | 'invalid' | 'future-schema'
   diagnostics: WorkspaceDiagnosticDto[]
   noteCount: number
@@ -262,6 +264,12 @@ export interface KnowledgeBaseDescriptor {
   lastCommitAt: number | null
   snapshotRevision: string
 }
+
+/**
+ * `commonmark`：单换行是空格、连续空行合并。`visual`：单换行即换行、多出的空行保留，
+ * 站点渲染与编辑器所见一致。
+ */
+export type LineBreakMode = 'commonmark' | 'visual'
 
 /** Form payload for the knowledge-base settings tab. */
 export interface KnowledgeBaseSettingsDto {
@@ -282,6 +290,9 @@ export interface KnowledgeBaseSettingsDto {
   /** 推送前是否自动 update；缺省 true（与 kb 默认一致）。 */
   pushRunUpdateBefore: boolean
   headingNumberMaxDepth: number | null
+  lineBreaks: LineBreakMode
+  /** 切到另一种换行方式后渲染会变的笔记数。 */
+  lineBreakImpact: number
 }
 
 export interface KnowledgeBaseSettingsWriteRequest {
@@ -297,6 +308,7 @@ export interface KnowledgeBaseSettingsWriteRequest {
   /** null → 删键（回退 kb 默认 true）；boolean → 写入 tnotes.json push.runUpdateBefore */
   pushRunUpdateBefore?: boolean | null
   headingNumberMaxDepth?: number | null
+  lineBreaks?: LineBreakMode
 }
 
 export interface KnowledgeBaseCreateRequest {
@@ -567,7 +579,7 @@ export type ContextMenuRequest =
       othersClosable?: boolean
     }
   | { kind: 'code-group-tab' }
-  /** 可视化编辑里图片右上角「⋯」：预览、对齐、原始大小、删除。 */
+  /** 可视化编辑里图片右上角「⋯」：预览、对齐、尺寸、删除，以及按条件出现的拉取 / 推送。 */
   | {
       kind: 'image'
       align: 'left' | 'center' | 'right'
@@ -1543,7 +1555,17 @@ export interface AttachmentReleaseLocalRequest {
 export type AttachmentCopyImageRequest =
   { knowledgeBaseId: string; src: string } | { png: Uint8Array }
 
-export type AttachmentCopyImageResult = { copied: true } | { copied: false; reason: 'unsupported' }
+export type AttachmentCopyImageResult =
+  | { copied: true }
+  | {
+      copied: false
+      reason: 'unsupported'
+      /**
+       * 原图字节。系统剪贴板解不了（比如扩展名是 png、内容是 webp）时交回渲染端，
+       * 由浏览器解码成 PNG 再写一次。不在页面上的 img 上画：那张图来自 tnotes-asset，画布会当成跨源。
+       */
+      bytes?: Uint8Array
+    }
 
 /** 图片「导出」：另存为原始字节 */
 export interface AttachmentExportImageRequest {

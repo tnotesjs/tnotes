@@ -5,11 +5,13 @@ import { EditorView, WidgetType } from '@codemirror/view'
 import DOMPurify from 'dompurify'
 import type { SyntaxNode } from '@lezer/common'
 import MarkdownIt from 'markdown-it'
+import type { LineBreakMode } from '@tnotesjs/ui/line-breaks'
 
 import {
   allowDataUrlsInParser,
   applyImageSizeAttrs,
   destroyContainerPreview,
+  parseContainerFences,
   renderContainerFromSource,
   withLinkDefinitions
 } from '../editor/markdown/containerBody'
@@ -82,7 +84,7 @@ function markdownRenderer(): InstanceType<typeof MarkdownIt> {
 
 /** 卡片里这些元素有自己的交互，点它们不应该把光标移进源码。 */
 const INTERACTIVE =
-  'button, a, input, select, textarea, summary, video, iframe, [role="tab"], .tn-swiper-tabs, .tn-swiper-resize, .cm-lp-image-handle, .cm-lp-image-more, .swiper-button-prev, .swiper-button-next, .rightClickMenu'
+  'button, a, input, select, textarea, summary, video, iframe, [role="tab"], .tn-swiper-tabs, .cm-lp-image-handle, .cm-lp-image-more, .swiper-button-prev, .swiper-button-next, .rightClickMenu'
 
 interface Mounted {
   destroy(): void
@@ -97,6 +99,8 @@ const mounted = new WeakMap<HTMLElement, Mounted>()
  * key 去掉 `{w=… align=…}`，图片改宽/对齐后仍命中，避免卡片重建后自动收起。
  */
 const detailsOpenSession = new Map<string, boolean>()
+/** Swiper 当前页。改宽度会重建卡片，hydrate 默认回到第一张。 */
+const swiperActiveSession = new Map<string, number>()
 
 export function detailsSessionKey(noteUuid: string, source: string): string {
   const normalized = source.replace(/\r\n?/g, '\n')
@@ -250,7 +254,8 @@ export class CardWidget extends WidgetType {
     /** 围栏外的链接定义。容器、导图和表格单独渲染，源码没变时定义变了也要重画。 */
     private readonly definitions: ReadonlyMap<string, string> = new Map(),
     /** 当前笔记；WordList 勾选态按「知识库 + 笔记」存，换笔记要重画。 */
-    private readonly noteUuid: string = ''
+    private readonly noteUuid: string = '',
+    private readonly lineBreakMode: LineBreakMode = 'commonmark'
   ) {
     super()
   }
@@ -261,6 +266,7 @@ export class CardWidget extends WidgetType {
       other.source === this.source &&
       other.knowledgeBaseId === this.knowledgeBaseId &&
       other.noteUuid === this.noteUuid &&
+      other.lineBreakMode === this.lineBreakMode &&
       definitionKey(other.definitions) === definitionKey(this.definitions)
     )
   }
@@ -290,6 +296,7 @@ export class CardWidget extends WidgetType {
         return
       }
       if (target?.closest(INTERACTIVE)) return
+      if (this.kind === 'container' && target?.closest('.tn-custom-block')) return
       event.preventDefault()
       let pos: number
       try {
@@ -329,7 +336,12 @@ export class CardWidget extends WidgetType {
           {
             readOnly: host.isReadOnly(),
             commit: (index, next) => commitSwiperSlide(view, card, index, next),
-            asset: () => imageAssetContext(view)
+            asset: () => imageAssetContext(view),
+            activeIndex:
+              swiperActiveSession.get(detailsSessionKey(this.noteUuid, this.source)) ?? 0,
+            onActivate: (index) => {
+              swiperActiveSession.set(detailsSessionKey(this.noteUuid, this.source), index)
+            }
           },
           {
             readOnly: host.isReadOnly(),
@@ -342,7 +354,12 @@ export class CardWidget extends WidgetType {
             onOpenChange: (open) => {
               detailsOpenSession.set(detailsKey, open)
             }
-          }
+          },
+          {
+            readOnly: host.isReadOnly(),
+            commit: (next) => commitCalloutMeta(view, card, next)
+          },
+          this.lineBreakMode
         )
         if (element.dataset.footprints === '1') {
           const payload = parseFootprintsSource(this.source)
@@ -412,6 +429,26 @@ export class CardWidget extends WidgetType {
   }
 }
 
+const swiperCardOrigin = new WeakMap<HTMLElement, number>()
+
+function swiperCardPos(view: EditorView, card: HTMLElement): number | null {
+  if (card.isConnected) {
+    try {
+      const pos = view.posAtDOM(card)
+      let node: SyntaxNode | null = syntaxTree(view.state).resolveInner(pos, 1)
+      while (node && node.name !== 'Container') node = node.parent
+      if (node) {
+        const origin = view.state.doc.lineAt(node.from).from
+        swiperCardOrigin.set(card, origin)
+        return origin
+      }
+    } catch {
+      // 卡片已经从编辑器摘掉，改用上次记下的起点。
+    }
+  }
+  return swiperCardOrigin.get(card) ?? null
+}
+
 function commitSwiperSlide(
   view: EditorView,
   card: HTMLElement,
@@ -420,14 +457,9 @@ function commitSwiperSlide(
 ): void {
   const host = view.state.facet(livePreviewHost)
   if (host.isReadOnly()) return
-  let pos: number
-  try {
-    pos = view.posAtDOM(card)
-  } catch {
-    return
-  }
-  const start = syntaxTree(view.state).resolveInner(pos, 1)
-  let node: typeof start | null = start
+  const origin = swiperCardPos(view, card)
+  if (origin == null) return
+  let node: SyntaxNode | null = syntaxTree(view.state).resolveInner(origin, 1)
   while (node && node.name !== 'Container') node = node.parent
   if (!node) return
   const from = view.state.doc.lineAt(node.from).from
@@ -435,6 +467,7 @@ function commitSwiperSlide(
   const current = view.state.doc.sliceString(from, to)
   const updated = updateSwiperSlideAttrs(current, index, next)
   if (updated === current) return
+  swiperActiveSession.set(detailsSessionKey(host.noteUuid, current), index)
   view.dispatch({
     changes: { from, to, insert: updated },
     userEvent: 'input.swiper'
@@ -558,6 +591,35 @@ export function containerImageChange(
         : imageAttrChange(found, next)
   if (!local || bodyState.doc.sliceString(local.from, local.to) === local.insert) return null
   return { from: body.from + local.from, to: body.from + local.to, insert: local.insert }
+}
+
+function commitCalloutMeta(
+  view: EditorView,
+  card: HTMLElement,
+  next: { name?: string; title?: string }
+): void {
+  const host = view.state.facet(livePreviewHost)
+  if (host.isReadOnly() || view.state.readOnly) return
+  let pos: number
+  try {
+    pos = view.posAtDOM(card)
+  } catch {
+    return
+  }
+  let container: SyntaxNode | null = syntaxTree(view.state).resolveInner(pos, 1)
+  while (container && container.name !== 'Container') container = container.parent
+  if (!container) return
+  const source = view.state.doc.sliceString(container.from, container.to)
+  const parsed = parseContainerFences(source)
+  const name = (next.name ?? parsed.name).toLowerCase()
+  const title = (next.title !== undefined ? next.title : parsed.title).trim()
+  const line = view.state.doc.lineAt(container.from)
+  const open = title ? `${parsed.openColons} ${name} ${title}` : `${parsed.openColons} ${name}`
+  if (open === line.text) return
+  view.dispatch({
+    changes: { from: line.from, to: line.to, insert: open },
+    userEvent: 'input.callout'
+  })
 }
 
 function commitContainerImage(

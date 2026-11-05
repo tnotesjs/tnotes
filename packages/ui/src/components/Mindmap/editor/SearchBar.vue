@@ -78,7 +78,6 @@ function inlineFormatShortcut(event: KeyboardEvent, hasSelection = true): Inline
   if (key === 'u' && !event.shiftKey) return 'underline'
   if (key === 'enter' && !event.shiftKey && hasSelection) return 'strike'
   if ((key === 's' || key === 'x') && event.shiftKey) return 'strike'
-  if (key === 'h' && event.shiftKey) return 'highlight'
   if (key === 'e' && !event.shiftKey) return 'code'
   return null
 }

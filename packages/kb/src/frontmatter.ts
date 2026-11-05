@@ -18,6 +18,10 @@ export interface ParsedNoteContent {
 }
 
 function cleanString(value: unknown): string | undefined {
+  // YAML 会把未加引号的 111 读成数字。描述框逐字打出的纯数字必须仍是字符串，
+  // 否则保存时字段被丢掉，并退回磁盘上的旧描述。
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
@@ -46,7 +50,18 @@ export function serializeNoteContent(frontmatter: NoteFrontmatter, body: string)
   if (Object.keys(ordered).length === 0) {
     return normalizedBody.endsWith('\n') ? normalizedBody : `${normalizedBody}\n`
   }
-  return matter.stringify(`\n${normalizedBody.replace(/\n$/, '')}\n`, ordered)
+  return keepPlainScalars(matter.stringify(`\n${normalizedBody.replace(/\n$/, '')}\n`, ordered))
+}
+
+/**
+ * js-yaml 会给纯数字、布尔值加引号，避免它们被读成非字符串。
+ * 解析时这些值已经按文本保留，引号只会让源码和描述框不一致。
+ */
+function keepPlainScalars(content: string): string {
+  return content.replace(
+    /^(id|description):\s*(['"])((?:[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)|true|false)\2\s*$/gm,
+    '$1: $3'
+  )
 }
 
 /** Merge updates into existing file content, preserving the body. */

@@ -21,7 +21,12 @@ const compilerConfig = {
   discussions: false,
   ignoreDeadLinks: true,
   head: [] as Array<[string, Record<string, string>, string?]>,
-  markdown: { lineNumbers: false, math: false, imageLazyLoading: false }
+  markdown: {
+    lineNumbers: false,
+    math: false,
+    imageLazyLoading: false,
+    lineBreaks: 'commonmark' as const
+  }
 }
 
 describe('note identity for the comments component', () => {
@@ -76,6 +81,34 @@ describe('page outline headings', () => {
       '3 3.2. Prompt',
       '2 4. 分析对话记录优化笔记内容'
     ])
+  })
+
+  it('ignores a heading inside a markdown code fence', () => {
+    const body = ['## 111', '', '```md', '## 123', '', '111', '```', '', '## 222'].join('\n')
+    expect(headings(body)).toEqual(['2 111', '2 222'])
+  })
+
+  it('ignores headings inside a container, including a nested one and a fence', () => {
+    const body = [
+      '## 外',
+      '',
+      ':::: tip',
+      '## 外层容器',
+      '',
+      '::: warning',
+      '## 内层',
+      ':::',
+      '',
+      '```md',
+      '## 示例',
+      '```',
+      '',
+      '## 仍在容器里',
+      '::::',
+      '',
+      '## 后'
+    ].join('\n')
+    expect(headings(body)).toEqual(['2 外', '2 后'])
   })
 
   it('ignores headings in tilde fences and does not close on a fence with an info string', () => {
@@ -138,6 +171,13 @@ describe('heading sections for the fold-all control', () => {
     expect(sections(await render('## A\n\n::: details\n\n### 里层\n\nx\n\n:::\n'))).toBe(1)
   })
 
+  it('still renders a heading inside a callout', async () => {
+    const html = await render('::: tip\n\n## 容器标题\n\n正文\n\n:::\n')
+    expect(html).toContain('<h2')
+    expect(html).toContain('容器标题')
+    expect(sections(html)).toBe(0)
+  })
+
   it('folds a section that runs to the end of the note', async () => {
     const html = await render('# 标题\n\n正文\n')
     expect(sections(html)).toBe(1)
@@ -173,10 +213,11 @@ describe('Markdown compatibility helpers', () => {
     ).toEqual(['./0002.%20指南.md'])
   })
 
-  it('renders ==text== as a highlight mark', async () => {
+  it('leaves ==text== as literal text', async () => {
     const compiler = await createMarkdownCompiler(compilerConfig)
     const { html } = compiler.compile('前 ==重点== 后，a == b\n', 'n.md', '/n', 'n')
-    expect(html).toContain('<mark>重点</mark>')
+    expect(html).not.toContain('<mark>')
+    expect(html).toContain('==重点==')
     expect(html).toContain('a == b')
   })
 
@@ -236,6 +277,14 @@ describe('Markdown compatibility helpers', () => {
     expect(html).not.toMatch(/<li>\s*<img /)
   })
 
+  it('leaves ::: note as text instead of a custom block', async () => {
+    const compiler = await createMarkdownCompiler(compilerConfig)
+    const { html } = compiler.compile('::: note\n\n123\n\n:::\n', 'n.md', '/n', 'n')
+    expect(html).not.toContain('tn-custom-block')
+    expect(html).toContain('::: note')
+    expect(html).toContain('123')
+  })
+
   it('renders tip/info/warning/danger/details as typed custom blocks', async () => {
     const compiler = await createMarkdownCompiler(compilerConfig)
     const { html } = compiler.compile(
@@ -257,7 +306,37 @@ describe('Markdown compatibility helpers', () => {
     expect(html).toContain('<details class="tn-custom-block details">')
     expect(html).toContain('tn-details-fold')
     expect(html).toContain('<summary>')
-    expect(html).toContain('细节</summary>')
+    expect(html).toContain('细节</span></summary>')
+    expect(html).toContain('tn-alert-icon')
+  })
+
+  it('renders a nested callout and mermaid inside a tip as source', async () => {
+    const compiler = await createMarkdownCompiler(compilerConfig)
+    const { html } = compiler.compile(
+      [
+        ':::: tip',
+        '',
+        '::: warning',
+        '',
+        '内层',
+        '',
+        ':::',
+        '',
+        '```mermaid',
+        'graph TD',
+        '```',
+        '',
+        '::::'
+      ].join('\n'),
+      'n.md',
+      '/n',
+      'n'
+    )
+    expect(html).toContain('class="tn-custom-block tip"')
+    expect(html).not.toContain('tn-custom-block warning')
+    expect(html).not.toContain('data-tn-island="mermaid"')
+    expect(html).toContain('::: warning')
+    expect(html).toContain('graph TD')
   })
 
   it('emits hydratable island hosts for mermaid, mindmap, and code', async () => {

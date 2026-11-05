@@ -200,7 +200,6 @@ describe('脑图编辑态行内格式快捷键', () => {
     ['i', false, '*alpha*'],
     ['u', false, '<u>alpha</u>'],
     ['s', true, '~~alpha~~'],
-    ['h', true, '==alpha=='],
     ['e', false, '`alpha`']
   ])('Cmd+%s 切换格式并保持选区', (key, shiftKey, expectedRaw) => {
     const { editor, input, node } = mountEditor()

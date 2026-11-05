@@ -244,7 +244,6 @@ onBeforeUnmount(() => {
         :active="active"
         :heading-level="headingLevel"
         :heading-number-max-depth="headingNumberMaxDepth"
-        :exclude-blocks="EXCLUDED_BLOCKS"
         @toggle-mode="toggleMode"
       />
       <span v-if="phase === 'ready'" class="save-state" :class="saveState">{{ saveLabel }}</span>
@@ -267,6 +266,7 @@ onBeforeUnmount(() => {
       note-rel-path="README.md"
       :active="active"
       :outline-visible="false"
+      :exclude-blocks="EXCLUDED_BLOCKS"
       @change="updateContent"
       @open-link="openLink"
       @open-note="workspace.openNoteByUuid(tab.knowledgeBaseId, $event)"

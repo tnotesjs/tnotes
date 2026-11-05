@@ -45,6 +45,47 @@ describe('renumberHeadings', () => {
     expect(renumberHeadings('#  A\n', 2).text).toBe('#  1. A\n')
   })
 
+  it('容器内标题不占编号，后面的标题接着外层往下排', () => {
+    const input = '# A\n::: tip\n## 容器标题\n:::\n## B\n'
+    expect(renumberHeadings(input, 2).text).toBe('# 1. A\n::: tip\n## 容器标题\n:::\n## 1.1. B\n')
+  })
+
+  it('容器里已有的编号前缀保持原样', () => {
+    const input = '# A\n::: warning\n## 9. 留着\n:::\n## B\n'
+    expect(renumberHeadings(input, 2).text).toBe(
+      '# 1. A\n::: warning\n## 9. 留着\n:::\n## 1.1. B\n'
+    )
+  })
+
+  it('围栏里的 ::: 不会把容器提前关掉', () => {
+    const input = [
+      '# A',
+      '::: tip',
+      '```md',
+      ':::',
+      '## 示例',
+      '```',
+      '## 容器里',
+      ':::',
+      '## B',
+      ''
+    ].join('\n')
+    expect(renumberHeadings(input, 2).text).toBe(
+      [
+        '# 1. A',
+        '::: tip',
+        '```md',
+        ':::',
+        '## 示例',
+        '```',
+        '## 容器里',
+        ':::',
+        '## 1.1. B',
+        ''
+      ].join('\n')
+    )
+  })
+
   it('frontmatter 与代码块原样保留', () => {
     const input = '---\ntitle: x\n---\n# A\n```md\n# 不动\n```\n## B\n'
     expect(renumberHeadings(input, 2).text).toBe(

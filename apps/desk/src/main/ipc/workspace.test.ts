@@ -81,6 +81,28 @@ describe('工作区 IPC 合同', () => {
     expect(mocks.showContextMenu).toHaveBeenCalledTimes(7)
   })
 
+  it('图片菜单的拉到本地 / 推到图床标志能进主进程', async () => {
+    const result = await invoke(IPC_CHANNELS.contextMenuShow, {
+      kind: 'image',
+      align: 'left',
+      hasWidth: false,
+      editable: true,
+      remote: true,
+      local: false,
+      copyable: true
+    })
+    expect(result.ok).toBe(true)
+    expect(mocks.showContextMenu).toHaveBeenCalledWith(window, {
+      kind: 'image',
+      align: 'left',
+      hasWidth: false,
+      editable: true,
+      remote: true,
+      local: false,
+      copyable: true
+    })
+  })
+
   it('未知标签页类型被拒绝', async () => {
     const result = await invoke(IPC_CHANNELS.contextMenuShow, {
       kind: 'tab',

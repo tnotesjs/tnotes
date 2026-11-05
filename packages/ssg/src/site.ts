@@ -178,7 +178,8 @@ function joinBase(base: string, file: string): string {
  * browser-specific render-blocking and Accept-header negotiation (Safari and
  * embedded webviews still flash), so inline them instead: ~20KB total, no
  * url()/@import inside to rebase, and entry.ts keeps its imports so Vite's
- * JS-injected duplicates continue to provide HMR.
+ * JS-injected duplicates continue to provide HMR. Read per page so a later
+ * reload never pairs fresh HMR styles with a stale inline copy.
  */
 const DEV_STYLE_SPECIFIERS = [
   '@tnotesjs/ui/styles/tokens.css',
@@ -786,7 +787,6 @@ export async function createDevServer(
   await linkRuntimeDependencies(config.cacheDir)
   await writeRuntimeEntries(config)
   const session = await createDevSession(config)
-  const styleTags = await devStyleBlocks()
 
   const server = await createViteServer({
     root: config.cacheDir,
@@ -874,7 +874,7 @@ export async function createDevServer(
                     // to all root-absolute src/href again (img assets 404'd as
                     // /base/base/assets/...). Inject the dev client ourselves.
                     const transformed = injectDevClient(
-                      injectDevStyles(html, styleTags),
+                      injectDevStyles(html, await devStyleBlocks()),
                       config.base
                     )
                     response.statusCode = route === '/404' && current !== '/404' ? 404 : 200

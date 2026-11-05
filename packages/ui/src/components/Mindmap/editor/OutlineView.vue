@@ -385,7 +385,7 @@ const selectedTextFormats = computed<Partial<Record<InlineFormat, boolean>>>(() 
   if (props.version < 0) return {}
   const selection = textSelection.value
   if (!selection) return {}
-  const formats: InlineFormat[] = ['bold', 'italic', 'underline', 'strike', 'highlight', 'code']
+  const formats: InlineFormat[] = ['bold', 'italic', 'underline', 'strike', 'code']
   return Object.fromEntries(
     formats.map((format) => [
       format,
@@ -712,7 +712,6 @@ function inlineFormatShortcut(event: KeyboardEvent, hasSelection = true): Inline
   if (key === 'u' && !event.shiftKey) return 'underline'
   if (key === 'enter' && !event.shiftKey && hasSelection) return 'strike'
   if ((key === 's' || key === 'x') && event.shiftKey) return 'strike'
-  if (key === 'h' && event.shiftKey) return 'highlight'
   if (key === 'e' && !event.shiftKey) return 'code'
   return null
 }

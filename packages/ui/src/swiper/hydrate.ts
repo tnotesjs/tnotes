@@ -61,7 +61,10 @@ const READY = 'tnSwiperReady'
  * already-hydrated roots are skipped via `data-tn-swiper-ready`.
  * When `root` itself is a `.tn-swiper`, it is included.
  */
-export function hydrateTnSwipers(root: ParentNode = document): number {
+export function hydrateTnSwipers(
+  root: ParentNode = document,
+  options?: { activeIndex?: number; onActivate?: (index: number) => void }
+): number {
   const hosts: HTMLElement[] = []
   if (root instanceof HTMLElement && root.classList.contains('tn-swiper')) {
     hosts.push(root)
@@ -74,7 +77,7 @@ export function hydrateTnSwipers(root: ParentNode = document): number {
     if (seen.has(host)) continue
     seen.add(host)
     if (host.dataset[READY] === 'true') continue
-    if (hydrateOne(host)) {
+    if (hydrateOne(host, options)) {
       host.dataset[READY] = 'true'
       count += 1
     }
@@ -82,7 +85,10 @@ export function hydrateTnSwipers(root: ParentNode = document): number {
   return count
 }
 
-function hydrateOne(host: HTMLElement): boolean {
+function hydrateOne(
+  host: HTMLElement,
+  options?: { activeIndex?: number; onActivate?: (index: number) => void }
+): boolean {
   if (host.classList.contains('is-empty')) return true
   const tabs = host.querySelector<HTMLElement>('.tn-swiper-tabs')
   const wrapper = host.querySelector<HTMLElement>('.swiper-wrapper')
@@ -117,6 +123,7 @@ function hydrateOne(host: HTMLElement): boolean {
       slide.classList.toggle('is-active', on)
       slide.hidden = !on
     })
+    options?.onActivate?.(index)
   }
 
   const activeIndex = (): number => {
@@ -156,6 +163,10 @@ function hydrateOne(host: HTMLElement): boolean {
     tabsEl.remove()
   }
 
-  activate(0)
+  const start = Math.min(
+    Math.max(0, options?.activeIndex ?? 0),
+    Math.max(0, slides.length - 1)
+  )
+  activate(start)
   return true
 }

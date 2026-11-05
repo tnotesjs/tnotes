@@ -33,7 +33,8 @@ const serializeSite = (site: ResolvedSsgConfig, store: PageSourceStore) => ({
   markdown: {
     lineNumbers: site.markdown.lineNumbers,
     math: site.markdown.math,
-    imageLazyLoading: site.markdown.imageLazyLoading
+    imageLazyLoading: site.markdown.imageLazyLoading,
+    lineBreaks: site.markdown.lineBreaks
   },
   completionStats: readCompletionStats(site.root)
 })

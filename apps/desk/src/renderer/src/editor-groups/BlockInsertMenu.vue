@@ -1,87 +1,84 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+/**
+ * 工具栏「插入」菜单：和斜杠菜单同一份清单、同一套列表外观，顶部多一个搜索框，
+ * 简写（`swdt`、`表格`）同样能过滤。
+ */
+import { nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 
+import { BlockPicker } from '../markdown/blockPicker'
 import { blockTypeOfMenuItem, canNest } from '../markdown/blockSpecs'
-import { TN_NOTES_SLASH_ITEMS } from '../markdown/slashMenu'
+import { INSERT_ITEMS, filterInsertItems } from '../markdown/insertCatalog'
+
+import type { InsertItem } from '../markdown/insertCatalog'
 
 const props = defineProps<{
   disabled: boolean
   active: boolean
-  /** 宿主不支持的块（README 没有笔记索引，画布无处归属） */
+  /** 宿主不支持的块（README 没有画布） */
   exclude?: readonly string[]
-  /** 打开菜单时读一次插入点所在的父块类型（null = 文档根） */
+  /** 打开菜单时读一次插入点所在的父块类型（null = 文档根）；没给 resolveItems 时用 */
   resolveParent?: () => string | null
+  /** 编辑器给出的可插入项（已按宿主与嵌套规则过滤） */
+  resolveItems?: () => InsertItem[]
 }>()
 
 const emit = defineEmits<{ select: [id: string] }>()
 
-const menuIds = [
-  'tip',
-  'info',
-  'warning',
-  'danger',
-  'details',
-  'code',
-  'code-group',
-  'table',
-  'swiper',
-  'mermaid',
-  'mindmap',
-  'canvas',
-  'bilibili',
-  'word-list',
-  'notes-table',
-  'footprints'
-] as const
-const parent = ref<string | null>(null)
-const items = computed(() =>
-  menuIds
-    .filter((id) => !props.exclude?.includes(id))
-    .filter((id) => canNest(parent.value, blockTypeOfMenuItem(id)))
-    .map((id) => {
-      if (id === 'canvas') return { id, label: '画布' }
-      if (id === 'table') return { id, label: '表格' }
-      const found = TN_NOTES_SLASH_ITEMS.find((item) => item.id === id)
-      return { id, label: found?.label ?? id }
-    })
-)
-
 const menuId = useId()
 const trigger = ref<HTMLButtonElement | null>(null)
 const menu = ref<HTMLElement | null>(null)
+const listHost = ref<HTMLElement | null>(null)
+const search = ref<HTMLInputElement | null>(null)
 const open = ref(false)
-const position = ref({ left: '0px', top: '0px', maxHeight: '320px' })
+const query = ref('')
+const position = ref({ left: '0px', top: '0px' })
+let base: InsertItem[] = []
+let picker: BlockPicker | null = null
+
+function itemsHere(): InsertItem[] {
+  const fromEditor = props.resolveItems?.()
+  const parent = props.resolveParent?.() ?? null
+  const items =
+    fromEditor && fromEditor.length > 0
+      ? fromEditor
+      : INSERT_ITEMS.filter(
+          (item) => !item.slashOnly && canNest(parent, blockTypeOfMenuItem(item.id))
+        )
+  return items.filter((item) => !props.exclude?.includes(item.id))
+}
+
+function render(): void {
+  picker?.setItems(filterInsertItems(base, query.value), query.value.trim() === '')
+}
 
 function close(restoreFocus = false): void {
   open.value = false
+  picker = null
   if (restoreFocus) trigger.value?.focus()
 }
 
-function focusAt(index: number): void {
-  menu.value?.querySelectorAll<HTMLButtonElement>('button')[index]?.focus()
-}
-
-async function show(focusMenu = false): Promise<void> {
-  if (props.disabled || !trigger.value) return
-  if (open.value) {
-    if (focusMenu) focusAt(0)
-    return
-  }
-  parent.value = props.resolveParent?.() ?? null
+async function show(): Promise<void> {
+  if (props.disabled || !trigger.value || open.value) return
+  base = itemsHere()
+  query.value = ''
   const rect = trigger.value.getBoundingClientRect()
   position.value = {
-    left: `${Math.max(8, Math.min(rect.left, window.innerWidth - 308))}px`,
-    top: `${rect.bottom + 6}px`,
-    maxHeight: `${Math.max(0, window.innerHeight - rect.bottom - 14)}px`
+    left: `${Math.max(8, Math.min(rect.left, window.innerWidth - 288))}px`,
+    top: `${rect.bottom + 6}px`
   }
   open.value = true
   await nextTick()
-  if (open.value && focusMenu) focusAt(0)
+  if (!open.value || !listHost.value) return
+  picker = new BlockPicker({ onPick: (item) => select(item.id) })
+  listHost.value.replaceChildren(picker.dom)
+  picker.dom.style.maxHeight = `${Math.max(160, window.innerHeight - rect.bottom - 70)}px`
+  render()
+  search.value?.focus()
 }
 
 function onTriggerClick(): void {
   if (open.value) close(true)
-  else void show(true)
+  else void show()
 }
 
 function select(id: string): void {
@@ -89,25 +86,20 @@ function select(id: string): void {
   emit('select', id)
 }
 
-function onKeydown(event: KeyboardEvent): void {
-  const buttons = [...(menu.value?.querySelectorAll('button') ?? [])]
-  const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
-  if (event.key === 'Escape') {
+function onSearchKeydown(event: KeyboardEvent): void {
+  if (event.isComposing) return
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault()
+    picker?.move(event.key === 'ArrowDown' ? 1 : -1)
+  } else if (event.key === 'Enter') {
+    event.preventDefault()
+    picker?.pickSelected()
+  } else if (event.key === 'Escape') {
     event.preventDefault()
     event.stopPropagation()
     close(true)
   } else if (event.key === 'Tab') {
     close(true)
-  } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-    event.preventDefault()
-    const index =
-      event.key === 'Home'
-        ? 0
-        : event.key === 'End'
-          ? items.value.length - 1
-          : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.value.length) %
-            items.value.length
-    focusAt(index)
   }
 }
 
@@ -116,35 +108,22 @@ function onOutside(event: Event): void {
   if (!menu.value?.contains(target) && !trigger.value?.contains(target)) close()
 }
 
-function onDocumentKeydown(event: KeyboardEvent): void {
-  if (!open.value || event.key !== 'Escape') return
-  event.preventDefault()
-  event.stopPropagation()
-  close(true)
-}
-
 function onViewportChange(event: Event): void {
   if (event.target instanceof Node && menu.value?.contains(event.target)) return
   close()
 }
 
-watch(
-  () => props.disabled,
-  (disabled) => {
-    if (disabled) close()
-  }
-)
+watch(query, render)
 
 watch(
-  () => props.active,
-  (active) => {
-    if (!active) close()
+  () => [props.disabled, props.active],
+  ([disabled, active]) => {
+    if (disabled || !active) close()
   }
 )
 
 onMounted(() => {
   document.addEventListener('pointerdown', onOutside, true)
-  document.addEventListener('keydown', onDocumentKeydown, true)
   window.addEventListener('resize', onViewportChange)
   window.addEventListener('scroll', onViewportChange, true)
   window.addEventListener('blur', onViewportChange)
@@ -152,7 +131,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onOutside, true)
-  document.removeEventListener('keydown', onDocumentKeydown, true)
   window.removeEventListener('resize', onViewportChange)
   window.removeEventListener('scroll', onViewportChange, true)
   window.removeEventListener('blur', onViewportChange)
@@ -165,14 +143,14 @@ onBeforeUnmount(() => {
     type="button"
     class="block-insert-trigger"
     aria-label="插入"
-    aria-haspopup="menu"
+    aria-haspopup="listbox"
     :aria-expanded="open"
     :aria-controls="open ? menuId : undefined"
     :disabled="disabled"
     @mousedown.prevent
     @click="onTriggerClick"
-    @keydown.down.prevent="show(true)"
-    @keydown.up.prevent="show(true)"
+    @keydown.down.prevent="show()"
+    @keydown.up.prevent="show()"
   >
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" aria-hidden="true">
       <path d="M0 0h1024v1024H0z" fill="none" />
@@ -186,21 +164,26 @@ onBeforeUnmount(() => {
       :id="menuId"
       ref="menu"
       class="block-insert-menu"
-      role="menu"
+      role="dialog"
       aria-label="插入"
       :style="position"
-      @mousedown.prevent
-      @keydown="onKeydown"
     >
-      <button
-        v-for="item in items"
-        :key="item.id"
-        type="button"
-        role="menuitem"
-        @click="select(item.id)"
-      >
-        {{ item.label }}
-      </button>
+      <label class="block-insert-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="6.5" />
+          <path d="m16 16 4 4" />
+        </svg>
+        <input
+          ref="search"
+          v-model="query"
+          type="text"
+          spellcheck="false"
+          placeholder="搜索，如 表格、swdt"
+          aria-label="搜索要插入的块"
+          @keydown="onSearchKeydown"
+        />
+      </label>
+      <div ref="listHost" class="block-insert-list" />
     </div>
   </Teleport>
 </template>
@@ -240,38 +223,47 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 1000;
   box-sizing: border-box;
-  display: grid;
-  grid-auto-flow: column;
-  grid-template-rows: repeat(8, auto);
-  width: 300px;
-  max-width: calc(100vw - 16px);
-  column-gap: 4px;
-  overflow-y: auto;
-  padding: 6px;
+  overflow: hidden;
   color: var(--text);
-  background: var(--panel);
+  background: var(--raised, var(--panel));
   border: 1px solid var(--border);
   border-radius: 10px;
-  box-shadow: 0 10px 28px rgb(0 0 0 / 28%);
+  box-shadow: var(--tn-shadow-2);
 }
 
-.block-insert-menu button {
-  display: block;
-  width: 100%;
-  min-height: 32px;
-  padding: 6px 10px;
+.block-insert-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 6px 2px;
+  padding: 0 8px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input-bg);
+}
+
+.block-insert-search:focus-within {
+  border-color: var(--accent);
+}
+
+.block-insert-search svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.block-insert-search input {
+  flex: 1;
+  min-width: 0;
   border: 0;
-  border-radius: 5px;
-  color: inherit;
-  background: transparent;
-  font: 13px var(--font-sans);
-  text-align: left;
-  cursor: pointer;
-}
-
-.block-insert-menu button:hover,
-.block-insert-menu button:focus-visible {
   outline: none;
-  background: var(--hover);
+  background: transparent;
+  color: inherit;
+  font: 13px var(--font-sans);
 }
 </style>

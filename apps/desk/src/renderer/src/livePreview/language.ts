@@ -12,12 +12,99 @@ const CONTAINER_OPEN = /^(:{3,})[ \t]*(.*)$/
 const CONTAINER_CLOSE = /^(:{3,})[ \t]*$/
 const FENCE = /^(`{3,}|~{3,})/
 
+/** 原地编辑的提示块：开启行和结束行各自成节点，中间是普通正文。 */
+export const CALLOUT_NAMES = new Set(['tip', 'info', 'warning', 'danger', 'details'])
+
 function lineContent(line: Line): string {
   return line.text.slice(line.pos)
 }
 
+// `Line.depth` is public at runtime but missing from @lezer/markdown's typings; without
+// this check a multi-line leaf would swallow the close line of the enclosing Callout.
+function insideParent(cx: BlockContext, line: Line): boolean {
+  return (line as Line & { depth: number }).depth >= cx.depth
+}
+
+function calloutOpenMatch(text: string): RegExpExecArray | null {
+  const open = CONTAINER_OPEN.exec(text)
+  if (!open) return null
+  const name = open[2].trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+  return CALLOUT_NAMES.has(name) ? open : null
+}
+
+function isCalloutFenceLine(line: Line): boolean {
+  if (line.indent - line.baseIndent >= 4) return false
+  const text = lineContent(line)
+  return Boolean(CONTAINER_CLOSE.exec(text) || calloutOpenMatch(text))
+}
+
 /**
- * VitePress 风格的 `:::` 容器（`::: tip 标题` … `:::`），整块作为一个叶子节点。
+ * 顶层的 `::: tip 标题` … `:::` 是一个复合块（和引用块一样），正文按普通 Markdown 解析，
+ * 可以像正文一样直接编辑。闭合与 markdown-it-container 一致：第一行冒号数不少于开启行的
+ * `:::` 关闭容器，哪怕它落在没闭合的围栏里。容器里再写的开启行不嵌套，单独成 CalloutOpen；
+ * 不在容器里的 `:::` 单独成 CalloutClose。
+ */
+const callouts: MarkdownConfig = {
+  defineNodes: [
+    {
+      name: 'Callout',
+      block: true,
+      composite(cx, line, colons) {
+        if (line.indent - line.baseIndent >= 4) return true
+        const close = CONTAINER_CLOSE.exec(lineContent(line))
+        if (!close || close[1].length < colons) return true
+        const start = cx.lineStart + line.pos
+        line.addMarker(cx.elt('CalloutMark', start, start + close[1].length))
+        line.moveBase(line.text.length)
+        return false
+      }
+    },
+    { name: 'CalloutOpen', block: true },
+    { name: 'CalloutClose', block: true },
+    { name: 'CalloutMark', style: tags.processingInstruction },
+    { name: 'CalloutInfo', style: tags.labelName }
+  ],
+  parseBlock: [
+    {
+      name: 'Callout',
+      before: 'FencedCode',
+      parse(cx: BlockContext, line: Line): boolean | null {
+        if (line.indent - line.baseIndent >= 4) return false
+        const text = lineContent(line)
+        const start = cx.lineStart + line.pos
+        const end = cx.lineStart + line.text.length
+        const open = calloutOpenMatch(text)
+        if (open) {
+          const mark = cx.elt('CalloutMark', start, start + open[1].length)
+          const info = cx.elt('CalloutInfo', end - open[2].length, end)
+          if (cx.depth === 1) {
+            cx.startComposite('Callout', line.pos, open[1].length)
+            cx.addElement(mark)
+            cx.addElement(info)
+            line.moveBase(line.text.length)
+            return null
+          }
+          cx.addElement(cx.elt('CalloutOpen', start, end, [mark, info]))
+          cx.nextLine()
+          return true
+        }
+        const close = CONTAINER_CLOSE.exec(text)
+        if (!close) return false
+        cx.addElement(
+          cx.elt('CalloutClose', start, end, [
+            cx.elt('CalloutMark', start, start + close[1].length)
+          ])
+        )
+        cx.nextLine()
+        return true
+      },
+      endLeaf: (_cx, line) => isCalloutFenceLine(line)
+    }
+  ]
+}
+
+/**
+ * 提示块以外的 `:::` 容器（`::: code-group` … `:::`），整块作为一个叶子节点。
  *
  * 闭合规则与 markdown-it-container 一致：只由冒号组成、且冒号数不少于开启行的那一行
  * 关闭当前层；更短的开启行是内层容器。容器内部的围栏代码里出现的 `:::` 不算。
@@ -36,7 +123,7 @@ const containers: MarkdownConfig = {
       parse(cx: BlockContext, line: Line): boolean {
         if (line.indent >= 4) return false
         const open = CONTAINER_OPEN.exec(lineContent(line))
-        if (!open || !open[2].trim()) return false
+        if (!open || !open[2].trim() || calloutOpenMatch(open[0])) return false
         const start = cx.lineStart + line.pos
         const openEnd = cx.lineStart + line.text.length
         const markEnd = start + open[1].length
@@ -46,7 +133,7 @@ const containers: MarkdownConfig = {
         let bodyEnd = -1
         let closeFrom = -1
         let closeTo = -1
-        while (cx.nextLine()) {
+        while (cx.nextLine() && insideParent(cx, line)) {
           const text = lineContent(line)
           if (bodyStart < 0) bodyStart = cx.lineStart
           if (fence) {
@@ -200,7 +287,7 @@ const math: MarkdownConfig = {
         let end = cx.lineStart + line.text.length
         let closeFrom = -1
         const contentStart = end + 1
-        while (cx.nextLine()) {
+        while (cx.nextLine() && insideParent(cx, line)) {
           const current = lineContent(line).trimEnd()
           if (current.endsWith('$$')) {
             closeFrom = cx.lineStart + line.pos + current.length - 2
@@ -255,45 +342,6 @@ const math: MarkdownConfig = {
   ]
 }
 
-const EQUALS = 61
-const HIGHLIGHT_PUNCTUATION = /[\p{P}\p{S}]/u
-const highlightDelimiter = { resolve: 'Highlight', mark: 'HighlightMark' }
-
-/**
- * `==高亮==`：和导图节点、SSG（markdown-it-mark）用同一种写法。
- * 左右定界规则照 GFM 删除线：`a == b` 这种两侧有空白的不算。
- */
-const highlight: MarkdownConfig = {
-  defineNodes: [
-    { name: 'Highlight' },
-    { name: 'HighlightMark', style: tags.processingInstruction }
-  ],
-  parseInline: [
-    {
-      name: 'Highlight',
-      after: 'Emphasis',
-      parse(cx: InlineContext, next: number, pos: number): number {
-        if (next !== EQUALS || cx.char(pos + 1) !== EQUALS || cx.char(pos + 2) === EQUALS) {
-          return -1
-        }
-        const before = cx.slice(pos - 1, pos)
-        const after = cx.slice(pos + 2, pos + 3)
-        const spaceBefore = /\s|^$/.test(before)
-        const spaceAfter = /\s|^$/.test(after)
-        const punctBefore = HIGHLIGHT_PUNCTUATION.test(before)
-        const punctAfter = HIGHLIGHT_PUNCTUATION.test(after)
-        return cx.addDelimiter(
-          highlightDelimiter,
-          pos,
-          pos + 2,
-          !spaceAfter && (!punctAfter || spaceBefore || punctBefore),
-          !spaceBefore && (!punctBefore || spaceAfter || punctAfter)
-        )
-      }
-    }
-  ]
-}
-
 /**
  * `classHighlighter` 没有 `tags.strikethrough`。不补上的话，可视化藏掉 `~~` 之后正文没有中线。
  */
@@ -311,10 +359,10 @@ export function tnotesMarkdown(): Extension {
       codeLanguages: deskCodeMirrorLanguages,
       extensions: [
         frontmatter,
+        callouts,
         containers,
         componentBlock,
         math,
-        highlight,
         { remove: ['Superscript', 'Subscript'] }
       ],
       addKeymap: false

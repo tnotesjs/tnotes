@@ -15,12 +15,13 @@ describe('BlockSpec 嵌套角色', () => {
     for (const spec of BLOCK_SPECS) expect(canNest(null, spec.type)).toBe(true)
   })
 
-  it('容器里只放普通内容：不套容器，也不放顶层特殊块', () => {
+  it('容器里只放普通内容和代码：不套容器，也不放其余顶层特殊块', () => {
     for (const parent of ['tip', 'info', 'warning', 'danger', 'details']) {
       expect(canNest(parent, 'table')).toBe(true)
       expect(canNest(parent, 'tip')).toBe(false)
       expect(canNest(parent, 'details')).toBe(false)
-      expect(canNest(parent, 'code')).toBe(false)
+      expect(canNest(parent, 'code')).toBe(true)
+      expect(canNest(parent, 'code-group')).toBe(true)
       expect(canNest(parent, 'mermaid')).toBe(false)
       expect(canNest(parent, 'excalidraw')).toBe(false)
     }

@@ -44,7 +44,7 @@ describe('tnotesMarkdown', () => {
     expect(topLevel('---\n\n正文\n')[0].name).toBe('HorizontalRule')
   })
 
-  it('parses containers with nested containers and fenced ::: lines', () => {
+  it('parses callouts as open / close lines around normal markdown', () => {
     const doc = [
       ':::: tip 外层',
       '外层正文',
@@ -58,9 +58,25 @@ describe('tnotesMarkdown', () => {
       '',
       '后续段落'
     ].join('\n')
+    // 提示块是复合块，正文按普通 Markdown 解析；容器里的开启行不嵌套
     const nodes = topLevel(doc)
-    expect(nodes.map((node) => node.name)).toEqual(['Container', 'Paragraph'])
+    expect(nodes.map((node) => node.name)).toEqual(['Callout', 'Paragraph'])
     expect(nodes[0].text.endsWith('::::')).toBe(true)
+    expect(names(doc, 'CalloutOpen')).toEqual(['::: warning 内层'])
+  })
+
+  it('closes a callout at the first long-enough ::: line, even inside an open fence', () => {
+    const doc = '::: tip\n正文\n```js\nconst a = 1\n:::\n后文\n'
+    const nodes = topLevel(doc)
+    expect(nodes.map((node) => node.name)).toEqual(['Callout', 'Paragraph'])
+    expect(nodes[0].text.endsWith(':::')).toBe(true)
+  })
+
+  it('lets callout fence lines interrupt a paragraph', () => {
+    expect(topLevel('::: tip\n正文\n:::\n后文\n').map((node) => node.name)).toEqual([
+      'Callout',
+      'Paragraph'
+    ])
   })
 
   it('parses code-group containers as one block', () => {
@@ -125,10 +141,8 @@ describe('tnotesMarkdown', () => {
     expect(names(doc, 'Strikethrough')).toEqual(['~~删~~'])
   })
 
-  it('parses ==highlight== like GFM strikethrough', () => {
-    expect(names('前 ==重点== 后\n', 'Highlight')).toEqual(['==重点=='])
-    expect(names('**==粗体里的高亮==**\n', 'Highlight')).toEqual(['==粗体里的高亮=='])
-    expect(names('a == b == c\n', 'Highlight')).toEqual([])
-    expect(names('x === y\n', 'Highlight')).toEqual([])
+  it('leaves ==text== as plain text', () => {
+    expect(names('前 ==重点== 后\n', 'Highlight')).toEqual([])
+    expect(names('前 ==重点== 后\n', 'Paragraph').join('')).toContain('==重点==')
   })
 })

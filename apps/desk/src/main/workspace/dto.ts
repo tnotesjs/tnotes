@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import {
@@ -16,8 +17,10 @@ import type {
   KnowledgeBaseDescriptor,
   KnowledgeBaseDetail,
   KnowledgeBaseSettingsDto,
+  LineBreakMode,
   NoteDocumentDto
 } from '../../shared/contracts'
+import { isLineBreakSensitive } from '../../shared/lineBreakImpact'
 
 import type { KnowledgeBaseHandle } from './types'
 
@@ -107,6 +110,7 @@ export function descriptor(handle: KnowledgeBaseHandle): KnowledgeBaseDescriptor
     statsEnabled: snapshot.config.stats?.enabled === true,
     autoPush: snapshot.config.autoPush ?? undefined,
     headingNumberMaxDepth: snapshot.config.headingNumberMaxDepth,
+    lineBreaks: lineBreakModeOf(snapshot),
     health: hasError ? 'invalid' : 'ready',
     diagnostics: snapshot.diagnostics,
     noteCount: snapshot.notes.length,
@@ -145,8 +149,29 @@ export async function toSettingsDto(
     suggestedName,
     autoPush: config.autoPush ?? null,
     pushRunUpdateBefore: config.push?.runUpdateBefore !== false,
-    headingNumberMaxDepth: config.headingNumberMaxDepth ?? null
+    headingNumberMaxDepth: config.headingNumberMaxDepth ?? null,
+    lineBreaks: lineBreakModeOf(handle.snapshot),
+    lineBreakImpact: await countLineBreakSensitiveNotes(handle)
   }
+}
+
+export function lineBreakModeOf(snapshot: KbSnapshot): LineBreakMode {
+  return snapshot.config.markdown?.lineBreaks === 'visual' ? 'visual' : 'commonmark'
+}
+
+async function countLineBreakSensitiveNotes(handle: KnowledgeBaseHandle): Promise<number> {
+  const results = await Promise.all(
+    handle.snapshot.notes.map(async (note) => {
+      try {
+        return isLineBreakSensitive(
+          await readFile(path.join(handle.rootPath, note.relPath), 'utf8')
+        )
+      } catch {
+        return false
+      }
+    })
+  )
+  return results.filter(Boolean).length
 }
 
 export function mapToc(nodes: TocNode[], snapshot: KbSnapshot): DeskTocNode[] {

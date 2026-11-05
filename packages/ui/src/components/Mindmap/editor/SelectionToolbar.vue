@@ -44,8 +44,7 @@ const formats: Array<{ id: InlineFormat; text: string; label: string }> = [
   { id: 'bold', text: 'B', label: `加粗 (${primaryShortcut('B')})` },
   { id: 'italic', text: 'I', label: `斜体 (${primaryShortcut('I')})` },
   { id: 'underline', text: 'U', label: `下划线 (${primaryShortcut('U')})` },
-  { id: 'strike', text: 'S', label: `删除线 (${primaryShortcut('Enter')})` },
-  { id: 'highlight', text: '▰', label: '高亮' }
+  { id: 'strike', text: 'S', label: `删除线 (${primaryShortcut('Enter')})` }
 ]
 
 const toolbarRef = ref<HTMLElement | null>(null)
@@ -113,8 +112,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', measureToolbar))
         :aria-label="item.label"
         @click="emit('format', item.id)"
       >
-        <AppIcon v-if="item.id === 'highlight'" name="highlight" :size="21" />
-        <template v-else>{{ item.text }}</template>
+        {{ item.text }}
       </button>
       <span class="toolbar-divider" />
     </template>
@@ -283,9 +281,6 @@ onBeforeUnmount(() => window.removeEventListener('resize', measureToolbar))
 }
 .format-button.is-strike {
   text-decoration: line-through;
-}
-.format-button.is-highlight {
-  color: #d3c900;
 }
 .tool-button.danger {
   color: #e14f5b;

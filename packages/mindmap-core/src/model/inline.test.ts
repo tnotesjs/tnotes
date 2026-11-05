@@ -14,9 +14,9 @@ import {
 } from './inline'
 
 describe('Markdown 行内模型', () => {
-  it('解析粗体、斜体、下划线、删除线、高亮、代码和链接', () => {
-    const raw = '**粗体** *斜体* <u>下划线</u> ~~删除~~ ==高亮== `代码` [链接](https://example.com)'
-    expect(stripInline(raw)).toBe('粗体 斜体 下划线 删除 高亮 代码 链接')
+  it('解析粗体、斜体、下划线、删除线、代码和链接', () => {
+    const raw = '**粗体** *斜体* <u>下划线</u> ~~删除~~ `代码` [链接](https://example.com)'
+    expect(stripInline(raw)).toBe('粗体 斜体 下划线 删除 代码 链接')
     const segments = parseInlineSegments(raw)
     expect(segments.some((segment) => segment.marks.bold && segment.text === '粗体')).toBe(true)
     expect(segments.some((segment) => segment.marks.underline && segment.text === '下划线')).toBe(
@@ -87,13 +87,11 @@ describe('Markdown 行内模型', () => {
     expect(bold).toBe('a**bcd**ef')
     expect(inlineFormatActive(bold, 1, 4, 'bold')).toBe(true)
     expect(toggleInlineFormat(bold, 1, 4, 'bold')).toBe('abcdef')
-    expect(toggleInlineFormat('abcdef', 0, 6, 'highlight')).toBe('==abcdef==')
     expect(toggleInlineFormat('abcdef', 0, 6, 'underline')).toBe('<u>abcdef</u>')
+    expect(stripInline('前 ==重点== 后')).toBe('前 ==重点== 后')
   })
 
-  it('高亮与行内代码互斥，清除样式时保留链接', () => {
-    expect(toggleInlineFormat('==abcdef==', 0, 6, 'code')).toBe('`abcdef`')
-    expect(toggleInlineFormat('`abcdef`', 0, 6, 'highlight')).toBe('==abcdef==')
+  it('清除样式时保留链接', () => {
     expect(clearInlineFormats('[***abc***](https://example.com)', 0, 3)).toBe(
       '[abc](https://example.com)'
     )

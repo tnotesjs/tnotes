@@ -14,6 +14,32 @@
   margin: 16px 0;
   line-height: var(--tn-prose-line-height);
 }
+/* Visual line breaks: each blank line beyond the first adds one editor line.
+   The first spacer cancels the preceding block's 16px margin so N spacers add
+   exactly N line heights on top of the normal paragraph gap. */
+:is(.tn-prose, .vp-doc) :where(.tn-blank-line) {
+  height: var(--tn-prose-line-height);
+  margin: 0;
+}
+:is(.tn-prose, .vp-doc) :where(:not(.tn-blank-line) + .tn-blank-line) {
+  margin-top: -16px;
+}
+/* Callout bodies keep every blank line as a spacer, so the spacer replaces the
+   neighbouring blocks' own margins instead of adding to them. */
+:is(.tn-prose, .vp-doc) :where(.tn-custom-block > .tn-blank-line) {
+  margin-top: 0;
+}
+:is(.tn-prose, .vp-doc) .tn-custom-block > .tn-blank-line + *,
+:is(.tn-prose, .vp-doc) .tn-custom-block > .tn-blank-line + * > :first-child,
+:is(.tn-prose, .vp-doc) .tn-custom-block > .tn-blank-line + * > :first-child > :first-child {
+  margin-top: 0;
+}
+/* Inner margins collapse out through the block (nested lists, quoted paragraphs). */
+:is(.tn-prose, .vp-doc) .tn-custom-block > :has(+ .tn-blank-line),
+:is(.tn-prose, .vp-doc) .tn-custom-block > :has(+ .tn-blank-line) > :last-child,
+:is(.tn-prose, .vp-doc) .tn-custom-block > :has(+ .tn-blank-line) > :last-child > :last-child {
+  margin-bottom: 0;
+}
 :is(.tn-prose, .vp-doc) :where(h1, h2, h3, h4, h5, h6) {
   font-family: var(--tn-font-sans);
   font-weight: var(--tn-heading-weight);
@@ -209,37 +235,67 @@
   text-align: center;
 }
 
-/* Callouts — same soft-tint cards as Desk visual (no left accent bar). */
+/* Callouts — GitHub Alerts：左侧色条 + 图标/标题，正文与周围连续，没有整块底色。 */
 :is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block) {
+  --tn-alert: var(--tn-c-text-2);
   box-sizing: border-box;
   margin: 16px 0;
-  padding: 12px 16px;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  padding: 2px 0 2px 16px;
+  border: none;
+  border-left: 0.25em solid var(--tn-alert);
+  border-radius: 0;
+  background: none;
   color: var(--tn-c-text);
   font-size: inherit;
   line-height: 1.5;
 }
 :is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block.tip) {
-  background-color: var(--tn-c-highlight);
+  --tn-alert: var(--tn-c-success);
 }
-:is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block.info),
-:is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block.note),
-:is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block.details) {
-  background-color: var(--tn-c-hover);
+:is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block.info) {
+  --tn-alert: var(--tn-c-link);
 }
 :is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block.warning) {
-  background-color: var(--tn-c-warning-soft);
+  --tn-alert: var(--tn-c-warning);
 }
 :is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block.danger) {
-  background-color: var(--tn-c-danger-soft);
+  --tn-alert: var(--tn-c-danger);
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block.details) {
+  --tn-alert: var(--tn-c-text-2);
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-alert-icon) {
+  display: inline-flex;
+  flex: none;
+  color: var(--tn-alert);
+  line-height: 0;
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-alert-icon svg) {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 :is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block-title) {
-  margin: 0 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
   font-size: inherit;
   font-weight: 600;
   line-height: 1.5;
+  color: var(--tn-alert);
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-container-source) {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--tn-c-bg-soft);
   color: var(--tn-c-text);
+  font-family: var(--tn-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-x: auto;
 }
 :is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block > p:not(.tn-custom-block-title)) {
   margin: 0;
@@ -251,6 +307,7 @@
   margin-bottom: 0;
 }
 :is(.tn-prose, .vp-doc, .cm-lp-card) :where(details.tn-custom-block > summary) {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -268,16 +325,41 @@
   :where(details.tn-custom-block > summary::-webkit-details-marker) {
   display: none;
 }
-/* 左侧折叠折线：与 Desk 标题折叠同一套 SVG（.tn-details-fold），展开旋转 90° */
+/* 折叠折线和标题折叠一样挂在色条左外侧（悬停或收起时显示），图标和标题留在其它提示块的位置。
+   right 要越过 details 的左内边距 16px 和 0.25em 色条。 */
 :is(.tn-prose, .vp-doc, .cm-lp-card) :where(details.tn-custom-block > summary > .tn-details-fold) {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: calc(100% + 16px + 0.25em);
   display: inline-flex;
-  flex: none;
   align-items: center;
   justify-content: center;
-  width: 1em;
-  height: 1em;
+  width: 20px;
+  border-radius: 4px;
   color: var(--tn-c-text-2);
   line-height: 0;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card)
+  :where(details.tn-custom-block > summary:hover > .tn-details-fold) {
+  color: var(--tn-c-brand);
+  background: var(--tn-c-hover);
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card)
+  :where(
+    details.tn-custom-block:not([open]) > summary > .tn-details-fold,
+    details.tn-custom-block:hover > summary > .tn-details-fold,
+    details.tn-custom-block > summary:focus-visible > .tn-details-fold
+  ) {
+  opacity: 1;
+}
+@media (hover: none) {
+  :is(.tn-prose, .vp-doc, .cm-lp-card)
+    :where(details.tn-custom-block > summary > .tn-details-fold) {
+    opacity: 1;
+  }
 }
 :is(.tn-prose, .vp-doc, .cm-lp-card)
   :where(details.tn-custom-block > summary > .tn-details-fold svg) {

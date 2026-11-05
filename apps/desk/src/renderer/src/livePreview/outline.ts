@@ -1,6 +1,7 @@
 import { syntaxTree } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
 
+import { calloutLayout } from './calloutLayout'
 import { tnotesMarkdown } from './language'
 
 import type { NoteOutlineHeading } from '../markdown/noteOutline'
@@ -13,8 +14,11 @@ export interface OutlineHeading extends NoteOutlineHeading {
 export function collectHeadings(state: EditorState): OutlineHeading[] {
   const headings: OutlineHeading[] = []
   const doc = state.doc
+  const callouts = calloutLayout(state).blocks
   syntaxTree(state).iterate({
     enter(node) {
+      if (callouts.some((block) => node.from > block.open.to && node.from <= block.end))
+        return false
       const match = /^(ATX|Setext)Heading([1-6])$/.exec(node.name)
       if (!match) {
         return (

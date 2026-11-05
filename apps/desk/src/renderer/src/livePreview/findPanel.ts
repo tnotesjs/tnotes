@@ -17,10 +17,10 @@ import { Decoration, EditorView, type Panel, type ViewUpdate } from '@codemirror
 import { setEditorInteracting } from './decorations'
 
 /**
- * 当前笔记的查找 / 替换条（对齐 VS Code 编辑器内的 Find）。
+ * 当前笔记的查找 / 替换条（对齐 VS Code / Cursor 编辑器内的 Find）。
  *
- * 查询状态全部交给 `@codemirror/search`：高亮、跳转、替换（含 `$1` 捕获组）都用它的命令，
- * 这里只负责界面、计数、开关记忆和「在选区中查找」。
+ * 条本身浮在编辑器右上角，不占文档流。查询状态全部交给 `@codemirror/search`：
+ * 高亮、跳转、替换（含 `$1` 捕获组）都用它的命令，这里只负责界面、计数、开关记忆和「在选区中查找」。
  */
 
 const OPTIONS_KEY = 'tnotes.find.options'
@@ -131,6 +131,15 @@ export function formatCount(count: FindCount, query: SearchQuery): string {
 
 const panels = new WeakMap<EditorView, FindPanel>()
 
+const ICON_CHEVRON =
+  '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+const ICON_REPLACE =
+  '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h6M2.5 6.5h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M9.5 5.2 12.2 7.4 9.5 9.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+const ICON_REPLACE_ALL =
+  '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 2.8h6M2.5 5.2h4M2.5 8.6h6M2.5 11h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M10 4.4 12.4 6.2 10 8M10 8.6 12.4 10.4 10 12.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+const ICON_SELECTION =
+  '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M3 8h10M3 11.5h6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>'
+
 function button(
   label: string,
   title: string,
@@ -140,7 +149,8 @@ function button(
   const element = document.createElement('button')
   element.type = 'button'
   element.className = className
-  element.textContent = label
+  if (label.startsWith('<')) element.innerHTML = label
+  else element.textContent = label
   element.title = title
   element.setAttribute('aria-label', title)
   // 按下时不抢走输入框焦点
@@ -193,24 +203,38 @@ class FindPanel implements Panel {
       ),
       wholeWord: button('ab', '全字匹配（⌥⌘W）', () => this.toggle('wholeWord'), 'cm-find-toggle'),
       regexp: button('.*', '使用正则表达式（⌥⌘R）', () => this.toggle('regexp'), 'cm-find-toggle'),
-      scope: button('≡', '在选区中查找（⌥⌘L）', () => this.toggleScope(), 'cm-find-toggle')
+      scope: button(
+        ICON_SELECTION,
+        '在选区中查找（⌥⌘L）',
+        () => this.toggleScope(),
+        'cm-find-toggle'
+      )
     }
+    this.toggles.wholeWord.classList.add('cm-find-whole')
 
     this.expandButton = button(
-      '›',
+      ICON_CHEVRON,
       '切换替换（⌥⌘F）',
       () => this.setReplaceOpen(!this.replaceOpen),
       'cm-find-expand'
     )
 
+    const findOptions = document.createElement('div')
+    findOptions.className = 'cm-find-options'
+    findOptions.append(this.toggles.caseSensitive, this.toggles.wholeWord, this.toggles.regexp)
+    const findField = document.createElement('div')
+    findField.className = 'cm-find-field'
+    findField.append(this.findInput, findOptions)
+
+    const replaceField = document.createElement('div')
+    replaceField.className = 'cm-find-field'
+    replaceField.append(this.replaceInput)
+
     const findRow = document.createElement('div')
     findRow.className = 'cm-find-row'
     findRow.append(
-      this.findInput,
+      findField,
       this.countLabel,
-      this.toggles.caseSensitive,
-      this.toggles.wholeWord,
-      this.toggles.regexp,
       button('↑', '上一个（⇧Enter / ⇧⌘G）', () => findPrevious(this.view)),
       button('↓', '下一个（Enter / ⌘G）', () => findNext(this.view)),
       this.toggles.scope,
@@ -220,9 +244,19 @@ class FindPanel implements Panel {
     this.replaceRow = document.createElement('div')
     this.replaceRow.className = 'cm-find-row cm-find-replace-row'
     this.replaceRow.append(
-      this.replaceInput,
-      button('替换', '替换（Enter）', () => replaceNext(this.view), 'cm-find-text-button'),
-      button('全部替换', '全部替换（⌘Enter）', () => replaceAll(this.view), 'cm-find-text-button')
+      replaceField,
+      button(
+        ICON_REPLACE,
+        '替换（Enter）',
+        () => replaceNext(this.view),
+        'cm-find-button cm-find-icon'
+      ),
+      button(
+        ICON_REPLACE_ALL,
+        '全部替换（⌘Enter）',
+        () => replaceAll(this.view),
+        'cm-find-button cm-find-icon'
+      )
     )
 
     const rows = document.createElement('div')
@@ -286,7 +320,7 @@ class FindPanel implements Panel {
 
   setReplaceOpen(open: boolean, focus = false): void {
     this.replaceRow.hidden = !open
-    this.expandButton.textContent = open ? '⌄' : '›'
+    this.expandButton.classList.toggle('is-open', open)
     this.expandButton.setAttribute('aria-expanded', String(open))
     if (focus && open) {
       this.replaceInput.focus()
@@ -362,6 +396,7 @@ class FindPanel implements Panel {
     this.countLabel.textContent = formatCount(count, this.query)
     const missing = Boolean(this.query.search) && (count.total === 0 || !this.query.valid)
     this.findInput.classList.toggle('is-missing', missing)
+    this.countLabel.classList.toggle('is-missing', missing)
     this.findInput.setAttribute('aria-invalid', String(missing))
   }
 

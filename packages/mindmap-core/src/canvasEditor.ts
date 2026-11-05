@@ -85,7 +85,7 @@ function renderCanvasInlineRuns(
   for (const segment of parseInlineSegments(raw, options)) {
     const run = document.createElement('span')
     run.className = 'inline-run'
-    for (const format of ['bold', 'italic', 'underline', 'strike', 'highlight', 'code'] as const) {
+    for (const format of ['bold', 'italic', 'underline', 'strike', 'code'] as const) {
       if (segment.marks[format]) run.classList.add(format)
     }
     if (segment.link) run.classList.add('link')
@@ -860,7 +860,6 @@ export class CanvasEditor {
     if (mod && key === 'enter' && hasSelection) return 'strike'
     // 兼容常见编辑器键位，便于从旧版本迁移。
     if (mod && e.shiftKey && key === 's') return 'strike'
-    if (mod && e.shiftKey && key === 'h') return 'highlight'
     // 行内代码采用常见编辑器键位 Cmd/Ctrl+E；Option/Alt+L 会在 macOS 输入 ¬。
     if (mod && !e.shiftKey && key === 'e') return 'code'
     return null

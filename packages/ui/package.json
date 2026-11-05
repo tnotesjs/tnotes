@@ -27,6 +27,12 @@
       "import": "./src/markdown/image.ts",
       "default": "./src/markdown/image.ts"
     },
+    "./line-breaks": {
+      "types": "./src/markdown/lineBreaks.ts",
+      "node": "./dist/markdown/lineBreaks.js",
+      "import": "./src/markdown/lineBreaks.ts",
+      "default": "./src/markdown/lineBreaks.ts"
+    },
     "./styles/tokens.css": "./src/styles/tokens.css",
     "./styles/prose.css": "./src/styles/prose.css",
     "./styles/code.css": "./src/styles/code.css",
@@ -44,6 +50,7 @@
     },
     "./code-block": "./src/components/CodeBlock/CodeBlock.vue",
     "./code-group": "./src/components/CodeGroup/CodeGroup.vue",
+    "./alerts": "./src/alerts/icons.ts",
     "./badge": "./src/components/Badge/Badge.vue",
     "./image-preview": "./src/components/ImagePreview/ImagePreview.vue",
     "./bilibili-video": "./src/entries/bilibili-video.ts",
@@ -126,7 +133,7 @@
   ],
   "license": "MIT",
   "scripts": {
-    "build": "tsup src/code/highlight.ts src/components/Footprints/parse.ts src/components/Mindmap/markdown.ts src/markdown/image.ts src/swiper/hydrate.ts --format esm --dts --out-dir dist --clean",
+    "build": "tsup src/code/highlight.ts src/components/Footprints/parse.ts src/components/Mindmap/markdown.ts src/markdown/image.ts src/markdown/lineBreaks.ts src/swiper/hydrate.ts --format esm --dts --out-dir dist --clean",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "lint": "eslint . --max-warnings=0",

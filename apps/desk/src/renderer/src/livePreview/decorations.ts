@@ -20,6 +20,7 @@ import {
   type DecorationSet
 } from '@codemirror/view'
 
+import type { LineBreakMode } from '@tnotesjs/ui/line-breaks'
 import { writeClipboardText } from '../clipboardText'
 import {
   applyFenceLanguage,
@@ -38,7 +39,10 @@ import {
 } from './codeBlockChrome'
 import { codeLineDecorations, fenceLineDigits } from './codeLines'
 import { CodeHScrollWidget, codeBlockScrollSync } from './codeBlockScroll'
+import { isKnownContainerName } from '../editor/markdown/containerBody'
 import { CardWidget, isKnownComponent, setCodeGroupTab, type CardKind } from './cards'
+import { calloutExpanded, calloutLayout, hasCalloutBody, isCalloutCollapsed } from './calloutLayout'
+import { CalloutHeaderWidget, calloutExtension } from './calloutView'
 import { headingFoldKey, headingSections, HeadingFoldToggle, isHeadingFolded } from './headingFold'
 import { livePreviewEnabled, livePreviewHost } from './host'
 import { listWrapIndent } from './listWrap'
@@ -268,6 +272,11 @@ const BREAK_TAG = /^<br\s*\/?>$/i
 /** 卡片里的组件（如笔记表格）需要知道当前知识库。 */
 export const cardKnowledgeBase = Facet.define<string, string>({
   combine: (values) => values[values.length - 1] ?? ''
+})
+
+/** 知识库的换行渲染方式（tnotes.json markdown.lineBreaks），卡片里的 markdown 照它渲染。 */
+export const cardLineBreaks = Facet.define<LineBreakMode, LineBreakMode>({
+  combine: (values) => values[values.length - 1] ?? 'commonmark'
 })
 
 /** 代码组当前显示的是第几个标签页（键：容器起点，随编辑映射）。 */
@@ -1044,6 +1053,7 @@ function build(state: EditorState): LivePreviewState {
     }
   }
   const kbId = state.facet(cardKnowledgeBase)
+  const lineBreaks = state.facet(cardLineBreaks)
   const noteUuid = state.facet(livePreviewHost).noteUuid
   const definitions = linkDefinitions(state)
   const card = (node: SyntaxNode, kind: CardKind, revealOffset: number): void => {
@@ -1052,7 +1062,7 @@ function build(state: EditorState): LivePreviewState {
     replaceBlock(
       node.from,
       node.to,
-      new CardWidget(kind, source, revealOffset, kbId, definitions, noteUuid)
+      new CardWidget(kind, source, revealOffset, kbId, definitions, noteUuid, lineBreaks)
     )
   }
   const listDepth = (node: SyntaxNode): number => {
@@ -1063,12 +1073,66 @@ function build(state: EditorState): LivePreviewState {
     return Math.max(0, depth)
   }
 
+  const callouts = calloutLayout(state)
+  const readOnly = state.readOnly
+  const collapsedCallouts: Array<{ from: number; to: number }> = []
+  for (const block of callouts.blocks) {
+    const tone = `cm-lp-callout-${block.type}`
+    const collapsed = isCalloutCollapsed(state, block)
+    lineClass(block.open.from, `cm-lp-callout-line cm-lp-callout-head ${tone}`)
+    ranges.push(
+      Decoration.replace({
+        widget: new CalloutHeaderWidget(
+          block.type,
+          block.title,
+          block.type === 'details' && hasCalloutBody(block) ? collapsed : null,
+          readOnly
+        )
+      }).range(block.open.from, block.open.to)
+    )
+    if (hasCalloutBody(block) && collapsed) {
+      ranges.push(Decoration.replace({ block: true }).range(block.bodyFrom, block.end))
+      collapsedCallouts.push({ from: block.bodyFrom, to: block.end })
+      continue
+    }
+    if (hasCalloutBody(block)) {
+      const first = doc.lineAt(block.bodyFrom).number
+      const last = doc.lineAt(block.bodyTo).number
+      for (let number = first; number <= last; number += 1) {
+        ranges.push(
+          Decoration.line({
+            class: `cm-lp-callout-line ${tone}${number === last ? ' cm-lp-callout-last' : ''}`
+          }).range(doc.line(number).from)
+        )
+      }
+    }
+    if (block.close) {
+      ranges.push(Decoration.replace({ block: true }).range(block.close.from, block.close.to))
+    }
+  }
+  const inCalloutBody = (pos: number): boolean =>
+    callouts.blocks.some(
+      (block) => hasCalloutBody(block) && pos >= block.bodyFrom && pos <= block.bodyTo
+    )
+  const nestedSource = (pos: number): { from: number; to: number } | undefined =>
+    callouts.nested.find((span) => pos >= span.from && pos <= span.to)
+
   const sections = headingSections(state)
   syntaxTree(state).iterate({
     enter(ref) {
       const node = ref.node
       const { from, to } = ref
       const name = ref.name
+      if (name === 'CalloutMark' || name === 'CalloutInfo') return false
+      if (name === 'CalloutOpen' || name === 'CalloutClose') {
+        if (nestedSource(from)) linesClass(from, to, 'cm-lp-source-block')
+        return false
+      }
+      if (collapsedCallouts.some((span) => from >= span.from && from <= span.to)) return false
+      if (node.parent?.name === 'Callout' && nestedSource(from)) {
+        linesClass(from, to, 'cm-lp-source-block')
+        return false
+      }
       if (name.startsWith('ATXHeading')) {
         const level = Number(name.slice(-1))
         const line = doc.lineAt(from)
@@ -1180,16 +1244,6 @@ function build(state: EditorState): LivePreviewState {
               hide(child.from, child.to)
             }
           }
-          return
-        }
-        case 'Highlight': {
-          const marks = node.getChildren('HighlightMark')
-          const open = marks[0]
-          const close = marks[marks.length - 1]
-          if (open && close && close.from > open.to) {
-            ranges.push(Decoration.mark({ class: 'cm-lp-highlight' }).range(open.to, close.from))
-          }
-          if (!touches(from, to)) for (const mark of marks) hide(mark.from, mark.to)
           return
         }
         case 'InlineCode': {
@@ -1314,7 +1368,8 @@ function build(state: EditorState): LivePreviewState {
             !token || token.startsWith('[') || token.startsWith('{') ? '' : token.toLowerCase()
           const openLine = doc.lineAt(from)
           const closeLine = doc.lineAt(to)
-          if (lang === 'mermaid' || lang === 'mindmap') {
+          // 提示块里的图表与静态站一致露出源码（按普通代码块显示）
+          if ((lang === 'mermaid' || lang === 'mindmap') && !inCalloutBody(from)) {
             if (!touches(from, to)) {
               card(node, lang, openLine.to - openLine.from + 1)
               return false
@@ -1421,6 +1476,13 @@ function build(state: EditorState): LivePreviewState {
           const infoNode = node.getChild('ContainerInfo')
           const info = infoNode ? doc.sliceString(infoNode.from, infoNode.to).trim() : ''
           const containerName = info.split(/\s+/)[0]?.toLowerCase() ?? ''
+          // 未登记的类型不是容器。收成卡片会把 ::: note 这类已移除语法藏起来。
+          if (!isKnownContainerName(containerName)) return false
+          // 提示块里只认代码组，其余容器不嵌套渲染，露出源码（与静态站一致）
+          if (containerName !== 'code-group' && inCalloutBody(from)) {
+            linesClass(from, to, 'cm-lp-source-block')
+            return false
+          }
           const openLine = doc.lineAt(from)
           const closeLine = doc.lineAt(to)
           const body = node.getChild('ContainerBody')
@@ -1657,9 +1719,11 @@ const livePreviewStateField = StateField.define<LivePreviewState>({
       interactionChanged ||
       syntaxTree(tr.state) !== syntaxTree(tr.startState) ||
       tr.startState.facet(cardKnowledgeBase) !== tr.state.facet(cardKnowledgeBase) ||
+      tr.startState.facet(cardLineBreaks) !== tr.state.facet(cardLineBreaks) ||
       tr.startState.facet(livePreviewHost).noteUuid !== tr.state.facet(livePreviewHost).noteUuid ||
       headingFoldKey(tr.startState) !== headingFoldKey(tr.state) ||
       tr.startState.field(codeBlockChrome, false) !== tr.state.field(codeBlockChrome, false) ||
+      tr.startState.field(calloutExpanded, false) !== tr.state.field(calloutExpanded, false) ||
       tr.startState.field(codeHighlightEpoch, false) !==
         tr.state.field(codeHighlightEpoch, false) ||
       tr.effects.some((effect) => effect.is(setCodeGroupTab))
@@ -1674,6 +1738,7 @@ const livePreviewStateField = StateField.define<LivePreviewState>({
 /** 实时预览显示层（含焦点与拖选状态跟踪） */
 export const livePreviewField: Extension = [
   interactionField,
+  calloutExtension,
   codeHighlightEpoch,
   codeHighlightLoader,
   livePreviewStateField,

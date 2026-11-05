@@ -1,5 +1,7 @@
 import { syntaxTree } from '@codemirror/language'
 
+import { calloutBodyAt } from './calloutLayout'
+
 import type { EditorState } from '@codemirror/state'
 
 /**
@@ -8,6 +10,8 @@ import type { EditorState } from '@codemirror/state'
  */
 export function containerAtCursor(state: EditorState): string | null {
   const pos = state.selection.main.head
+  const callout = calloutBodyAt(state, pos)
+  if (callout) return callout.type
   let node: ReturnType<ReturnType<typeof syntaxTree>['resolveInner']> | null = syntaxTree(
     state
   ).resolveInner(pos, -1)

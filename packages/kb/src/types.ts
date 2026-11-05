@@ -112,6 +112,23 @@ export interface KbConfig {
    * 超过该层级的标题不加编号前缀。
    */
   headingNumberMaxDepth?: number
+  /** Markdown rendering switches shared by the SSG and Desk. */
+  markdown?: KbMarkdownConfig
+  [key: string]: unknown
+}
+
+/**
+ * How newlines render. `commonmark` (default): a single newline is a space and
+ * blank-line runs collapse. `visual`: a single newline is `<br>` and each extra
+ * blank line between blocks keeps a one-line spacer, matching Desk's editor.
+ */
+export type KbLineBreakMode = 'commonmark' | 'visual'
+
+export interface KbMarkdownConfig {
+  lineNumbers?: boolean
+  math?: boolean
+  imageLazyLoading?: boolean
+  lineBreaks?: KbLineBreakMode
   [key: string]: unknown
 }
 

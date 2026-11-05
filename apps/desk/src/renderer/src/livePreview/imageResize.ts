@@ -84,15 +84,20 @@ export function linkedWidth(height: number, image: HTMLImageElement): number | n
 }
 
 let openPopover: HTMLElement | null = null
+let detachPopoverScroll: (() => void) | null = null
 
 export function closeImageSizePopover(): void {
+  detachPopoverScroll?.()
+  detachPopoverScroll = null
   openPopover?.remove()
   openPopover = null
 }
 
+const SIZE_PRESETS = [25, 50, 75, 100] as const
+
 /**
- * 「调整尺寸…」浮层：宽、高两个输入框，改一边另一边按原图比例跟着变。
- * 只写宽度；下限 16px（低于下限按下限写）。
+ * 「调整尺寸…」浮层：宽、高两个输入框，加上相对原图的 25/50/75/100。
+ * 改一边另一边按原图比例跟着变，合法数字立即写回宽度；只写宽度，下限 16px。
  */
 export function openImageSizePopover(
   image: HTMLImageElement,
@@ -105,64 +110,95 @@ export function openImageSizePopover(
   popover.setAttribute('role', 'dialog')
   popover.setAttribute('aria-label', '调整图片尺寸')
 
+  const fields = document.createElement('div')
+  fields.className = 'cm-lp-image-size-fields'
   const field = (label: string): HTMLInputElement => {
     const wrap = document.createElement('label')
     const text = document.createElement('span')
     text.textContent = label
     const input = document.createElement('input')
     input.type = 'number'
-    input.min = String(MIN_IMAGE_INPUT_WIDTH)
+    input.min = '1'
     input.step = '1'
+    input.setAttribute('aria-label', label === '宽' ? '宽度' : '高度')
     wrap.append(text, input)
-    popover.append(wrap)
+    fields.append(wrap)
     return input
   }
   const widthInput = field('宽')
   const heightInput = field('高')
+  popover.append(fields)
+
   const currentWidth = Math.round(frame.offsetWidth || image.width || image.naturalWidth || 0)
   widthInput.value = currentWidth ? String(currentWidth) : ''
   const initialHeight = linkedHeight(currentWidth, image)
   heightInput.value = initialHeight ? String(initialHeight) : ''
   heightInput.disabled = initialHeight === null
 
+  const presets = document.createElement('div')
+  presets.className = 'cm-lp-image-size-presets'
+  const presetButtons: HTMLButtonElement[] = []
+  for (const percent of SIZE_PRESETS) {
+    if (percent === 100) {
+      const gap = document.createElement('span')
+      gap.className = 'cm-lp-image-size-preset-gap'
+      gap.setAttribute('aria-hidden', 'true')
+      presets.append(gap)
+    }
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.textContent = `${percent}%`
+    button.dataset.percent = String(percent)
+    button.disabled = !image.naturalWidth
+    presetButtons.push(button)
+    presets.append(button)
+  }
+  popover.append(presets)
+
+  const markPreset = (width: number): void => {
+    const natural = image.naturalWidth
+    for (const button of presetButtons) {
+      const percent = Number(button.dataset.percent)
+      const target = natural ? Math.round((natural * percent) / 100) : 0
+      button.classList.toggle('is-active', natural > 0 && Math.abs(target - width) <= 1)
+    }
+  }
+
+  const applyWidth = (px: number): void => {
+    const value = Math.max(MIN_IMAGE_INPUT_WIDTH, Math.round(px))
+    widthInput.value = String(value)
+    const nextHeight = linkedHeight(value, image)
+    if (nextHeight !== null) heightInput.value = String(nextHeight)
+    markPreset(value)
+    commit(`${value}px`)
+  }
+
   widthInput.addEventListener('input', () => {
-    const next = linkedHeight(Number(widthInput.value), image)
-    if (next !== null && Number(widthInput.value) > 0) heightInput.value = String(next)
+    const raw = Number(widthInput.value)
+    if (!Number.isFinite(raw) || raw <= 0) return
+    const next = linkedHeight(raw, image)
+    if (next !== null) heightInput.value = String(next)
+    applyWidth(raw)
   })
   heightInput.addEventListener('input', () => {
-    const next = linkedWidth(Number(heightInput.value), image)
-    if (next !== null && Number(heightInput.value) > 0) widthInput.value = String(next)
+    const raw = Number(heightInput.value)
+    if (!Number.isFinite(raw) || raw <= 0) return
+    const next = linkedWidth(raw, image)
+    if (next === null) return
+    applyWidth(next)
   })
-
-  const actions = document.createElement('div')
-  actions.className = 'cm-lp-image-size-actions'
-  const cancel = document.createElement('button')
-  cancel.type = 'button'
-  cancel.textContent = '取消'
-  const confirm = document.createElement('button')
-  confirm.type = 'button'
-  confirm.className = 'is-primary'
-  confirm.textContent = '确定'
-  actions.append(cancel, confirm)
-  popover.append(actions)
-
-  const apply = (): void => {
-    const value = Math.round(Number(widthInput.value))
-    if (!Number.isFinite(value) || value <= 0) {
-      widthInput.focus()
-      return
-    }
-    closeImageSizePopover()
-    commit(`${Math.max(MIN_IMAGE_INPUT_WIDTH, value)}px`)
+  for (const button of presetButtons) {
+    button.addEventListener('click', () => {
+      const percent = Number(button.dataset.percent)
+      if (!image.naturalWidth) return
+      applyWidth((image.naturalWidth * percent) / 100)
+    })
   }
-  confirm.addEventListener('click', apply)
-  cancel.addEventListener('click', closeImageSizePopover)
+  markPreset(currentWidth)
+
   popover.addEventListener('keydown', (event) => {
     event.stopPropagation()
-    if (event.key === 'Enter') {
-      event.preventDefault()
-      apply()
-    } else if (event.key === 'Escape') {
+    if (event.key === 'Escape') {
       event.preventDefault()
       closeImageSizePopover()
     }
@@ -171,9 +207,11 @@ export function openImageSizePopover(
   popover.addEventListener('mousedown', (event) => event.stopPropagation())
 
   const rect = frame.getBoundingClientRect()
-  popover.style.left = `${Math.round(rect.left)}px`
-  popover.style.top = `${Math.round(rect.bottom + 6)}px`
   document.body.append(popover)
+  // 贴在图片上沿上方一行。长图若挂在下沿，浮层会落到视口外面。
+  const gap = 6
+  popover.style.left = `${Math.round(rect.left)}px`
+  popover.style.top = `${Math.max(8, Math.round(rect.top - popover.offsetHeight - gap))}px`
   openPopover = popover
   const outside = (event: MouseEvent): void => {
     if (openPopover !== popover) {
@@ -188,5 +226,18 @@ export function openImageSizePopover(
   document.addEventListener('mousedown', outside, true)
   widthInput.focus()
   widthInput.select()
+  // 聚焦输入框时编辑器可能顺带滚一下，等这次过了再监听，避免刚打开就被关掉。
+  queueMicrotask(() => {
+    if (openPopover !== popover) return
+    const targets: EventTarget[] = [window, document]
+    for (let node: Node | null = frame.parentNode; node; node = node.parentNode) targets.push(node)
+    const onScroll = (): void => {
+      if (openPopover === popover) closeImageSizePopover()
+    }
+    for (const target of targets) target.addEventListener('scroll', onScroll)
+    detachPopoverScroll = () => {
+      for (const target of targets) target.removeEventListener('scroll', onScroll)
+    }
+  })
   return popover
 }

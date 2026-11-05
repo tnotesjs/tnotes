@@ -4,10 +4,13 @@ import linkAttributes from 'markdown-it-link-attributes'
 import { installMarkdownMath } from '../../agent/agentMarkdown'
 import DOMPurify from 'dompurify'
 import CodeGroup from '@tnotesjs/ui/code-group'
+import CodeBlock from '@tnotesjs/ui/code-block'
+import { alertIcon, ALERT_LABELS, ALERT_TYPES, isAlertType } from '@tnotesjs/ui/alerts'
 import { parseImageAttrs } from '@tnotesjs/ui/image-markdown'
+import { useLineBreaks, type LineBreakMode } from '@tnotesjs/ui/line-breaks'
 import { createApp, h, type App } from 'vue'
 import { createImageMoreButton, type ImageAssetContext } from '../../livePreview/imageMenu'
-import { clearImageSizeMask, syncImageSizeMask } from '../../livePreview/imageSizeMask'
+import { createImageResizeHandles } from '../../livePreview/imageResize'
 import {
   enhanceCardImages,
   keepFirstImagePerCell,
@@ -46,6 +49,19 @@ export type ResolveImage = (src: string) => string
 
 const COLLAPSIBLE_TYPES = new Set(['details'])
 const CALLOUT_TYPES = new Set(['info', 'tip', 'warning', 'danger'])
+
+/** 可视化会收成卡片的 `:::` 类型。其余（例如已移除的 note）留在源码里。 */
+export const KNOWN_CONTAINER_TYPES = new Set([
+  ...CALLOUT_TYPES,
+  'details',
+  'code-group',
+  'swiper',
+  'footprints'
+])
+
+export function isKnownContainerName(name: string): boolean {
+  return KNOWN_CONTAINER_TYPES.has(name.toLowerCase())
+}
 
 /** Callouts that use structured title+body editing (fences stay locked). */
 export const STRUCTURED_CALLOUT_TYPES = new Set(['tip', 'info', 'warning', 'danger', 'details'])
@@ -154,7 +170,7 @@ export function preservedContainerSource(
   return baseline.source
 }
 
-let markdownIt: InstanceType<typeof MarkdownIt> | null = null
+const markdownIts = new Map<LineBreakMode, InstanceType<typeof MarkdownIt>>()
 
 /**
  * markdown-it 默认 validateLink 只放行 data:image/(gif|png|jpeg|webp)，其余 data:（如 svg）
@@ -179,16 +195,18 @@ export function allowDataUrlsInParser(instance: InstanceType<typeof MarkdownIt>)
   })
 }
 
-function getMarkdownIt(): InstanceType<typeof MarkdownIt> {
-  if (markdownIt) return markdownIt
+function getMarkdownIt(lineBreaks: LineBreakMode = 'commonmark'): InstanceType<typeof MarkdownIt> {
+  const cached = markdownIts.get(lineBreaks)
+  if (cached) return cached
   const instance = new MarkdownIt({ html: true, linkify: true, breaks: false })
   instance.use(taskLists)
   instance.use(linkAttributes, { attrs: { target: '_self', rel: 'noopener' } })
   installMarkdownMath(instance)
   allowDataUrlsInParser(instance)
   numberMarkdownImages(instance)
+  useLineBreaks(instance, lineBreaks)
 
-  markdownIt = instance
+  markdownIts.set(lineBreaks, instance)
   return instance
 }
 
@@ -202,7 +220,20 @@ function rewriteImageSources(html: string, resolveImage: ResolveImage): string {
     else image.removeAttribute('src')
     applyImageSizeAttrs(image)
   })
+  markCheckedTasks(host)
   return host.innerHTML
+}
+
+/** 已完成任务的正文套上和实时预览相同的删除线。线只画在文字上，不穿过复选框。 */
+function markCheckedTasks(host: HTMLElement): void {
+  host.querySelectorAll<HTMLInputElement>('.task-list-item-checkbox:checked').forEach((box) => {
+    const parent = box.parentNode
+    if (!parent || box.nextSibling == null) return
+    const done = document.createElement('span')
+    done.className = 'cm-lp-task-done'
+    while (box.nextSibling) done.append(box.nextSibling)
+    parent.append(done)
+  })
 }
 
 /** 块外图片由 `readImage` 吃掉 ` {w=…}`。markdown-it 卡片（容器/表格）同一段语法会留在图后面。 */
@@ -241,9 +272,10 @@ export function withLinkDefinitions(
 function renderBody(
   body: string,
   resolveImage: ResolveImage,
-  definitions?: ReadonlyMap<string, string>
+  definitions?: ReadonlyMap<string, string>,
+  lineBreaks: LineBreakMode = 'commonmark'
 ): string {
-  const raw = getMarkdownIt().render(withLinkDefinitions(body, definitions))
+  const raw = getMarkdownIt(lineBreaks).render(withLinkDefinitions(body, definitions))
   const sanitized = DOMPurify.sanitize(raw)
   return rewriteImageSources(sanitized, resolveImage)
 }
@@ -273,10 +305,13 @@ const mountedCodeGroups = new WeakMap<HTMLElement, App>()
 
 export function destroyContainerPreview(element: HTMLElement | null | undefined): void {
   if (!element) return
-  const app = mountedCodeGroups.get(element)
-  if (!app) return
-  app.unmount()
-  mountedCodeGroups.delete(element)
+  const hosts = [element, ...element.querySelectorAll<HTMLElement>('[data-tn-vue-mount]')]
+  for (const host of hosts) {
+    const app = mountedCodeGroups.get(host)
+    if (!app) continue
+    app.unmount()
+    mountedCodeGroups.delete(host)
+  }
 }
 
 function assembleCodeGroup(fences: CodeFence[]): HTMLElement {
@@ -290,6 +325,7 @@ function assembleCodeGroup(fences: CodeFence[]): HTMLElement {
     key: `${fence.filename || fence.lang || 'code'}-${index}`
   }))
   const app = createApp({ render: () => h(CodeGroup, { items }) })
+  group.dataset.tnVueMount = '1'
   app.mount(group)
   mountedCodeGroups.set(group, app)
   return group
@@ -304,6 +340,9 @@ export interface SwiperSlideEditor {
   readOnly: boolean
   commit(index: number, next: SwiperSlideChange): void
   asset?(): ImageAssetContext | null
+  /** 卡片因改宽度重建后仍停在这一张，而不是回到第一张。 */
+  activeIndex?: number
+  onActivate?(index: number): void
 }
 
 const MIN_SLIDE_WIDTH = 48
@@ -328,32 +367,14 @@ function buildEditableSlide(
     img.style.height = 'auto'
   }
   frame.append(img)
-
-  const handle = document.createElement('span')
-  handle.className = 'tn-swiper-resize'
-  handle.title = '拖动调整宽度'
-  handle.addEventListener('mousedown', (event) => {
-    event.preventDefault()
-    event.stopPropagation()
-    const startX = event.clientX
-    const startWidth = frame.getBoundingClientRect().width
-    const zoom = startWidth / Math.max(1, frame.offsetWidth)
-    const maxWidth = Math.max(MIN_SLIDE_WIDTH, bounds.getBoundingClientRect().width)
-    let width = startWidth
-    const move = (moveEvent: MouseEvent): void => {
-      width = Math.min(maxWidth, Math.max(MIN_SLIDE_WIDTH, startWidth + moveEvent.clientX - startX))
-      frame.style.width = `${Math.round(width / zoom)}px`
-      syncImageSizeMask(frame)
-    }
-    const up = (): void => {
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
-      clearImageSizeMask(frame)
-      editor.commit(index, { width: `${Math.round(width / zoom)}px` })
-    }
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
-  })
+  frame.append(
+    ...createImageResizeHandles(frame, {
+      minWidth: MIN_SLIDE_WIDTH,
+      maxWidth: () => Math.max(MIN_SLIDE_WIDTH, bounds.getBoundingClientRect().width),
+      enabled: () => !editor.readOnly,
+      commit: (width) => editor.commit(index, { width })
+    })
+  )
 
   // 与正文 / 表格图片同一套「⋯」系统菜单（预览 / 对齐 / 原始大小 / 删除）
   const actions = document.createElement('span')
@@ -378,7 +399,7 @@ function buildEditableSlide(
       }
     )
   )
-  frame.append(handle, actions)
+  frame.append(actions)
   return frame
 }
 
@@ -435,7 +456,10 @@ function buildSwiper(
   container.append(wrapper)
   root.append(tabs, container)
   // Shared site/Desk activation: tabs, prev/next, single visible slide.
-  hydrateTnSwipers(root)
+  hydrateTnSwipers(root, {
+    activeIndex: editor?.activeIndex,
+    onActivate: editor?.onActivate
+  })
   return root
 }
 
@@ -448,8 +472,9 @@ export interface DetailsSessionOptions {
 function buildContainerDom(
   name: string,
   title: string,
-  bodyHtml: string,
-  detailsSession?: DetailsSessionOptions
+  body: HTMLElement,
+  detailsSession?: DetailsSessionOptions,
+  calloutEditor?: CalloutEditor
 ): HTMLElement {
   if (COLLAPSIBLE_TYPES.has(name)) {
     const details = document.createElement('details')
@@ -460,16 +485,21 @@ function buildContainerDom(
     fold.className = 'tn-details-fold'
     fold.setAttribute('aria-hidden', 'true')
     fold.innerHTML = FOLD_CHEVRON_SVG
-    summary.append(fold, document.createTextNode(title || '详情'))
-    // Keep the toggle deterministic inside the non-editable atom rather than
-    // relying on the browser default (which ProseMirror can swallow).
+    summary.append(fold)
+    summary.append(buildAlertHeading(name, title, calloutEditor))
     summary.addEventListener('click', (event) => {
+      if (
+        (event.target as HTMLElement | null)?.closest(
+          '.tn-alert-icon-button, .tn-alert-menu, .tn-alert-title-input'
+        )
+      ) {
+        return
+      }
       event.preventDefault()
       details.open = !details.open
       detailsSession?.onOpenChange?.(details.open)
     })
-    details.append(summary)
-    appendHtml(details, bodyHtml)
+    details.append(summary, body)
     return details
   }
 
@@ -478,16 +508,305 @@ function buildContainerDom(
     block.className = `tn-custom-block ${name}`
     const titleEl = document.createElement('p')
     titleEl.className = 'tn-custom-block-title'
-    titleEl.textContent = title || name.toUpperCase()
-    block.append(titleEl)
-    appendHtml(block, bodyHtml)
+    titleEl.append(buildAlertHeading(name, title, calloutEditor))
+    block.append(titleEl, body)
     return block
   }
 
   const block = document.createElement('div')
   block.className = `tn-custom-block ${name}`
-  appendHtml(block, bodyHtml)
+  block.append(body)
   return block
+}
+
+export interface CalloutEditor {
+  readOnly: boolean
+  commit(next: { name?: string; title?: string }): void
+  /** 去掉容器，正文留在原处；不传时菜单里没有这一项 */
+  unwrap?(): void
+  /** 标题框里按回车：焦点回到正文 */
+  exit?(): void
+}
+
+function defaultAlertLabel(name: string): string {
+  return isAlertType(name) ? ALERT_LABELS[name] : name.toUpperCase()
+}
+
+const UNWRAP_ICON =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z"/></svg>'
+
+export function buildAlertHeading(
+  name: string,
+  title: string,
+  editor?: CalloutEditor
+): HTMLElement {
+  const heading = document.createElement('span')
+  heading.className = 'tn-alert-heading'
+  if (!editor || editor.readOnly) {
+    const icon = document.createElement('span')
+    icon.className = 'tn-alert-icon'
+    icon.innerHTML = alertIcon(name)
+    const label = document.createElement('span')
+    label.className = 'tn-alert-label'
+    label.textContent = title || defaultAlertLabel(name)
+    heading.append(icon, label)
+    return heading
+  }
+
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'tn-alert-icon-button'
+  button.innerHTML = `<span class="tn-alert-icon">${alertIcon(name)}</span>`
+  button.setAttribute('aria-label', '切换容器类型')
+  button.setAttribute('aria-haspopup', 'listbox')
+  const menu = document.createElement('div')
+  menu.className = 'tn-alert-menu'
+  menu.hidden = true
+  menu.setAttribute('role', 'listbox')
+  const choices: Array<{ id: string; label: string; icon: string; run: () => void }> =
+    ALERT_TYPES.map((type) => ({
+      id: type,
+      label: ALERT_LABELS[type],
+      icon: alertIcon(type),
+      run: () => {
+        if (type !== name) editor.commit({ name: type })
+      }
+    }))
+  if (editor.unwrap) {
+    const unwrap = editor.unwrap
+    choices.push({ id: 'unwrap', label: '取消容器', icon: UNWRAP_ICON, run: () => unwrap() })
+  }
+  const current = Math.max(
+    0,
+    choices.findIndex((choice) => choice.id === name)
+  )
+  let active = current
+  const closeMenu = (): void => {
+    menu.hidden = true
+    document.removeEventListener('mousedown', onOutside, true)
+  }
+  const onOutside = (event: MouseEvent): void => {
+    if (!heading.contains(event.target as Node | null)) closeMenu()
+  }
+  const options = choices.map((choice, index) => {
+    const option = document.createElement('button')
+    option.type = 'button'
+    option.className = choice.id === 'unwrap' ? 'tn-alert-option is-unwrap' : 'tn-alert-option'
+    option.dataset.type = choice.id
+    option.setAttribute('role', 'option')
+    option.innerHTML = `<span class="tn-alert-icon">${choice.icon}</span><span>${choice.label}</span>`
+    if (choice.id === name) option.setAttribute('aria-selected', 'true')
+    option.addEventListener('mousedown', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+    })
+    option.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      closeMenu()
+      choice.run()
+    })
+    menu.append(option)
+    return { option, index }
+  })
+  const paint = (): void => {
+    options.forEach(({ option, index }) => option.classList.toggle('is-active', index === active))
+  }
+  const openMenu = (): void => {
+    menu.hidden = false
+    active = current
+    paint()
+    options[active]?.option.focus()
+    document.addEventListener('mousedown', onOutside, true)
+  }
+  button.addEventListener('mousedown', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+  })
+  button.addEventListener('click', (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (menu.hidden) openMenu()
+    else closeMenu()
+  })
+  menu.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      event.stopPropagation()
+      active = (active + (event.key === 'ArrowDown' ? 1 : choices.length - 1)) % choices.length
+      paint()
+      options[active]?.option.focus()
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      event.stopPropagation()
+      options[active]?.option.click()
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeMenu()
+      button.focus()
+    } else {
+      event.stopPropagation()
+    }
+  })
+  const input = document.createElement('input')
+  input.className = 'tn-alert-title-input'
+  input.value = title
+  input.placeholder = defaultAlertLabel(name)
+  input.spellcheck = false
+  input.setAttribute('aria-label', '容器标题')
+  input.addEventListener('mousedown', (event) => event.stopPropagation())
+  input.addEventListener('keydown', (event) => {
+    event.stopPropagation()
+    if (event.isComposing) return
+    if (event.key === 'Enter' || event.key === 'ArrowDown') {
+      event.preventDefault()
+      // 先把焦点交回正文（失焦时 change 会提交标题），提交会重建标题栏
+      if (editor.exit) editor.exit()
+      else input.blur()
+      commitTitle()
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      input.value = committed
+      if (editor.exit) editor.exit()
+      else input.blur()
+    }
+  })
+  let committed = title
+  const commitTitle = (): void => {
+    if (input.value === committed) return
+    committed = input.value
+    editor.commit({ title: input.value })
+  }
+  input.addEventListener('change', commitTitle)
+  heading.append(button, input, menu)
+  return heading
+}
+
+const SPECIAL_FENCE_LANG = new Set(['mermaid', 'mindmap', 'mmd'])
+
+type CalloutSegment =
+  | { kind: 'markdown'; text: string }
+  | { kind: 'source'; text: string }
+  | { kind: 'code'; info: string; code: string }
+  | { kind: 'code-group'; body: string }
+
+/** 容器正文：普通 Markdown 与代码 / 代码组可视化，其余 `:::` 和特殊围栏露出源码。 */
+export function splitCalloutBody(body: string): CalloutSegment[] {
+  const lines = body.replace(/\r\n?/g, '\n').split('\n')
+  const segments: CalloutSegment[] = []
+  let markdown: string[] = []
+  const flush = (): void => {
+    if (!markdown.some((line) => line.trim())) {
+      markdown = []
+      return
+    }
+    segments.push({ kind: 'markdown', text: markdown.join('\n') })
+    markdown = []
+  }
+  let index = 0
+  while (index < lines.length) {
+    const fence = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(lines[index] ?? '')
+    if (fence && !(fence[2][0] === '`' && fence[3].includes('`'))) {
+      const mark = fence[2]
+      const info = fence[3].trim()
+      const lang = info.split(/\s+/)[0]?.toLowerCase() ?? ''
+      const start = index
+      const code: string[] = []
+      index += 1
+      while (index < lines.length) {
+        const close = /^( {0,3})(`{3,}|~{3,})[ \t]*$/.exec(lines[index] ?? '')
+        if (close && close[2][0] === mark[0] && close[2].length >= mark.length) break
+        code.push(lines[index] ?? '')
+        index += 1
+      }
+      const closed = index < lines.length
+      const text = lines.slice(start, closed ? index + 1 : lines.length).join('\n')
+      flush()
+      if (SPECIAL_FENCE_LANG.has(lang)) segments.push({ kind: 'source', text })
+      else segments.push({ kind: 'code', info, code: code.join('\n') })
+      if (closed) index += 1
+      continue
+    }
+    const container = /^( {0,3})(:{3,})[ \t]*(.*)$/.exec(lines[index] ?? '')
+    if (container?.[3].trim()) {
+      const name = container[3].trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+      const stack = [container[2].length]
+      const start = index
+      let innerFence: string | null = null
+      index += 1
+      while (index < lines.length && stack.length > 0) {
+        const line = lines[index] ?? ''
+        if (innerFence) {
+          if (line.trimEnd().startsWith(innerFence) && line.trim().replace(/[`~]/g, '') === '') {
+            innerFence = null
+          }
+          index += 1
+          continue
+        }
+        const inner = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line)
+        if (inner && !(inner[2][0] === '`' && inner[3].includes('`'))) {
+          innerFence = inner[2]
+          index += 1
+          continue
+        }
+        const mark = /^( {0,3})(:{3,})[ \t]*(.*)$/.exec(line)
+        if (mark && !mark[3].trim() && mark[2].length >= stack[stack.length - 1]) stack.pop()
+        else if (mark?.[3].trim()) stack.push(mark[2].length)
+        index += 1
+      }
+      const text = lines.slice(start, index).join('\n')
+      flush()
+      if (name === 'code-group') {
+        const inner = lines.slice(start + 1, stack.length === 0 ? index - 1 : index).join('\n')
+        segments.push({ kind: 'code-group', body: inner })
+      } else segments.push({ kind: 'source', text })
+      continue
+    }
+    markdown.push(lines[index] ?? '')
+    index += 1
+  }
+  flush()
+  return segments
+}
+
+function mountVue(host: HTMLElement, render: () => ReturnType<typeof h>): HTMLElement {
+  host.dataset.tnVueMount = '1'
+  const app = createApp({ render })
+  app.mount(host)
+  mountedCodeGroups.set(host, app)
+  return host
+}
+
+function renderCalloutBodyElement(
+  body: string,
+  resolveImage: ResolveImage,
+  definitions?: ReadonlyMap<string, string>,
+  lineBreaks: LineBreakMode = 'commonmark'
+): HTMLElement {
+  const root = document.createElement('div')
+  root.className = 'tn-alert-body'
+  for (const segment of splitCalloutBody(body)) {
+    if (segment.kind === 'markdown') {
+      appendHtml(root, renderBody(segment.text, resolveImage, definitions, lineBreaks))
+    } else if (segment.kind === 'source') {
+      const pre = document.createElement('pre')
+      pre.className = 'tn-container-source'
+      pre.textContent = segment.text
+      root.append(pre)
+    } else if (segment.kind === 'code') {
+      const host = document.createElement('div')
+      host.className = 'tn-alert-code'
+      root.append(
+        mountVue(host, () =>
+          h(CodeBlock, { code: segment.code, info: segment.info, lineNumbers: false })
+        )
+      )
+    } else {
+      root.append(buildCodeGroup(segment.body))
+    }
+  }
+  return root
 }
 
 function appendHtml(parent: HTMLElement, html: string): void {
@@ -513,7 +832,9 @@ export function renderContainerFromSource(
   /** Desk 可视化：提示块正文图片的拖拽宽度 + 「⋯」菜单（与正文 / 表格图片一致）。站点 / 只读投影不传。 */
   imageEditor?: CardImageEditor,
   /** details：会话内开合记忆（卡片因改图重建时保持展开）。 */
-  detailsSession?: DetailsSessionOptions
+  detailsSession?: DetailsSessionOptions,
+  calloutEditor?: CalloutEditor,
+  lineBreaks: LineBreakMode = 'commonmark'
 ): HTMLElement {
   const { name, title, body, hasBody } = parseContainerSource(source)
   if (name === 'code-group') return buildCodeGroup(body)
@@ -525,8 +846,10 @@ export function renderContainerFromSource(
     host.dataset.footprints = '1'
     return host
   }
-  const bodyHtml = hasBody ? renderBody(body, resolveImage, definitions) : ''
-  const element = buildContainerDom(name, title, bodyHtml, detailsSession)
+  const bodyEl = hasBody
+    ? renderCalloutBodyElement(body, resolveImage, definitions, lineBreaks)
+    : document.createElement('div')
+  const element = buildContainerDom(name, title, bodyEl, detailsSession, calloutEditor)
   // 提示块里的表格同样「一格一图」：每格只留第一张可用 markdown 图
   keepFirstImagePerCell(element)
   if (imageEditor) enhanceCardImages(element, imageEditor, 'cm-lp-container-image')

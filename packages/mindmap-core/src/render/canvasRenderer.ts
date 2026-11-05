@@ -101,8 +101,6 @@ interface CanvasTheme {
   accent: string
   selectionBg: string
   matchBg: string
-  /** 与正文 `==高亮==`（`--tn-c-mark-bg`）同色：半透明底，文字保持原色 */
-  markBg: string
   /** 与正文行内代码（`--tn-c-inline-code-*`）同色：字色仍用节点正文色 */
   codeBg: string
   codeBorder: string
@@ -129,7 +127,6 @@ const LIGHT: CanvasTheme = {
   accent: '#4f8ef7',
   selectionBg: 'rgba(79, 142, 247, 0.10)',
   matchBg: 'rgba(255, 213, 79, 0.35)',
-  markBg: 'rgba(255, 221, 0, 0.45)',
   codeBg: 'rgba(0, 0, 0, 0.06)',
   codeBorder: '#e7e9e8',
   dim: '#8a919e'
@@ -149,7 +146,6 @@ const DARK: CanvasTheme = {
   accent: '#6b9eff',
   selectionBg: 'rgba(107, 158, 255, 0.12)',
   matchBg: 'rgba(255, 213, 79, 0.3)',
-  markBg: 'rgba(250, 204, 21, 0.32)',
   codeBg: 'rgba(255, 255, 255, 0.08)',
   codeBorder: 'rgba(255, 255, 255, 0.12)',
   dim: '#7a828f'
@@ -524,7 +520,6 @@ export class CanvasRenderer {
               italic: false,
               underline: false,
               strike: false,
-              highlight: false,
               code: false
             },
             link: null
@@ -702,16 +697,14 @@ export class CanvasRenderer {
     ctx.textBaseline = 'middle'
     const width = ctx.measureText(text).width
 
-    if (marks.code || marks.highlight) {
+    if (marks.code) {
       ctx.beginPath()
-      ctx.roundRect(x - 1, y - fontSize / 2 - 2, width + 2, fontSize + 4, marks.code ? 4 : 2)
-      ctx.fillStyle = marks.code ? this.theme.codeBg : this.theme.markBg
+      ctx.roundRect(x - 1, y - fontSize / 2 - 2, width + 2, fontSize + 4, 4)
+      ctx.fillStyle = this.theme.codeBg
       ctx.fill()
-      if (marks.code) {
-        ctx.strokeStyle = this.theme.codeBorder
-        ctx.lineWidth = 1 / this.transform.k
-        ctx.stroke()
-      }
+      ctx.strokeStyle = this.theme.codeBorder
+      ctx.lineWidth = 1 / this.transform.k
+      ctx.stroke()
     }
 
     ctx.fillStyle = isDone

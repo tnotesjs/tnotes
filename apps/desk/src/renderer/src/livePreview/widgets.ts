@@ -693,6 +693,15 @@ export class ImageWidget extends WidgetType {
         resize: (width) => this.applyAttrs(view, figure, { width })
       }
     )
+    // 系统菜单打开时编辑器会失焦，露出源码的预览会被整块换掉，旧节点无法再定位。
+    // 按下「⋯」时先记下文档位置，之后的尺寸 / 对齐写回仍能找到这张图。
+    more.addEventListener(
+      'pointerdown',
+      () => {
+        this.anchorPos = widgetPos(view, figure) ?? this.anchorPos
+      },
+      true
+    )
     actions.append(edit, more)
 
     const editingBadge = document.createElement('span')
@@ -791,13 +800,23 @@ export class ImageWidget extends WidgetType {
     imageCanvasTeardown.delete(dom)
   }
 
+  /** 打开菜单前记下的文档位置。菜单令编辑器失焦后，原 DOM 可能已经不在树上。 */
+  private anchorPos: number | null = null
+
+  private locate(view: EditorView, dom: HTMLElement): number | null {
+    // 失焦后旧预览节点会从编辑器摘掉。posAtDOM 对这种节点可能给出无关位置，不能拿来写回。
+    const live = dom.isConnected ? widgetPos(view, dom) : null
+    if (live != null) this.anchorPos = live
+    return live ?? this.anchorPos
+  }
+
   private applyAttrs(
     view: EditorView,
     dom: HTMLElement,
     next: { width?: string; align?: ImageAlign }
   ): void {
     if (view.state.readOnly) return
-    const pos = widgetPos(view, dom)
+    const pos = this.locate(view, dom)
     if (pos == null) return
     const image = imageBefore(view.state, pos)
     if (!image) return
@@ -806,7 +825,7 @@ export class ImageWidget extends WidgetType {
 
   private replaceSrc(view: EditorView, dom: HTMLElement, src: string): void {
     if (view.state.readOnly) return
-    const pos = widgetPos(view, dom)
+    const pos = this.locate(view, dom)
     if (pos == null) return
     const image = imageBefore(view.state, pos)
     const changes = image && imageSrcChange(image, src)
@@ -816,7 +835,7 @@ export class ImageWidget extends WidgetType {
 
   private removeImage(view: EditorView, dom: HTMLElement): void {
     if (view.state.readOnly) return
-    const pos = widgetPos(view, dom)
+    const pos = this.locate(view, dom)
     if (pos == null) return
     const image = imageBefore(view.state, pos)
     if (!image) return

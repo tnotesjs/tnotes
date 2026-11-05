@@ -9,6 +9,7 @@ export function setupHeadingFolds(root: HTMLElement, changed: (anyCollapsed: boo
   // Complete sections absent from the build-time wrappers (adjacent headings,
   // blockquotes and custom containers). Work backwards to retain nested sections.
   for (const heading of [...headings].reverse()) {
+    if (heading.closest('.tn-custom-block')) continue
     if (heading.nextElementSibling?.classList.contains('tn-heading-body')) continue
     const nodes: ChildNode[] = []
     for (let node = heading.nextSibling; node; node = node.nextSibling) {
@@ -23,6 +24,7 @@ export function setupHeadingFolds(root: HTMLElement, changed: (anyCollapsed: boo
   }
 
   for (const heading of headings) {
+    if (heading.closest('.tn-custom-block')) continue
     const body = heading.nextElementSibling
     if (!(body instanceof HTMLElement) || !body.classList.contains('tn-heading-body')) continue
     const button = document.createElement('button')

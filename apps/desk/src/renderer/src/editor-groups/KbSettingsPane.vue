@@ -43,7 +43,8 @@ const draft = reactive({
   autoPushEnabled: false,
   autoPushIdleMinutes: 5,
   pushRunUpdateBefore: true,
-  headingNumberMaxDepth: null as number | null
+  headingNumberMaxDepth: null as number | null,
+  visualLineBreaks: false
 })
 
 const pendingIcon = ref<PendingIcon | null>(null)
@@ -101,6 +102,9 @@ const headingDepthChoice = computed({
   }
 })
 const globalHeadingDepth = computed(() => workspace.settings?.headingNumberMaxDepth ?? 2)
+const lineBreaksChanged = computed(
+  () => loaded.value !== null && draft.visualLineBreaks !== (loaded.value.lineBreaks === 'visual')
+)
 
 function formSnapshot(): string {
   return JSON.stringify({
@@ -116,6 +120,7 @@ function formSnapshot(): string {
     autoPushIdleMinutes: draft.autoPushIdleMinutes,
     pushRunUpdateBefore: draft.pushRunUpdateBefore,
     headingNumberMaxDepth: draft.headingNumberMaxDepth,
+    visualLineBreaks: draft.visualLineBreaks,
     pending: pendingIcon.value
       ? pendingIcon.value.kind === 'file'
         ? { kind: 'file', fileName: pendingIcon.value.fileName }
@@ -146,6 +151,7 @@ function applyLoaded(settings: KnowledgeBaseSettingsDto): void {
   draft.autoPushIdleMinutes = settings.autoPush?.idleMinutes ?? 5
   draft.pushRunUpdateBefore = settings.pushRunUpdateBefore !== false
   draft.headingNumberMaxDepth = settings.headingNumberMaxDepth
+  draft.visualLineBreaks = settings.lineBreaks === 'visual'
   pendingIcon.value = null
   baseline.value = formSnapshot()
   syncDirty()
@@ -238,7 +244,8 @@ async function persistSettings(): Promise<void> {
           ? { enabled: true, idleMinutes: draft.autoPushIdleMinutes }
           : null,
         pushRunUpdateBefore: draft.pushRunUpdateBefore,
-        headingNumberMaxDepth: draft.headingNumberMaxDepth
+        headingNumberMaxDepth: draft.headingNumberMaxDepth,
+        lineBreaks: draft.visualLineBreaks ? 'visual' : 'commonmark'
       })
     )
 
@@ -457,6 +464,23 @@ onUnmounted(() => {
           <input v-model="draft.pushRunUpdateBefore" type="checkbox" />
           <span>推送前自动 update（写入 tnotes.json → push.runUpdateBefore，默认开启）</span>
         </label>
+        <div class="line-breaks-field">
+          <label class="switch-field">
+            <input v-model="draft.visualLineBreaks" type="checkbox" />
+            <span>所见即所得换行（写入 tnotes.json → markdown.lineBreaks）</span>
+          </label>
+          <p class="hint line-breaks-hint">
+            开启后站点和卡片里单个换行就是换行，多出来的空行按编辑器里的高度保留；关闭为标准
+            Markdown（单换行并成空格，连续空行合并）。GitHub 上直接看 .md 始终是标准
+            Markdown，需要两边都换行可用单独一行的 <code>&lt;br&gt;</code>。
+          </p>
+          <p v-if="lineBreaksChanged" class="hint warn">
+            <template v-if="loaded!.lineBreakImpact > 0">
+              保存后约 {{ loaded!.lineBreakImpact }} 篇笔记的渲染会变化（含单换行或连续空行）
+            </template>
+            <template v-else>没有笔记的渲染会因此变化</template>
+          </p>
+        </div>
       </section>
 
       <section class="settings-section">
@@ -643,6 +667,14 @@ onUnmounted(() => {
 
 .switch-field.disabled {
   opacity: 0.55;
+}
+
+.line-breaks-field {
+  margin-top: 14px;
+}
+
+.line-breaks-field .hint {
+  margin: 4px 0 0 20px;
 }
 
 .auto-push-idle {

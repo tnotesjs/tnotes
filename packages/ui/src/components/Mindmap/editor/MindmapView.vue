@@ -48,7 +48,7 @@ const textFormats = computed<Partial<Record<InlineFormat, boolean>>>(() => {
   const state = editState.value
   const selection = textSelection.value
   if (!state || !selection) return {}
-  const formats: InlineFormat[] = ['bold', 'italic', 'underline', 'strike', 'highlight', 'code']
+  const formats: InlineFormat[] = ['bold', 'italic', 'underline', 'strike', 'code']
   return Object.fromEntries(
     formats.map((format) => [
       format,

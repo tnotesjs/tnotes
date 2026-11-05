@@ -136,6 +136,15 @@ describe('config name validation', () => {
     const ws = createWorkspace({ rootPath: root })
     await expect(ws.config.set({ name: 'bad name' })).rejects.toThrow(/知识库名称/)
   })
+
+  it('rejects an unknown markdown.lineBreaks mode', async () => {
+    await write('tnotes.json', '{}\n')
+    await write('TOC.md', '\n')
+    const ws = createWorkspace({ rootPath: root })
+    await expect(ws.config.set({ markdown: { lineBreaks: 'gfm' as never } })).rejects.toThrow(
+      /lineBreaks/
+    )
+  })
 })
 
 describe('completed notes stats', () => {

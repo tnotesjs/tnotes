@@ -124,13 +124,23 @@
 }
 
 .live-editor .cm-panels {
-  background: var(--tn-c-bg-soft);
   color: var(--editor-text);
   border-color: var(--tn-c-divider);
 }
 
-.live-editor .cm-panels-top {
-  border-bottom: 1px solid var(--tn-c-divider);
+/* 查找条浮在编辑器右上角，不占文档流。CodeMirror 默认把 .cm-panels-top 排进纵向 flex，
+   会把正文往下推；绝对定位之后滚动区仍铺满编辑器。 */
+.live-editor .cm-panels.cm-panels-top {
+  position: absolute;
+  top: 4px;
+  right: 14px;
+  left: auto;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  border: none;
+  background: transparent;
+  pointer-events: none;
+  overflow: visible;
 }
 
 .live-editor .cm-foldPlaceholder {
@@ -161,9 +171,35 @@
 .live-editor .cm-find-panel {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
-  padding: 4px 8px;
+  gap: 2px;
+  max-width: 100%;
+  padding: 4px 6px 4px 2px;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 6px;
+  background: var(--tn-c-bg-soft);
+  box-shadow: var(--tn-shadow-2, 0 8px 24px rgb(0 0 0 / 18%));
+  color: var(--editor-text);
   font-size: 12px;
+  pointer-events: auto;
+  transform-origin: top right;
+  animation: cm-find-slide-in 140ms ease-out;
+}
+
+@keyframes cm-find-slide-in {
+  from {
+    opacity: 0;
+    transform: translate(16px, -10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-editor .cm-find-panel {
+    animation: none;
+  }
 }
 
 .live-editor .cm-find-rows {
@@ -186,45 +222,76 @@
   display: none;
 }
 
-.live-editor .cm-find-input {
-  flex: 0 1 260px;
-  min-width: 80px;
-  height: 24px;
-  padding: 0 6px;
+.live-editor .cm-find-field {
+  display: flex;
+  align-items: center;
+  flex: 0 1 248px;
+  width: 248px;
+  min-width: 96px;
+  height: 26px;
+  box-sizing: border-box;
   border: 1px solid var(--tn-c-divider);
   border-radius: 4px;
   background: var(--tn-c-bg);
+}
+
+.live-editor .cm-find-field:focus-within {
+  border-color: var(--tn-c-brand-1, #5b8def);
+}
+
+.live-editor .cm-find-field:has(.is-missing) {
+  border-color: #f48771;
+}
+
+.live-editor .cm-find-input {
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 40px;
+  height: 100%;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
   color: var(--editor-text);
   font: inherit;
   outline: none;
 }
 
-.live-editor .cm-find-input:focus {
-  border-color: var(--tn-c-brand-1, #5b8def);
-}
-
-.live-editor .cm-find-input.is-missing {
-  border-color: var(--tn-c-danger, #e06c75);
-  background: color-mix(in srgb, var(--tn-c-danger, #e06c75) 10%, var(--tn-c-bg));
+.live-editor .cm-find-options {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 1px;
+  padding-right: 2px;
 }
 
 .live-editor .cm-find-count {
   flex: none;
-  min-width: 64px;
-  padding: 0 6px;
+  padding: 0 4px;
   color: var(--tn-c-text-2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
+.live-editor .cm-find-count:empty {
+  display: none;
+}
+
+.live-editor .cm-find-count.is-missing {
+  color: #f48771;
+  font-weight: 600;
+}
+
 .live-editor .cm-find-button,
 .live-editor .cm-find-toggle,
-.live-editor .cm-find-expand,
-.live-editor .cm-find-text-button {
+.live-editor .cm-find-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
-  height: 24px;
-  min-width: 24px;
-  padding: 0 5px;
+  height: 26px;
+  min-width: 22px;
+  padding: 0 4px;
   border: 1px solid transparent;
   border-radius: 4px;
   background: none;
@@ -234,22 +301,55 @@
   white-space: nowrap;
 }
 
+.live-editor .cm-find-expand {
+  width: 22px;
+  padding: 0;
+}
+
+.live-editor .cm-find-expand svg,
+.live-editor .cm-find-icon svg,
+.live-editor .cm-find-toggle svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.live-editor .cm-find-expand svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 80ms ease;
+}
+
+.live-editor .cm-find-expand.is-open svg {
+  transform: rotate(90deg);
+}
+
 .live-editor .cm-find-button:hover,
 .live-editor .cm-find-toggle:hover,
-.live-editor .cm-find-expand:hover,
-.live-editor .cm-find-text-button:hover {
+.live-editor .cm-find-expand:hover {
   background: var(--tn-c-hover);
   color: var(--editor-text);
 }
 
 .live-editor .cm-find-toggle.is-active {
-  border-color: var(--tn-c-brand-1, #5b8def);
-  background: color-mix(in srgb, var(--tn-c-brand-1, #5b8def) 18%, transparent);
+  background: color-mix(in srgb, var(--editor-text) 16%, transparent);
   color: var(--editor-text);
+}
+
+.live-editor .cm-find-options .cm-find-toggle {
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: none;
 }
 
 .live-editor .cm-find-toggle {
   font-family: var(--tn-font-mono);
+}
+
+.live-editor .cm-find-whole {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .live-editor .cm-selectionMatch {
@@ -666,26 +766,38 @@
   text-align: right;
 }
 
-.live-editor .cm-lp-task {
+/* 卡片里的任务项来自 markdown-it，类名不同。和正文复选框画成同一套，
+   盖掉 prose 里给静态站用的 SVG 对勾（那一版更小、更方）。 */
+.live-editor .cm-lp-task,
+.live-editor .cm-lp-card .task-list-item-checkbox {
   appearance: none;
+  -webkit-appearance: none;
   position: relative;
+  top: 0;
   box-sizing: border-box;
   width: 16px;
   height: 16px;
+  min-width: 16px;
+  min-height: 16px;
   margin: 0 6px 0 0;
   border: 1px solid var(--tn-c-task-check-border);
   border-radius: 4px;
   background: var(--tn-c-task-check-bg);
+  background-image: none;
   vertical-align: -2px;
+  opacity: 1;
   cursor: pointer;
 }
 
-.live-editor .cm-lp-task:checked {
+.live-editor .cm-lp-task:checked,
+.live-editor .cm-lp-card .task-list-item-checkbox:checked {
   border-color: var(--tn-c-task-check);
   background: var(--tn-c-task-check);
+  background-image: none;
 }
 
-.live-editor .cm-lp-task:checked::after {
+.live-editor .cm-lp-task:checked::after,
+.live-editor .cm-lp-card .task-list-item-checkbox:checked::after {
   content: '';
   position: absolute;
   left: 4.5px;
@@ -697,17 +809,7 @@
   transform: rotate(45deg);
 }
 
-.live-editor .cm-lp-task-done {
-  color: var(--tn-c-text-2);
-  text-decoration: line-through;
-}
-
 /* ---------- 行内 ---------- */
-
-.live-editor .cm-lp-visual .cm-lp-highlight {
-  background: var(--tn-c-mark-bg);
-  border-radius: 2px;
-}
 
 .live-editor .cm-lp-visual .cm-lp-inline-code {
   color: inherit;
@@ -994,6 +1096,7 @@
 }
 
 .live-editor .cm-editor:not(.cm-lp-readonly) .cm-lp-image-frame:hover .cm-lp-image-handle,
+.live-editor .cm-editor:not(.cm-lp-readonly) .tn-swiper-frame:hover .cm-lp-image-handle,
 .live-editor .cm-lp-image-frame:hover .cm-lp-image-actions,
 .live-editor .cm-lp-image-actions:focus-within {
   opacity: 1;
@@ -1022,21 +1125,27 @@
   margin: 0;
 }
 
-.live-editor .tn-swiper-resize {
-  position: absolute;
-  top: 50%;
-  right: 6px;
-  width: 8px;
-  height: 36px;
-  margin-top: -18px;
-  border-radius: 4px;
-  background: var(--tn-c-brand);
-  opacity: 0;
-  cursor: ew-resize;
-  transition: opacity 0.12s;
+/* 轮播容器会裁切溢出，四角把手收进图内 */
+.live-editor .tn-swiper-frame .cm-lp-image-handle.is-se,
+.live-editor .tn-swiper-frame .cm-lp-image-handle.is-ne {
+  right: 2px;
 }
 
-.live-editor .cm-editor:not(.cm-lp-readonly) .tn-swiper-frame:hover .tn-swiper-resize,
+.live-editor .tn-swiper-frame .cm-lp-image-handle.is-sw,
+.live-editor .tn-swiper-frame .cm-lp-image-handle.is-nw {
+  left: 2px;
+}
+
+.live-editor .tn-swiper-frame .cm-lp-image-handle.is-ne,
+.live-editor .tn-swiper-frame .cm-lp-image-handle.is-nw {
+  top: 2px;
+}
+
+.live-editor .tn-swiper-frame .cm-lp-image-handle.is-se,
+.live-editor .tn-swiper-frame .cm-lp-image-handle.is-sw {
+  bottom: 2px;
+}
+
 .live-editor .tn-swiper-frame:hover .cm-lp-image-actions {
   opacity: 1;
 }
@@ -1472,7 +1581,8 @@
 .live-editor .cm-editor.cm-lp-code-fs {
   position: fixed !important;
   z-index: 40;
-  inset: 16px;
+  /* 上沿让开隐藏标题栏里的交通灯（高 42px），左右下仍贴边 */
+  inset: 48px 16px 16px;
   width: auto !important;
   height: auto !important;
   border-radius: 12px;
@@ -1490,7 +1600,17 @@
   padding: 12px 16px 24px;
 }
 
-.live-editor .cm-editor.cm-lp-code-fs .cm-line:not(.cm-lp-codeblock-fs) {
+/* 导图、Swiper 等卡片是块级组件，不在 .cm-line 里，只藏行会留在全屏画面中 */
+.live-editor .cm-editor.cm-lp-code-fs .cm-content > :not(.cm-lp-codeblock-fs) {
+  display: none;
+}
+
+.live-editor .cm-editor.cm-lp-code-fs .cm-content > .cm-lp-codeblock-fs + .cm-lp-code-hscroll {
+  display: block;
+}
+
+/* 标题挂在编辑器滚动区里，不是 .cm-line，全屏时会压在代码块上方 */
+.live-editor .cm-editor.cm-lp-code-fs .cm-lp-doc-head {
   display: none;
 }
 
@@ -1749,22 +1869,229 @@
   background: var(--tn-c-bg-soft);
 }
 
-.live-editor .cm-lp-visual .cm-lp-callout-tip {
-  border-left-color: var(--tn-c-brand);
-  background: var(--tn-c-highlight);
-}
-.live-editor .cm-lp-visual .cm-lp-callout-warning {
-  border-left-color: var(--tn-c-warning);
-  background: var(--tn-c-warning-soft);
-}
-.live-editor .cm-lp-visual .cm-lp-callout-danger {
-  border-left-color: var(--tn-c-danger);
-  background: var(--tn-c-danger-soft);
+/* ---------- 提示块（原地编辑，GitHub Alerts 外观） ---------- */
+
+.live-editor .cm-lp-visual .cm-lp-callout-tip,
+.live-editor .cm-lp-callout-bar.tn-alert-tip,
+.live-editor .cm-lp-callout-header.tn-alert-tip {
+  --tn-alert: var(--tn-c-success);
 }
 .live-editor .cm-lp-visual .cm-lp-callout-info,
-.live-editor .cm-lp-visual .cm-lp-callout-note {
-  border-left-color: var(--tn-c-divider-strong);
-  background: var(--tn-c-default-soft);
+.live-editor .cm-lp-callout-bar.tn-alert-info,
+.live-editor .cm-lp-callout-header.tn-alert-info {
+  --tn-alert: var(--tn-c-link);
+}
+.live-editor .cm-lp-visual .cm-lp-callout-warning,
+.live-editor .cm-lp-callout-bar.tn-alert-warning,
+.live-editor .cm-lp-callout-header.tn-alert-warning {
+  --tn-alert: var(--tn-c-warning);
+}
+.live-editor .cm-lp-visual .cm-lp-callout-danger,
+.live-editor .cm-lp-callout-bar.tn-alert-danger,
+.live-editor .cm-lp-callout-header.tn-alert-danger {
+  --tn-alert: var(--tn-c-danger);
+}
+.live-editor .cm-lp-visual .cm-lp-callout-details,
+.live-editor .cm-lp-callout-bar.tn-alert-details,
+.live-editor .cm-lp-callout-header.tn-alert-details {
+  --tn-alert: var(--tn-c-text-2);
+}
+
+/* 提示块正文里的行：色条在行盒左边缘，文字让出色条和间距 */
+.live-editor .cm-lp-visual .cm-line.cm-lp-callout-line {
+  --lp-list-base: 20px;
+}
+
+.live-editor
+  .cm-lp-visual
+  .cm-line.cm-lp-callout-line:not(.cm-lp-li):not(.cm-lp-codeblock):not(.cm-lp-quote):not(
+    .cm-lp-source-block
+  ):not(.cm-lp-code-group-open):not(:has(.cm-lp-code-header)) {
+  padding-left: 20px;
+}
+
+/* 自带底色或边框的块（代码、代码组、引用、卡片）整体右移，色条留在外面 */
+.live-editor .cm-lp-visual .cm-line.cm-lp-callout-line.cm-lp-codeblock,
+.live-editor .cm-lp-visual .cm-line.cm-lp-callout-line.cm-lp-source-block,
+.live-editor .cm-lp-visual .cm-line.cm-lp-callout-line.cm-lp-code-group-open,
+.live-editor .cm-lp-visual .cm-line.cm-lp-callout-line:has(.cm-lp-code-header),
+.live-editor .cm-lp-visual .cm-lp-callout-inset {
+  margin-left: 20px;
+}
+
+.live-editor .cm-lp-visual .cm-line.cm-lp-callout-line.cm-lp-quote {
+  --lp-list-base: 14px;
+  margin-left: 20px;
+  border-left: 3px solid var(--tn-c-divider-strong);
+}
+
+.live-editor .cm-lp-visual .cm-line.cm-lp-callout-head {
+  padding-top: 4px;
+  padding-bottom: 2px;
+}
+
+.live-editor .cm-lp-visual .cm-line.cm-lp-callout-last {
+  padding-bottom: 4px;
+}
+
+.live-editor .cm-lp-callout-bars {
+  pointer-events: none;
+}
+
+.live-editor .cm-lp-callout-bar {
+  position: absolute;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--tn-alert);
+}
+
+.live-editor .cm-lp-callout-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  max-width: 100%;
+  vertical-align: top;
+  color: var(--tn-alert);
+  font-family: var(--tn-font-sans);
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+}
+
+.live-editor .cm-lp-callout-header .tn-alert-heading {
+  flex: 1;
+}
+
+.live-editor .cm-lp-callout-header .tn-alert-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--tn-alert);
+  line-height: 0;
+}
+
+.live-editor .cm-lp-callout-header .tn-alert-icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.live-editor .cm-lp-callout-header .tn-alert-icon-button {
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: -4px;
+  border-radius: 4px;
+}
+
+.live-editor .cm-lp-callout-header .tn-alert-icon-button:hover,
+.live-editor .cm-lp-callout-header .tn-alert-icon-button:focus-visible {
+  background: var(--tn-c-hover);
+  outline: none;
+}
+
+.live-editor .cm-lp-callout-header .tn-alert-title-input {
+  flex: 0 1 auto;
+  min-width: 3em;
+  max-width: 100%;
+  field-sizing: content;
+  margin-left: -4px;
+  color: var(--tn-alert);
+  font-size: inherit;
+  line-height: inherit;
+  user-select: text;
+}
+
+.live-editor .cm-lp-callout-header .tn-alert-title-input::placeholder {
+  color: var(--tn-alert);
+  opacity: 1;
+}
+
+.live-editor .cm-lp-callout-header .tn-alert-title-input:hover {
+  border-color: var(--tn-c-divider);
+}
+
+.live-editor .cm-lp-callout-header .tn-alert-menu {
+  color: var(--tn-c-text-1, var(--tn-c-text));
+  font-weight: 400;
+}
+
+.live-editor .cm-lp-callout-header .tn-alert-option[data-type='tip'] .tn-alert-icon {
+  color: var(--tn-c-success);
+}
+.live-editor .cm-lp-callout-header .tn-alert-option[data-type='info'] .tn-alert-icon {
+  color: var(--tn-c-link);
+}
+.live-editor .cm-lp-callout-header .tn-alert-option[data-type='warning'] .tn-alert-icon {
+  color: var(--tn-c-warning);
+}
+.live-editor .cm-lp-callout-header .tn-alert-option[data-type='danger'] .tn-alert-icon {
+  color: var(--tn-c-danger);
+}
+.live-editor .cm-lp-callout-header .tn-alert-option[data-type='details'] .tn-alert-icon,
+.live-editor .cm-lp-callout-header .tn-alert-option.is-unwrap .tn-alert-icon {
+  color: var(--tn-c-text-2);
+}
+
+.live-editor .cm-lp-callout-header .tn-alert-option.is-unwrap {
+  margin-top: 4px;
+  border-top: 1px solid var(--tn-c-divider);
+  border-radius: 0 0 4px 4px;
+  padding-top: 6px;
+}
+
+/* 和标题折叠同一列：挂在色条左外侧，悬停或收起时显示；图标和标题留在其它提示块的位置。
+   right 越过行左内边距（--lp-list-base）再留 4px，与 .cm-lp-heading-toggle 对齐。 */
+.live-editor .cm-lp-callout-header:has(> .cm-lp-callout-fold) {
+  position: relative;
+}
+
+.live-editor .cm-lp-callout-fold {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + var(--lp-list-base, 20px) + 4px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: -10px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--tn-c-text-2);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.live-editor .cm-lp-callout-fold:hover {
+  color: var(--tn-c-brand);
+  background: var(--tn-c-hover);
+}
+
+.live-editor .cm-line:hover .cm-lp-callout-fold,
+.live-editor .cm-lp-callout-fold.is-collapsed,
+.live-editor .cm-lp-callout-fold:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .live-editor .cm-lp-callout-fold {
+    opacity: 1;
+  }
+}
+
+.live-editor .cm-lp-callout-fold svg {
+  width: 12px;
+  height: 12px;
+  transform: rotate(90deg);
+  transition: transform 0.12s;
+}
+
+.live-editor .cm-lp-callout-fold.is-collapsed svg {
+  transform: none;
 }
 
 /* ---------- 卡片 ---------- */
@@ -1806,9 +2133,83 @@
   box-shadow: var(--tn-shadow-2);
 }
 
-.live-editor .cm-lp-card .tn-custom-block {
-  margin: 0;
-  max-width: 100%;
+.live-editor .tn-alert-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  position: relative;
+}
+
+.live-editor .tn-alert-icon-button {
+  display: inline-flex;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.live-editor .tn-alert-title-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+}
+
+.live-editor .tn-alert-title-input:focus {
+  border-color: var(--tn-c-divider);
+  outline: none;
+  background: var(--tn-c-bg);
+}
+
+.live-editor .tn-alert-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 4px;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 8px;
+  background: var(--tn-c-bg-elv, var(--tn-c-bg));
+  box-shadow: var(--tn-shadow-2);
+}
+
+.live-editor .tn-alert-menu[hidden] {
+  display: none;
+}
+
+.live-editor .tn-alert-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.live-editor .tn-alert-option.is-active,
+.live-editor .tn-alert-option:hover {
+  background: var(--tn-c-hover);
+}
+
+.live-editor .tn-alert-option:focus {
+  outline: none;
 }
 
 .live-editor .cm-lp-card .tn-custom-block img {
@@ -1870,59 +2271,81 @@
   bottom: 2px;
 }
 
-/* 「调整尺寸…」浮层挂在 body 上 */
+/* 「调整尺寸…」浮层挂在 body 上：宽高输入 + 相对原图的四个比例 */
 .cm-lp-image-size-popover {
   position: fixed;
   z-index: 1000;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
-  padding: 10px 12px;
+  width: 228px;
+  padding: 10px;
   border: 1px solid var(--tn-c-divider);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--tn-c-bg);
   box-shadow: var(--tn-shadow-3, 0 12px 40px rgb(0 0 0 / 28%));
   color: var(--tn-c-text-1, inherit);
-  font: 12px/1.4 var(--tn-font-sans);
+  font: 13px/1.4 var(--tn-font-sans);
+}
+
+.cm-lp-image-size-fields {
+  display: flex;
+  gap: 8px;
 }
 
 .cm-lp-image-size-popover label {
   display: inline-flex;
+  flex: 1;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .cm-lp-image-size-popover input {
-  width: 72px;
-  padding: 3px 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 8px;
   border: 1px solid var(--tn-c-divider);
-  border-radius: 4px;
+  border-radius: 8px;
   background: var(--tn-c-bg-soft);
   color: inherit;
   font: inherit;
 }
 
-.cm-lp-image-size-actions {
+.cm-lp-image-size-presets {
   display: flex;
-  gap: 6px;
-  margin-left: auto;
+  align-items: center;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--tn-c-bg-soft);
 }
 
-.cm-lp-image-size-actions button {
-  padding: 3px 10px;
-  border: 1px solid var(--tn-c-divider);
-  border-radius: 4px;
-  background: var(--tn-c-bg);
+.cm-lp-image-size-presets button {
+  flex: 1;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: inherit;
   font: inherit;
   cursor: pointer;
 }
 
-.cm-lp-image-size-actions button.is-primary {
-  border-color: var(--tn-c-brand);
-  background: var(--tn-c-brand);
-  color: #fff;
+.cm-lp-image-size-presets button.is-active {
+  background: var(--tn-c-text);
+  color: var(--tn-c-bg);
+}
+
+.cm-lp-image-size-presets button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.cm-lp-image-size-preset-gap {
+  flex: 0 0 1px;
+  align-self: stretch;
+  margin: 4px 2px;
+  background: var(--tn-c-divider);
 }
 
 .live-editor .cm-lp-diagram {
@@ -2050,4 +2473,25 @@
   border-color: var(--tn-c-brand);
   background: var(--tn-c-brand);
   color: #fff;
+}
+
+/* ---------- 斜杠快捷输入 ---------- */
+.live-editor .cm-lp-slash-hint {
+  color: var(--tn-c-text-2);
+  opacity: 0.6;
+  pointer-events: none;
+  user-select: none;
+}
+
+.live-editor .cm-tooltip.cm-lp-slash-menu {
+  overflow: hidden;
+  border: 1px solid var(--tn-c-divider);
+  border-radius: 10px;
+  background: var(--tn-c-bg-elv, var(--tn-c-bg));
+  box-shadow: var(--tn-shadow-2);
+  margin-top: 6px;
+}
+
+.live-editor .cm-tooltip.cm-lp-slash-menu.cm-tooltip-above {
+  margin-top: -6px;
 }

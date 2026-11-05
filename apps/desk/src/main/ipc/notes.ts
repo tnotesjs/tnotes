@@ -199,7 +199,7 @@ export function registerNotes(getWindow: GetWindow): void {
       const bytes =
         'png' in input ? input.png : (await imageBytes(input.knowledgeBaseId, input.src)).data
       const image = nativeImage.createFromBuffer(Buffer.from(bytes))
-      if (image.isEmpty()) return { copied: false, reason: 'unsupported' }
+      if (image.isEmpty()) return { copied: false, reason: 'unsupported', bytes }
       clipboard.writeImage(image)
       return { copied: true }
     }

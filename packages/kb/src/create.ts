@@ -19,7 +19,7 @@ import {
   writePackageJsonScaffold
 } from './scaffold'
 import { isValidKbName } from './name'
-import type { KbConfig } from './types'
+import type { KbConfig, KbLineBreakMode } from './types'
 
 /** Starter note title written into notes/ and TOC.md on init. */
 export const STARTER_NOTE_TITLE = '开始使用'
@@ -36,6 +36,8 @@ export interface CreateKnowledgeBaseOptions {
   readme?: boolean
   /** Run `git init` in the new knowledge-base directory. */
   gitInit?: boolean
+  /** Written to `markdown.lineBreaks`; omitted means the CommonMark default. */
+  lineBreaks?: KbLineBreakMode
 }
 
 export interface CreateKnowledgeBaseInput {
@@ -119,6 +121,7 @@ export async function createKnowledgeBase(
     name: folderName,
     title
   }
+  if (input.options?.lineBreaks === 'visual') config.markdown = { lineBreaks: 'visual' }
 
   const noteFileName = `0001. ${STARTER_NOTE_TITLE}.md`
   const starterNoteRelPath = `${NOTES_DIR}/${noteFileName}`

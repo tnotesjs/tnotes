@@ -39,7 +39,7 @@ export const TN_NOTES_SLASH_ITEMS: SlashMenuItem[] = [
     kind: 'container',
     shortcut: '/tip',
     keywords: ['tip', ':::tip', '提示'],
-    insert: '::: tip 💡 TIP\n\n\n\n:::\n'
+    insert: '::: tip\n\n:::\n'
   },
   {
     id: 'info',
@@ -47,7 +47,7 @@ export const TN_NOTES_SLASH_ITEMS: SlashMenuItem[] = [
     kind: 'container',
     shortcut: '/info',
     keywords: ['info', ':::info', '信息'],
-    insert: '::: info ℹ️ INFO\n\n\n\n:::\n'
+    insert: '::: info\n\n:::\n'
   },
   {
     id: 'warning',
@@ -55,7 +55,7 @@ export const TN_NOTES_SLASH_ITEMS: SlashMenuItem[] = [
     kind: 'container',
     shortcut: '/warning',
     keywords: ['warning', ':::warning', '警告'],
-    insert: '::: warning ⚠️ WARNING\n\n\n\n:::\n'
+    insert: '::: warning\n\n:::\n'
   },
   {
     id: 'danger',
@@ -63,7 +63,7 @@ export const TN_NOTES_SLASH_ITEMS: SlashMenuItem[] = [
     kind: 'container',
     shortcut: '/error',
     keywords: ['error', ':::error', 'danger', ':::danger', '错误'],
-    insert: '::: danger ❌ ERROR\n\n\n\n:::\n'
+    insert: '::: danger\n\n:::\n'
   },
   {
     id: 'details',
@@ -71,7 +71,7 @@ export const TN_NOTES_SLASH_ITEMS: SlashMenuItem[] = [
     kind: 'container',
     shortcut: '/details',
     keywords: ['details', ':::details', '细节'],
-    insert: '::: details 🔍 DETAILS\n\n\n\n:::\n'
+    insert: '::: details\n\n:::\n'
   },
   {
     id: 'code',

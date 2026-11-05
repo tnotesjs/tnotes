@@ -877,6 +877,12 @@ export function createWorkspace(options: CreateWorkspaceOptions): TNotesKbWorksp
           }
           updates = { ...updates, headingNumberMaxDepth: depth }
         }
+        const lineBreaks = updates.markdown?.lineBreaks
+        if (lineBreaks !== undefined && lineBreaks !== 'commonmark' && lineBreaks !== 'visual') {
+          throw new KbError('INVALID_OPERATION', 'markdown.lineBreaks 须为 commonmark 或 visual', {
+            lineBreaks
+          })
+        }
         if (updates.autoPush !== undefined && updates.autoPush !== null) {
           const autoPush = updates.autoPush
           const idleMinutes = Number(autoPush.idleMinutes)

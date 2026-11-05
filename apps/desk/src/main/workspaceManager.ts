@@ -15,7 +15,8 @@ import {
   listIncompleteJournals,
   readExcalidrawDocument,
   writeExcalidrawDerivedSvg,
-  writeExcalidrawDocument
+  writeExcalidrawDocument,
+  type KbMarkdownConfig
 } from '@tnotesjs/kb'
 
 import { deskLog } from './log'
@@ -85,6 +86,7 @@ import type {
   TocDeleteRequest,
   TocMoveRequest,
   TocRenameGroupRequest,
+  LineBreakMode,
   WorkspaceOverview
 } from '../shared/contracts'
 
@@ -92,6 +94,17 @@ export type { GitRepositoryDescriptor } from './workspace/types'
 
 /** 知识库根目录的 README，给 GitHub 这类平台当仓库首页 */
 const KB_README = 'README.md'
+
+/** commonmark 是缺省值，不写进 tnotes.json；`markdown` 里其他站点开关原样保留。 */
+function withLineBreaks(
+  markdown: KbMarkdownConfig | undefined,
+  mode: LineBreakMode
+): KbMarkdownConfig | undefined {
+  const next: KbMarkdownConfig = { ...markdown }
+  if (mode === 'visual') next.lineBreaks = 'visual'
+  else delete next.lineBreaks
+  return Object.keys(next).length > 0 ? next : undefined
+}
 
 export class WorkspaceManager {
   private readonly events = new EventEmitter<WorkspaceManagerEvents>()
@@ -200,7 +213,8 @@ export class WorkspaceManager {
         packageJson: request.packageJson,
         githubPages: request.githubPages,
         readme: request.readme,
-        gitInit: request.gitInit
+        gitInit: request.gitInit,
+        lineBreaks: 'visual'
       }
     })
     this.mutationEffects().markInternalWrites(created.rootPath, [
@@ -429,6 +443,9 @@ export class WorkspaceManager {
         : {}),
       ...(request.headingNumberMaxDepth !== undefined
         ? { headingNumberMaxDepth: request.headingNumberMaxDepth ?? undefined }
+        : {}),
+      ...(request.lineBreaks !== undefined
+        ? { markdown: withLineBreaks(existing.markdown, request.lineBreaks) }
         : {})
     })
     this.mutationEffects().markInternalWrites(handle.rootPath, result.changedFiles)

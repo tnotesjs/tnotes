@@ -58,6 +58,31 @@ describe('frontmatterIdGuard', () => {
     )
   })
 
+  it('replaces an existing description when the settings field is typed', () => {
+    const change = frontmatterDescriptionChange(doc, '123')!
+    const state = EditorState.create({ doc, extensions: [frontmatterIdGuard()] })
+    const next = state.update({ changes: change }).state.doc.toString()
+    expect(next).toContain('description: 123')
+    expect(next).not.toContain('description: 简介')
+    expect(next).toContain('id: abc-123')
+  })
+
+  it('replaces a long description one keystroke would produce', () => {
+    const source = [
+      '---',
+      'id: abc-123',
+      'description: 所以你看到的「没改别的，一保存就回到我输入的内容」，发生在保存和失焦这一步。我上次没有走这一步。',
+      '---',
+      '',
+      '111222'
+    ].join('\n')
+    const change = frontmatterDescriptionChange(source, '123')!
+    const state = EditorState.create({ doc: source, extensions: [frontmatterIdGuard()] })
+    const next = state.update({ changes: change }).state.doc.toString()
+    expect(next).toContain('description: 123\n')
+    expect(next).toContain('111222')
+  })
+
   it('still rejects partial text or a fence typed at the closing fence', () => {
     const idOnly = ['---', 'id: abc-123', '---', '', '正文'].join('\n')
     const closeFrom = idOnly.indexOf('---', 3)

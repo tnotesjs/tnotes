@@ -593,7 +593,7 @@ describe('大纲连续节点选择（幕布对齐）', () => {
   })
 
   it('进入主题聚焦后退出纯文本编辑态并完整保留行内样式', async () => {
-    const raw = '**粗体** *斜体* <u>下划线</u> ~~删除线~~ ==高亮== [链接](https://example.com)'
+    const raw = '**粗体** *斜体* <u>下划线</u> ~~删除线~~ [链接](https://example.com)'
     const { session, host } = mountOutline(`# T\n\n- ${raw}\n  - child\n`)
     const formatted = session.document.root.children[0]
     const input = inputOf(host, formatted.id)!
@@ -610,7 +610,6 @@ describe('大纲连续节点选择（幕布对齐）', () => {
     expect(title.querySelector('.inline-run.italic')?.textContent).toBe('斜体')
     expect(title.querySelector('.inline-run.underline')?.textContent).toBe('下划线')
     expect(title.querySelector('.inline-run.strike')?.textContent).toBe('删除线')
-    expect(title.querySelector('.inline-run.highlight')?.textContent).toBe('高亮')
     expect(title.querySelector('.inline-run.link')?.textContent).toBe('链接')
 
     session.exitFocusTo(0)
@@ -670,7 +669,7 @@ describe('大纲连续节点选择（幕布对齐）', () => {
 
 describe('大纲富文本、链接与浮动工具栏', () => {
   it('节点进入文字编辑态后仍原位显示全部行内样式', async () => {
-    const raw = '**粗体** *斜体* <u>下划线</u> ~~删除线~~ ==高亮== `代码`'
+    const raw = '**粗体** *斜体* <u>下划线</u> ~~删除线~~ `代码`'
     const { session, host } = mountOutline(`# T\n\n- ${raw}\n`)
     const node = session.document.root.children[0]
     const editor = inputOf(host, node.id)!
@@ -683,7 +682,6 @@ describe('大纲富文本、链接与浮动工具栏', () => {
     expect(editor.querySelector('.italic')?.textContent).toBe('斜体')
     expect(editor.querySelector('.underline')?.textContent).toBe('下划线')
     expect(editor.querySelector('.strike')?.textContent).toBe('删除线')
-    expect(editor.querySelector('.highlight')?.textContent).toBe('高亮')
     expect(editor.querySelector('.code')?.textContent).toBe('代码')
     expect(node.content.raw).toBe(raw)
   })
@@ -774,7 +772,7 @@ describe('大纲富文本、链接与浮动工具栏', () => {
 
     const toolbar = document.body.querySelector('[aria-label="文字格式工具栏"]') as HTMLElement
     expect(toolbar).not.toBeNull()
-    expect(toolbar.querySelectorAll('button')).toHaveLength(11)
+    expect(toolbar.querySelectorAll('button')).toHaveLength(10)
     ;(toolbar.querySelector('.format-button.is-bold') as HTMLButtonElement).click()
     await settle()
     expect(node.content.raw).toBe('**alpha**')
@@ -849,7 +847,7 @@ describe('大纲富文本、链接与浮动工具栏', () => {
 
     const toolbar = document.body.querySelector('[aria-label="多主题工具栏"]') as HTMLElement
     expect(toolbar).not.toBeNull()
-    expect(toolbar.querySelectorAll('button')).toHaveLength(9)
+    expect(toolbar.querySelectorAll('button')).toHaveLength(8)
     expect(toolbar.querySelector('[aria-label="添加图片"]')).toBeNull()
     expect(toolbar.querySelector('[aria-label="添加链接"]')).toBeNull()
     ;(toolbar.querySelector('.format-button.is-bold') as HTMLButtonElement).click()

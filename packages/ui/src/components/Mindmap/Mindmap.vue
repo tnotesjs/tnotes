@@ -1203,11 +1203,6 @@ onBeforeUnmount(() => {
 .mindmap-canvas-host:deep(.mm-edit-input .inline-run.underline.strike) {
   text-decoration-line: underline line-through;
 }
-.mindmap-canvas-host:deep(.mm-edit-input .inline-run.highlight:not(.code)) {
-  padding: 0 1px;
-  border-radius: 2px;
-  background: var(--tn-c-mark-bg, rgba(255, 221, 0, 0.45));
-}
 .mindmap-canvas-host:deep(.mm-edit-input .inline-run.code) {
   padding: 0 4px;
   border: 1px solid var(--tn-c-inline-code-border);
@@ -1366,11 +1361,6 @@ onBeforeUnmount(() => {
 }
 .mindmap-outline :deep(.is-strike) {
   text-decoration: line-through;
-}
-.mindmap-outline :deep(.is-highlight) {
-  padding: 0 2px;
-  border-radius: 2px;
-  background: var(--tn-c-mark-bg, rgba(255, 221, 0, 0.45));
 }
 .mindmap-outline :deep(.is-code) {
   padding: 0 4px;

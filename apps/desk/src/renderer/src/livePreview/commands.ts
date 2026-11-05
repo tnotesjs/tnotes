@@ -12,6 +12,7 @@ import {
   wrapSelectionEdit,
   type TextEdit
 } from '../markdown/sourceEdits'
+import { calloutHiddenLines } from './calloutLayout'
 import { collapsedCodeBodies } from './codeBlockChrome'
 import { openFind } from './findPanel'
 import { hiddenCodeGroupBodies } from './decorations'
@@ -93,7 +94,13 @@ export function prefixSelection(view: EditorView, prefix: string): void {
 export function insertText(view: EditorView, insert: string, position?: number): void {
   if (view.state.readOnly) return
   const { text, from } = selectionOffsets(view)
-  applyTextEdit(view, insertTextEdit(text, insert, position, from))
+  const edit = insertTextEdit(text, insert, position, from)
+  // 提示块模板插入后光标落在正文第一行，接着就能写内容
+  const callout = /^\n?:{3,}[ \t]*(?:tip|info|warning|danger|details)\b[^\n]*\n/.exec(insert)
+  if (callout && insert.length > callout[0].length) {
+    edit.selectionFrom = edit.selectionTo = edit.from + callout[0].length
+  }
+  applyTextEdit(view, edit)
 }
 
 export function clearLineStyles(view: EditorView): boolean {
@@ -225,6 +232,11 @@ export function verticalStopLine(
 function lineIsRestable(view: EditorView, lineNo: number): boolean {
   const line = view.state.doc.line(lineNo)
   const pos = line.from
+  if (
+    view.state.facet(livePreviewEnabled) &&
+    calloutHiddenLines(view.state).some((span) => pos >= span.from && pos <= span.to)
+  )
+    return false
   if (collapsedCodeBodies(view.state).some((body) => pos >= body.from && pos < body.to))
     return false
   if (hiddenCodeGroupBodies(view.state).some((body) => pos >= body.from && pos <= body.to))
