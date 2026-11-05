@@ -173,7 +173,8 @@ function installPlainNestedContainers(md: MarkdownIt): void {
     'container_info',
     'tn_plain_nested_container',
     (state, startLine, endLine, silent) => {
-      if (state.parentType !== 'container') return false
+      // markdown-it 的 ParentType 没有 container，容器插件在运行时仍会写成这个值。
+      if ((state.parentType as string) !== 'container') return false
       if (state.sCount[startLine] - state.blkIndent >= 4) return false
       const start = state.bMarks[startLine] + state.tShift[startLine]
       const max = state.eMarks[startLine]
