@@ -51,12 +51,12 @@
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.8.1",
-    "globals": "^17.11.0",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
     "happy-dom": "^20.11.2",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.67.0",
-    "vite": "^8.2.1",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.5",
     "vitest": "^4.1.10"
   }
 }
