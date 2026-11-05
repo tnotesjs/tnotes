@@ -1,6 +1,6 @@
 {
   "name": "@tnotesjs/ui",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Shared Vue UI for TNotes built-in blocks — consumed by the TNotes SSG and Desk.",
   "type": "module",
   "exports": {
@@ -50,7 +50,12 @@
     },
     "./code-block": "./src/components/CodeBlock/CodeBlock.vue",
     "./code-group": "./src/components/CodeGroup/CodeGroup.vue",
-    "./alerts": "./src/alerts/icons.ts",
+    "./alerts": {
+      "types": "./src/alerts/icons.ts",
+      "node": "./dist/alerts/icons.js",
+      "import": "./src/alerts/icons.ts",
+      "default": "./src/alerts/icons.ts"
+    },
     "./badge": "./src/components/Badge/Badge.vue",
     "./image-preview": "./src/components/ImagePreview/ImagePreview.vue",
     "./bilibili-video": "./src/entries/bilibili-video.ts",
@@ -133,7 +138,7 @@
   ],
   "license": "MIT",
   "scripts": {
-    "build": "tsup src/code/highlight.ts src/components/Footprints/parse.ts src/components/Mindmap/markdown.ts src/markdown/image.ts src/markdown/lineBreaks.ts src/swiper/hydrate.ts --format esm --dts --out-dir dist --clean",
+    "build": "tsup src/alerts/icons.ts src/code/highlight.ts src/components/Footprints/parse.ts src/components/Mindmap/markdown.ts src/markdown/image.ts src/markdown/lineBreaks.ts src/swiper/hydrate.ts --format esm --dts --out-dir dist --clean",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "lint": "eslint . --max-warnings=0",
