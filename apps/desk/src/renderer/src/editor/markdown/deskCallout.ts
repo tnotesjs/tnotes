@@ -15,7 +15,7 @@ import { isVisualCalloutName, type VisualCalloutType } from './containerBody'
 
 import type { MarkdownNode } from '@milkdown/kit/transformer'
 
-export const DESK_CALLOUT_TYPES = ['tip', 'info', 'warning', 'danger'] as const
+export const DESK_CALLOUT_TYPES = ['tip', 'quote', 'warning', 'danger'] as const
 
 const CALLOUT_START =
   /^<!--desk-callout:v1:(tip|info|warning|danger):([A-Za-z0-9+/]*={0,2}):([A-Za-z0-9+/]*={0,2})-->$/
@@ -417,7 +417,7 @@ export function createDeskCalloutNode(
 }
 
 export function slashCalloutType(itemId: string): VisualCalloutType | null {
-  if (itemId === 'tip' || itemId === 'info' || itemId === 'warning' || itemId === 'danger') {
+  if (itemId === 'tip' || itemId === 'quote' || itemId === 'warning' || itemId === 'danger') {
     return itemId
   }
   return null

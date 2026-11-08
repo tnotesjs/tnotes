@@ -70,6 +70,10 @@
         <ArticleTools
           v-if="showArticleTools"
           :repo-url="noteRepoUrl"
+          :desk-url="deskUrl"
+          :desk-fallback="
+            props.data.relativePath.startsWith('notes/') && !deskUrl
+          "
           :source="data.source ?? ''"
           :folded="headingsFolded"
           :can-fold="hasArticleHeadings"
@@ -197,6 +201,12 @@ function isArticlePage(relativePath: string): boolean {
 const showArticleTools = computed(
   () => props.data.source !== undefined && isArticlePage(props.data.relativePath)
 )
+const deskUrl = computed(() => {
+  if (!isArticlePage(props.data.relativePath) || props.data.relativePath === 'README.md') return ''
+  if (!site.kbId || !props.data.noteId) return ''
+  const params = new URLSearchParams({ kb: site.kbId, note: props.data.noteId })
+  return `tnotes-desk://open?${params.toString()}`
+})
 const noteRepoUrl = computed(() => {
   const repository = site.repositoryUrl?.replace(/\/+$/, '')
   if (!repository || !isArticlePage(props.data.relativePath)) return ''

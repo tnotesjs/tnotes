@@ -43,8 +43,8 @@ describe('rebuildContainerSource', () => {
 
   it('keeps an empty body shell valid', () => {
     expect(
-      rebuildContainerSource('::: info ℹ️ INFO\n\n\n\n:::\n', { title: 'ℹ️ INFO', body: '' })
-    ).toBe('::: info ℹ️ INFO\n\n\n:::\n')
+      rebuildContainerSource('::: quote ℹ️ INFO\n\n\n\n:::\n', { title: 'ℹ️ INFO', body: '' })
+    ).toBe('::: quote ℹ️ INFO\n\n\n:::\n')
   })
 
   it('identifies structured callout names', () => {
@@ -306,7 +306,7 @@ describe('renderContainerFromSource', () => {
 
   it('resolves reference links from definitions outside the callout', () => {
     const el = renderContainerFromSource(
-      '::: info\n\n[百度][1]\n\n:::',
+      '::: quote\n\n[百度][1]\n\n:::',
       (src) => src,
       new Map([['1', 'https://www.baidu.com']])
     )

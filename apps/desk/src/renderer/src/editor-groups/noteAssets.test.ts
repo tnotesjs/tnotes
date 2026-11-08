@@ -102,6 +102,14 @@ describe('分组：引用 / 编号匹配 / 无效 / 缺失', () => {
     expect(view.own).toEqual([])
     expect(view.invalid).toEqual([])
   })
+
+  it('新的无前缀文件被引用时进 own，且不标 needsIndexFix', () => {
+    const name = 'assets/26-09-11-10-20-30-abcdef01.png'
+    const view = build(`![图](../${name})`, listing(name))
+    expect(view.own.map((entry) => entry.relPath)).toEqual([name])
+    expect(view.referenced[0]?.needsIndexFix).toBe(false)
+    expect(view.invalid).toEqual([])
+  })
 })
 
 describe('画布配对（.excalidraw ↔ 同名 .svg）', () => {

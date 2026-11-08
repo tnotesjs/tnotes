@@ -132,6 +132,14 @@ const api: DeskApi = {
       ipcRenderer.on(IPC_CHANNELS.appBeforeClose, listener)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.appBeforeClose, listener)
     },
+    onDeskOpen: (callback) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        target: { knowledgeBaseId: string; noteUuid: string }
+      ): void => callback(target)
+      ipcRenderer.on(IPC_CHANNELS.deskOpen, listener)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.deskOpen, listener)
+    },
     confirmCloseReady: (proceed) => invoke<void>(IPC_CHANNELS.appCloseReady, { proceed }),
     confirmTabClose: (titles) => invoke<TabCloseChoice>(IPC_CHANNELS.tabConfirmClose, titles),
     showContextMenu: (request) =>

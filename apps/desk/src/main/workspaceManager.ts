@@ -7,6 +7,7 @@ import {
   copyExcalidrawDocument,
   createExcalidrawDocument,
   createKnowledgeBase as createKbOnDisk,
+  ensureKnowledgeBaseId,
   findExcalidrawSourceFor,
   hashBytes,
   listKbDirectory,
@@ -180,12 +181,30 @@ export class WorkspaceManager {
     if (normalized) {
       this.bindAssetUserData()
       await scan(this.scanState)
+      for (const handle of this.scanState.handles.values()) {
+        const before = handle.snapshot.config.id
+        const id = await ensureKnowledgeBaseId(handle.rootPath)
+        if (before !== id) handle.snapshot.config.id = id
+      }
       await this.syncAssetWriteHolds()
       startWatchers(this.scanState, normalized)
     }
     const overview = this.getOverview()
     this.events.emit('changed', overview)
     return overview
+  }
+
+  findNoteByKbConfigId(
+    kbId: string,
+    noteId: string
+  ): { knowledgeBaseId: string; noteUuid: string } | null {
+    for (const handle of this.scanState.handles.values()) {
+      if (handle.snapshot.config.id !== kbId) continue
+      const note = handle.snapshot.notes.find((item) => item.frontmatter.id === noteId)
+      if (!note?.frontmatter.id) return null
+      return { knowledgeBaseId: handle.id, noteUuid: note.frontmatter.id }
+    }
+    return null
   }
 
   async refresh(): Promise<WorkspaceOverview> {

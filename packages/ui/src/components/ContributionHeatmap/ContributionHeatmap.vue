@@ -363,7 +363,7 @@ watch(
 )
 </script>
 
-<style scoped>
+<style>
 .tn-heatmap {
   /* 尺寸：对齐 GitHub（10px 格 + 3px 间距） */
   --tn-hm-cell: 10px;

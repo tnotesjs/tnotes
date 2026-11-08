@@ -112,7 +112,6 @@ export function duplicateGroupsFromHashes(
       if (owned.length < 2) continue
       const names = owned.map((relPath) => path.posix.basename(relPath))
       const mergeable =
-        ownerNoteIndex != null &&
         names.every(isContentReusableAsset) &&
         names.every((name) => compatibleAssetTypes(name, names[0] ?? name))
       groups.push({
@@ -165,7 +164,16 @@ export async function findReusableAsset(input: {
   const size = input.data.byteLength
   for (const asset of input.assets) {
     if (asset.size !== size) continue
-    if (assetOwnerFromName(asset.name) !== input.ownerNoteIndex) continue
+    const owner = assetOwnerFromName(asset.name)
+    const incomingOwner = assetOwnerFromName(input.fileName)
+    const globalName = /^\d{2}(?:-\d{2}){5}-[0-9a-f]{8}\./i.test(input.fileName)
+    if (incomingOwner) {
+      if (owner !== incomingOwner) continue
+    } else if (globalName) {
+      if (owner || !/^\d{2}(?:-\d{2}){5}-[0-9a-f]{8}\./i.test(asset.name)) continue
+    } else {
+      continue
+    }
     if (!compatibleAssetTypes(asset.name, input.fileName)) continue
     const existing = hashBytes(
       new Uint8Array(await fs.readFile(path.join(input.rootPath, asset.relPath)))

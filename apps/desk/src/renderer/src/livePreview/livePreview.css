@@ -1876,9 +1876,9 @@
 .live-editor .cm-lp-callout-header.tn-alert-tip {
   --tn-alert: var(--tn-c-success);
 }
-.live-editor .cm-lp-visual .cm-lp-callout-info,
-.live-editor .cm-lp-callout-bar.tn-alert-info,
-.live-editor .cm-lp-callout-header.tn-alert-info {
+.live-editor .cm-lp-visual .cm-lp-callout-quote,
+.live-editor .cm-lp-callout-bar.tn-alert-quote,
+.live-editor .cm-lp-callout-header.tn-alert-quote {
   --tn-alert: var(--tn-c-link);
 }
 .live-editor .cm-lp-visual .cm-lp-callout-warning,
@@ -2020,7 +2020,7 @@
 .live-editor .cm-lp-callout-header .tn-alert-option[data-type='tip'] .tn-alert-icon {
   color: var(--tn-c-success);
 }
-.live-editor .cm-lp-callout-header .tn-alert-option[data-type='info'] .tn-alert-icon {
+.live-editor .cm-lp-callout-header .tn-alert-option[data-type='quote'] .tn-alert-icon {
   color: var(--tn-c-link);
 }
 .live-editor .cm-lp-callout-header .tn-alert-option[data-type='warning'] .tn-alert-icon {

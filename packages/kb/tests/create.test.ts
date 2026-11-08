@@ -54,11 +54,17 @@ describe('createKnowledgeBase', () => {
     })
 
     expect(result.rootPath).toBe(path.join(parent, 'demo-kb'))
-    expect(result.config).toEqual({ name: 'demo-kb', title: '演示库' })
+    expect(result.config.name).toBe('demo-kb')
+    expect(result.config.title).toBe('演示库')
+    expect(result.config.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    )
     expect(result.starterNoteRelPath).toBe(`notes/0001. ${STARTER_NOTE_TITLE}.md`)
 
     const config = JSON.parse(await fs.readFile(path.join(result.rootPath, 'tnotes.json'), 'utf8'))
-    expect(config).toEqual({ name: 'demo-kb', title: '演示库' })
+    expect(config.name).toBe('demo-kb')
+    expect(config.title).toBe('演示库')
+    expect(config.id).toBe(result.config.id)
 
     const toc = await fs.readFile(path.join(result.rootPath, 'TOC.md'), 'utf8')
     expect(toc).toBe(`- [ ] 0001. ${STARTER_NOTE_TITLE}\n`)

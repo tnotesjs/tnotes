@@ -40,6 +40,7 @@ export async function resolveConfig(root = process.cwd()): Promise<ResolvedSsgCo
     lang: user.lang ?? 'zh-Hans',
     port: user.port ?? 9193,
     home: user.home,
+    kbId: typeof user.id === 'string' ? user.id : undefined,
     repositoryUrl: user.repositoryUrl,
     icon: user.icon,
     discussions: user.discussions === true,

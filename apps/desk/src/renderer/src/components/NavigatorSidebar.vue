@@ -37,6 +37,7 @@ const tocListRef = ref<InstanceType<typeof TocNodeList> | null>(null)
 const batchDeleting = ref(false)
 const batchSelected = ref(new Set<string>())
 const previewBusy = ref(false)
+const dismissedPreviewError = ref('')
 const menuBusy = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -213,6 +214,12 @@ const previewState = computed(() =>
     ? (editor.previewStates[store.selectedKnowledgeBaseId] ?? null)
     : null
 )
+const previewErrorKey = computed(
+  () => `${store.selectedKnowledgeBaseId ?? ''}:${previewState.value?.error ?? ''}`
+)
+function dismissPreviewError(): void {
+  dismissedPreviewError.value = previewErrorKey.value
+}
 
 const gitState = computed(() =>
   store.selectedKnowledgeBaseId ? (store.gitStates[store.selectedKnowledgeBaseId] ?? null) : null
@@ -511,7 +518,12 @@ async function openHeaderMenu(): Promise<void> {
     </div>
 
     <div
-      v-if="previewBusy || previewState?.status === 'starting' || previewState?.status === 'error'"
+      v-if="
+        previewBusy ||
+        previewState?.status === 'starting' ||
+        (previewState?.status === 'error' &&
+          dismissedPreviewError !== previewErrorKey)
+      "
       class="preview-feedback"
       :class="previewState?.status"
     >
@@ -521,6 +533,7 @@ async function openHeaderMenu(): Promise<void> {
       <template v-else>
         <span>预览启动失败：{{ previewState?.error ?? '未知错误' }}</span>
         <button type="button" @click="togglePreview">重试</button>
+        <button type="button" @click="dismissPreviewError">关闭</button>
       </template>
     </div>
 

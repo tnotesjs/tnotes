@@ -56,6 +56,8 @@ export interface MarkdownConfig {
  * Unknown tnotes.json keys are preserved by @tnotesjs/kb but ignored here.
  */
 export interface SsgConfig {
+  /** Stable kb UUID. Sites use it to open this kb in Desk. */
+  id?: string
   /** Deploy base path, e.g. "/TNotes.vite/". Defaults to "/". */
   base?: string
   title?: string
@@ -88,6 +90,7 @@ export interface ResolvedSsgConfig {
   lang: string
   port: number
   home?: string
+  kbId?: string
   repositoryUrl?: string
   icon?: { src: string }
   discussions: boolean
@@ -116,6 +119,7 @@ export interface SiteData {
   description: string
   lang: string
   repositoryUrl?: string
+  kbId?: string
   discussions: boolean
   sidebar: SidebarItem[]
   markdown: MarkdownConfig

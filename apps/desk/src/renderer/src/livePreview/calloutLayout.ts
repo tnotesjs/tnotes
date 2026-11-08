@@ -3,7 +3,7 @@ import { StateEffect, StateField, type EditorState } from '@codemirror/state'
 
 import type { Tree } from '@lezer/common'
 
-export type CalloutType = 'tip' | 'info' | 'warning' | 'danger' | 'details'
+export type CalloutType = 'tip' | 'quote' | 'warning' | 'danger' | 'details'
 
 export interface LineSpan {
   from: number

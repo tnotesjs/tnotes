@@ -58,7 +58,6 @@ const formatActions = [
   'italic',
   'strikethrough',
   'inline-code',
-  'quote',
   'unordered-list',
   'ordered-list',
   'checkbox',
@@ -193,16 +192,6 @@ function insertBlock(id: string): void {
             @click="editor?.removeHeadingNumbers()"
           >
             <FormatIcon name="heading-number-remove" />
-          </button>
-        </UiTooltip>
-        <UiTooltip v-else-if="item === 'quote'" label="引用" shortcut="⌥ ⌘ U">
-          <button
-            type="button"
-            aria-label="引用"
-            :disabled="disabled"
-            @click="editor?.setLinePrefix('> ')"
-          >
-            <FormatIcon name="quote" />
           </button>
         </UiTooltip>
         <UiTooltip v-else-if="item === 'unordered-list'" label="无序列表" shortcut="⇧ ⌘ 8">

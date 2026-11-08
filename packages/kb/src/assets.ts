@@ -86,18 +86,16 @@ export async function addAsset(
 ): Promise<{ relPath: string; markdownPath: string; reused: boolean }> {
   const baseName = path.basename(fileName)
   const ownerNoteIndex = assetOwnerFromName(baseName)
-  if (ownerNoteIndex) {
-    const listed = await listAssets(rootPath)
-    const reused = await findReusableAsset({
-      rootPath,
-      data,
-      fileName: baseName,
-      ownerNoteIndex,
-      assets: listed
-    })
-    if (reused) {
-      return { relPath: reused.relPath, markdownPath: `../${reused.relPath}`, reused: true }
-    }
+  const listed = await listAssets(rootPath)
+  const reused = await findReusableAsset({
+    rootPath,
+    data,
+    fileName: baseName,
+    ownerNoteIndex: ownerNoteIndex ?? '',
+    assets: listed
+  })
+  if (reused) {
+    return { relPath: reused.relPath, markdownPath: `../${reused.relPath}`, reused: true }
   }
   const assetsDir = path.join(rootPath, ASSETS_DIR)
   await fs.mkdir(assetsDir, { recursive: true })

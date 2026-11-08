@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { ensureSyntaxTree } from '@codemirror/language'
+import { codeFolding, ensureSyntaxTree, foldEffect } from '@codemirror/language'
 import { EditorSelection, EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -15,7 +15,7 @@ import {
 } from './calloutView'
 import { containerAtCursor } from './containerAt'
 import { livePreviewField, setFocused } from './decorations'
-import { headingSections } from './headingFold'
+import { headingFoldService, headingSections } from './headingFold'
 import { tnotesMarkdown } from './language'
 import { collectHeadings } from './outline'
 
@@ -81,10 +81,10 @@ describe('callout layout', () => {
   })
 
   it('closes at the first colon-only line with enough colons, like markdown-it-container', () => {
-    const doc = '::: tip\n一\n::: info\n二\n:::\n三\n:::\n'
+    const doc = '::: tip\n一\n::: quote\n二\n:::\n三\n:::\n'
     const { blocks } = calloutLayout(stateOf(doc))
     expect(blocks).toHaveLength(1)
-    expect(doc.slice(blocks[0].bodyFrom, blocks[0].bodyTo)).toBe('一\n::: info\n二')
+    expect(doc.slice(blocks[0].bodyFrom, blocks[0].bodyTo)).toBe('一\n::: quote\n二')
   })
 
   it('runs an unclosed callout to the end of the document', () => {
@@ -142,7 +142,7 @@ describe('callout editing', () => {
     expect(calloutBackspace(view)).toBe(true)
     expect(view.state.doc.toString()).toBe('正文\n')
 
-    const empty = mount('前\n::: info\n\n:::\n后', '前\n::: info\n'.length)
+    const empty = mount('前\n::: quote\n\n:::\n后', '前\n::: quote\n'.length)
     expect(calloutBackspace(empty)).toBe(true)
     expect(empty.state.doc.toString()).toBe('前\n后')
   })
@@ -177,6 +177,28 @@ describe('callout editing', () => {
     // 只有一行空正文时回车照常换行
     const fresh = mount('::: tip\n\n:::\n', '::: tip\n'.length)
     expect(calloutEnter(fresh)).toBe(false)
+  })
+
+  it('折叠标题后，标题行不露出井号，后面的高亮块也不画色条', () => {
+    const doc = '## 标题\n\n正文\n\n::: tip\n提示\n:::\n'
+    const parent = document.createElement('div')
+    document.body.append(parent)
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc,
+        extensions: [tnotesMarkdown(), codeFolding(), headingFoldService, livePreviewField]
+      })
+    })
+    views.push(view)
+    const section = headingSections(view.state)[0]
+    expect(section).toBeTruthy()
+    view.dispatch({ effects: foldEffect.of({ from: section!.lineEnd, to: section!.end }) })
+    const heading = [...document.querySelectorAll('.cm-line')].find((line) =>
+      line.textContent?.includes('标题')
+    )
+    expect(heading?.textContent ?? '').not.toContain('#')
+    expect(document.querySelectorAll('.cm-lp-callout-bar')).toHaveLength(0)
   })
 
   it('arrow down past a callout at the end of the document adds a line', () => {

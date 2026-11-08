@@ -13,7 +13,7 @@ const CONTAINER_CLOSE = /^(:{3,})[ \t]*$/
 const FENCE = /^(`{3,}|~{3,})/
 
 /** 原地编辑的提示块：开启行和结束行各自成节点，中间是普通正文。 */
-export const CALLOUT_NAMES = new Set(['tip', 'info', 'warning', 'danger', 'details'])
+export const CALLOUT_NAMES = new Set(['tip', 'quote', 'warning', 'danger', 'details'])
 
 function lineContent(line: Line): string {
   return line.text.slice(line.pos)

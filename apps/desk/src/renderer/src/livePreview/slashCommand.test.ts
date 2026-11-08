@@ -229,7 +229,7 @@ describe('block insertion', () => {
 
   it('prefix items rewrite the current line and keep its text', () => {
     expect(apply('标题 /h2', 3, 'h2', { from: 3, to: 6 }).doc).toBe('## 标题 ')
-    expect(apply('- 事项', 0, 'quote').doc).toBe('> 事项')
+    expect(apply('- 事项', 0, 'quote').doc).toContain('::: quote')
   })
 
   it('runInsertItem from the toolbar inserts at the cursor line', () => {

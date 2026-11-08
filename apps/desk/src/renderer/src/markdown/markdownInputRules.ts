@@ -34,7 +34,7 @@ export interface MarkdownBlockShortcut {
 
 const blockShortcutDefinitions = [
   { id: 'tip', syntax: ':::tip', aliases: [], trigger: 'Enter' },
-  { id: 'info', syntax: ':::info', aliases: [], trigger: 'Enter' },
+  { id: 'quote', syntax: ':::quote', aliases: [], trigger: 'Enter' },
   { id: 'warning', syntax: ':::warning', aliases: [], trigger: 'Enter' },
   { id: 'danger', syntax: ':::error', aliases: [':::danger'], trigger: 'Enter' },
   { id: 'details', syntax: ':::details', aliases: [], trigger: 'Enter' },

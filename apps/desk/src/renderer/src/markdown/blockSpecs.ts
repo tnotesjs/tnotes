@@ -17,12 +17,12 @@ export type BlockSpec = {
   allowParents?: readonly string[]
 }
 
-const CALLOUT_TYPES = ['tip', 'info', 'warning', 'danger', 'details'] as const
+const CALLOUT_TYPES = ['tip', 'quote', 'warning', 'danger', 'details'] as const
 
 /** 未出现在此表中的块 → nest: 'ordinary' */
 export const BLOCK_SPECS: readonly BlockSpec[] = [
   { type: 'tip', nest: 'container' },
-  { type: 'info', nest: 'container' },
+  { type: 'quote', nest: 'container' },
   { type: 'warning', nest: 'container' },
   { type: 'danger', nest: 'container' },
   { type: 'details', nest: 'container' },

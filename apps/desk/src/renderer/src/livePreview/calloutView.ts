@@ -1,4 +1,4 @@
-import { syntaxTree } from '@codemirror/language'
+import { foldedRanges, syntaxTree } from '@codemirror/language'
 import { EditorSelection, type ChangeSpec, type EditorState } from '@codemirror/state'
 import {
   EditorView,
@@ -193,6 +193,23 @@ export class CalloutHeaderWidget extends WidgetType {
   }
 }
 
+function foldSignature(state: EditorState): string {
+  const parts: string[] = []
+  foldedRanges(state).between(0, state.doc.length, (from, to) => {
+    parts.push(`${from}:${to}`)
+  })
+  return parts.join(',')
+}
+
+/** 标题折叠把后面的高亮块收进不可见区间。色条若仍按行盒取坐标，会缩到标题行上。 */
+function hiddenByFold(state: EditorState, pos: number): boolean {
+  let hidden = false
+  foldedRanges(state).between(pos, pos, (from, to) => {
+    if (pos > from && pos < to) hidden = true
+  })
+  return hidden
+}
+
 /** 左侧色条：一块一条，跨过正文里的代码块、表格卡片等块级组件也不断开 */
 export const calloutBars = layer({
   above: false,
@@ -202,7 +219,9 @@ export const calloutBars = layer({
     update.geometryChanged ||
     update.viewportChanged ||
     update.selectionSet ||
-    update.startState.field(calloutExpanded, false) !== update.state.field(calloutExpanded, false),
+    update.startState.field(calloutExpanded, false) !==
+      update.state.field(calloutExpanded, false) ||
+    foldSignature(update.startState) !== foldSignature(update.state),
   markers(view) {
     if (!view.state.facet(livePreviewEnabled)) return []
     const { blocks } = calloutLayout(view.state)
@@ -216,6 +235,7 @@ export const calloutBars = layer({
     const markers: RectangleMarker[] = []
     for (const block of blocks) {
       if (block.end < from || block.open.from > to) continue
+      if (hiddenByFold(view.state, block.open.from)) continue
       const last =
         hasCalloutBody(block) && !isCalloutCollapsed(view.state, block)
           ? block.bodyTo

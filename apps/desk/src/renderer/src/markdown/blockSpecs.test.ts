@@ -16,7 +16,7 @@ describe('BlockSpec 嵌套角色', () => {
   })
 
   it('容器里只放普通内容和代码：不套容器，也不放其余顶层特殊块', () => {
-    for (const parent of ['tip', 'info', 'warning', 'danger', 'details']) {
+    for (const parent of ['tip', 'quote', 'warning', 'danger', 'details']) {
       expect(canNest(parent, 'table')).toBe(true)
       expect(canNest(parent, 'tip')).toBe(false)
       expect(canNest(parent, 'details')).toBe(false)

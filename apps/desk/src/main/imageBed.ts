@@ -43,8 +43,8 @@ export function parseGitHubRepository(input: string): GitHubRepository {
   return { owner: segments[0], repository: segments[1] }
 }
 
-/** Local paste into `assets/`: `{index}-{YY}-{MM}-{DD}-{HH}-{mm}-{ss}{ext}`. */
-export const LOCAL_PASTED_ASSET_NAME_FORMAT = '${index}-${YY}-${MM}-${DD}-${HH}-${mm}-${ss}'
+/** New local assets: `{YY}-{MM}-{DD}-{HH}-{mm}-{ss}-{hash}{ext}` (no note-index prefix). */
+export const LOCAL_PASTED_ASSET_NAME_FORMAT = '${YY}-${MM}-${DD}-${HH}-${mm}-${ss}-${hash}'
 
 export function formatImageFileName(
   format: string,
@@ -61,11 +61,12 @@ export function formatImageFileName(
     HH: twoDigits(date.getHours()),
     mm: twoDigits(date.getMinutes()),
     ss: twoDigits(date.getSeconds()),
-    index: extraTokens.index ?? ''
+    index: extraTokens.index ?? '',
+    hash: extraTokens.hash ?? ''
   }
   const extension = extname(originalName).toLowerCase() || '.png'
   const replaced = format.replace(
-    /\$\{(YYYY|YY|MM|DD|HH|mm|ss|index)\}/g,
+    /\$\{(YYYY|YY|MM|DD|HH|mm|ss|index|hash)\}/g,
     (_match, key) => tokens[key] ?? ''
   )
   const withoutControlCharacters = [...replaced]

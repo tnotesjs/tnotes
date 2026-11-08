@@ -140,6 +140,7 @@ let unsubscribeAskpass: (() => void) | null = null
 let unsubscribeCommandTaskRetry: (() => void) | null = null
 let unsubscribeTabShortcut: (() => void) | null = null
 let unsubscribeBeforeClose: (() => void) | null = null
+let unsubscribeDeskOpen: (() => void) | null = null
 let unsubscribeUpdates: (() => void) | null = null
 
 /** 两块大胶囊离窗口边缘的空隙，和 VSCode 侧栏、编辑区之间的缝一样。 */
@@ -877,6 +878,9 @@ onMounted(async () => {
     void handleTabShortcut(command)
   })
   // 红叉 / ⌘Q：主进程接管关闭，这里把未保存内容处理干净再回执
+  unsubscribeDeskOpen = window.desk.app.onDeskOpen((target) => {
+    void store.openNoteByUuid(target.knowledgeBaseId, target.noteUuid)
+  })
   unsubscribeBeforeClose = window.desk.app.onBeforeClose(() => {
     void (async () => {
       const proceed = await store.prepareToQuit()
@@ -932,6 +936,8 @@ onUnmounted(() => {
   unsubscribeCommandTaskRetry = null
   unsubscribeTabShortcut?.()
   unsubscribeTabShortcut = null
+  unsubscribeDeskOpen?.()
+  unsubscribeDeskOpen = null
   unsubscribeBeforeClose?.()
   unsubscribeBeforeClose = null
   unsubscribeUpdates?.()

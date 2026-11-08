@@ -48,7 +48,7 @@ export interface ParsedContainerFences extends ParsedContainer {
 export type ResolveImage = (src: string) => string
 
 const COLLAPSIBLE_TYPES = new Set(['details'])
-const CALLOUT_TYPES = new Set(['info', 'tip', 'warning', 'danger'])
+const CALLOUT_TYPES = new Set(['quote', 'tip', 'warning', 'danger'])
 
 /** 可视化会收成卡片的 `:::` 类型。其余（例如已移除的 note）留在源码里。 */
 export const KNOWN_CONTAINER_TYPES = new Set([
@@ -64,12 +64,12 @@ export function isKnownContainerName(name: string): boolean {
 }
 
 /** Callouts that use structured title+body editing (fences stay locked). */
-export const STRUCTURED_CALLOUT_TYPES = new Set(['tip', 'info', 'warning', 'danger', 'details'])
+export const STRUCTURED_CALLOUT_TYPES = new Set(['tip', 'quote', 'warning', 'danger', 'details'])
 
 /** tip/info/warning/danger are visual ProseMirror containers; details stays an atom. */
-export const VISUAL_CALLOUT_TYPES = new Set(['tip', 'info', 'warning', 'danger'])
+export const VISUAL_CALLOUT_TYPES = new Set(['tip', 'quote', 'warning', 'danger'])
 
-export type VisualCalloutType = 'tip' | 'info' | 'warning' | 'danger'
+export type VisualCalloutType = 'tip' | 'quote' | 'warning' | 'danger'
 
 export function isStructuredCalloutName(name: string): boolean {
   return STRUCTURED_CALLOUT_TYPES.has(name.toLowerCase())
@@ -144,7 +144,7 @@ export function rebuildContainerSource(
   next: { title: string; body: string; name?: string }
 ): string {
   const parsed = parseContainerFences(previousSource)
-  const name = (next.name ?? (parsed.name || 'info')).toLowerCase()
+  const name = (next.name ?? (parsed.name || 'quote')).toLowerCase()
   const title = next.title.trim()
   const openLine = title ? `${parsed.openColons} ${name} ${title}` : `${parsed.openColons} ${name}`
   const body = next.body.replace(/\r\n?/g, '\n').replace(/^\n+|\n+$/g, '')

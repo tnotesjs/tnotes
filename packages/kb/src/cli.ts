@@ -11,11 +11,13 @@
 import path from 'node:path'
 
 import { createKnowledgeBase } from './create'
+import { ensureKnowledgeBaseId } from './kbId'
 import { DEFAULT_PUSH_COMMIT_MESSAGE, pullKnowledgeBase, pushKnowledgeBase } from './sync'
 import { createWorkspace } from './workspace'
 
 function printHelp(): void {
   console.log(`用法:
+  tnotes-kb ensure-id [知识库目录]
   tnotes-kb update [知识库目录] [--rebuild-stats]
   tnotes-kb push [知识库目录] [--no-update]
   tnotes-kb pull [知识库目录]
@@ -32,6 +34,7 @@ function printHelp(): void {
   --rebuild-stats            update 时全量重建 tnotes.stats.json（见待办 10）
 
 说明:
+  ensure-id  若 tnotes.json 没有 UUID id，则写入一个。
   update  根据 Git 中 TOC.md 历史写入 tnotes.stats.json（需 stats.enabled）；
           并清除 tnotes.json 中旧的 stats.completedNotesCount。
   push    按 tnotes.json → push.runUpdateBefore（默认 true）可选先 update，
@@ -152,6 +155,12 @@ async function main(): Promise<void> {
   if (!command || command === '--help' || command === '-h') {
     printHelp()
     process.exit(command ? 0 : 1)
+  }
+
+  if (command === 'ensure-id') {
+    const id = await ensureKnowledgeBaseId(resolveTargetDir(args.slice(1)))
+    console.log(id)
+    return
   }
 
   if (command === 'update') {

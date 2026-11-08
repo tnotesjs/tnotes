@@ -42,8 +42,8 @@ defineProps<{
   </table>
 </template>
 
-<style scoped lang="scss">
-.tn-notes-table {
+<style lang="scss">
+:is(.tn-prose, .vp-doc, .cm-lp-card) .tn-notes-table {
   width: 100%;
   margin: 1.5rem 0;
   border-collapse: collapse;
@@ -75,7 +75,7 @@ defineProps<{
   }
 }
 
-.tn-notes-table__link {
+:is(.tn-prose, .vp-doc, .cm-lp-card) .tn-notes-table__link {
   color: var(--tn-c-brand);
   text-decoration: none;
   font-weight: 500;
@@ -85,14 +85,14 @@ defineProps<{
   }
 }
 
-.tn-notes-table__id {
+:is(.tn-prose, .vp-doc, .cm-lp-card) .tn-notes-table__id {
   margin-right: 0.5rem;
   font-family: var(--tn-font-mono);
   font-size: 0.9em;
   color: var(--tn-c-text-2);
 }
 
-.tn-notes-table__desc {
+:is(.tn-prose, .vp-doc, .cm-lp-card) .tn-notes-table__desc {
   line-height: 1.6;
 
   &.is-empty {

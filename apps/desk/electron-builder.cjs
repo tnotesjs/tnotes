@@ -149,6 +149,7 @@ function platformPrunePatterns() {
 module.exports = {
   appId: 'com.tnotesjs.desk',
   productName: 'TNotes Desk',
+  protocols: [{ name: 'TNotes Desk', schemes: ['tnotes-desk'] }],
   publish: null,
   directories: {
     buildResources: 'build'

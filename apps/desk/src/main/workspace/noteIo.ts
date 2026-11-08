@@ -1,10 +1,10 @@
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 
 import {
   KbError,
   parseNoteContent,
-  README_ASSET_OWNER,
   serializeNoteContent,
   type ChangedFile,
   type NoteFrontmatter,
@@ -232,14 +232,13 @@ export async function writeLocalAttachment(
   request: AttachmentWriteLocalRequest,
   effects: MutationSideEffects
 ): Promise<AttachmentWriteLocalResult> {
-  const readme = request.noteUuid === README_NOTE_UUID
-  const owner = readme ? README_ASSET_OWNER : resolveNoteIndex(handle, request.noteUuid)
+  const hash = createHash('sha256').update(request.data).digest('hex').slice(0, 8)
   const fileName = formatImageFileName(
     LOCAL_PASTED_ASSET_NAME_FORMAT,
     request.fileName,
     new Date(),
     0,
-    { index: owner }
+    { hash }
   )
   const result = await handle.workspace.assets.add({
     fileName,
@@ -252,6 +251,7 @@ export async function writeLocalAttachment(
   handle.snapshot = await handle.workspace.scan()
   effects.emitChanged()
   // README.md 在根目录，比 notes/ 少一层
+  const readme = request.noteUuid === README_NOTE_UUID
   const markdownPath = readme ? `./${result.relPath}` : result.markdownPath
   return { absolutePath, markdownPath, reused: result.reused }
 }

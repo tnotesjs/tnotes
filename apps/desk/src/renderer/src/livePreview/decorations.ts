@@ -1148,7 +1148,7 @@ function build(state: EditorState): LivePreviewState {
             }).range(line.from)
           )
         }
-        if (!lineTouched(from)) {
+        if (folded || !lineTouched(from)) {
           const line = doc.lineAt(from)
           for (let child = node.firstChild; child; child = child.nextSibling) {
             if (child.name !== 'HeaderMark') continue
@@ -1173,15 +1173,6 @@ function build(state: EditorState): LivePreviewState {
           const textEnd = mark ? doc.lineAt(mark.from).from - 1 : to
           linesClass(from, Math.max(from, textEnd), `cm-lp-heading cm-lp-h${level}`)
           if (mark && !touches(from, to)) hide(mark.from, mark.to)
-          return
-        }
-        case 'Blockquote':
-          linesClass(from, to, 'cm-lp-quote')
-          return
-        case 'QuoteMark': {
-          if (lineTouched(from)) return
-          const next = doc.sliceString(to, to + 1)
-          hide(from, next === ' ' ? to + 1 : to)
           return
         }
         case 'ListMark': {

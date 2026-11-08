@@ -31,6 +31,7 @@ export {
 } from './toc'
 export type { ParsedTocLine, TocLineKind } from './toc'
 export { scanKnowledgeBase, readKbConfig, readTocLines, contentRevision } from './scanner'
+export { ensureKnowledgeBaseId } from './kbId'
 export {
   createWorkspace,
   validateTitle,

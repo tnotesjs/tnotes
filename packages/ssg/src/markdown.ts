@@ -126,7 +126,7 @@ export function extractMarkdownLinks(raw: string): string[] {
 /* ------------------------------ containers ------------------------------ */
 
 function configureContainers(md: MarkdownIt) {
-  for (const name of ['info', 'tip', 'warning', 'danger', 'details']) {
+  for (const name of ['quote', 'tip', 'warning', 'danger', 'details']) {
     md.use(markdownItContainer, name, {
       render(tokens: any[], index: number) {
         const token = tokens[index]
@@ -170,7 +170,7 @@ function configureContainers(md: MarkdownIt) {
  */
 function installPlainNestedContainers(md: MarkdownIt): void {
   md.block.ruler.before(
-    'container_info',
+    'container_quote',
     'tn_plain_nested_container',
     (state, startLine, endLine, silent) => {
       // markdown-it 的 ParentType 没有 container，容器插件在运行时仍会写成这个值。
@@ -891,6 +891,7 @@ export async function createMarkdownCompiler(
   notes: readonly NoteRef[] = []
 ) {
   const md = new MarkdownIt({ html: true, linkify: true, typographer: false })
+  md.disable('blockquote')
   // Save the raw source for container fallbacks (footprints).
   md.core.ruler.before('normalize', 'save-source', (state) => {
     ;(state.env as MarkdownEnvironment).source = state.src

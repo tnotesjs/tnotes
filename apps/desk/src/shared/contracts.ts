@@ -2,6 +2,7 @@ export const IPC_CHANNELS = {
   bootstrap: 'desk:bootstrap',
   windowClose: 'window:close',
   appBeforeClose: 'app:before-close',
+  deskOpen: 'app:desk-open',
   appCloseReady: 'app:close-ready',
   tabShortcut: 'tab:shortcut',
   tabConfirmClose: 'tab:confirm-close',
@@ -2470,6 +2471,7 @@ export interface DeskApi {
     closeWindow(): Promise<DeskResult<void>>
     /** 主进程在关窗 / 退出前请求渲染端 flush 未保存内容 */
     onBeforeClose(callback: () => void): () => void
+    onDeskOpen(callback: (target: { knowledgeBaseId: string; noteUuid: string }) => void): () => void
     /** 渲染端回执：proceed=false 表示用户取消了退出 */
     confirmCloseReady(proceed: boolean): Promise<DeskResult<void>>
     confirmTabClose(titles: string[]): Promise<DeskResult<TabCloseChoice>>

@@ -18,6 +18,15 @@ const FULL_OID = /^[0-9a-f]{40}$/
 const NOTE_INDEX = /^(\d{4})[.\s-]/
 const ASSET_OWNER = /^(\d{4})-/
 
+function referencedAssetPaths(text: string): Set<string> {
+  const found = new Set<string>()
+  for (const match of text.matchAll(/(?:\.\.\/)?assets\/[^\s)"'>]+/g)) {
+    const raw = (match[0] ?? '').replace(/^\.\.\//, '').split(/[?#]/)[0] ?? ''
+    if (raw.startsWith('assets/')) found.add(raw)
+  }
+  return found
+}
+
 export type GitHistoryErrorCode =
   'NOT_A_REPO' | 'NO_HEAD' | 'BAD_REVISION' | 'UNKNOWN_COMMIT' | 'UNKNOWN_PATH' | 'GIT_FAILED'
 
@@ -465,12 +474,6 @@ export async function readHistorySnapshot(
     const basename = entry.relPath.split('/').pop() ?? ''
     return !ASSET_OWNER.exec(basename)
   })
-  if (unownedAssets.length > 0) {
-    limitations.push({
-      code: 'unowned-assets',
-      message: `本 commit 有 ${unownedAssets.length} 个资源文件名没有四位归属前缀，不纳入快照`
-    })
-  }
 
   let note: HistorySnapshotManifest['note'] = null
   const ambiguousNotePaths: string[] = []
@@ -519,6 +522,24 @@ export async function readHistorySnapshot(
         message: `历史笔记文件名不符合「NNNN. 标题.md」约定：${entry.relPath}`
       })
     }
+  }
+
+  if (note) {
+    const text = await readBlobText(rootPath, note.oid, options)
+    const wanted = text ? referencedAssetPaths(text) : new Set<string>()
+    for (const entry of unownedAssets) {
+      if (!wanted.has(entry.relPath)) continue
+      if (assets.some((asset) => asset.relPath === entry.relPath)) continue
+      assets.push(entry)
+    }
+    assets.sort((left, right) => left.relPath.localeCompare(right.relPath))
+  }
+  const dropped = unownedAssets.filter((entry) => !assets.some((asset) => asset.relPath === entry.relPath))
+  if (dropped.length > 0) {
+    limitations.push({
+      code: 'unowned-assets',
+      message: `本 commit 有 ${dropped.length} 个资源文件名没有四位归属前缀，且未被这篇笔记引用，不纳入快照`
+    })
   }
 
   return {

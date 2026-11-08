@@ -118,6 +118,7 @@ export async function createKnowledgeBase(
   }
 
   const config: KbConfig = {
+    id: randomUUID(),
     name: folderName,
     title
   }

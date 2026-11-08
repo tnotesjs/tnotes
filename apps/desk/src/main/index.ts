@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, Menu, shell } from 'electron'
+import { app, BrowserWindow, dialog, Menu, shell } from 'electron'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 
 import icon from '../../resources/icon.png?asset'
@@ -214,15 +214,64 @@ function createWindow(): BrowserWindow {
   return window
 }
 
+function parseDeskOpenUrl(raw: string): { kbId: string; noteId: string } | null {
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== 'tnotes-desk:') return null
+    const kbId = url.searchParams.get('kb') ?? ''
+    const noteId = url.searchParams.get('note') ?? ''
+    if (!kbId || !noteId) return null
+    return { kbId, noteId }
+  } catch {
+    return null
+  }
+}
+
+function openDeskLink(raw: string): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  const parsed = parseDeskOpenUrl(raw)
+  if (!parsed) {
+    void dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      message: '无法识别这个 Desk 链接。'
+    })
+    return
+  }
+  const target = workspaceManager.findNoteByKbConfigId(parsed.kbId, parsed.noteId)
+  if (!target) {
+    void dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      message: 'Desk 里还没有这个知识库，或笔记对不上。请先在本机添加该知识库。'
+    })
+    return
+  }
+  mainWindow.webContents.send(IPC_CHANNELS.deskOpen, target)
+}
+
+if (process.defaultApp && process.argv.length >= 2) {
+  app.setAsDefaultProtocolClient('tnotes-desk', process.execPath, [process.argv[1] ?? ''])
+} else {
+  app.setAsDefaultProtocolClient('tnotes-desk')
+}
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
+    const link = argv.find((arg) => arg.startsWith('tnotes-desk:'))
+    if (link) openDeskLink(link)
     if (!mainWindow) return
     if (mainWindow.isMinimized()) mainWindow.restore()
     mainWindow.show()
     mainWindow.focus()
+  })
+  app.on('open-url', (event, url) => {
+    event.preventDefault()
+    openDeskLink(url)
   })
 
   void app.whenReady().then(async () => {

@@ -204,9 +204,13 @@ export function buildNoteAssetsView(input: {
   const referencedPaths = new Set(referenced.map((entry) => entry.relPath))
 
   // 2) 编号匹配的资源（含被引用的）
-  const own = files
+  const ownFromPrefix = files
     .filter((entry) => Boolean(noteIndex) && ownerIndexFromRelPath(entry.relPath) === noteIndex)
     .map((entry) => entryFor(entry.relPath, refsByAsset.get(entry.relPath) ?? []))
+  const ownFromRefs = referenced.filter((entry) => !entry.ownerIndex && entry.exists)
+  const ownSeen = new Set<string>()
+  const own = [...ownFromPrefix, ...ownFromRefs]
+    .filter((entry) => (ownSeen.has(entry.relPath) ? false : (ownSeen.add(entry.relPath), true)))
     .sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true }))
 
   // 3) 无效资源：编号匹配但没被引用。

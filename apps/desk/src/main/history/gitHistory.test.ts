@@ -301,6 +301,20 @@ describe('readHistorySnapshot / readHistoryBlob', () => {
     expect(snapshot.assets.map((entry) => entry.relPath)).toEqual(['assets/0001-a.png'])
   })
 
+  it('笔记引用的无前缀资源进入快照，未被引用的仍标成无归属', async () => {
+    const note = `${NOTE_V1}\n![图](../assets/26-09-11-10-20-30-abcdef01.png)\n`
+    await write('notes/0001. 笔记.md', note)
+    await write('assets/26-09-11-10-20-30-abcdef01.png', Buffer.from([3]))
+    await write('assets/idle.png', Buffer.from([4]))
+    const oid = commit('feat: 新资源名')
+
+    const snapshot = await readHistorySnapshot(root, { commit: oid, noteIndex: '0001' })
+    expect(snapshot.assets.map((entry) => entry.relPath)).toEqual([
+      'assets/26-09-11-10-20-30-abcdef01.png'
+    ])
+    expect(snapshot.limitations.map((item) => item.code)).toContain('unowned-assets')
+  })
+
   it('中文/空格/括号路径与 tree 枚举都正常', async () => {
     await write('notes/0001. 中文 (1).md', NOTE_V1)
     await write('assets/0001-中文 (1).png', Buffer.from([7]))

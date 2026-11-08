@@ -285,12 +285,12 @@ describe('Markdown compatibility helpers', () => {
     expect(html).toContain('123')
   })
 
-  it('renders tip/info/warning/danger/details as typed custom blocks', async () => {
+  it('renders tip/quote/warning/danger/details as typed custom blocks', async () => {
     const compiler = await createMarkdownCompiler(compilerConfig)
     const { html } = compiler.compile(
       [
         '::: tip 💡 TIP\n\nbody\n\n:::',
-        '::: info\n\ninfo\n\n:::',
+        '::: quote\n\nquote\n\n:::',
         '::: warning\n\nwarn\n\n:::',
         '::: danger\n\nerr\n\n:::',
         '::: details 细节\n\nhidden\n\n:::'
@@ -300,7 +300,7 @@ describe('Markdown compatibility helpers', () => {
       'n'
     )
     expect(html).toContain('class="tn-custom-block tip"')
-    expect(html).toContain('class="tn-custom-block info"')
+    expect(html).toContain('class="tn-custom-block quote"')
     expect(html).toContain('class="tn-custom-block warning"')
     expect(html).toContain('class="tn-custom-block danger"')
     expect(html).toContain('<details class="tn-custom-block details">')

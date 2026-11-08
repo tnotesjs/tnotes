@@ -42,12 +42,12 @@ export const TN_NOTES_SLASH_ITEMS: SlashMenuItem[] = [
     insert: '::: tip\n\n:::\n'
   },
   {
-    id: 'info',
-    label: '信息块',
+    id: 'quote',
+    label: '引用',
     kind: 'container',
-    shortcut: '/info',
-    keywords: ['info', ':::info', '信息'],
-    insert: '::: info\n\n:::\n'
+    shortcut: '/quote',
+    keywords: ['quote', ':::quote', '引用', 'yy'],
+    insert: '::: quote\n\n:::\n'
   },
   {
     id: 'warning',

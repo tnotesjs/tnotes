@@ -128,15 +128,6 @@ export const INSERT_ITEMS: readonly InsertItem[] = [
     slashOnly: true
   },
   {
-    id: 'quote',
-    label: '引用',
-    group: 'basic',
-    aliases: ['quote', 'yy'],
-    icon: formatIconSvg('quote'),
-    action: { kind: 'prefix', prefix: '> ' },
-    slashOnly: true
-  },
-  {
     id: 'divider',
     label: '分割线',
     group: 'basic',
@@ -170,7 +161,7 @@ export const INSERT_ITEMS: readonly InsertItem[] = [
     action: { kind: 'block', template: `$$\n${CARET}\n$$` }
   },
   callout('tip', ['tip', 'tsk', 'ts']),
-  callout('info', ['info', 'xxk', 'xx']),
+  callout('quote', ['quote', 'yy', 'yyk']),
   callout('warning', ['warning', 'jgk', 'jg', 'warn']),
   callout('danger', ['danger', 'cwk', 'cw', 'error']),
   callout('details', ['details', 'xqk', 'zd', 'fold']),

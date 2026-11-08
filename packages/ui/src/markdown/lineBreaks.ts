@@ -41,7 +41,7 @@ interface MarkdownLike {
   core: { ruler: { push(name: string, rule: (state: CoreState) => void): void } }
 }
 
-const CALLOUT_OPEN = /^container_(?:info|tip|warning|danger|details)_open$/
+const CALLOUT_OPEN = /^container_(?:quote|tip|warning|danger|details)_open$/
 const CONTAINER_FENCE = /^\s*:{3,}\s*$/
 
 /** Callout bodies get spacers too; other containers render their own way. */

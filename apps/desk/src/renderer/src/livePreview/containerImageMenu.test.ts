@@ -12,7 +12,7 @@ const editor = { readOnly: false, commit: () => undefined }
 
 describe('callout card image chrome', () => {
   it('wraps markdown images in info/tip/warning/danger/details like body images', () => {
-    for (const name of ['info', 'tip', 'warning', 'danger', 'details']) {
+    for (const name of ['quote', 'tip', 'warning', 'danger', 'details']) {
       const el = renderContainerFromSource(
         `::: ${name}\n\n![a](https://e.com/a.png) {w=50% align=center}\n\n<img src="https://e.com/raw.png">\n\n:::`,
         (src) => src,

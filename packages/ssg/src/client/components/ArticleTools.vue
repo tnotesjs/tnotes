@@ -1,6 +1,24 @@
 <template>
   <div class="tn-article-tools">
     <a
+      v-if="deskUrl"
+      :href="deskUrl"
+      class="tn-article-tool"
+      title="在 Desk 中打开这篇笔记（需本机已安装 Desk，并已添加该知识库）"
+      aria-label="在 Desk 中打开这篇笔记"
+      >Desk</a
+    >
+    <button
+      v-else-if="deskFallback"
+      type="button"
+      class="tn-article-tool"
+      title="在 Desk 中打开这篇笔记"
+      aria-label="在 Desk 中打开这篇笔记"
+      @click="message = '知识库或笔记缺少 id，无法在 Desk 中打开'"
+    >
+      Desk
+    </button>
+    <a
       v-if="repoUrl"
       :href="repoUrl"
       target="_blank"
@@ -55,6 +73,8 @@ const props = defineProps<{
   folded: boolean
   canFold: boolean
   wide: boolean
+  deskUrl?: string
+  deskFallback?: boolean
 }>()
 defineEmits<{ 'toggle-fold': []; 'toggle-width': [] }>()
 const message = ref('')

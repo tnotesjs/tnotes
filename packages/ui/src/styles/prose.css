@@ -169,6 +169,53 @@
   font-size: 14px;
   line-height: 24px;
 }
+/* NotesTable 在站点里被渲染成静态 HTML，组件样式不会进入客户端包。规则写在这里，并压过上面的通用表格。 */
+:is(.tn-prose, .vp-doc, .cm-lp-card) .tn-notes-table {
+  width: 100%;
+  margin: 1.5rem 0;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card) .tn-notes-table :is(th, td) {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border: 1px solid var(--tn-c-divider);
+  font-size: inherit;
+  line-height: 1.6;
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card) .tn-notes-table th {
+  background-color: var(--tn-c-bg-soft);
+  font-weight: 600;
+  color: var(--tn-c-text);
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card) .tn-notes-table tbody tr:hover {
+  background-color: var(--tn-c-bg-soft);
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card) .tn-notes-table td {
+  color: var(--tn-c-text-2);
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card) .tn-notes-table__link {
+  color: var(--tn-c-brand);
+  text-decoration: none;
+  font-weight: 500;
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card) .tn-notes-table__link:hover {
+  text-decoration: underline;
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card) .tn-notes-table__id {
+  margin-right: 0.5rem;
+  font-family: var(--tn-font-mono);
+  font-size: 0.9em;
+  color: var(--tn-c-text-2);
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card) .tn-notes-table__desc {
+  line-height: 1.6;
+}
+:is(.tn-prose, .vp-doc, .cm-lp-card) .tn-notes-table__desc.is-empty {
+  color: var(--tn-c-text-2);
+  font-style: italic;
+}
+
 :is(.tn-prose, .vp-doc, .cm-lp-card .tn-custom-block) :where(th) {
   font-weight: 600;
   background: var(--tn-c-bg-soft);
@@ -252,7 +299,7 @@
 :is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block.tip) {
   --tn-alert: var(--tn-c-success);
 }
-:is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block.info) {
+:is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block.quote) {
   --tn-alert: var(--tn-c-link);
 }
 :is(.tn-prose, .vp-doc, .cm-lp-card) :where(.tn-custom-block.warning) {

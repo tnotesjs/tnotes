@@ -35,9 +35,9 @@ describe('创建画布源文件', () => {
     const first = await createExcalidrawDocument(root, { ownerNoteIndex: '0042', now })
     const second = await createExcalidrawDocument(root, { ownerNoteIndex: '0042', now })
 
-    expect(first.relPath).toBe('assets/0042-26-09-11-10-20-30.excalidraw')
-    // 同一秒再次创建不能覆盖：换后缀
-    expect(second.relPath).toBe('assets/0042-26-09-11-10-20-30-1.excalidraw')
+    expect(first.relPath).toMatch(/^assets\/26-09-11-10-20-30-[0-9a-f]{8}\.excalidraw$/)
+    expect(second.relPath).toMatch(/^assets\/26-09-11-10-20-30-[0-9a-f]{8}\.excalidraw$/)
+    expect(second.relPath).not.toBe(first.relPath)
     expect(first.ownerNoteIndex).toBe('0042')
     await expect(fs.readFile(path.join(root, second.relPath), 'utf8')).resolves.toContain(
       '"type": "excalidraw"'
@@ -182,7 +182,8 @@ describe('路径与归属校验', () => {
       now
     })
 
-    expect(copy.relPath.startsWith('assets/0043-')).toBe(true)
+    expect(copy.relPath.startsWith('assets/')).toBe(true)
+    expect(copy.relPath).not.toMatch(/^assets\/0043-/)
     expect(copy.relPath).not.toBe(source.relPath)
     const copied = await readExcalidrawDocument(root, copy.relPath)
     expect(copied.content).toBe(content)
@@ -215,7 +216,7 @@ describe('派生 SVG（笔记里引用那张图）', () => {
 
     expect(written.relPath).toBe(created.relPath.replace(/\.excalidraw$/, '.svg'))
     expect(written.sourceRelPath).toBe(created.relPath)
-    expect(written.ownerNoteIndex).toBe('0042')
+    expect(written.ownerNoteIndex).toBe('')
     await expect(fs.readFile(path.join(root, written.relPath), 'utf8')).resolves.toBe(SVG)
   })
 
@@ -269,7 +270,7 @@ describe('识别「这张 .svg 能不能编辑」', () => {
 
     await expect(findExcalidrawSourceFor(root, derived)).resolves.toEqual({
       relPath: created.relPath,
-      ownerNoteIndex: '0042'
+      ownerNoteIndex: ''
     })
   })
 

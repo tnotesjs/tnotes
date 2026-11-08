@@ -75,6 +75,11 @@ export interface KbStats {
 /** tnotes.json — kb-level configuration. Unknown keys are preserved. */
 export interface KbConfig {
   /**
+   * Stable UUID for this knowledge base. Written at creation and kept in the
+   * repo so a site can open the same kb in Desk without a machine path.
+   */
+  id?: string
+  /**
    * GitHub-style repository name (`^[A-Za-z0-9._-]{1,100}$`).
    * Does not rename the on-disk folder.
    */

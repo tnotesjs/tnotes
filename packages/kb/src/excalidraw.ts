@@ -12,6 +12,7 @@
  * 同笔记复制、派生产物的同名写入与识别。会话/自动写入/撤销历史由宿主负责。
  */
 
+import { randomBytes } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
@@ -134,10 +135,8 @@ function resolveDocumentPath(rootPath: string, relPath: string): string {
 function assertOwnership(relPath: string, expectedOwner?: string): string {
   const owner = ownerNoteIndexFromName(path.posix.basename(relPath))
   if (!owner) {
-    throw new KbError(
-      'INVALID_OPERATION',
-      `画布文件名缺少四位笔记编号前缀，无法确定归属：${path.posix.basename(relPath)}`
-    )
+    // 新命名没有笔记前缀。旧的四位前缀仍校验归属；新文件的归属看谁引用了它。
+    return expectedOwner ? normalizeOwnerIndex(expectedOwner) : ''
   }
   if (expectedOwner && owner !== normalizeOwnerIndex(expectedOwner)) {
     throw new KbError(
@@ -175,7 +174,7 @@ function isExcalidrawScene(value: unknown): boolean {
   return scene.type === 'excalidraw' && Array.isArray(scene.elements)
 }
 
-/** 与本地粘贴资源同一约定：`0042-YY-MM-DD-HH-mm-ss`。 */
+/** 新画板：`YY-MM-DD-HH-mm-ss-{random}`，不带笔记编号。随机段避免空场景内容哈希撞车。 */
 function timestampName(now: Date): string {
   const pad = (value: number): string => String(value).padStart(2, '0')
   return [
@@ -198,7 +197,8 @@ async function createExclusive(
   content: string,
   now: Date
 ): Promise<string> {
-  const base = `${normalizeOwnerIndex(ownerNoteIndex)}-${timestampName(now)}`
+  void ownerNoteIndex
+  const base = `${timestampName(now)}-${randomBytes(4).toString('hex')}`
   const assetsDir = path.join(path.resolve(rootPath), ASSETS_DIR)
   await fs.mkdir(assetsDir, { recursive: true })
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -375,8 +375,7 @@ export async function findExcalidrawSourceFor(
   if (!normalized.startsWith(`${ASSETS_DIR}/`)) return null
   if (path.posix.extname(normalized).toLowerCase() !== EXCALIDRAW_DERIVED_EXTENSION) return null
   const sourceRelPath = sourceRelPathForDerived(path.posix.normalize(normalized))
-  const owner = ownerNoteIndexFromName(path.posix.basename(sourceRelPath))
-  if (!owner) return null
+  const owner = ownerNoteIndexFromName(path.posix.basename(sourceRelPath)) ?? ''
   try {
     await fs.access(resolveDocumentPath(rootPath, sourceRelPath))
   } catch {
