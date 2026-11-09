@@ -1,5 +1,5 @@
 /**
- * Callouts (tip / info / warning / danger).
+ * Callouts (tip / quote / warning / danger).
  *
  * Source mapping:
  *   ::: tip {A}
@@ -18,13 +18,13 @@ import type { MarkdownNode } from '@milkdown/kit/transformer'
 export const DESK_CALLOUT_TYPES = ['tip', 'quote', 'warning', 'danger'] as const
 
 const CALLOUT_START =
-  /^<!--desk-callout:v1:(tip|info|warning|danger):([A-Za-z0-9+/]*={0,2}):([A-Za-z0-9+/]*={0,2})-->$/
+  /^<!--desk-callout:v1:(tip|quote|info|warning|danger):([A-Za-z0-9+/]*={0,2}):([A-Za-z0-9+/]*={0,2})-->$/
 const CALLOUT_END = '<!--/desk-callout:v1-->'
 const CALLOUT_END_RE = /^<!--\/desk-callout:v1-->$/
 
 export const DEFAULT_CALLOUT_TITLE: Record<VisualCalloutType, string> = {
   tip: 'TIP',
-  info: 'INFO',
+  quote: 'QUOTE',
   warning: 'WARNING',
   danger: 'DANGER'
 }
@@ -60,7 +60,7 @@ export function readDeskCalloutStartMarker(value: string): ProjectedCalloutMarke
   const match = value.trim().match(CALLOUT_START)
   if (!match) return null
   try {
-    const calloutType = match[1] as VisualCalloutType
+    const calloutType = (match[1] === 'info' ? 'quote' : match[1]) as VisualCalloutType
     if (!isVisualCalloutName(calloutType)) return null
     return {
       calloutType,

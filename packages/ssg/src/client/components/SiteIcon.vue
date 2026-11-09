@@ -56,8 +56,8 @@
  */
 import { computed } from 'vue'
 
-import { SITE_ICONS, type SiteIconName } from '../icons'
+import { SITE_ICONS, type SiteIcon, type SiteIconName } from '../icons'
 
 const props = defineProps<{ name: SiteIconName }>()
-const icon = computed(() => SITE_ICONS[props.name])
+const icon = computed((): SiteIcon => SITE_ICONS[props.name])
 </script>
