@@ -3,7 +3,7 @@
  * 设置页「压缩效果测试」：拖入 / 点选 / 粘贴一张临时图片，按当前草稿参数试压一次。
  * 数据只在内存里（data: URL + IPC 往返），不落盘、不写任何知识库，关闭面板即丢。
  *
- * 注意：本应用的 CSP 是 `img-src 'self' data: https: tnotes-asset:`，不含 blob:，
+ * 注意：本应用的 CSP 是 `img-src 'self' data: https: http://localhost:* http://127.0.0.1:* tnotes-asset:`，不含 blob:，
  * 所以预览必须用 data: URL；`URL.createObjectURL()` 出来的图会被 CSP 拦成破图。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'

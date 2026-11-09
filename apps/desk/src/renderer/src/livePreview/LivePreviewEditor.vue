@@ -458,6 +458,9 @@ function createState(doc: string): EditorState {
         if (update.docChanged) {
           const external = update.transactions.some((tr) => tr.annotation(externalSync))
           if (!external) emit('change', update.state.doc.toString())
+        }
+        // 后台把语法树往后解析时也要补目录，否则 3000 字以后的标题一直不出现
+        if (update.docChanged || syntaxTree(update.startState) !== syntaxTree(update.state)) {
           scheduleOutline()
         }
         if (update.docChanged || update.selectionSet) {
@@ -723,6 +726,14 @@ watch(
   () => props.active,
   (active) => {
     if (active) void nextTick(() => view?.requestMeasure())
+  }
+)
+
+// 页宽和目录显隐会改内容列宽度。色条坐标是按上一次测量画的，不重新量就会浮在文字中间。
+watch(
+  () => [props.pageWidth, props.outlineVisible] as const,
+  () => {
+    void nextTick(() => view?.requestMeasure())
   }
 )
 </script>

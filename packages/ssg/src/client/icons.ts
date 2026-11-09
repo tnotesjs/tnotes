@@ -30,12 +30,27 @@
  *                     Inward arrows are the standard column; outward arrows are wide.
  * - `search`          User-supplied magnifier (1024 viewBox, currentColor path only);
  *                     replaces the old `⌕` text glyph in the header.
+ * - `desk`            A pencil over a page. The article tool opens this note in
+ *                     Desk for editing; the button is 32px, so a word does not fit.
  */
 export interface SiteIcon {
   readonly viewBox: string
   /** Outlined shapes are stroked, solid shapes take `fill`. */
   readonly mode: 'stroke' | 'fill'
   readonly paths: readonly string[]
+  /** Defaults to 2 for stroked icons. */
+  readonly strokeWidth?: number
+  /**
+   * A translucent shape painted between the first path and the rest.
+   * Used by the Desk edit glyph, whose pencil body sits under the outline.
+   */
+  readonly accent?: {
+    readonly width: number
+    readonly height: number
+    readonly rx: number
+    readonly opacity: number
+    readonly transform: string
+  }
 }
 
 export const SITE_ICONS = {
@@ -89,6 +104,22 @@ export const SITE_ICONS = {
     paths: [
       'M909.6 854.5L649.9 594.8C690.2 542.7 712 479 712 412c0-80.2-31.3-155.4-87.9-212.1S492.1 112 412 112s-155.5 31.3-212.1 87.9C143.2 256.5 112 331.8 112 412c0 80.1 31.3 155.5 87.9 212.1C256.5 680.8 331.8 712 412 712c67 0 130.6-21.8 182.7-62l259.7 259.6a8.2 8.2 0 0 0 11.6 0l43.6-43.5a8.2 8.2 0 0 0 0-11.6M570.4 570.4C528 612.7 471.8 636 412 636s-116-23.3-158.4-65.6C211.3 528 188 471.8 188 412s23.3-116.1 65.6-158.4C296 211.3 352.2 188 412 188s116.1 23.2 158.4 65.6S636 352.2 636 412s-23.3 116.1-65.6 158.4'
     ]
+  },
+  desk: {
+    viewBox: '0 0 24 24',
+    mode: 'stroke',
+    strokeWidth: 1.5,
+    paths: [
+      'M2.34 22.19h19.32',
+      'm19.11 9.07l-4.16-4.16M6.27 21.24c.47-.14.71-.2.92-.33s.39-.3.74-.65L20.98 7.41a5 5 0 0 0 1.19-1.4a2 2 0 0 0 0-1.5A5 5 0 0 0 21 3.12a5 5 0 0 0-1.4-1.18a2 2 0 0 0-1.48 0c-.38.15-.72.49-1.4 1.17l-13 12.94c-.34.35-.52.53-.65.74c-.12.21-.2.45-.34.92l-.46 1.5c-.48 1.58-.73 2.37-.3 2.8c.42.42 1.2.18 2.79-.3z'
+    ],
+    accent: {
+      width: 5.17,
+      height: 6.08,
+      rx: 1,
+      opacity: 0.2,
+      transform: 'rotate(135 7.642 8.558) scale(-1 1)'
+    }
   },
   outline: {
     viewBox: '0 0 24 24',

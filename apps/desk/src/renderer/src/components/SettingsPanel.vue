@@ -96,6 +96,7 @@ const groupDefaults: Record<string, Partial<AppSettings>> = {
     noteOutline: 'shown',
     showPathBreadcrumb: true,
     showNoteTitle: true,
+    showTextFormatToolbar: true,
     autosave: { enabled: true, delayMs: 1000 },
     workspaceLayout: 'kb-dir-content',
     updates: { autoCheck: true }

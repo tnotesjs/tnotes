@@ -26,6 +26,13 @@ const titleChoice = computed({
   }
 })
 
+const textFormatChoice = computed({
+  get: () => (props.draft.showTextFormatToolbar ? 'shown' : 'hidden'),
+  set: (value: string) => {
+    props.draft.showTextFormatToolbar = value === 'shown'
+  }
+})
+
 const autosaveChoice = computed({
   get: () => (props.draft.autosave.enabled ? 'on' : 'off'),
   set: (value: string) => {
@@ -87,6 +94,13 @@ async function checkNow(): Promise<void> {
       <label class="field">
         <span>显示笔记标题</span>
         <select v-model="titleChoice">
+          <option value="shown">显示</option>
+          <option value="hidden">隐藏</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>标题与文本格式</span>
+        <select v-model="textFormatChoice">
           <option value="shown">显示</option>
           <option value="hidden">隐藏</option>
         </select>

@@ -336,6 +336,26 @@ html.tn-hide-note-index .tn-site-sidebar-index {
   padding: 8px 44px 96px;
   overflow-wrap: anywhere;
 }
+.tn-home-title {
+  margin: 28px 0 8px;
+  text-align: left;
+  font-size: 2rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+.tn-home-stats {
+  display: flex;
+  gap: 16px;
+  margin: 0 0 20px;
+  color: var(--tn-c-text-2);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.tn-home-heatmap {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto 28px;
+}
 .tn-site-outline {
   position: sticky;
   top: 64px;
@@ -726,6 +746,11 @@ html.tn-hide-note-index .tn-site-sidebar-index {
 .tn-article-tool svg {
   width: 18px;
   height: 18px;
+}
+@media (max-width: 760px) {
+  .tn-article-tool-desk {
+    display: none;
+  }
 }
 .tn-article-toast {
   position: fixed;

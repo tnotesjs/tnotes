@@ -142,20 +142,20 @@ describe('static site build', () => {
     )
     expect(fs.readFileSync(dist('404.html'), 'utf8')).not.toContain('class="tn-article-tools"')
   })
-  it('renders the first TOC note as home and every note at its route', () => {
+  it('keeps notes on their own routes and leaves / as the kb home', () => {
     const home = fs.readFileSync(dist('index.html'), 'utf8')
-    expect(home).toContain('Vue SFC works')
-    expect(home).toContain('首页笔记')
-    // Canonical note route is /notes/{n}.
+    expect(home).toContain('>首页<')
+    expect(home).toContain('2 篇')
+    expect(home).toContain('字')
+    expect(home).not.toContain('Vue SFC works')
     const noteHtml = fs.readFileSync(dist('notes/1.html'), 'utf8')
     expect(noteHtml).toContain('Vue SFC works')
-    // Cross-note links rewrite to the canonical /notes/{n} form.
-    expect(home).toContain('href="/fixture/notes/2"')
-    // Asset references are rewritten to base-absolute (assets/ copied verbatim).
-    expect(home).toContain('src="/fixture/assets/pic.txt"')
-    expect(home).toContain('<figure class="tn-image">')
-    expect(home).toContain('<figcaption>图片</figcaption>')
-    expect(home).toContain('width:50%')
+    expect(noteHtml).toContain('首页笔记')
+    expect(noteHtml).toContain('href="/fixture/notes/2"')
+    expect(noteHtml).toContain('src="/fixture/assets/pic.txt"')
+    expect(noteHtml).toContain('<figure class="tn-image">')
+    expect(noteHtml).toContain('<figcaption>图片</figcaption>')
+    expect(noteHtml).toContain('width:50%')
     expect(fs.existsSync(dist('404.html'))).toBe(true)
   })
 
@@ -175,6 +175,7 @@ describe('static site build', () => {
     expect(home).toContain('tn-site-sidebar-status')
     expect(home).toContain('data-done="true"')
     expect(home).toContain('data-done="false"')
+    expect(home).toContain('>首页<')
     expect(home).toContain('>0001<')
     expect(home).toContain('>首页笔记<')
     expect(home).toContain('>指南<')
@@ -188,7 +189,7 @@ describe('static site build', () => {
     // current note and stays open, its sibling 分组 A1 is folded. Asserting the
     // class instead would be fragile — the folded class renders *before* the
     // static one, and `is-collapsed` is shared with the code-block components.
-    expect(home).toContain('aria-label="收起 分组 A"')
+    expect(home).toContain('aria-label="展开 分组 A"')
     expect(home).toContain('aria-label="展开 分组 A1"')
     expect(home).toContain('data-tn-key="0"')
     // Chevron and title are separate hit areas: disclosure vs navigation.
@@ -204,11 +205,12 @@ describe('static site build', () => {
   })
 
   it('每篇笔记末尾都挂上按 id 绑定的评论块', () => {
-    const home = fs.readFileSync(dist('index.html'), 'utf8')
+    const note = fs.readFileSync(dist('notes/1.html'), 'utf8')
     // The note's own id is the whole binding: giscus maps one discussion per term.
-    expect(home).toContain('class="tn-discussions"')
-    expect(home).toContain('discussions_q=00000000-0000-4000-8000-000000000001')
-    expect(home).toContain('正在载入评论')
+    expect(note).toContain('class="tn-discussions"')
+    expect(note).toContain('discussions_q=00000000-0000-4000-8000-000000000001')
+    expect(note).toContain('正在载入评论')
+    expect(fs.readFileSync(dist('index.html'), 'utf8')).not.toContain('class="tn-discussions"')
     // The 404 is generated and has no note identity, so there is no thread to key.
     expect(fs.readFileSync(dist('404.html'), 'utf8')).not.toContain('class="tn-discussions"')
   })
@@ -231,9 +233,8 @@ describe('static site build', () => {
 
   it('目录高亮跟随规范笔记路由，首页也能点亮当前项', () => {
     const home = fs.readFileSync(dist('index.html'), 'utf8')
-    // `/` reuses note 0001's body; highlighting by raw route left the sidebar
-    // with nothing marked on the site's default entry point.
     expect(home).toContain('aria-current="page"')
+    expect(home).toContain('>首页<')
     const note = fs.readFileSync(dist('notes/2.html'), 'utf8')
     expect(note).toContain('aria-current="page"')
   })
@@ -335,15 +336,14 @@ describe('static site build', () => {
   it('emits a serialized local-search index', () => {
     const serialized = fs.readFileSync(dist('search-index.json'), 'utf8')
     const index = JSON.parse(serialized) as { documentCount: number }
-    // Home + its note route are deduplicated.
-    expect(index.documentCount).toBe(2)
+    expect(index.documentCount).toBe(3)
     const search = MiniSearch.loadJSON(serialized, {
       fields: ['title', 'headings', 'text'],
       storeFields: ['route', 'title', 'text'],
       tokenize: tokenizeSearch,
       processTerm: normalizeSearchTerm
     })
-    expect(search.search('首页笔记')[0]?.route).toBe('/')
+    expect(search.search('首页笔记')[0]?.route).toBe('/notes/1')
     expect(search.search('中文')[0]?.route).toBe('/notes/2')
     expect(search.search('草稿')).toHaveLength(0)
   })
@@ -355,7 +355,10 @@ describe('static site build', () => {
       if (!address || typeof address === 'string') throw new Error('Missing preview port')
       const response = await fetch(`http://127.0.0.1:${address.port}/fixture/`)
       expect(response.status).toBe(200)
-      expect(await response.text()).toContain('首页笔记')
+      expect(await response.text()).toContain('>首页<')
+      const note = await fetch(`http://127.0.0.1:${address.port}/fixture/notes/1`)
+      expect(note.status).toBe(200)
+      expect(await note.text()).toContain('首页笔记')
       const guide = await fetch(`http://127.0.0.1:${address.port}/fixture/notes/2`)
       expect(guide.status).toBe(200)
       expect(await guide.text()).toContain('提示')
@@ -382,7 +385,7 @@ describe('static site build', () => {
     try {
       const address = server.httpServer?.address()
       if (!address || typeof address === 'string') throw new Error('Missing dev port')
-      const response = await fetch(`http://127.0.0.1:${address.port}/fixture/`)
+      const response = await fetch(`http://127.0.0.1:${address.port}/fixture/notes/1`)
       expect(response.status).toBe(200)
       const html = await response.text()
       expect(html).toContain('Vue SFC works')

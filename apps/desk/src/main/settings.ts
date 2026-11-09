@@ -43,6 +43,7 @@ const settingsSchema = z.object({
   noteOutline: z.enum(['shown', 'hidden']).default('shown'),
   showPathBreadcrumb: z.boolean().default(true),
   showNoteTitle: z.boolean().default(true),
+  showTextFormatToolbar: z.boolean().default(true),
   headingNumberMaxDepth: z
     .number()
     .transform(clampHeadingNumberMaxDepth)

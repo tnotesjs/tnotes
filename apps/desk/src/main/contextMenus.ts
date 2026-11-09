@@ -77,6 +77,16 @@ export function contextMenuTemplate(
   if (request.kind === 'code-group-tab') {
     return [item('rename', '重命名'), item('request-delete', '删除代码块')]
   }
+  if (request.kind === 'note-layout') {
+    const rows: MenuItemConstructorOptions[] = [
+      item('toggle-page-width', request.pageWidth === 'wide' ? '标准页宽' : '超宽显示')
+    ]
+    if (request.outline) {
+      rows.push(item('toggle-outline', request.outline === 'hidden' ? '显示目录' : '隐藏目录'))
+    }
+    rows.push(item('select-note-assets', '资源'), item('select-note-settings', '设置'))
+    return rows
+  }
   const pinLabel = request.pinned ? '解除固定' : '固定'
   if (request.kind === 'note') {
     return [

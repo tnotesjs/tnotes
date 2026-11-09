@@ -1,7 +1,7 @@
 import path from 'node:path'
 import matter from 'gray-matter'
 
-import type { SourcePage } from './pages'
+import type { NoteCorpusStats, SourcePage } from './pages'
 import type { PageData, ResolvedSsgConfig, SidebarItem } from './types'
 import type { NoteRef } from './noteRoute'
 
@@ -22,6 +22,7 @@ export class PageSourceStore {
   catalog: Record<string, PageData> = {}
   sidebar: SidebarItem[] = []
   notes: NoteRef[] = []
+  corpus: NoteCorpusStats = { noteCount: 0, charCount: 0 }
   private vue = new Map<string, string>()
   private compiled = new Map<string, PageData>()
   private html = new Map<string, string>()

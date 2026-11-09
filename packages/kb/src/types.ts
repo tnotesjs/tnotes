@@ -99,7 +99,10 @@ export interface KbConfig {
   stats?: KbStats
   /** Deploy base path, e.g. "/TNotes.vite/". Defaults to "/". */
   base?: string
-  /** Note index used as the site home page. Defaults to the first TOC note. */
+  /**
+   * Older configs named a note as the site home. The site now always serves `/`
+   * as the kb home and does not follow this field.
+   */
   home?: string
   /** kb-level comments switch (giscus). */
   discussions?: boolean

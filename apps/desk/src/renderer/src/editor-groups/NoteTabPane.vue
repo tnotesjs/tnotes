@@ -3,10 +3,9 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import UiTooltip from '../components/UiTooltip.vue'
 import NoteDoneToggle from '../components/NoteDoneToggle.vue'
-import OutlineIcon from '../components/OutlineIcon.vue'
-import PageWidthIcon from '../components/PageWidthIcon.vue'
 import KbPathBreadcrumb from './KbPathBreadcrumb.vue'
 import NoteFormatToolbar from './NoteFormatToolbar.vue'
+import NoteViewToggle from './NoteViewToggle.vue'
 import NoteAssetsPanel from './NoteAssetsPanel.vue'
 import LivePreviewEditor from '../livePreview/LivePreviewEditor.vue'
 import { documentHasHeadings } from '../livePreview/outline'
@@ -16,9 +15,11 @@ import {
 } from '../livePreview/frontmatterFields'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
+import { resultValue } from '../stores/workspace/helpers'
 import { useAgentStore } from '../agent/agentStore'
 
 import { registerHeadingFoldRunner } from '../commands/headingFoldBridge'
+import { registerHeadingNumberActions } from '../commands/headingNumberBridge'
 import { registerViewToggleRunner } from '../commands/viewToggleBridge'
 import {
   clearSelection,
@@ -106,7 +107,6 @@ async function toggleNoteDone(): Promise<void> {
 
 /** 可视化与源码是同一个编辑器实例的两种显示 */
 const markdownEditor = ref<MarkdownEditorHandle | null>(null)
-const pageWidthLabel = computed(() => (props.tab.pageWidth === 'wide' ? '超宽显示' : '标准页宽'))
 // 标题编号深度生效值：库级约定（tnotes.json）→ desk 全局 → 内置默认
 const headingNumberMaxDepth = computed(
   () =>
@@ -334,13 +334,21 @@ watch(
 
 /** 标题折叠命令的执行者：命令面板只认识 `runHeadingFold`，交给当前编辑器。 */
 watch(
-  [markdownEditor, () => props.active],
+  [markdownEditor, () => props.active, headingNumberMaxDepth],
   () => {
     // 非活动标签页不碰 runner：它可能正被别的标签页注册着
     if (!props.active) return
     const handle = markdownEditor.value
     registerHeadingFoldRunner(
       handle?.applyHeadingFold ? (command) => handle.applyHeadingFold?.(command) ?? false : null
+    )
+    registerHeadingNumberActions(
+      handle?.addHeadingNumbers
+        ? {
+            add: () => handle.addHeadingNumbers(headingNumberMaxDepth.value),
+            remove: () => handle.removeHeadingNumbers()
+          }
+        : null
     )
   },
   { immediate: true }
@@ -450,6 +458,7 @@ watch(
 onUnmounted(() => {
   if (outlineHeadingTimer) clearTimeout(outlineHeadingTimer)
   if (props.active) registerHeadingFoldRunner(null)
+  if (props.active) registerHeadingNumberActions(null)
   if (props.active) registerViewToggleRunner(null)
   unregisterViewRunner?.()
   unregisterViewRunner = null
@@ -545,8 +554,33 @@ async function insertCanvas(): Promise<void> {
   })
 }
 
-function toggleProperties(): void {
-  editor.toggleNoteAssetsVisible(props.tab.id)
+/** 系统菜单：页宽、目录、资源、设置。文案由主进程按当前状态生成。 */
+async function showLayoutMenu(): Promise<void> {
+  try {
+    const action = resultValue(
+      await window.desk.app.showContextMenu({
+        kind: 'note-layout',
+        pageWidth: props.tab.pageWidth,
+        outline: hasOutlineHeadings.value ? (outlineVisible.value ? 'shown' : 'hidden') : null
+      })
+    )
+    if (action === 'toggle-page-width') editor.toggleNotePageWidth(props.tab.id)
+    else if (action === 'toggle-outline') editor.toggleNoteOutlineVisible(props.tab.id)
+    else if (action === 'select-note-assets') openSide('assets')
+    else if (action === 'select-note-settings') openSide('settings')
+  } catch (cause) {
+    workspace.error = cause instanceof Error ? cause.message : String(cause)
+  }
+}
+
+/** 资源 / 设置：已经开在这一页就关掉，否则打开并切到这一页 */
+function openSide(tab: 'settings' | 'assets'): void {
+  if (propertiesOpen.value && sideTab.value === tab) {
+    closeProperties()
+    return
+  }
+  sideTab.value = tab
+  editor.setNoteAssetsVisible(props.tab.id, true)
 }
 
 function closeProperties(): void {
@@ -687,55 +721,27 @@ function openLink(url: string): void {
 
       <NoteFormatToolbar
         :editor="markdownEditor"
-        :view-mode="tab.viewMode"
         :disabled="formatDisabled"
         :active="active"
         :heading-level="headingLevel"
-        :heading-number-max-depth="headingNumberMaxDepth"
-        @toggle-mode="toggleMode"
         @insert-canvas="insertCanvas"
       />
       <div class="layout-toggles">
-        <UiTooltip :label="pageWidthLabel">
+        <NoteViewToggle :view-mode="tab.viewMode" @toggle="toggleMode" />
+        <UiTooltip label="更多" align="end">
           <button
             type="button"
-            class="page-width-toggle"
-            :aria-label="pageWidthLabel"
-            @click="editor.toggleNotePageWidth(tab.id)"
-          >
-            <PageWidthIcon :mode="tab.pageWidth" />
-          </button>
-        </UiTooltip>
-        <UiTooltip v-if="hasOutlineHeadings" :label="outlineVisible ? '隐藏目录' : '显示目录'">
-          <button
-            type="button"
-            class="outline-toggle"
-            :class="{ active: outlineVisible }"
-            :aria-label="outlineVisible ? '隐藏目录' : '显示目录'"
-            :aria-pressed="outlineVisible"
-            @click="editor.toggleNoteOutlineVisible(tab.id)"
-          >
-            <OutlineIcon />
-          </button>
-        </UiTooltip>
-        <UiTooltip :label="propertiesOpen ? '关闭文档属性' : '文档属性'">
-          <button
-            type="button"
-            class="properties-toggle"
-            data-testid="note-properties-toggle"
+            class="layout-more"
+            data-testid="note-layout-menu"
+            aria-label="更多"
+            aria-haspopup="menu"
             :class="{ active: propertiesOpen }"
-            aria-label="文档属性"
-            :aria-pressed="propertiesOpen"
-            @click="toggleProperties"
+            @click="showLayoutMenu"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <g fill="none" stroke="currentColor" stroke-width="1.5">
-                <path
-                  d="M2 12c0-3.69 0-5.534.814-6.841a4.8 4.8 0 0 1 1.105-1.243C5.08 3 6.72 3 10 3h4c3.28 0 4.919 0 6.081.916c.43.338.804.759 1.105 1.243C22 6.466 22 8.31 22 12s0 5.534-.814 6.841a4.8 4.8 0 0 1-1.105 1.243C18.92 21 17.28 21 14 21h-4c-3.28 0-4.919 0-6.081-.916a4.8 4.8 0 0 1-1.105-1.243C2 17.534 2 15.69 2 12Z"
-                />
-                <path stroke-linejoin="round" d="M14.5 3v18" />
-                <path stroke-linecap="round" stroke-linejoin="round" d="M18 7h1m-1 3h1" />
-              </g>
+              <circle cx="5" cy="12" r="1.35" />
+              <circle cx="12" cy="12" r="1.35" />
+              <circle cx="19" cy="12" r="1.35" />
             </svg>
           </button>
         </UiTooltip>
@@ -774,29 +780,8 @@ function openLink(url: string): void {
         data-testid="note-properties-panel"
         aria-label="文档属性"
       >
-        <header class="properties-head">
-          <div class="properties-tabs" role="tablist" aria-label="侧栏">
-            <button
-              type="button"
-              role="tab"
-              class="properties-tab"
-              :class="{ active: sideTab === 'settings' }"
-              :aria-selected="sideTab === 'settings'"
-              @click="sideTab = 'settings'"
-            >
-              设置
-            </button>
-            <button
-              type="button"
-              role="tab"
-              class="properties-tab"
-              :class="{ active: sideTab === 'assets' }"
-              :aria-selected="sideTab === 'assets'"
-              @click="sideTab = 'assets'"
-            >
-              资源
-            </button>
-          </div>
+        <header v-if="sideTab === 'settings'" class="properties-head">
+          <span class="properties-title">设置</span>
           <button
             type="button"
             class="properties-close"
@@ -838,7 +823,6 @@ function openLink(url: string): void {
           :note-index="session.document.index"
           :source="session.content"
           :read-only="session.document.readOnly"
-          :show-close="false"
           @insert="insertAssetReference"
           @locate="locateAssetReference"
           @close="closeProperties"
@@ -1018,15 +1002,14 @@ function openLink(url: string): void {
   stroke-linejoin: round;
 }
 
-.outline-toggle.active {
+.layout-more.active {
   color: var(--accent-strong);
   background: var(--selected);
 }
 
-.outline-toggle svg {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.5;
+.layout-more svg {
+  fill: currentColor;
+  stroke: none;
 }
 
 .conflict-banner {
@@ -1095,35 +1078,15 @@ function openLink(url: string): void {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 8px 8px 10px;
+  min-height: 44px;
+  padding: 8px 8px 8px 12px;
   border-bottom: 1px solid var(--border);
 }
 
-.properties-tabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.properties-tab {
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  padding: 6px 10px;
-  border-radius: 5px;
-}
-
-.properties-tab:hover {
-  color: var(--text);
-  background: var(--hover);
-}
-
-.properties-tab.active {
-  color: var(--text);
-  background: var(--hover);
+.properties-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .properties-close {
@@ -1164,7 +1127,6 @@ function openLink(url: string): void {
 .properties-section {
   flex: none;
   padding: 12px;
-  border-bottom: 1px solid var(--border);
 }
 
 .properties-label,
@@ -1223,15 +1185,6 @@ function openLink(url: string): void {
   flex: 1;
   min-height: 0;
   border: 0;
-}
-
-.properties-toggle.active {
-  color: var(--accent-strong);
-  background: var(--hover);
-}
-
-.properties-toggle svg {
-  stroke-width: 1.5;
 }
 
 /* 窄面板放不下侧栏：收窄一些，仍然可用 */

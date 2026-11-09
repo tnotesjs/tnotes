@@ -76,6 +76,24 @@ describe('native context menus', () => {
     expect(template.filter((item) => item.id === 'open-ide')).toHaveLength(1)
   })
 
+  it('笔记头部更多菜单按当前状态给出将要切换的文案', () => {
+    const shown = contextMenuTemplate(
+      { kind: 'note-layout', pageWidth: 'standard', outline: 'shown' },
+      vi.fn()
+    )
+    expect(shown.map((item) => item.label)).toEqual(['超宽显示', '隐藏目录', '资源', '设置'])
+    const wide = contextMenuTemplate(
+      { kind: 'note-layout', pageWidth: 'wide', outline: 'hidden' },
+      vi.fn()
+    )
+    expect(wide.map((item) => item.label)).toEqual(['标准页宽', '显示目录', '资源', '设置'])
+    const noOutline = contextMenuTemplate(
+      { kind: 'note-layout', pageWidth: 'standard', outline: null },
+      vi.fn()
+    )
+    expect(noOutline.map((item) => item.label)).toEqual(['超宽显示', '资源', '设置'])
+  })
+
   it('gives code-group tabs rename and delete', () => {
     const template = contextMenuTemplate({ kind: 'code-group-tab' }, vi.fn())
     expect(template.map((item) => item.id)).toEqual(['rename', 'request-delete'])

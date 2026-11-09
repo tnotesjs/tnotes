@@ -39,12 +39,6 @@
       <p v-if="visibleKeys?.size === 0" role="status">没有匹配的笔记</p>
     </div>
     <div ref="scrollRef" class="tn-site-sidebar-scroll">
-      <ContributionHeatmap
-        v-if="completionStats?.byYear"
-        class="tn-sidebar-heatmap"
-        :by-year="completionStats.byYear"
-        title="完成热力图"
-      />
       <SidebarTree
         :items="items"
         :active-route="activeRoute"
@@ -90,7 +84,6 @@ import {
   collapsedByDefaultKeys,
   sidebarGroupKeys
 } from '../navigation'
-import { ContributionHeatmap } from '@tnotesjs/ui'
 import SidebarTree from './SidebarTree.vue'
 import SiteIcon from './SiteIcon.vue'
 import { SIDEBAR_COLLAPSE_KEY, type SidebarCollapseContext } from '../sidebarContext'
@@ -113,7 +106,6 @@ const props = defineProps<{
   desktopHidden?: boolean
   mobileOpen?: boolean
   width?: number
-  completionStats?: { byYear: Record<string, any> } | null
 }>()
 
 const emit = defineEmits<{ resize: [width: number] }>()

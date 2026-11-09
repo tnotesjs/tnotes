@@ -103,6 +103,20 @@ describe('工作区 IPC 合同', () => {
     })
   })
 
+  it('笔记头部更多菜单请求能进入主进程', async () => {
+    const result = await invoke(IPC_CHANNELS.contextMenuShow, {
+      kind: 'note-layout',
+      pageWidth: 'wide',
+      outline: null
+    })
+    expect(result.ok).toBe(true)
+    expect(mocks.showContextMenu).toHaveBeenCalledWith(window, {
+      kind: 'note-layout',
+      pageWidth: 'wide',
+      outline: null
+    })
+  })
+
   it('未知标签页类型被拒绝', async () => {
     const result = await invoke(IPC_CHANNELS.contextMenuShow, {
       kind: 'tab',

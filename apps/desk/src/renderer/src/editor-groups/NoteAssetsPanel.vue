@@ -389,12 +389,14 @@ onUnmounted(() => {
         <button
           v-if="showClose"
           type="button"
-          class="head-button"
+          class="head-icon"
           data-note-assets-close
           aria-label="关闭资源面板"
           @click="emit('close')"
         >
-          关闭
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
         </button>
       </div>
     </header>
@@ -780,7 +782,35 @@ onUnmounted(() => {
 .head-actions {
   flex: none;
   display: flex;
+  align-items: center;
   gap: 6px;
+}
+
+.head-icon {
+  width: 27px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.head-icon:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.head-icon svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
 }
 
 .head-button {

@@ -50,6 +50,11 @@ export function registerWorkspace(getWindow: GetWindow): () => void {
       }),
       z.object({ kind: z.literal('code-group-tab') }),
       z.object({
+        kind: z.literal('note-layout'),
+        pageWidth: z.enum(['standard', 'wide']),
+        outline: z.enum(['shown', 'hidden']).nullable()
+      }),
+      z.object({
         kind: z.literal('image'),
         align: z.enum(['left', 'center', 'right']),
         hasWidth: z.boolean(),

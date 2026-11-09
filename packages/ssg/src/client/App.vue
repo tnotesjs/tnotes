@@ -51,7 +51,6 @@
         :mobile-open="mobileOpen"
         :desktop-hidden="sidebarHidden"
         :width="sidebarWidth"
-        :completion-stats="site.completionStats"
         @resize="sidebarWidth = $event"
         @click="closeDrawerOnPick"
       />
@@ -67,6 +66,17 @@
         <SiteIcon name="sidebarCollapse" />
       </button>
       <main :inert="mobileOpen" class="tn-site-main">
+        <h1 v-if="isHome" class="tn-home-title">{{ site.title }}</h1>
+        <p v-if="isHome" class="tn-home-stats">
+          <span>{{ site.corpus.noteCount }} 篇</span>
+          <span>{{ charCountLabel }}</span>
+        </p>
+        <ContributionHeatmap
+          v-if="isHome && site.completionStats?.byYear"
+          class="tn-home-heatmap"
+          :by-year="site.completionStats.byYear"
+          title="完成热力图"
+        />
         <ArticleTools
           v-if="showArticleTools"
           :repo-url="noteRepoUrl"
@@ -157,6 +167,7 @@
 <script setup lang="ts">
 import MiniSearch from 'minisearch'
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { ContributionHeatmap } from '@tnotesjs/ui'
 import ImagePreview from '@tnotesjs/ui/image-preview'
 import site from 'virtual:tnotes-site'
 
@@ -193,13 +204,25 @@ async function jumpToHeading(id: string) {
     target.scrollIntoView({ block: 'start' })
   }
 }
+function formatCharCount(count: number): string {
+  if (count < 10000) return `${count} 字`
+  const wan = Math.round((count / 10000) * 10) / 10
+  const text = Number.isInteger(wan) ? String(wan) : wan.toFixed(1)
+  return `${text} 万字`
+}
+
 /** 笔记和库根 README 共用顶栏；404 这类生成页没有原文可复制。 */
 function isArticlePage(relativePath: string): boolean {
   return relativePath.startsWith('notes/') || relativePath === 'README.md'
 }
 
+const isHome = computed(() => props.route === '/')
+const charCountLabel = computed(() => formatCharCount(site.corpus?.charCount ?? 0))
 const showArticleTools = computed(
-  () => props.data.source !== undefined && isArticlePage(props.data.relativePath)
+  () =>
+    !isHome.value &&
+    props.data.source !== undefined &&
+    isArticlePage(props.data.relativePath)
 )
 const deskUrl = computed(() => {
   if (!isArticlePage(props.data.relativePath) || props.data.relativePath === 'README.md') return ''
@@ -221,10 +244,9 @@ function toggleArticleWidth() {
 type SearchResult = Pick<PageData, 'route' | 'title' | 'text'>
 
 /**
- * The sidebar highlights by note, but the home page (and 404) are synthesized
- * routes that reuse a note's body — comparing the raw route left `/` with
- * nothing highlighted at all. Resolve back to the canonical note route so the
- * entry the reader is actually on stays lit.
+ * The sidebar highlights by note. `/` is the kb home, not a note, so it stays
+ * on its own route and lights the「首页」row. A note-shaped path still resolves
+ * back to `/notes/{n}`.
  */
 const activeRoute = computed(() => {
   if (props.route.startsWith('/notes/')) return props.route

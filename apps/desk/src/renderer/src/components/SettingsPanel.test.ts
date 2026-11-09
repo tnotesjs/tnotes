@@ -17,6 +17,7 @@ const settings: AppSettings = {
   noteOutline: 'shown',
   showPathBreadcrumb: true,
   showNoteTitle: true,
+  showTextFormatToolbar: true,
   headingNumberMaxDepth: 2,
   git: { autoFetch: false },
   mcp: { enabled: false, port: DEFAULT_MCP_PORT },

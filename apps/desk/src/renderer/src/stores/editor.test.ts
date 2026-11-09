@@ -15,6 +15,7 @@ const settings: AppSettings = {
   noteOutline: 'shown',
   showPathBreadcrumb: true,
   showNoteTitle: true,
+  showTextFormatToolbar: true,
   appZoomPercent: 100,
   autosave: { enabled: true, delayMs: 800 },
   createNotePosition: 'top',

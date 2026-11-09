@@ -151,6 +151,14 @@ describe('配置文件字段级容错', () => {
     expect(loadSettings().showPathBreadcrumb).toBe(false)
   })
 
+  it('缺省显示标题与文本格式，也可以改成隐藏', () => {
+    expect(loadSettings().showTextFormatToolbar).toBe(true)
+    writeFileSync(path(), JSON.stringify({ theme: 'dark' }))
+    expect(loadSettings().showTextFormatToolbar).toBe(true)
+    expect(saveSettings({ showTextFormatToolbar: false }).showTextFormatToolbar).toBe(false)
+    expect(loadSettings().showTextFormatToolbar).toBe(false)
+  })
+
   it('缺省显示笔记标题，也可以改成隐藏', () => {
     expect(loadSettings().showNoteTitle).toBe(true)
     writeFileSync(path(), JSON.stringify({ theme: 'dark' }))

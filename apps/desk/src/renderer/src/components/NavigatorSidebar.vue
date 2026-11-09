@@ -447,6 +447,17 @@ const previewLabel = computed(() => {
   return '启动站点预览'
 })
 
+const previewRunningLabel = computed(() => {
+  const port = previewState.value?.port
+  if (port) return `localhost:${port}`
+  return previewState.value?.baseUrl ?? ''
+})
+
+function openPreviewTab(): void {
+  const url = previewState.value?.baseUrl
+  if (url) editor.openWeb(url)
+}
+
 const kbReady = computed(
   () => Boolean(store.knowledgeBase) && store.knowledgeBase?.health === 'ready'
 )
@@ -521,15 +532,29 @@ async function openHeaderMenu(): Promise<void> {
       v-if="
         previewBusy ||
         previewState?.status === 'starting' ||
+        previewState?.status === 'ready' ||
         (previewState?.status === 'error' &&
           dismissedPreviewError !== previewErrorKey)
       "
       class="preview-feedback"
       :class="previewState?.status"
     >
-      <span v-if="previewBusy || previewState?.status === 'starting'">
+      <span v-if="previewBusy && previewState?.status === 'ready'">正在停止站点预览…</span>
+      <span v-else-if="previewBusy || previewState?.status === 'starting'">
         正在启动 {{ store.selectedKnowledgeBase?.displayName }} 站点预览…
       </span>
+      <template v-else-if="previewState?.status === 'ready'">
+        <button
+          v-if="previewRunningLabel"
+          type="button"
+          class="preview-link"
+          :title="previewState.baseUrl ?? previewRunningLabel"
+          @click="openPreviewTab"
+        >
+          {{ previewRunningLabel }}
+        </button>
+        <button type="button" @click="togglePreview">停止</button>
+      </template>
       <template v-else>
         <span>预览启动失败：{{ previewState?.error ?? '未知错误' }}</span>
         <button type="button" @click="togglePreview">重试</button>
@@ -1087,6 +1112,18 @@ async function openHeaderMenu(): Promise<void> {
   cursor: pointer;
   padding: 3px 7px;
   font-size: 9px;
+}
+
+.preview-feedback button.preview-link {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--accent);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .navigator-top {

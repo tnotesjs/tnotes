@@ -4,10 +4,11 @@ import { DOMWrapper, flushPromises, shallowMount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { NoteEditorTab } from '../../../shared/contracts'
+import type { AppSettings, NoteEditorTab } from '../../../shared/contracts'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
 import FormatOverflowBar from './FormatOverflowBar.vue'
+import NoteAssetsPanel from './NoteAssetsPanel.vue'
 import NoteTabPane from './NoteTabPane.vue'
 
 const tab: NoteEditorTab = {
@@ -23,6 +24,8 @@ const tab: NoteEditorTab = {
   dirty: false,
   pinned: false
 }
+
+const showContextMenu = vi.fn()
 
 function dom<T extends Element>(selector: string): DOMWrapper<T> {
   const element = document.querySelector(selector)
@@ -61,11 +64,12 @@ function setup(readOnly = false, content = '## 概述') {
     props: { tab: { ...tab }, groupId: 'group-a', active: true },
     global: {
       renderStubDefaultSlot: true,
-      stubs: {
+        stubs: {
         // 完成开关要断言真实 DOM（位置 + 圆点），不能用自动 stub
         NoteDoneToggle: false,
-        // 格式工具栏是抽出来的子组件，断言仍按真实 DOM
-        NoteFormatToolbar: false
+        // 格式工具栏、视图切换是抽出来的子组件，断言仍按真实 DOM
+        NoteFormatToolbar: false,
+        NoteViewToggle: false
       }
     }
   })
@@ -74,54 +78,79 @@ function setup(readOnly = false, content = '## 概述') {
 
 beforeEach(() => {
   setActivePinia(createPinia())
+  showContextMenu.mockReset().mockResolvedValue({ ok: true, value: null })
+  Object.defineProperty(window, 'desk', {
+    configurable: true,
+    writable: true,
+    value: { app: { showContextMenu } }
+  })
 })
 afterEach(() => document.body.replaceChildren())
 
 describe('note header', () => {
   it('puts formatting on the same row as the title and view modes', async () => {
     const { wrapper, editor } = setup()
-    // 顺序：面包屑 | 【视图切换 + 格式工具栏】 | 右侧布局开关
+    // 顺序：面包屑 | 格式工具栏 | 右侧（视图切换、更多）
     const toolbar = wrapper.get('.document-toolbar')
     expect(
       [...toolbar.element.children].map((node) => node.classList[0] ?? node.nodeName.toLowerCase())
     ).toEqual(['document-path', 'format-cluster', 'layout-toggles'])
     const toggle = wrapper.get('[data-testid="view-toggle"]')
-    const formatBar = wrapper.getComponent(FormatOverflowBar).element
     expect(toggle.attributes('aria-label')).toBe('可视化编辑')
-    expect(
-      toggle.element.compareDocumentPosition(formatBar) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy()
+    expect(wrapper.get('.layout-toggles').element.contains(toggle.element)).toBe(true)
     expect(
       wrapper
         .get('.layout-toggles')
         .findAll('button')
         .map((button) => button.attributes('aria-label'))
-    ).toEqual(['标准页宽', '隐藏目录', '文档属性'])
+    ).toEqual(['可视化编辑', '更多'])
     expect(wrapper.find('.save-button').exists()).toBe(false)
     const width = vi.spyOn(editor, 'toggleNotePageWidth')
     const outline = vi.spyOn(editor, 'toggleNoteOutlineVisible')
     const view = vi.spyOn(editor, 'setNoteViewMode')
     await wrapper.setProps({ tab: { ...tab, noteAssetsVisible: true } })
     expect(wrapper.get('[data-testid="note-properties-panel"]').exists()).toBe(true)
-    expect(wrapper.get('.outline-toggle').classes()).toContain('active')
-    expect(
-      wrapper
-        .get('.properties-tabs')
-        .findAll('button')
-        .map((button) => button.text())
-    ).toEqual(['设置', '资源'])
-    expect(wrapper.get('.properties-tab.active').text()).toBe('设置')
+    expect(wrapper.find('.properties-tabs').exists()).toBe(false)
+    expect(wrapper.findComponent(NoteAssetsPanel).exists()).toBe(false)
     expect(wrapper.get('#note-description-input').element.tagName).toBe('TEXTAREA')
     expect((wrapper.get('#note-description-input').element as HTMLTextAreaElement).value).toBe('')
-    await wrapper.get('.page-width-toggle').trigger('click')
-    await wrapper.get('.outline-toggle').trigger('click')
+    showContextMenu.mockResolvedValueOnce({ ok: true, value: 'toggle-page-width' })
+    await wrapper.get('[data-testid="note-layout-menu"]').trigger('click')
+    expect(showContextMenu).toHaveBeenLastCalledWith({
+      kind: 'note-layout',
+      pageWidth: 'standard',
+      outline: 'shown'
+    })
+    showContextMenu.mockResolvedValueOnce({ ok: true, value: 'toggle-outline' })
+    await wrapper.get('[data-testid="note-layout-menu"]').trigger('click')
     await wrapper.get('[data-testid="view-toggle"]').trigger('click')
     expect(width).toHaveBeenCalledWith('tab-a')
     expect(outline).toHaveBeenCalledWith('tab-a')
     expect(view).toHaveBeenCalledWith('tab-a', 'source')
     await wrapper.setProps({ tab: { ...tab, noteAssetsVisible: true, outlineVisible: false } })
-    expect(wrapper.get('.outline-toggle').classes()).not.toContain('active')
-    expect(wrapper.get('.outline-toggle').attributes('aria-label')).toBe('显示目录')
+    showContextMenu.mockResolvedValueOnce({ ok: true, value: null })
+    await wrapper.get('[data-testid="note-layout-menu"]').trigger('click')
+    expect(showContextMenu).toHaveBeenLastCalledWith({
+      kind: 'note-layout',
+      pageWidth: 'standard',
+      outline: 'hidden'
+    })
+    await wrapper.setProps({
+      tab: { ...tab, noteAssetsVisible: true, outlineVisible: false, pageWidth: 'wide' }
+    })
+    showContextMenu.mockResolvedValueOnce({ ok: true, value: 'select-note-assets' })
+    await wrapper.get('[data-testid="note-layout-menu"]').trigger('click')
+    expect(showContextMenu).toHaveBeenLastCalledWith({
+      kind: 'note-layout',
+      pageWidth: 'wide',
+      outline: 'hidden'
+    })
+    expect(wrapper.find('#note-description-input').exists()).toBe(false)
+    expect(wrapper.findComponent(NoteAssetsPanel).exists()).toBe(true)
+    showContextMenu.mockResolvedValueOnce({ ok: true, value: 'select-note-settings' })
+    await wrapper.get('[data-testid="note-layout-menu"]').trigger('click')
+    expect(wrapper.findComponent(NoteAssetsPanel).exists()).toBe(false)
+    expect(wrapper.get('#note-description-input').exists()).toBe(true)
     for (const viewMode of ['source', 'visual'] as const) {
       await wrapper.setProps({ tab: { ...tab, viewMode } })
       const bar = wrapper.getComponent(FormatOverflowBar)
@@ -130,6 +159,32 @@ describe('note header', () => {
       expect(wrapper.find('.layout-toggles').exists()).toBe(true)
       expect(wrapper.find('.save-button').exists()).toBe(false)
     }
+    wrapper.unmount()
+  })
+
+  it('隐藏标题与文本格式时，中间区域连加号一起留空', async () => {
+    const { wrapper, workspace } = setup()
+    expect(wrapper.getComponent(FormatOverflowBar).props('items')).toContain('insert')
+    workspace.settings = { showTextFormatToolbar: false } as AppSettings
+    await flushPromises()
+    expect(wrapper.findComponent(FormatOverflowBar).exists()).toBe(false)
+    expect(wrapper.get('.format-cluster').element.childElementCount).toBe(0)
+    expect(wrapper.get('[data-testid="view-toggle"]').exists()).toBe(true)
+    workspace.settings = { showTextFormatToolbar: true } as AppSettings
+    await flushPromises()
+    expect(wrapper.getComponent(FormatOverflowBar).props('items')).toEqual([
+      'insert',
+      'heading',
+      'bold',
+      'italic',
+      'strikethrough',
+      'inline-code',
+      'unordered-list',
+      'ordered-list',
+      'checkbox',
+      'link',
+      'divider'
+    ])
     wrapper.unmount()
   })
 
@@ -166,6 +221,7 @@ describe('note header', () => {
         stubs: {
           NoteDoneToggle: false,
           NoteFormatToolbar: false,
+          NoteViewToggle: false,
           LivePreviewEditor: editorStub
         }
       }
@@ -185,15 +241,14 @@ describe('note header', () => {
     mounted.unmount()
   })
 
-  it('没有标题时隐藏目录按钮', () => {
+  it('没有标题时更多菜单里不出现目录', async () => {
     const { wrapper } = setup(false, '只有正文，没有标题。\n\n```\n# 代码里的井号\n```\n')
-    expect(wrapper.find('.outline-toggle').exists()).toBe(false)
-    expect(
-      wrapper
-        .get('.layout-toggles')
-        .findAll('button')
-        .map((button) => button.attributes('aria-label'))
-    ).toEqual(['标准页宽', '文档属性'])
+    await wrapper.get('[data-testid="note-layout-menu"]').trigger('click')
+    expect(showContextMenu).toHaveBeenCalledWith({
+      kind: 'note-layout',
+      pageWidth: 'standard',
+      outline: null
+    })
     wrapper.unmount()
   })
 

@@ -9,7 +9,6 @@ import BlockInsertMenu from './BlockInsertMenu.vue'
 import { TN_NOTES_SLASH_ITEMS } from '../markdown/slashMenu'
 import { useWorkspaceStore } from '../stores/workspace'
 
-import type { NoteViewMode } from '../../../shared/contracts'
 import type { InsertItem } from '../markdown/insertCatalog'
 
 /** 工具栏只用到编辑器句柄里的这几项；笔记和 README 两个宿主都满足 */
@@ -30,30 +29,27 @@ export interface FormatToolbarEditor {
 
 const props = defineProps<{
   editor: FormatToolbarEditor | null
-  viewMode: NoteViewMode
   disabled: boolean
   active: boolean
   headingLevel: number | null
-  headingNumberMaxDepth: number
   /** 宿主不支持的插入项 */
   excludeBlocks?: readonly string[]
 }>()
 
-const emit = defineEmits<{ toggleMode: []; insertCanvas: [] }>()
+const emit = defineEmits<{ insertCanvas: [] }>()
 
 const workspace = useWorkspaceStore()
 const platform = computed(() => workspace.runtimePlatform)
 
 /**
- * 顺序即工具栏顺序。标题三项（级别下拉 / 编号重排 / 移除编号）放在最前：
- * 它们是**块级**结构操作，与后面的行内格式分开；同时 FormatOverflowBar 是从**尾部**
- * 开始收进「…」的，放最前也保证窄面板下它们始终在。
+ * 顺序即工具栏顺序。加号和标题、文本格式是同一组。
+ * 「标题与文本格式」隐藏时这一组整段不渲染，中间留空。
+ * 标题编号的重排和移除只在命令面板里。
+ * FormatOverflowBar 从尾部收进「…」，靠前的项在窄面板里仍会留下。
  */
 const formatActions = [
   'insert',
   'heading',
-  'heading-number',
-  'heading-number-remove',
   'bold',
   'italic',
   'strikethrough',
@@ -65,11 +61,7 @@ const formatActions = [
   'divider'
 ] as const
 
-const viewToggleHint = computed(() =>
-  props.viewMode === 'source'
-    ? '切换到可视化编辑（⌘K V）· 当前：源码视图'
-    : '切换到源码视图（⌘K V）· 当前：可视化编辑'
-)
+const showTextFormat = computed(() => workspace.settings?.showTextFormatToolbar !== false)
 
 function insertBlock(id: string): void {
   if (props.editor?.insertBlock) {
@@ -96,24 +88,7 @@ function insertBlock(id: string): void {
 
 <template>
   <div class="format-cluster">
-    <UiTooltip :label="viewToggleHint">
-      <button
-        type="button"
-        class="view-toggle"
-        data-testid="view-toggle"
-        :aria-label="viewMode === 'source' ? '源码视图' : '可视化编辑'"
-        @click="emit('toggleMode')"
-      >
-        <svg v-if="viewMode !== 'source'" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="m4 20 4.2-1 10.6-10.6a2.1 2.1 0 0 0-3-3L5.2 16 4 20Z" />
-          <path d="m14.5 6.7 2.8 2.8" />
-        </svg>
-        <svg v-else viewBox="0 0 24 24" aria-hidden="true">
-          <path d="m8.5 7-5 5 5 5M15.5 7l5 5-5 5M13.5 4l-3 16" />
-        </svg>
-      </button>
-    </UiTooltip>
-    <FormatOverflowBar :items="formatActions" :disabled="disabled">
+    <FormatOverflowBar v-if="showTextFormat" :items="formatActions" :disabled="disabled">
       <template #item="{ item }">
         <BlockInsertMenu
           v-if="item === 'insert'"
@@ -174,26 +149,6 @@ function insertBlock(id: string): void {
           :platform="platform"
           @select="editor?.setLinePrefix($event === 0 ? '' : `${'#'.repeat($event)} `)"
         />
-        <UiTooltip v-else-if="item === 'heading-number'" label="标题编号（重排）">
-          <button
-            type="button"
-            aria-label="标题编号（重排）"
-            :disabled="disabled"
-            @click="editor?.addHeadingNumbers(headingNumberMaxDepth)"
-          >
-            <FormatIcon name="heading-number" />
-          </button>
-        </UiTooltip>
-        <UiTooltip v-else-if="item === 'heading-number-remove'" label="移除标题编号">
-          <button
-            type="button"
-            aria-label="移除标题编号"
-            :disabled="disabled"
-            @click="editor?.removeHeadingNumbers()"
-          >
-            <FormatIcon name="heading-number-remove" />
-          </button>
-        </UiTooltip>
         <UiTooltip v-else-if="item === 'unordered-list'" label="无序列表" shortcut="⇧ ⌘ 8">
           <button
             type="button"
@@ -256,35 +211,6 @@ function insertBlock(id: string): void {
   justify-content: center;
   gap: 2px;
   min-width: 0;
-}
-
-.view-toggle {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  flex: none;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 0;
-}
-
-.view-toggle:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-
-.view-toggle svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 :deep(.format-overflow .ui-tooltip-host) {

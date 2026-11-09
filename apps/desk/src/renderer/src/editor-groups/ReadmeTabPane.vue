@@ -10,9 +10,11 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import KbPathBreadcrumb from './KbPathBreadcrumb.vue'
 import NoteFormatToolbar from './NoteFormatToolbar.vue'
+import NoteViewToggle from './NoteViewToggle.vue'
 import LivePreviewEditor from '../livePreview/LivePreviewEditor.vue'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
+import { registerHeadingNumberActions } from '../commands/headingNumberBridge'
 import { registerViewToggleRunner } from '../commands/viewToggleBridge'
 import { pastedImageMarkdown } from '../editor/markdown/pasteImageWidth'
 import { HEADING_NUMBER_DEFAULT_MAX_DEPTH } from '../../../shared/headingNumbering'
@@ -185,11 +187,20 @@ let unregisterViewRunner: (() => void) | null = null
 let unsubscribeExternal: (() => void) | null = null
 
 watch(
-  () => props.active,
-  (active) => {
-    if (!active) return
+  [markdownEditor, () => props.active, headingNumberMaxDepth],
+  () => {
+    if (!props.active) return
     unregisterViewRunner?.()
     unregisterViewRunner = registerViewToggleRunner(toggleMode)
+    const handle = markdownEditor.value
+    registerHeadingNumberActions(
+      handle?.addHeadingNumbers
+        ? {
+            add: () => handle.addHeadingNumbers(headingNumberMaxDepth.value),
+            remove: () => handle.removeHeadingNumbers()
+          }
+        : null
+    )
   },
   { immediate: true }
 )
@@ -216,6 +227,7 @@ onBeforeUnmount(() => {
   void save()
   unregisterViewRunner?.()
   unregisterViewRunner = null
+  if (props.active) registerHeadingNumberActions(null)
   unsubscribeExternal?.()
   unsubscribeExternal = null
 })
@@ -239,14 +251,14 @@ onBeforeUnmount(() => {
       <span class="readme-title">README.md</span>
       <NoteFormatToolbar
         :editor="markdownEditor"
-        :view-mode="viewMode"
         :disabled="phase !== 'ready'"
         :active="active"
         :heading-level="headingLevel"
-        :heading-number-max-depth="headingNumberMaxDepth"
-        @toggle-mode="toggleMode"
       />
-      <span v-if="phase === 'ready'" class="save-state" :class="saveState">{{ saveLabel }}</span>
+      <div class="readme-side">
+        <NoteViewToggle :view-mode="viewMode" @toggle="toggleMode" />
+        <span v-if="phase === 'ready'" class="save-state" :class="saveState">{{ saveLabel }}</span>
+      </div>
     </header>
     <p v-if="phase === 'loading'" class="pane-note">正在读取…</p>
     <p v-else-if="message" class="pane-note is-error" role="alert">
@@ -306,6 +318,13 @@ onBeforeUnmount(() => {
   padding: 0 12px;
   border-bottom: 1px solid var(--border);
   font: 12px/1.6 var(--font-sans);
+}
+
+.readme-side {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .readme-title {

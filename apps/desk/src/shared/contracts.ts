@@ -568,6 +568,10 @@ export type ContextMenuAction =
   | 'image-copy'
   | 'image-export'
   | 'image-resize'
+  | 'toggle-page-width'
+  | 'toggle-outline'
+  | 'select-note-assets'
+  | 'select-note-settings'
 export type ContextMenuRequest =
   | { kind: 'note'; pinned: boolean; tocPinned: boolean; completed: boolean }
   | { kind: 'group' }
@@ -594,6 +598,15 @@ export type ContextMenuRequest =
       local?: boolean
       /** 有地址与知识库上下文：显示「复制」「导出」（只读也可用） */
       copyable?: boolean
+    }
+  /**
+   * 笔记头部「更多」：页宽、目录、资源、设置。
+   * `outline` 为空表示这篇笔记没有标题，菜单里不出现目录项。
+   */
+  | {
+      kind: 'note-layout'
+      pageWidth: NotePageWidth
+      outline: 'shown' | 'hidden' | null
     }
 
 export interface KnowledgeSidebarMenuRequest {
@@ -749,6 +762,8 @@ export interface AppSettings {
   showPathBreadcrumb: boolean
   /** 正文顶部的完成状态、编号和可重命名标题。默认显示。 */
   showNoteTitle: boolean
+  /** 笔记工具栏里从「标题」到分隔线的那一组。默认显示。 */
+  showTextFormatToolbar: boolean
   /** 标题编号层级上限（1-6）：1. 与 1.1. 允许出现的最大段数。 */
   headingNumberMaxDepth: number
   appZoomPercent: number

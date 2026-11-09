@@ -29,7 +29,7 @@ import {
 } from './client/sidebarState'
 import { createMarkdownCompiler, extractMarkdownLinks, extractPageData } from './markdown'
 import { resolveNotePath, resolveNoteSlug, stripBase, type NoteRef } from './noteRoute'
-import { collectSite, routeToOutput, type SourcePage } from './pages'
+import { collectSite, noteCorpusStats, routeToOutput, type SourcePage } from './pages'
 import { catalogFromPages, pageModuleId, PageSourceStore, slimPageData } from './pageStore'
 import { tnotesPlugin } from './vitePlugin'
 
@@ -455,6 +455,7 @@ export async function buildSite(root = process.cwd()) {
   const store = new PageSourceStore()
   store.sidebar = sidebar
   store.notes = notes
+  store.corpus = noteCorpusStats(snapshot.notes, pages)
   store.catalog = catalogFromPages(config, pages)
 
   let server = await createSsrVite(config, store)
@@ -647,6 +648,7 @@ async function createDevSession(config: ResolvedSsgConfig): Promise<DevSession> 
   const store = new PageSourceStore()
   store.sidebar = sidebar
   store.notes = notes
+  store.corpus = noteCorpusStats(snapshot.notes, pages)
   store.catalog = catalogFromPages(config, pages)
   return {
     pages,
@@ -665,6 +667,7 @@ async function refreshDevSession(config: ResolvedSsgConfig, session: DevSession)
   session.compiler = next.compiler
   session.store.sidebar = next.store.sidebar
   session.store.notes = next.store.notes
+  session.store.corpus = next.store.corpus
   session.store.catalog = next.store.catalog
   session.store.dropAllVue()
 }
@@ -680,6 +683,7 @@ async function applyPageEdit(session: DevSession, file: string): Promise<void> {
   if (!page) return
   const source = await fs.readFile(file, 'utf8')
   if (source === page.source) return
+  if (page.noteIndex) session.store.corpus.charCount += source.length - page.source.length
   page.source = source
   session.store.dropVue(page.route)
   const entry = session.store.catalog[page.route]

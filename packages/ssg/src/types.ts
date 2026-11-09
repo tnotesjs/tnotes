@@ -64,7 +64,10 @@ export interface SsgConfig {
   description?: string
   lang?: string
   port?: number
-  /** Note index used as the home page; defaults to the first TOC note. */
+  /**
+   * Kept so older `tnotes.json` files still parse. The site home is always `/`
+   * (heatmap, then README.md when that file has text) and does not follow this.
+   */
   home?: string
   /** Git repository this kb lives in; the site's title links to it. */
   repositoryUrl?: string
@@ -126,4 +129,6 @@ export interface SiteData {
   notes: SiteNoteRef[]
   /** Derived from tnotes.stats.json when present. */
   completionStats: SiteCompletionStats | null
+  /** Note completion and source length. Computed for this build or dev session. */
+  corpus: { noteCount: number; charCount: number }
 }

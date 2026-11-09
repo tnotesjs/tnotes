@@ -1,4 +1,9 @@
 import { canRunHeadingFold, runHeadingFold } from './headingFoldBridge'
+import {
+  canRunHeadingNumbers,
+  runAddHeadingNumbers,
+  runRemoveHeadingNumbers
+} from './headingNumberBridge'
 import { canRunViewToggle, runViewToggle } from './viewToggleBridge'
 
 import type { ThemeMode } from '../../../shared/contracts'
@@ -66,6 +71,24 @@ export function createPaletteCommands(context: PaletteCommandContext): PaletteCo
         run: () => void runHeadingFold(`unfold-level-${level}`)
       }
     ]),
+    {
+      id: 'add-heading-numbers',
+      title: '重排标题编号',
+      category: '编辑器',
+      hint: 'Renumber Headings',
+      keywords: ['heading number', 'renumber', '标题编号'],
+      enabled: canRunHeadingNumbers,
+      run: () => runAddHeadingNumbers()
+    },
+    {
+      id: 'remove-heading-numbers',
+      title: '移除标题编号',
+      category: '编辑器',
+      hint: 'Remove Heading Numbers',
+      keywords: ['heading number', 'remove', '标题编号'],
+      enabled: canRunHeadingNumbers,
+      run: () => runRemoveHeadingNumbers()
+    },
     {
       id: 'toggle-note-view',
       title: '切换视图（可视化 / 源码）',

@@ -1,4 +1,4 @@
-import { syntaxTree } from '@codemirror/language'
+import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
 
 import { calloutLayout } from './calloutLayout'
@@ -10,12 +10,21 @@ export interface OutlineHeading extends NoteOutlineHeading {
   from: number
 }
 
+/**
+ * 语法高亮是分段做的，刚打开笔记时树往往只覆盖前 3000 字。
+ * 目录必须看到全文，否则后半篇的标题不会出现。
+ */
+function outlineTree(state: EditorState) {
+  return ensureSyntaxTree(state, state.doc.length, 200) ?? syntaxTree(state)
+}
+
 /** 从语法树取标题（容器、代码块里的 `#` 不算）。`id` 用标题起点，随编辑变化。 */
 export function collectHeadings(state: EditorState): OutlineHeading[] {
   const headings: OutlineHeading[] = []
   const doc = state.doc
+  const tree = outlineTree(state)
   const callouts = calloutLayout(state).blocks
-  syntaxTree(state).iterate({
+  tree.iterate({
     enter(node) {
       if (callouts.some((block) => node.from > block.open.to && node.from <= block.end))
         return false

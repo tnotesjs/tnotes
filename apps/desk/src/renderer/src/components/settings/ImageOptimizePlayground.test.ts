@@ -86,7 +86,7 @@ describe('ImageOptimizePlayground', () => {
     expect(wrapper.get('[data-testid="saved-percent"]').text()).toContain('-75%')
     expect(wrapper.text()).toContain('有损')
 
-    // 回归护栏：应用 CSP 是 `img-src 'self' data: https: tnotes-asset:`，不含 blob:，
+    // 回归护栏：应用 CSP 是 `img-src 'self' data: https: http://localhost:* http://127.0.0.1:* tnotes-asset:`，不含 blob:，
     // 预览必须走 data: URL —— 用 createObjectURL 会被 CSP 拦成破图。
     // 同时 MIME 要按扩展名口径映射（format: 'jpg' → image/jpeg，不能落成 octet-stream）。
     const originalSrc = wrapper.get('figure:nth-child(1) img').attributes('src') ?? ''

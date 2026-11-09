@@ -2,8 +2,8 @@
  * src/pages.ts
  *
  * kb-driven page discovery: notes/*.md become routes, TOC.md becomes the
- * sidebar, and the home page is the configured note, else the kb's README.md
- * (pinned as the sidebar's first row), else the first TOC note.
+ * sidebar, and `/` is always the kb home: the heatmap plus README.md when
+ * that file has text. `tnotes.json` `home` does not choose this page.
  */
 
 import fs from 'node:fs'
@@ -30,8 +30,23 @@ export interface CollectedSite {
   snapshot: KbSnapshot
 }
 
-/** Sidebar row for the README home page; always first, above the TOC. */
-export const README_SIDEBAR_TEXT = 'README'
+/** Sidebar row for `/`. Always first, above the TOC. */
+export const HOME_SIDEBAR_TEXT = '首页'
+
+/** Note counts and source length. Computed while the notes are already in memory. */
+export interface NoteCorpusStats {
+  noteCount: number
+  charCount: number
+}
+
+export function noteCorpusStats(
+  notes: ReadonlyArray<unknown>,
+  pages: ReadonlyArray<{ noteIndex: string; source: string }>
+): NoteCorpusStats {
+  let charCount = 0
+  for (const page of pages) if (page.noteIndex) charCount += page.source.length
+  return { noteCount: notes.length, charCount }
+}
 
 export function noteRoute(index: string): string {
   return canonicalNoteRoute(index)
@@ -68,16 +83,6 @@ function toSidebarItems(
   return items
 }
 
-/** First note in TOC order (used as the default home page). */
-function firstTocNoteIndex(nodes: TocNode[]): string | undefined {
-  for (const node of nodes) {
-    if (node.kind === 'note') return node.index
-    const nested = firstTocNoteIndex(node.children)
-    if (nested) return nested
-  }
-  return undefined
-}
-
 export async function collectSite(config: ResolvedSsgConfig): Promise<CollectedSite> {
   const snapshot = await scanKnowledgeBase(config.root)
   const noteByIndex = new Map(
@@ -95,33 +100,19 @@ export async function collectSite(config: ResolvedSsgConfig): Promise<CollectedS
     })
   }
 
-  // Home page: configured note, else README.md, else the first TOC note, else a placeholder.
+  // `/` is the kb home. README body follows the heatmap when the file has text.
+  // A configured `home` note stays at its own `/notes/{n}` route.
   const sidebar = toSidebarItems(snapshot.toc, noteByIndex)
-  const configuredHome = config.home && noteByIndex.has(config.home) ? config.home : undefined
   const readmeFile = path.join(config.root, 'README.md')
-  const readme = configuredHome ? '' : readNonEmpty(readmeFile)
-  const homeIndex = configuredHome ?? firstTocNoteIndex(snapshot.toc)
-  const homePage = pages.find((page) => page.noteIndex === homeIndex)
-  if (readme) {
-    pages.unshift({
-      file: readmeFile,
-      route: '/',
-      source: readme,
-      titleHint: config.title,
-      noteIndex: ''
-    })
-    sidebar.unshift({ text: README_SIDEBAR_TEXT, link: '/' })
-  } else if (homePage) {
-    pages.unshift({ ...homePage, route: '/' })
-  } else {
-    pages.unshift({
-      file: path.join(config.cacheDir, 'index.md'),
-      route: '/',
-      source: `# ${config.title}\n`,
-      titleHint: config.title,
-      noteIndex: ''
-    })
-  }
+  const readme = readNonEmpty(readmeFile)
+  pages.unshift({
+    file: readme ? readmeFile : path.join(config.cacheDir, 'index.md'),
+    route: '/',
+    source: readme,
+    titleHint: config.title,
+    noteIndex: ''
+  })
+  sidebar.unshift({ text: HOME_SIDEBAR_TEXT, link: '/' })
 
   return {
     pages,

@@ -37,6 +37,12 @@ describe('palette commands', () => {
     expect(filterPaletteCommands(commands, '>Unfold Level 3').map((command) => command.id)).toEqual(
       ['unfold-level-3']
     )
+    expect(filterPaletteCommands(commands, '>重排标题编号').map((command) => command.id)).toEqual([
+      'add-heading-numbers'
+    ])
+    expect(filterPaletteCommands(commands, '>移除标题编号').map((command) => command.id)).toEqual([
+      'remove-heading-numbers'
+    ])
     expect(
       filterPaletteCommands(commands, '>Fold Level 1').map((command) => command.hint)
     ).toContain('Fold Level 1')
