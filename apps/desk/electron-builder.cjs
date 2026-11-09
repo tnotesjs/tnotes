@@ -178,10 +178,7 @@ module.exports = {
   asar: false,
   mac: {
     icon: 'build/icon.icns',
-    target: [
-      { target: 'dmg', arch: ['arm64'] },
-      { target: 'zip', arch: ['arm64'] }
-    ],
+    target: [{ target: 'dmg', arch: ['arm64'] }],
     // Ad-hoc sign when no Developer ID cert is present. Unsigned+quarantined
     // downloads show "is damaged" with no bypass; ad-hoc becomes "unidentified
     // developer" (right-click → Open). Not a substitute for Apple notarization.
