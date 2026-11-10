@@ -626,6 +626,16 @@ export class WorkspaceManager {
     return noteIo.resolveNotesTable(this.getHandle(knowledgeBaseId), ids)
   }
 
+  resolveDemosTable(
+    knowledgeBaseId: string,
+    ids: string[]
+  ): {
+    demos: Array<{ id: string; title: string; description: string; path: string }>
+    missingIds: string[]
+  } {
+    return noteIo.resolveDemosTable(this.getHandle(knowledgeBaseId), ids)
+  }
+
   async saveNote(request: NoteSaveRequest): Promise<NoteMutationDto> {
     this.assertWritable(request.knowledgeBaseId)
     return noteIo.saveNote(this.getHandle(request.knowledgeBaseId), request, this.mutationEffects())

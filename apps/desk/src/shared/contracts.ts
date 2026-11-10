@@ -58,6 +58,7 @@ export const IPC_CHANNELS = {
   settingsWriteRaw: 'settings:write-raw',
   noteRead: 'note:read',
   noteResolveTable: 'note:resolve-table',
+  noteResolveDemos: 'note:resolve-demos',
   noteSave: 'note:save',
   noteCreate: 'note:create',
   noteCreateMany: 'note:create-many',
@@ -1445,6 +1446,25 @@ export interface NotesTableResolveResult {
   missingIds: string[]
 }
 
+/** Rows for `<DemosTable>` — folder title plus demos.json description. */
+export interface DemosTableResolveRowDto {
+  id: string
+  title: string
+  description: string
+  /** Absolute path of `demos/NNNN. 标题/`. */
+  path: string
+}
+
+export interface DemosTableResolveRequest {
+  knowledgeBaseId: string
+  ids: string[]
+}
+
+export interface DemosTableResolveResult {
+  demos: DemosTableResolveRowDto[]
+  missingIds: string[]
+}
+
 export interface NoteMutationDto {
   note: NoteDocumentDto
   knowledgeBase: KnowledgeBaseDetail
@@ -2625,6 +2645,7 @@ export interface DeskApi {
   notes: {
     read(knowledgeBaseId: string, noteUuid: string): Promise<DeskResult<NoteDocumentDto>>
     resolveTable(request: NotesTableResolveRequest): Promise<DeskResult<NotesTableResolveResult>>
+    resolveDemos(request: DemosTableResolveRequest): Promise<DeskResult<DemosTableResolveResult>>
     save(request: NoteSaveRequest): Promise<DeskResult<NoteMutationDto>>
     create(request: NoteCreateRequest): Promise<DeskResult<NoteMutationDto>>
     createMany(request: NoteCreateManyRequest): Promise<DeskResult<NoteCreateManyResult>>

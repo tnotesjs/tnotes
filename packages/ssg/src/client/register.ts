@@ -5,6 +5,7 @@ import ImagePreview from '@tnotesjs/ui/image-preview'
 import { defineAsyncComponent } from 'vue'
 import theme from 'virtual:tnotes-theme'
 
+import DemosTableAdapter, { DEMOS_DATA_KEY } from './components/DemosTableAdapter'
 import NotesTableAdapter from './components/NotesTableAdapter'
 import SidebarCard from './components/SidebarCard.vue'
 
@@ -40,6 +41,7 @@ export function registerTNotesComponents(
 ) {
   app.provide(NOTES_DATA_KEY, pages)
   app.provide(SITE_BASE_KEY, site.base)
+  app.provide(DEMOS_DATA_KEY, site.demos)
   for (const [name, component] of Object.entries({
     Badge,
     BilibiliVideo,
@@ -49,6 +51,7 @@ export function registerTNotesComponents(
     ImagePreview,
     Mermaid,
     Mindmap,
+    DemosTable: DemosTableAdapter,
     NotesTable: NotesTableAdapter,
     SidebarCard,
     WordList

@@ -80,6 +80,15 @@ export function registerNotes(getWindow: GetWindow): void {
     }),
     ({ knowledgeBaseId, ids }) => workspaceManager.resolveNotesTable(knowledgeBaseId, ids)
   )
+  handle(
+    IPC_CHANNELS.noteResolveDemos,
+    getWindow,
+    z.object({
+      knowledgeBaseId: z.string().min(1),
+      ids: z.array(z.string())
+    }),
+    ({ knowledgeBaseId, ids }) => workspaceManager.resolveDemosTable(knowledgeBaseId, ids)
+  )
   handle(IPC_CHANNELS.noteSave, getWindow, noteSaveSchema, (input) =>
     workspaceManager.saveNote(input as NoteSaveRequest)
   )

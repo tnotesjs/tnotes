@@ -131,4 +131,6 @@ export interface SiteData {
   completionStats: SiteCompletionStats | null
   /** Note completion and source length. Computed for this build or dev session. */
   corpus: { noteCount: number; charCount: number }
+  /** Demo folders that have a `demos.json` entry. Titles come from the folder name. */
+  demos: Array<{ id: string; title: string; description: string }>
 }

@@ -18,9 +18,11 @@ import {
 import { updateSwiperSlideAttrs, type SwiperSlideChange } from '../editor/markdown/swiperSlides'
 import {
   isBilibiliVideoSource,
+  isDemosTableSource,
   isNotesTableSource,
   isWordListSource,
   parseBilibiliVideoSource,
+  parseDemosTableSource,
   parseNotesTableSource,
   parseWordListSource
 } from '../editor/markdown/componentBody'
@@ -29,6 +31,7 @@ import {
   mountFootprintsPreview,
   mountMermaidPreview,
   mountMindmapPreview,
+  mountDemosTablePreview,
   mountNotesTablePreview,
   mountWordListPreview,
   type MindmapPreviewProps
@@ -36,6 +39,8 @@ import {
 import { parseFencedCode, rebuildMermaidFence } from '../editor/markdown/diagramRenderer'
 import { mindmapPreviewMarkdown, rebuildMindmapFence } from '../editor/markdown/mindmapFence'
 import { clampMindmapHeight, deskWordListStorageScope, parseFootprintsSource } from '@tnotesjs/ui'
+import { writeClipboardText } from '../clipboardText'
+import { pushToast } from '../stores/toast'
 import { installMarkdownMath } from '../agent/agentMarkdown'
 import { livePreviewHost, type LivePreviewHost } from './host'
 import {
@@ -236,12 +241,62 @@ function mountComponent(
     }
     return { destroy: () => handle.unmount() }
   }
+  if (isDemosTableSource(source)) {
+    const ids = parseDemosTableSource(source)?.ids ?? []
+    const copyPath = (demoPath: string): void => {
+      void writeClipboardText(demoPath).then((copied) => {
+        pushToast(copied ? '已复制' : '复制失败', copied ? 'success' : 'error')
+      })
+    }
+    const handle = mountDemosTablePreview(host, {
+      demos: [],
+      missingIds: [],
+      error: ids.length ? null : '错误: ids 数组不能为空',
+      onSelect: copyPath
+    })
+    const notesApi = window.desk?.notes
+    if (ids.length && knowledgeBaseId && notesApi) {
+      void notesApi
+        .resolveDemos({ knowledgeBaseId, ids })
+        .then((result) => {
+          if (!result.ok) {
+            handle.update({ demos: [], missingIds: [], error: result.error.message, onSelect: copyPath })
+            return
+          }
+          handle.update({
+            demos: result.value.demos.map((row) => ({
+              id: row.id,
+              title: row.title,
+              description: row.description,
+              path: row.path
+            })),
+            missingIds: result.value.missingIds,
+            error: null,
+            onSelect: copyPath
+          })
+        })
+        .catch((cause: unknown) => {
+          handle.update({
+            demos: [],
+            missingIds: [],
+            error: cause instanceof Error ? cause.message : String(cause),
+            onSelect: copyPath
+          })
+        })
+    }
+    return { destroy: () => handle.unmount() }
+  }
   return null
 }
 
 /** 由组件源码判断是不是 desk 认识的 Vue 组件（其它 HTML 块按普通 HTML 渲染）。 */
 export function isKnownComponent(source: string): boolean {
-  return isBilibiliVideoSource(source) || isWordListSource(source) || isNotesTableSource(source)
+  return (
+    isBilibiliVideoSource(source) ||
+    isWordListSource(source) ||
+    isNotesTableSource(source) ||
+    isDemosTableSource(source)
+  )
 }
 
 export class CardWidget extends WidgetType {

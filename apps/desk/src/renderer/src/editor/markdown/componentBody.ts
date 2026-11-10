@@ -173,6 +173,46 @@ export function parseNotesTableSource(source: string): ParsedNotesTable | null {
   return { name: 'NotesTable', ids, trailingNewline }
 }
 
+export interface ParsedDemosTable {
+  name: 'DemosTable'
+  ids: string[]
+  trailingNewline: boolean
+}
+
+const DEMOS_TABLE_OPEN = /^ {0,3}<(?<tag>DemosTable)\b/m
+
+export function isDemosTableSource(source: string): boolean {
+  return DEMOS_TABLE_OPEN.test(source.trim())
+}
+
+export function parseDemosTableSource(source: string): ParsedDemosTable | null {
+  const trailingNewline = /\r?\n$/.test(source)
+  const trimmed = source.replace(/\r\n?/g, '\n').trim()
+  if (!DEMOS_TABLE_OPEN.test(trimmed)) return null
+  const literal = extractIdsArrayLiteral(trimmed) ?? '[]'
+  const ids: string[] = []
+  for (const match of literal.matchAll(/['"]([^'"]*)['"]/g)) {
+    const id = match[1].trim()
+    if (id) ids.push(id)
+  }
+  return { name: 'DemosTable', ids, trailingNewline }
+}
+
+export function rebuildDemosTableSource(options: {
+  ids: string[]
+  trailingNewline?: boolean
+}): string {
+  const ids = options.ids.map((id) => id.trim()).filter(Boolean)
+  let line: string
+  if (ids.length === 0) {
+    line = `<DemosTable :ids="[\n  '',\n]" />`
+  } else {
+    const body = ids.map((id) => `  '${id.replace(/'/g, "\\'")}'`).join(',\n')
+    line = `<DemosTable :ids="[\n${body},\n]" />`
+  }
+  return (options.trailingNewline ?? true) ? `${line}\n` : line
+}
+
 export function rebuildNotesTableSource(options: {
   ids: string[]
   trailingNewline?: boolean

@@ -5,6 +5,8 @@ import fs from 'node:fs/promises'
 import {
   KbError,
   parseNoteContent,
+  readDemoCatalog,
+  resolveDemoIds,
   serializeNoteContent,
   type ChangedFile,
   type NoteFrontmatter,
@@ -103,6 +105,25 @@ export function resolveNotesTable(
   }
 
   return { notes, missingIds }
+}
+
+export function resolveDemosTable(
+  handle: KnowledgeBaseHandle,
+  ids: string[]
+): {
+  demos: Array<{ id: string; title: string; description: string; path: string }>
+  missingIds: string[]
+} {
+  const { demos, missingIds } = resolveDemoIds(readDemoCatalog(handle.snapshot.rootPath), ids)
+  return {
+    demos: demos.map((demo) => ({
+      id: demo.id,
+      title: demo.title,
+      description: demo.description,
+      path: demo.absolutePath
+    })),
+    missingIds
+  }
 }
 
 /** Keep only whitelist keys; pin id from the snapshot so a lost atom cannot drop giscus mapping. */

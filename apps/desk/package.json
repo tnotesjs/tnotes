@@ -1,6 +1,6 @@
 {
   "name": "desk",
-  "version": "0.17.9",
+  "version": "0.17.10",
   "description": "TNotes Desk — multi knowledge-base desktop client",
   "main": "./out/main/index.js",
   "author": "tnotesjs",

@@ -3,12 +3,13 @@ import {
   BilibiliVideo,
   Mermaid,
   Mindmap,
+  DemosTable,
   NotesTable,
   Footprints,
   WordList,
   WORD_LIST_FEATURES_STATIC
 } from '@tnotesjs/ui'
-import type { NotesTableRow, FootprintsPayload } from '@tnotesjs/ui'
+import type { DemosTableRow, NotesTableRow, FootprintsPayload } from '@tnotesjs/ui'
 
 export interface BilibiliVideoPreviewProps {
   id: string
@@ -287,6 +288,34 @@ export function mountNotesTablePreview(
     } as Record<string, unknown>,
     (a, b) => JSON.stringify(a) === JSON.stringify(b)
   ) as unknown as MountedVuePreview<NotesTablePreviewProps>
+}
+
+export interface DemosTablePreviewProps {
+  demos: DemosTableRow[]
+  missingIds?: string[]
+  error?: string | null
+  onSelect?: (path: string) => void
+}
+
+export function mountDemosTablePreview(
+  host: HTMLElement,
+  props: DemosTablePreviewProps
+): MountedVuePreview<DemosTablePreviewProps> {
+  return mountVuePreview(
+    host,
+    'desk-demos-table-root',
+    DemosTable,
+    {
+      demos: props.demos ?? [],
+      missingIds: props.missingIds ?? [],
+      error: props.error ?? null,
+      interactive: true,
+      onSelect: props.onSelect
+    } as Record<string, unknown>,
+    (a, b) =>
+      JSON.stringify({ demos: a.demos, missingIds: a.missingIds, error: a.error }) ===
+      JSON.stringify({ demos: b.demos, missingIds: b.missingIds, error: b.error })
+  ) as unknown as MountedVuePreview<DemosTablePreviewProps>
 }
 
 export function mountFootprintsPreview(

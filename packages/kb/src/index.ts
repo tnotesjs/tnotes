@@ -5,6 +5,7 @@
  *   tnotes.json   kb config
  *   TOC.md        sole source of structure (groups / order / done)
  *   notes/NNNN. 标题.md
+ *   demos/NNNN. 短标题/
  *   assets/
  */
 
@@ -32,6 +33,8 @@ export {
 export type { ParsedTocLine, TocLineKind } from './toc'
 export { scanKnowledgeBase, readKbConfig, readTocLines, contentRevision } from './scanner'
 export { ensureKnowledgeBaseId } from './kbId'
+export { readDemoCatalog, resolveDemoIds } from './demos'
+export type { DemoCatalogEntry } from './demos'
 export {
   createWorkspace,
   validateTitle,

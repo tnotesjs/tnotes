@@ -106,6 +106,14 @@ export const TN_NOTES_SLASH_ITEMS: SlashMenuItem[] = [
     insert: '<NotesTable :ids="[\n  \'\',\n]" />\n'
   },
   {
+    id: 'demos-table',
+    label: 'Demo 表格',
+    kind: 'component',
+    shortcut: '/D',
+    keywords: ['D', 'DemosTable', 'demo', '演示'],
+    insert: '<DemosTable :ids="[\n  \'\',\n]" />\n'
+  },
+  {
     id: 'bilibili',
     label: 'B站视频',
     kind: 'component',

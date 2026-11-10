@@ -241,6 +241,14 @@ export const INSERT_ITEMS: readonly InsertItem[] = [
     action: { kind: 'block', template: `<NotesTable :ids="[\n  '${CARET}',\n]" />` }
   },
   {
+    id: 'demos-table',
+    label: 'Demo 表格',
+    group: 'embed',
+    aliases: ['demos', 'ysbg', 'demostable'],
+    icon: ICONS.notesTable,
+    action: { kind: 'block', template: `<DemosTable :ids="[\n  '${CARET}',\n]" />` }
+  },
+  {
     id: 'footprints',
     label: '足迹',
     group: 'embed',

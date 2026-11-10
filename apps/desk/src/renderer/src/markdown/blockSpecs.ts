@@ -34,6 +34,7 @@ export const BLOCK_SPECS: readonly BlockSpec[] = [
   { type: 'mindmap', nest: 'topLevel' },
   { type: 'excalidraw', nest: 'topLevel', allowParents: ['swiper'] },
   { type: 'notes-table', nest: 'topLevel' },
+  { type: 'demos-table', nest: 'topLevel' },
   { type: 'bilibili', nest: 'topLevel' },
   { type: 'word-list', nest: 'topLevel' },
   { type: 'footprints', nest: 'topLevel' },

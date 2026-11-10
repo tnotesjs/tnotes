@@ -217,10 +217,10 @@ const frontmatter: MarkdownConfig = {
   ]
 }
 
-const COMPONENT_OPEN = /^(<(?:NotesTable|BilibiliVideo|WordList)\b)/
+const COMPONENT_OPEN = /^(<(?:NotesTable|DemosTable|BilibiliVideo|WordList)\b)/
 
 /**
- * 独占一段的 Vue 组件（`<NotesTable />`、`<BilibiliVideo />`、`<WordList>`）。
+ * 独占一段的 Vue 组件（`<NotesTable />`、`<DemosTable />`、`<BilibiliVideo />`、`<WordList>`）。
  * 标准 Markdown 会把它们当成段落里的 HTML，显示层就无法换成卡片。
  */
 const componentBlock: MarkdownConfig = {

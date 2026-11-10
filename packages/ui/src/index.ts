@@ -4,6 +4,7 @@ export { default as Mermaid } from './components/Mermaid/Mermaid.vue'
 export { default as Mindmap } from './components/Mindmap/Mindmap.vue'
 export { default as FocusBreadcrumbs } from './components/Mindmap/FocusBreadcrumbs.vue'
 export { default as NotesTable } from './components/NotesTable/NotesTable.vue'
+export { default as DemosTable } from './components/DemosTable/DemosTable.vue'
 export { default as Footprints } from './components/Footprints/Footprints.vue'
 export {
   WORD_LIST_FEATURES_FULL,
@@ -21,6 +22,7 @@ export {
 } from './components/Mindmap/markdown'
 export type { MindmapFenceOptions, NormalizeMindmapOptions } from './components/Mindmap/markdown'
 export type { NotesTableRow } from './components/NotesTable/types'
+export type { DemosTableRow } from './components/DemosTable/types'
 export {
   parseFootprintsSource,
   rebuildFootprintsSource,
