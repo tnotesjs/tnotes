@@ -81,9 +81,7 @@
           v-if="showArticleTools"
           :repo-url="noteRepoUrl"
           :desk-url="deskUrl"
-          :desk-fallback="
-            props.data.relativePath.startsWith('notes/') && !deskUrl
-          "
+          :desk-fallback="props.data.relativePath.startsWith('notes/') && !deskUrl"
           :source="data.source ?? ''"
           :folded="headingsFolded"
           :can-fold="hasArticleHeadings"
@@ -219,10 +217,7 @@ function isArticlePage(relativePath: string): boolean {
 const isHome = computed(() => props.route === '/')
 const charCountLabel = computed(() => formatCharCount(site.corpus?.charCount ?? 0))
 const showArticleTools = computed(
-  () =>
-    !isHome.value &&
-    props.data.source !== undefined &&
-    isArticlePage(props.data.relativePath)
+  () => !isHome.value && props.data.source !== undefined && isArticlePage(props.data.relativePath)
 )
 const deskUrl = computed(() => {
   if (!isArticlePage(props.data.relativePath) || props.data.relativePath === 'README.md') return ''

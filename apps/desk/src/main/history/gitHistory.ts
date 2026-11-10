@@ -534,7 +534,9 @@ export async function readHistorySnapshot(
     }
     assets.sort((left, right) => left.relPath.localeCompare(right.relPath))
   }
-  const dropped = unownedAssets.filter((entry) => !assets.some((asset) => asset.relPath === entry.relPath))
+  const dropped = unownedAssets.filter(
+    (entry) => !assets.some((asset) => asset.relPath === entry.relPath)
+  )
   if (dropped.length > 0) {
     limitations.push({
       code: 'unowned-assets',

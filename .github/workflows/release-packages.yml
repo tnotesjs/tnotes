@@ -135,12 +135,21 @@ jobs:
         env:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
 
+      # 发布请求成功后，npm 的读副本经常要几十秒才看得到新版本。只查一次时，
+      # 0.4.4 以来的发布几乎每一次都在这里被判失败，包其实已经在 registry 上。
       - name: Verify on the registry
         run: |
+          set -euo pipefail
           expected='${{ steps.target.outputs.expected }}'
-          actual=$(npm view '${{ steps.target.outputs.pkg }}@'"$expected" version --registry=https://registry.npmjs.org/ || true)
-          if [ "$actual" != "$expected" ]; then
-            echo "::error::发布后校验失败：registry 上没查到 ${{ steps.target.outputs.pkg }}@${expected}"
-            exit 1
-          fi
-          echo "已在 registry 上确认：${{ steps.target.outputs.pkg }}@${expected}"
+          pkg='${{ steps.target.outputs.pkg }}'
+          for attempt in $(seq 1 18); do
+            actual=$(npm view "$pkg@$expected" version --registry=https://registry.npmjs.org/ 2>/dev/null || true)
+            if [ "$actual" = "$expected" ]; then
+              echo "已在 registry 上确认：${pkg}@${expected}（第 ${attempt} 次）"
+              exit 0
+            fi
+            echo "第 ${attempt} 次还没查到 ${pkg}@${expected}，10 秒后再试"
+            sleep 10
+          done
+          echo "::error::发布后校验失败：连续 3 分钟 registry 上没查到 ${pkg}@${expected}"
+          exit 1

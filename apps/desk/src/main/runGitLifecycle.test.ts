@@ -33,7 +33,16 @@ const BEAT_IN_GRANDCHILD = `${BEAT_HOST} + "/" + ${BEAT_NAME} + ".beat"`
 writeFileSync(
   SUBPROCESS,
   `import { spawn } from 'node:child_process'
-import { writeFileSync } from 'node:fs'
+import { renameSync, writeFileSync } from 'node:fs'
+
+// writeFileSync 会先把目标截成空文件再写入。测试同时在读这份心跳，
+// 读到空串时 Number('') === 0，比较就会偶发失败。先写临时文件再 rename，
+// 读到的永远是完整的上一次或这一次。
+function writeBeat(file, value) {
+  const tmp = file + '.' + process.pid + '.tmp'
+  writeFileSync(tmp, String(value))
+  renameSync(tmp, file)
+}
 
 const [mode = 'normal-exit', mark = 'MARK', bytes = '1000'] = process.argv.slice(2)
 
@@ -51,7 +60,7 @@ if (mode === 'normal-exit') {
   // 主进程：**先关掉输出流但继续运行**，并忽略 SIGTERM。
   // 用来验证"管道关了 ≠ 进程结束了"，以及继续写心跳证明它还活着。
   const live = setInterval(() => {
-    try { writeFileSync(process.env.DESK_TEST_DIR + '/' + process.env.DESK_BEAT_NAME + '.beat', String(Date.now())) } catch {}
+    try { writeBeat(process.env.DESK_TEST_DIR + '/' + process.env.DESK_BEAT_NAME + '.beat', Date.now()) } catch {}
   }, 50)
   process.stdout.write('BEFORE_CLOSE_' + mark + '\\n', () => {
     process.stdout.end()
@@ -66,7 +75,8 @@ if (mode === 'normal-exit') {
   const source = [
     'const fs = require("node:fs")',
     'process.on("SIGTERM", () => {})',
-    'setInterval(() => { try { fs.writeFileSync(process.env.DESK_TEST_DIR + "/" + process.env.DESK_BEAT_NAME + ".beat", String(Date.now())) } catch {} }, 50)',
+    'function writeBeat(file, value) { const tmp = file + "." + process.pid + ".tmp"; fs.writeFileSync(tmp, String(value)); fs.renameSync(tmp, file) }',
+    'setInterval(() => { try { writeBeat(process.env.DESK_TEST_DIR + "/" + process.env.DESK_BEAT_NAME + ".beat", Date.now()) } catch {} }, 50)',
     'process.stdout.end()',
     'process.stderr.end()',
     'setInterval(() => {}, 1000)'
@@ -81,7 +91,7 @@ if (mode === 'normal-exit') {
   process.stdout.write('PARENT_' + mark + '\\n')
   // 父进程自己也写心跳：测试据此确认"父进程还活着"这个前提
   setInterval(() => {
-    try { writeFileSync(process.env.DESK_TEST_DIR + '/' + process.env.DESK_BEAT_NAME + '.parent.beat', String(Date.now())) } catch {}
+    try { writeBeat(process.env.DESK_TEST_DIR + '/' + process.env.DESK_BEAT_NAME + '.parent.beat', Date.now()) } catch {}
   }, 50)
   setInterval(() => {}, 1000)
 } else {
@@ -92,7 +102,8 @@ if (mode === 'normal-exit') {
   const source = [
     'const fs = require("node:fs")',
     'process.on("SIGTERM", () => {})',
-    'setInterval(() => { try { fs.writeFileSync(${BEAT_IN_GRANDCHILD}, String(Date.now())) } catch {} }, 50)',
+    'function writeBeat(file, value) { const tmp = file + "." + process.pid + ".tmp"; fs.writeFileSync(tmp, String(value)); fs.renameSync(tmp, file) }',
+    'setInterval(() => { try { writeBeat(${BEAT_IN_GRANDCHILD}, Date.now()) } catch {} }, 50)',
     'setInterval(() => process.stdout.write("gc-tick\\\\n"), 100)',
     'setInterval(() => {}, 1000)'
   ].join(';')
@@ -136,7 +147,13 @@ async function waitUntil(check: () => boolean, timeoutMs = 10000): Promise<boole
 
 const beatOf = (mark: string): number => {
   const path = join(fixture, `${mark}.beat`)
-  return existsSync(path) ? Number(readFileSync(path, 'utf8')) : 0
+  // 写入侧已经改成 rename，这里再丢掉读到的空内容，避免半截文件被当成 0。
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if (!existsSync(path)) return 0
+    const value = Number(readFileSync(path, 'utf8'))
+    if (Number.isFinite(value) && value > 0) return value
+  }
+  return 0
 }
 
 describe('runGit 生命周期（可控子进程）', () => {

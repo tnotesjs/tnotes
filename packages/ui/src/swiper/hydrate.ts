@@ -163,10 +163,7 @@ function hydrateOne(
     tabsEl.remove()
   }
 
-  const start = Math.min(
-    Math.max(0, options?.activeIndex ?? 0),
-    Math.max(0, slides.length - 1)
-  )
+  const start = Math.min(Math.max(0, options?.activeIndex ?? 0), Math.max(0, slides.length - 1))
   activate(start)
   return true
 }

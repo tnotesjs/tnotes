@@ -260,7 +260,12 @@ function mountComponent(
         .resolveDemos({ knowledgeBaseId, ids })
         .then((result) => {
           if (!result.ok) {
-            handle.update({ demos: [], missingIds: [], error: result.error.message, onSelect: copyPath })
+            handle.update({
+              demos: [],
+              missingIds: [],
+              error: result.error.message,
+              onSelect: copyPath
+            })
             return
           }
           handle.update({

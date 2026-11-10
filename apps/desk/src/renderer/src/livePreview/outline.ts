@@ -1,5 +1,6 @@
 import { ensureSyntaxTree, syntaxTree } from '@codemirror/language'
 import { EditorState } from '@codemirror/state'
+import type { Tree } from '@lezer/common'
 
 import { calloutLayout } from './calloutLayout'
 import { tnotesMarkdown } from './language'
@@ -14,7 +15,7 @@ export interface OutlineHeading extends NoteOutlineHeading {
  * 语法高亮是分段做的，刚打开笔记时树往往只覆盖前 3000 字。
  * 目录必须看到全文，否则后半篇的标题不会出现。
  */
-function outlineTree(state: EditorState) {
+function outlineTree(state: EditorState): Tree {
   return ensureSyntaxTree(state, state.doc.length, 200) ?? syntaxTree(state)
 }
 

@@ -61,14 +61,12 @@ it('supports headings inside containers without taking following outside content
   expect(document.querySelector('blockquote p')!.closest('[hidden]')).not.toBeNull()
 })
 it('does not fold a heading inside a callout', () => {
-  setup(
-    '<div class="tn-custom-block tip"><h3>里层</h3><p>x</p></div><h2>后</h2><p>y</p>'
-  )
+  setup('<div class="tn-custom-block tip"><h3>里层</h3><p>x</p></div><h2>后</h2><p>y</p>')
   expect(document.querySelectorAll('button')).toHaveLength(1)
   expect(button('折叠 后').getAttribute('aria-expanded')).toBe('true')
-  expect(document.querySelector('.tn-custom-block h3')!.classList.contains('tn-foldable-heading')).toBe(
-    false
-  )
+  expect(
+    document.querySelector('.tn-custom-block h3')!.classList.contains('tn-foldable-heading')
+  ).toBe(false)
 })
 it('does not offer empty sections and restores content on teardown', () => {
   setup('<h2>Empty</h2><h2>Full</h2><p>text</p>')

@@ -533,8 +533,7 @@ async function openHeaderMenu(): Promise<void> {
         previewBusy ||
         previewState?.status === 'starting' ||
         previewState?.status === 'ready' ||
-        (previewState?.status === 'error' &&
-          dismissedPreviewError !== previewErrorKey)
+        (previewState?.status === 'error' && dismissedPreviewError !== previewErrorKey)
       "
       class="preview-feedback"
       :class="previewState?.status"

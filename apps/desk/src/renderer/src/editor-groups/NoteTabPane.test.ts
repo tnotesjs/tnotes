@@ -64,7 +64,7 @@ function setup(readOnly = false, content = '## 概述') {
     props: { tab: { ...tab }, groupId: 'group-a', active: true },
     global: {
       renderStubDefaultSlot: true,
-        stubs: {
+      stubs: {
         // 完成开关要断言真实 DOM（位置 + 圆点），不能用自动 stub
         NoteDoneToggle: false,
         // 格式工具栏、视图切换是抽出来的子组件，断言仍按真实 DOM
