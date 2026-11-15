@@ -72,6 +72,21 @@ describe('native context menus', () => {
     )
     expect(pinnedInToc.find((item) => item.id === 'toggle-toc-pin')?.label).toBe('取消置顶')
     expect(template.find((item) => item.id === 'open-ide')?.label).toBe('在 Cursor 中打开')
+    expect(template.find((item) => item.id === 'open-deployed-site')).toBeUndefined()
+    expect(template.find((item) => item.id === 'open-github-file')).toBeUndefined()
+    const linked = contextMenuTemplate(
+      {
+        kind: 'note',
+        pinned: true,
+        tocPinned: false,
+        completed: true,
+        siteUrl: 'https://tnotes.example/vue/notes/7',
+        githubUrl: 'https://github.com/tnotesjs/TNotes.vue/blob/main/notes/0007.md'
+      },
+      vi.fn()
+    )
+    expect(linked.find((item) => item.id === 'open-deployed-site')?.label).toBe('在部署站点中打开')
+    expect(linked.find((item) => item.id === 'open-github-file')?.label).toBe('在 GitHub 中打开')
     expect(template.find((item) => item.id === 'toggle-done')?.label).toBe('标记为未完成')
     expect(template.filter((item) => item.id === 'open-ide')).toHaveLength(1)
   })

@@ -1,3 +1,4 @@
+import { commandHistory, type CommandHistory } from './commandHistory'
 import { canRunHeadingFold, runHeadingFold } from './headingFoldBridge'
 import {
   canRunHeadingNumbers,
@@ -193,24 +194,79 @@ export function isCommandMode(raw: string): boolean {
   return raw.startsWith('>')
 }
 
+export interface CommandHistoryView {
+  peek(commandId: string): number | undefined
+}
+
+/**
+ * 过滤后的顺序对齐 VS Code 命令面板：
+ * 有使用记录的排在前面，计数大的（最近一次）在最前；
+ * 都没用过时按标题排序。每条命令只出现一次。
+ */
 export function filterPaletteCommands(
   commands: readonly PaletteCommand[],
-  rawQuery: string
+  rawQuery: string,
+  history: CommandHistoryView = commandHistory
 ): PaletteCommand[] {
   const query = commandQuery(rawQuery).toLowerCase()
-  if (!query) return [...commands]
-  return commands.filter((command) => {
-    const haystack = [
-      command.title,
-      command.category,
-      command.hint,
-      command.id,
-      ...command.keywords
-    ]
-      .join(' ')
-      .toLowerCase()
-    return matchesQuery(haystack, query)
+  const matched = query
+    ? commands.filter((command) => {
+        const haystack = [
+          command.title,
+          command.category,
+          command.hint,
+          command.id,
+          ...command.keywords
+        ]
+          .join(' ')
+          .toLowerCase()
+        return matchesQuery(haystack, query)
+      })
+    : [...commands]
+  matched.sort((left, right) => compareCommands(left, right, history))
+  return matched
+}
+
+function compareCommands(
+  left: PaletteCommand,
+  right: PaletteCommand,
+  history: CommandHistoryView
+): number {
+  const leftCounter = history.peek(left.id) ?? 0
+  const rightCounter = history.peek(right.id) ?? 0
+  if (leftCounter && rightCounter && leftCounter !== rightCounter) return rightCounter - leftCounter
+  if (leftCounter && !rightCounter) return -1
+  if (rightCounter && !leftCounter) return 1
+  return left.title.localeCompare(right.title, 'zh')
+}
+
+export interface PaletteCommandGroup {
+  category: string
+  items: { command: PaletteCommand; index: number }[]
+}
+
+/** 有最近记录时分成「最近使用 / 其他命令」；还没有记录时不造一个空的最近分组。 */
+export function groupPaletteCommands(
+  commands: readonly PaletteCommand[],
+  rawQuery: string,
+  history: CommandHistoryView = commandHistory
+): PaletteCommandGroup[] {
+  const ordered = filterPaletteCommands(commands, rawQuery, history)
+  const recent: PaletteCommandGroup = { category: '最近使用', items: [] }
+  const rest: PaletteCommandGroup = { category: '', items: [] }
+  ordered.forEach((command, index) => {
+    const bucket = history.peek(command.id) ? recent : rest
+    bucket.items.push({ command, index })
   })
+  if (recent.items.length > 0) rest.category = '其他命令'
+  return [recent, rest].filter((group) => group.items.length > 0)
+}
+
+export function rememberPaletteCommand(
+  commandId: string,
+  history: CommandHistory = commandHistory
+): void {
+  history.push(commandId)
 }
 
 export function matchesQuery(haystack: string, query: string): boolean {

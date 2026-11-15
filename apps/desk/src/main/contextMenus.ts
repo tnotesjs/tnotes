@@ -104,6 +104,8 @@ export function contextMenuTemplate(
       item('reindex', '修改索引'),
       item('toggle-done', request.completed ? '标记为未完成' : '标记为完成'),
       item('open-ide', `在 ${loadSettings().ide === 'cursor' ? 'Cursor' : 'VSCode'} 中打开`),
+      ...(request.siteUrl ? [item('open-deployed-site', '在部署站点中打开')] : []),
+      ...(request.githubUrl ? [item('open-github-file', '在 GitHub 中打开')] : []),
       ...creationAndDeletion
     ]
   }

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { readFileSync } from 'node:fs'
+import { highlightSelectionMatches } from '@codemirror/search'
 import { EditorSelection, EditorState, Prec } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { codeFolding, syntaxHighlighting } from '@codemirror/language'
@@ -920,5 +921,42 @@ describe('live preview editing', () => {
     expect(css).toContain('.cm-lp-inline-code .tok-heading')
     expect(css).toMatch(/\.cm-lp-inline-code \.tok-heading \{[^}]*color: inherit/)
     expect(css).toMatch(/\.cm-lp-inline-code \.tok-heading \{[^}]*font-weight: inherit/)
+  })
+
+  it('keeps an inline-code capsule in one piece when a selection match splits it', () => {
+    const parent = document.createElement('div')
+    parent.className = 'live-editor'
+    document.body.append(parent)
+    const doc = '`123`\n\n123\n'
+    const plain = doc.lastIndexOf('123')
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc,
+        selection: EditorSelection.range(plain, plain + 2),
+        extensions: [
+          tnotesMarkdown(),
+          livePreviewEnabled.of(true),
+          EditorView.editorAttributes.of({ class: 'cm-lp-visual' }),
+          livePreviewField,
+          highlightSelectionMatches()
+        ]
+      })
+    })
+    views.push(view)
+    const pieces = [...view.dom.querySelectorAll<HTMLElement>('.cm-lp-inline-code')]
+    const head = pieces[0]
+    const tail = pieces[1]
+    expect(head?.textContent).toBe('12')
+    expect(head?.parentElement?.classList.contains('cm-selectionMatch')).toBe(true)
+    expect(tail?.textContent).toBe('3')
+    const style = document.createElement('style')
+    style.textContent = readFileSync('src/renderer/src/livePreview/livePreview.css', 'utf8')
+    document.head.append(style)
+    expect(getComputedStyle(head!).borderRightWidth).toBe('0px')
+    expect(getComputedStyle(tail!).borderLeftWidth).toBe('0px')
+    expect(getComputedStyle(head!).marginRight).toBe('0px')
+    expect(getComputedStyle(tail!).marginLeft).toBe('0px')
+    style.remove()
   })
 })

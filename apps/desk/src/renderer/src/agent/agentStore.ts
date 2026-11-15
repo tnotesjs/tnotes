@@ -95,7 +95,12 @@ const RUNNING: Record<string, string> = {
   search_notes: '搜索中…',
   read_note: '读取中…',
   edit_note: '修改中…',
-  create_note: '新建中…'
+  create_note: '新建中…',
+  rename_note: '重命名中…',
+  delete_notes: '删除中…',
+  move_note: '调整目录…',
+  set_note_done: '更新完成状态…',
+  sync_repository: '同步仓库…'
 }
 
 export const useAgentStore = defineStore('agent', () => {

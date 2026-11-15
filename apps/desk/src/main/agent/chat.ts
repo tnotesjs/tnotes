@@ -149,15 +149,101 @@ export const WRITE_TOOLS = [
     type: 'function',
     function: {
       name: 'create_note',
-      description: '在一个知识库里新建一篇笔记并保存。正文会标出来等用户保留或撤销。',
+      description:
+        '在知识库里新建笔记。必须走知识库流程（编号、id、目录），不要自己新建 .md。两种用法都可以：titles 一次传入每篇标题；或者只传 count，用默认标题 new 占位，再用 rename_note 改名。只建一篇时也可以传 title，并可选 content 写入正文。',
       parameters: {
         type: 'object',
         properties: {
           kb: KB_PARAM,
+          titles: { type: 'array', items: { type: 'string' } },
           title: { type: 'string' },
-          content: { type: 'string' }
+          count: { type: 'number' },
+          content: { type: 'string', description: '只在新建一篇时写入正文' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'rename_note',
+      description:
+        '重命名一篇笔记。走知识库的重命名流程，会改文件名和目录。note 可以是 uuid、编号或标题。',
+      parameters: {
+        type: 'object',
+        properties: {
+          kb: KB_PARAM,
+          note: { type: 'string' },
+          title: { type: 'string' }
         },
-        required: ['title', 'content']
+        required: ['note', 'title']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_notes',
+      description:
+        '删除一篇或多篇笔记，连同目录项。不要自己删文件。notes 是 uuid、编号或标题的数组。',
+      parameters: {
+        type: 'object',
+        properties: {
+          kb: KB_PARAM,
+          notes: { type: 'array', items: { type: 'string' } }
+        },
+        required: ['notes']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'move_note',
+      description:
+        '调整笔记在目录中的位置。target 是目标笔记（uuid、编号或标题），folderPath 是分组标题路径。placement 是 before、after 或 inside。',
+      parameters: {
+        type: 'object',
+        properties: {
+          kb: KB_PARAM,
+          note: { type: 'string' },
+          target: { type: 'string' },
+          folderPath: { type: 'array', items: { type: 'string' } },
+          placement: { type: 'string', enum: ['before', 'after', 'inside'] }
+        },
+        required: ['note', 'placement']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_note_done',
+      description: '切换笔记的完成状态。done 为 true 是完成，false 是未完成。',
+      parameters: {
+        type: 'object',
+        properties: {
+          kb: KB_PARAM,
+          note: { type: 'string' },
+          done: { type: 'boolean' }
+        },
+        required: ['note', 'done']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'sync_repository',
+      description:
+        '对知识库执行拉取或推送，走 Desk 现有的 Git 流程。不要在终端里自己执行 git pull 或 git push。action 是 pull 或 push。',
+      parameters: {
+        type: 'object',
+        properties: {
+          kb: KB_PARAM,
+          action: { type: 'string', enum: ['pull', 'push'] }
+        },
+        required: ['action']
       }
     }
   }
@@ -214,8 +300,8 @@ export function systemPrompt(
     `模型名是「${input.model}」。用户问你是什么模型时，只按这个名字回答。`,
     `工作区里有多个知识库。工具都有可选参数 kb（知识库 id 或名称），省略时是「${kbName}」。读写其他知识库的笔记时必须写 kb。`,
     input.mode === 'ask'
-      ? '现在是只读模式：只能列目录、搜索和阅读，不要调用 edit_note 或 create_note。'
-      : `需要改笔记时调用工具。old_string 必须和原文完全一致且只出现一次。追加到末尾用 position:"end"，只传 new_string。${defaultNote}没让你改时只回答。`,
+      ? '现在是只读模式：只能列目录、搜索和阅读，不要调用会新建、修改、删除、移动笔记或推拉仓库的工具。'
+      : `需要改笔记时调用工具。old_string 必须和原文完全一致且只出现一次。追加到末尾用 position:"end"，只传 new_string。${defaultNote}新建笔记可以一次带上 titles，也可以只传 count 先占位再 rename_note。重命名、删除、调整目录、完成状态、推拉仓库分别用 rename_note、delete_notes、move_note、set_note_done、sync_repository。这些都必须走知识库流程，不要自己新建或修改 .md，也不要在终端里 git push / git pull。没让你改时只回答。`,
     '不要把整篇笔记贴回对话。改完用一两句话说明改了什么。',
     '',
     contextBlock(input)
@@ -346,7 +432,17 @@ export async function runAgentChat(
         name: call.name,
         args: parseArgs(call.arguments)
       })
-      if (result.ok && (call.name === 'edit_note' || call.name === 'create_note')) edits += 1
+      if (
+        result.ok &&
+        (call.name === 'edit_note' ||
+          call.name === 'create_note' ||
+          call.name === 'rename_note' ||
+          call.name === 'delete_notes' ||
+          call.name === 'move_note' ||
+          call.name === 'set_note_done' ||
+          call.name === 'sync_repository')
+      )
+        edits += 1
       messages.push({
         role: 'tool',
         tool_call_id: call.id || call.name,

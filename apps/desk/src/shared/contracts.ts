@@ -62,6 +62,7 @@ export const IPC_CHANNELS = {
   noteSave: 'note:save',
   noteCreate: 'note:create',
   noteCreateMany: 'note:create-many',
+  noteStructure: 'note:structure',
   noteRename: 'note:rename',
   noteReindex: 'note:reindex',
   noteUpdateConfig: 'note:update-config',
@@ -548,6 +549,8 @@ export type ContextMenuAction =
   | 'toggle-pin'
   | 'toggle-toc-pin'
   | 'open-ide'
+  | 'open-deployed-site'
+  | 'open-github-file'
   | 'open-split'
   | 'show-history'
   | 'show-note-assets'
@@ -574,7 +577,16 @@ export type ContextMenuAction =
   | 'select-note-assets'
   | 'select-note-settings'
 export type ContextMenuRequest =
-  | { kind: 'note'; pinned: boolean; tocPinned: boolean; completed: boolean }
+  | {
+      kind: 'note'
+      pinned: boolean
+      tocPinned: boolean
+      completed: boolean
+      /** 这篇笔记的线上页面。没配站点地址时不传，菜单里不出现该项。 */
+      siteUrl?: string
+      /** 这篇笔记在 GitHub 上的文件页。没配仓库地址时不传。 */
+      githubUrl?: string
+    }
   | { kind: 'group' }
   | {
       kind: 'tab'
@@ -1502,8 +1514,11 @@ export interface NoteCreateRequest {
 
 export interface NoteCreateManyRequest {
   knowledgeBaseId: string
-  title: string
-  count: number
+  /** 每一篇都用这个标题，和 `count` 一起用。`titles` 有值时忽略。 */
+  title?: string
+  /** 一次传入每篇标题。 */
+  titles?: string[]
+  count?: number
   placement?: NoteCreateRequest['placement']
   expectedSnapshotRevision?: string
 }
@@ -1511,9 +1526,39 @@ export interface NoteCreateManyRequest {
 export interface NoteCreateManyResult {
   /** 这一批里排在最前面的那一篇，打开并进入标题编辑。 */
   note: NoteDocumentDto
+  notes: NoteDocumentDto[]
   createdCount: number
   knowledgeBase: KnowledgeBaseDetail
   changedFiles: NoteMutationDto['changedFiles']
+}
+
+export type KbStructureRequest =
+  | { op: 'create'; knowledgeBaseId: string; titles?: string[]; count?: number }
+  | { op: 'rename'; knowledgeBaseId: string; note: string; title: string }
+  | { op: 'delete'; knowledgeBaseId: string; notes: string[] }
+  | {
+      op: 'move'
+      knowledgeBaseId: string
+      note: string
+      placement: 'before' | 'after' | 'inside'
+      target?: string
+      folderPath?: string[]
+    }
+  | { op: 'set-done'; knowledgeBaseId: string; note: string; done: boolean }
+  | { op: 'git'; knowledgeBaseId: string; action: 'pull' | 'push' }
+
+export interface KbStructureNoteRef {
+  uuid: string
+  index: string
+  title: string
+  relPath: string
+}
+
+export interface KbStructureResult {
+  summary: string
+  detail: string
+  knowledgeBase: KnowledgeBaseDetail
+  notes: KbStructureNoteRef[]
 }
 
 export interface NoteRenameRequest {
@@ -2651,6 +2696,7 @@ export interface DeskApi {
     save(request: NoteSaveRequest): Promise<DeskResult<NoteMutationDto>>
     create(request: NoteCreateRequest): Promise<DeskResult<NoteMutationDto>>
     createMany(request: NoteCreateManyRequest): Promise<DeskResult<NoteCreateManyResult>>
+    structure(request: KbStructureRequest): Promise<DeskResult<KbStructureResult>>
     rename(request: NoteRenameRequest): Promise<DeskResult<NoteMutationDto>>
     reindex(request: NoteReindexRequest): Promise<DeskResult<NoteMutationDto>>
     updateConfig(request: NoteUpdateConfigRequest): Promise<DeskResult<NoteMutationDto>>

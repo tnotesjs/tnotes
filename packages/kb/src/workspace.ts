@@ -109,9 +109,21 @@ export const NOTE_BATCH_LIMIT = 999
 export const NOTE_COUNT_LIMIT = 9999
 
 export interface CreateNotesInput {
-  title: string
-  count: number
+  /** 每一篇都用这个标题。`titles` 有值时忽略。 */
+  title?: string
+  /** 一次传入每篇标题。有值时篇数就是数组长度。 */
+  titles?: string[]
+  count?: number
   placement?: Placement
+}
+
+/** 展开成每篇的标题。`titles` 优先；否则用同一个 `title` 重复 `count` 次。 */
+export function createNoteTitles(input: CreateNotesInput): string[] {
+  if (input.titles && input.titles.length > 0)
+    return input.titles.map((title) => validateTitle(title))
+  const count = input.count ?? 0
+  const title = validateTitle(input.title ?? '')
+  return Array.from({ length: count }, () => title)
 }
 
 export function assertNoteBatchCapacity(fileCount: number, freeCount: number, count: number): void {
@@ -462,7 +474,7 @@ export function createWorkspace(options: CreateWorkspaceOptions): TNotesKbWorksp
       },
 
       async createMany(input) {
-        const title = validateTitle(input.title)
+        const titles = createNoteTitles(input)
         const files = await scanNoteFiles(rootPath)
         const used = files.map((file) => file.index)
         const taken = new Set(
@@ -470,8 +482,8 @@ export function createWorkspace(options: CreateWorkspaceOptions): TNotesKbWorksp
             .map((index) => Number.parseInt(index, 10))
             .filter((value) => value >= 1 && value <= NOTE_COUNT_LIMIT)
         )
-        assertNoteBatchCapacity(files.length, NOTE_COUNT_LIMIT - taken.size, input.count)
-        const indexes = allocateNoteIndexes(used, input.count)
+        assertNoteBatchCapacity(files.length, NOTE_COUNT_LIMIT - taken.size, titles.length)
+        const indexes = allocateNoteIndexes(used, titles.length)
 
         const lines = await readTocLines(rootPath)
         const { lineIndex, indentLevel, where } = placementLineIndex(lines, input.placement)
@@ -480,9 +492,10 @@ export function createWorkspace(options: CreateWorkspaceOptions): TNotesKbWorksp
         const writes: Array<{ path: string; data: string }> = []
         const changedFiles: Array<{ path: string; kind: 'created' | 'updated' }> = []
 
-        for (let offset = 0; offset < input.count; offset += 1) {
+        for (let offset = 0; offset < titles.length; offset += 1) {
           const index = indexes[offset]
-          if (!index) break
+          const title = titles[offset]
+          if (!index || !title) break
           const fileName = noteFileName(index, title)
           const relPath = `${NOTES_DIR}/${fileName}`
           const frontmatter: NoteFrontmatter = { id: randomUUID() }

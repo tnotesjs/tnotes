@@ -823,6 +823,40 @@
   font-weight: 400;
 }
 
+/* 同内容高亮是另一层 mark。它会包住命中的那一段，把胶囊切成前后几截。
+   相接的截去掉挨着的边、圆角和外边距，看起来仍是一颗胶囊。 */
+.live-editor .cm-lp-visual .cm-lp-inline-code + .cm-lp-inline-code,
+.live-editor .cm-lp-visual .cm-selectionMatch:has(> .cm-lp-inline-code) + .cm-lp-inline-code,
+.live-editor .cm-lp-visual .cm-lp-inline-code + .cm-selectionMatch > .cm-lp-inline-code,
+.live-editor
+  .cm-lp-visual
+  .cm-selectionMatch:has(> .cm-lp-inline-code)
+  + .cm-selectionMatch
+  > .cm-lp-inline-code {
+  margin-left: 0;
+  border-left-width: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding-left: 0;
+}
+
+.live-editor .cm-lp-visual .cm-lp-inline-code:has(+ .cm-lp-inline-code),
+.live-editor .cm-lp-visual .cm-lp-inline-code:has(+ .cm-selectionMatch > .cm-lp-inline-code),
+.live-editor
+  .cm-lp-visual
+  .cm-selectionMatch:has(> .cm-lp-inline-code):has(+ .cm-lp-inline-code)
+  > .cm-lp-inline-code,
+.live-editor
+  .cm-lp-visual
+  .cm-selectionMatch:has(> .cm-lp-inline-code):has(+ .cm-selectionMatch)
+  > .cm-lp-inline-code {
+  margin-right: 0;
+  border-right-width: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  padding-right: 0;
+}
+
 /* 标题语法类会包在胶囊里面，并把字色、字重设回标题。胶囊上的品牌色和正常字重要盖回去。 */
 .live-editor .cm-lp-visual .cm-lp-inline-code .tok-heading {
   color: inherit;

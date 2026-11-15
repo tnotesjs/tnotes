@@ -5,9 +5,11 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useWorkspaceStore } from '../stores/workspace'
+import { commandHistory } from './commandHistory'
 import CommandPalette from './CommandPalette.vue'
 
 beforeEach(() => {
+  commandHistory.clear()
   setActivePinia(createPinia())
   Object.defineProperty(window, 'desk', {
     configurable: true,
@@ -73,6 +75,25 @@ describe('CommandPalette', () => {
     document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
     await wrapper.vm.$nextTick()
     expect(wrapper.find('#desk-command-palette-list').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('pressing enter runs the most recently used command', async () => {
+    const wrapper = mount(CommandPalette, { attachTo: document.body })
+    const palette = wrapper.vm as unknown as { openCommands: () => Promise<void> }
+    await palette.openCommands()
+    await wrapper.get('input').setValue('>设置')
+    const settings = wrapper.findAll('button').find((button) => button.text().includes('打开设置'))
+    expect(settings).toBeTruthy()
+    await settings!.trigger('mousedown')
+    await settings!.trigger('click')
+    expect(wrapper.emitted('openSettings')).toHaveLength(1)
+
+    await palette.openCommands()
+    expect(wrapper.find('.command-palette__heading').text()).toBe('最近使用')
+    expect(wrapper.find('.command-palette__item.is-active').text()).toContain('打开设置')
+    await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('openSettings')).toHaveLength(2)
     wrapper.unmount()
   })
 })

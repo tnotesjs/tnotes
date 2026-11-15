@@ -158,8 +158,11 @@ function createWindow(): BrowserWindow {
   })
   webContentsManager.attachWindow(window)
   webContentsManager.setZoomFactor(loadSettings().appZoomPercent / 100)
+  // 触控板捏合走 Chromium 原生可视缩放：不重排、选区不偏移，只放大不缩小。
+  void window.webContents.setVisualZoomLevelLimits(1, 3)
   window.webContents.on('did-finish-load', () => {
     webContentsManager.setZoomFactor(loadSettings().appZoomPercent / 100)
+    void window.webContents.setVisualZoomLevelLimits(1, 3)
   })
   webContentsManager.onTabShortcut((command) => sendTabShortcut(window, command))
   // 红叉 / ⌘W：先让渲染端 flush 并处理未保存内容，再真正关闭

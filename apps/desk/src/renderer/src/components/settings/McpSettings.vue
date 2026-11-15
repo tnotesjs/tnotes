@@ -116,8 +116,8 @@ async function rotate(): Promise<void> {
     <header class="section-heading">
       <strong>本机 MCP</strong>
       <span>
-        把当前打开的笔记位置以只读工具
-        <code>get_current_note</code> 提供给本机 Agent。只监听本机回环地址，请求必须带令牌。
+        把当前笔记位置，以及新建、重命名、删除、调整目录、完成状态、推拉仓库提供给本机
+        Agent。只监听本机回环地址，请求必须带令牌。
       </span>
     </header>
     <ResetGroupButton @reset="emit('reset')" />
@@ -202,9 +202,9 @@ async function rotate(): Promise<void> {
         <p>
           用法约定：用户提到「当前笔记 / 这篇笔记」时调用
           <code>get_current_note</code>。status 不是 ok 时如实说明没有打开笔记，不要臆测路径。
-          按返回路径读到的是磁盘内容，可能不含未保存编辑。首版不提供选区。
+          按返回路径读到的是磁盘内容，可能不含未保存编辑。 改知识库结构时用
+          create_notes、rename_note、delete_notes、move_note、set_note_done、sync_repository，不要自己改文件或在终端里推拉。
         </p>
-        <p>只读：工具不会修改笔记内容、文件或 Git 状态。</p>
         <button
           type="button"
           class="settings-action"

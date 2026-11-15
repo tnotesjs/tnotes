@@ -171,19 +171,23 @@ export async function createNotes(
   request: NoteCreateManyRequest,
   effects: MutationSideEffects
 ): Promise<NoteCreateManyResult> {
+  const titles = request.titles?.map((title) => title.trim()).filter(Boolean)
   const result = await handle.workspace.notes.createMany({
-    title: request.title,
-    count: request.count,
+    ...(titles && titles.length > 0
+      ? { titles }
+      : { title: request.title ?? '', count: request.count ?? 0 }),
     placement: toKbPlacement(handle, request.placement)
   })
   effects.markInternalWrites(handle.rootPath, result.changedFiles)
   handle.snapshot = await handle.workspace.scan()
   effects.emitChanged()
-  const note = result.value[0]
+  const notes = result.value.map((doc) => toNoteDocument(handle, doc))
+  const note = notes[0]
   if (!note) throw new Error('没有新建笔记')
   return {
-    note: toNoteDocument(handle, note),
-    createdCount: result.value.length,
+    note,
+    notes,
+    createdCount: notes.length,
     knowledgeBase: toDetail(handle),
     changedFiles: result.changedFiles
   }

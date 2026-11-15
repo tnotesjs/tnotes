@@ -120,7 +120,12 @@ describe('runCursorTurn', () => {
       'search_notes',
       'read_note',
       'edit_note',
-      'create_note'
+      'create_note',
+      'rename_note',
+      'delete_notes',
+      'move_note',
+      'set_note_done',
+      'sync_repository'
     ])
     expect(turn.executeTool).toHaveBeenCalledWith({
       id: 'call-1',

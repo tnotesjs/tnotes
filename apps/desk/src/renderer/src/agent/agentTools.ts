@@ -25,7 +25,7 @@ import {
 import { liveEditorFor } from '../livePreview/editorRegistry'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
-import { documentKey, ipcPlain, notePlacement, resultValue } from '../stores/workspace/helpers'
+import { documentKey, ipcPlain, resultValue } from '../stores/workspace/helpers'
 
 import {
   appendRange,
@@ -44,6 +44,7 @@ import {
 
 import type {
   DeskTocNode,
+  KbStructureRequest,
   KnowledgeBaseDescriptor,
   KnowledgeBaseDetail
 } from '../../../shared/contracts'
@@ -239,6 +240,32 @@ function editDetail(title: string, saveError: string): string {
     : `已保存，并标在「${title}」里，等用户保留或撤销。`
 }
 
+async function runStructure(
+  context: AgentToolContext,
+  request: KbStructureRequest
+): Promise<AgentToolOutcome> {
+  const workspace = useWorkspaceStore()
+  const editor = useEditorStore()
+  const result = resultValue(await window.desk.notes.structure(ipcPlain(request)))
+  context.details.set(request.knowledgeBaseId, result.knowledgeBase)
+  if (workspace.knowledgeBase?.id === request.knowledgeBaseId) await workspace.reloadKnowledgeBase()
+  if (request.op === 'delete') {
+    for (const note of result.notes)
+      editor.closeNote(request.knowledgeBaseId, note.uuid, note.index)
+  }
+  if (request.op === 'rename') {
+    const note = result.notes[0]
+    if (note) editor.renameNote(request.knowledgeBaseId, note.uuid, note.title, note.index)
+  }
+  return {
+    ok: true,
+    summary: result.summary,
+    detail: result.detail,
+    noteUuid: result.notes[0]?.uuid,
+    knowledgeBaseId: request.knowledgeBaseId
+  }
+}
+
 export async function runAgentTool(
   name: string,
   args: Record<string, unknown>,
@@ -356,9 +383,10 @@ export async function runAgentTool(
       }
     }
     if (name === 'create_note') {
+      const titles = Array.isArray(args.titles) ? args.titles.map((item) => String(item)) : []
       const title = String(args.title ?? '').trim()
+      const count = Number(args.count)
       const content = String(args.content ?? '')
-      if (!title) return { ok: false, summary: '缺少标题', detail: '' }
       const resolved = resolveKnowledgeBase(knowledgeBases(), args.kb, context.knowledgeBaseId)
       if ('error' in resolved) return { ok: false, summary: resolved.error, detail: '' }
       const knowledgeBaseId = resolved.kb.id
@@ -366,30 +394,21 @@ export async function runAgentTool(
       if (detail.health !== 'ready')
         return { ok: false, summary: '这个知识库现在不能新建笔记', detail: '' }
       if (!context.isCurrent()) return { ok: false, summary: '已停止', detail: '' }
-      const mutation = resultValue(
-        await window.desk.notes.create(
-          ipcPlain({
-            knowledgeBaseId,
-            title,
-            placement: notePlacement({ type: 'root', placement: 'end' }),
-            expectedSnapshotRevision: detail.snapshotRevision
-          })
-        )
-      )
-      context.details.set(knowledgeBaseId, mutation.knowledgeBase)
-      if (workspace.knowledgeBase?.id === knowledgeBaseId) await workspace.reloadKnowledgeBase()
-      const node = findNote(mutation.knowledgeBase.toc, mutation.note.uuid)
-      if (!node) return { ok: false, summary: '笔记已创建，但在目录里找不到', detail: '' }
-      created.add(`${knowledgeBaseId}:${node.uuid}`)
-      const label = `新建 ${prefix(context, knowledgeBaseId)}${title}`
-      if (!content)
-        return {
-          ok: true,
-          summary: label,
-          detail: `已新建「${title}」。`,
-          noteUuid: node.uuid,
-          knowledgeBaseId
-        }
+      const listed = titles.some((item) => item.trim())
+      const counted = !listed && !title && Number.isInteger(count) && count > 0
+      if (!listed && !title && !counted) {
+        return { ok: false, summary: '新建笔记要传 titles、title，或 count', detail: '' }
+      }
+      const outcome = await runStructure(context, {
+        op: 'create',
+        knowledgeBaseId,
+        ...(listed ? { titles } : counted ? { count } : { titles: [title] })
+      })
+      if (!outcome.ok || !outcome.noteUuid) return outcome
+      const fresh = await kbDetail(context, knowledgeBaseId, true)
+      const node = findNote(fresh.toc, outcome.noteUuid)
+      if (node) created.add(`${knowledgeBaseId}:${node.uuid}`)
+      if (listed || counted || !content || !node) return outcome
       const written = await writeAgentChange(
         knowledgeBaseId,
         node,
@@ -415,13 +434,80 @@ export async function runAgentTool(
       const counts = lineChangeCounts('', content)
       return {
         ok: true,
-        summary: `${label}${written.saveError ? ' · 保存失败' : ''}`,
+        summary: `新建 ${prefix(context, knowledgeBaseId)}${title}${written.saveError ? ' · 保存失败' : ''}`,
         detail: editDetail(title, written.saveError),
         noteUuid: node.uuid,
         knowledgeBaseId,
         added: counts.added,
         removed: 0
       }
+    }
+    if (
+      name === 'rename_note' ||
+      name === 'delete_notes' ||
+      name === 'move_note' ||
+      name === 'set_note_done' ||
+      name === 'sync_repository'
+    ) {
+      const resolved = resolveKnowledgeBase(knowledgeBases(), args.kb, context.knowledgeBaseId)
+      if ('error' in resolved) return { ok: false, summary: resolved.error, detail: '' }
+      const knowledgeBaseId = resolved.kb.id
+      if (!context.isCurrent()) return { ok: false, summary: '已停止', detail: '' }
+      if (name === 'rename_note') {
+        return runStructure(context, {
+          op: 'rename',
+          knowledgeBaseId,
+          note: String(args.note ?? ''),
+          title: String(args.title ?? '')
+        })
+      }
+      if (name === 'delete_notes') {
+        const notes = Array.isArray(args.notes)
+          ? args.notes.map((item) => String(item))
+          : [String(args.note ?? '')].filter(Boolean)
+        const detail = await kbDetail(context, knowledgeBaseId, true)
+        for (const raw of notes) {
+          const node = findNote(detail.toc, raw)
+          if (!node) continue
+          const session = workspace.documents[documentKey(knowledgeBaseId, node.uuid)]
+          if (session?.dirty || session?.saving) {
+            return {
+              ok: false,
+              summary: `「${node.title}」有未保存的更改，请先保存或撤销后再删除`,
+              detail: ''
+            }
+          }
+        }
+        return runStructure(context, { op: 'delete', knowledgeBaseId, notes })
+      }
+      if (name === 'move_note') {
+        const placement = args.placement
+        const where = placement === 'before' || placement === 'inside' ? placement : 'after'
+        const folderPath = Array.isArray(args.folderPath)
+          ? args.folderPath.map((item) => String(item))
+          : undefined
+        return runStructure(context, {
+          op: 'move',
+          knowledgeBaseId,
+          note: String(args.note ?? ''),
+          placement: where,
+          target: args.target ? String(args.target) : undefined,
+          folderPath
+        })
+      }
+      if (name === 'set_note_done') {
+        if (typeof args.done !== 'boolean') {
+          return { ok: false, summary: '要写明 done 是 true 还是 false', detail: '' }
+        }
+        return runStructure(context, {
+          op: 'set-done',
+          knowledgeBaseId,
+          note: String(args.note ?? ''),
+          done: args.done
+        })
+      }
+      const action = args.action === 'pull' ? 'pull' : 'push'
+      return runStructure(context, { op: 'git', knowledgeBaseId, action })
     }
   } catch (cause) {
     return {

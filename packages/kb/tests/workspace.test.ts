@@ -134,6 +134,21 @@ describe('notes', () => {
     await expect(ws.notes.createMany({ title: 'new', count: 0 })).rejects.toThrow('999')
   })
 
+  it('creates a batch from a title list, one title per note', async () => {
+    const ws = createWorkspace({ rootPath: root })
+    const { value: docs } = await ws.notes.createMany({
+      titles: ['甲', '乙'],
+      placement: { type: 'root', placement: 'end' }
+    })
+    expect(docs.map((doc) => doc.title)).toEqual(['甲', '乙'])
+    expect(docs.map((doc) => doc.index)).toEqual(['0004', '0005'])
+    expect(docs[0]?.frontmatter.id).toBeTruthy()
+    expect(docs[0]?.frontmatter.id).not.toBe(docs[1]?.frontmatter.id)
+    const toc = await read('TOC.md')
+    expect(toc).toContain('0004. 甲')
+    expect(toc).toContain('0005. 乙')
+  })
+
   it('allocates the smallest free index, including when 9999 is taken', async () => {
     const ws = createWorkspace({ rootPath: root })
     await write('notes/9999. 末号.md', `---\nid: uuid-last\n---\n\n# 末号\n`)

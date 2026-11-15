@@ -230,9 +230,57 @@ export const noteCreateSchema = z.object({
   expectedSnapshotRevision: z.string().min(1).optional()
 })
 
-export const noteCreateManySchema = noteCreateSchema.extend({
-  count: z.number().int().min(1).max(999)
-})
+export const noteCreateManySchema = z
+  .object({
+    knowledgeBaseId: z.string().min(1),
+    title: z.string().min(1).optional(),
+    titles: z.array(z.string().min(1)).min(1).max(999).optional(),
+    count: z.number().int().min(1).max(999).optional(),
+    placement: placementSchema.optional(),
+    expectedSnapshotRevision: z.string().min(1).optional()
+  })
+  .refine((value) => Boolean(value.titles?.length) || Boolean(value.title && value.count), {
+    message: '需要标题列表，或一个标题和数量'
+  })
+
+export const kbStructureSchema = z.discriminatedUnion('op', [
+  z.object({
+    op: z.literal('create'),
+    knowledgeBaseId: z.string().min(1),
+    titles: z.array(z.string()).max(999).optional(),
+    count: z.number().int().min(1).max(999).optional()
+  }),
+  z.object({
+    op: z.literal('rename'),
+    knowledgeBaseId: z.string().min(1),
+    note: z.string().min(1),
+    title: z.string().min(1)
+  }),
+  z.object({
+    op: z.literal('delete'),
+    knowledgeBaseId: z.string().min(1),
+    notes: z.array(z.string().min(1)).min(1).max(999)
+  }),
+  z.object({
+    op: z.literal('move'),
+    knowledgeBaseId: z.string().min(1),
+    note: z.string().min(1),
+    placement: z.enum(['before', 'after', 'inside']),
+    target: z.string().optional(),
+    folderPath: z.array(z.string().min(1)).optional()
+  }),
+  z.object({
+    op: z.literal('set-done'),
+    knowledgeBaseId: z.string().min(1),
+    note: z.string().min(1),
+    done: z.boolean()
+  }),
+  z.object({
+    op: z.literal('git'),
+    knowledgeBaseId: z.string().min(1),
+    action: z.enum(['pull', 'push'])
+  })
+])
 
 export const noteRenameSchema = z.object({
   knowledgeBaseId: z.string().min(1),

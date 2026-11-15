@@ -10,11 +10,13 @@ import { downloadRemoteImage, loadImageBytes } from '../workspace/imageTransfer'
 import { commitDeleteScope } from '../workspace/deleteScope'
 import { imageBedManager } from '../imageBed'
 import { maybeOptimizeUploadRequest } from '../imageUploadOptimize'
+import { performKbStructure } from '../kbStructureHost'
 import { workspaceManager } from '../workspaceManager'
-import { IPC_CHANNELS } from '../../shared/contracts'
+import { IPC_CHANNELS, type KbStructureRequest } from '../../shared/contracts'
 import {
   attachmentWriteLocalSchema,
   deleteTargetSchema,
+  kbStructureSchema,
   noteCreateManySchema,
   noteCreateSchema,
   noteReindexSchema,
@@ -97,6 +99,9 @@ export function registerNotes(getWindow: GetWindow): void {
   )
   handle(IPC_CHANNELS.noteCreateMany, getWindow, noteCreateManySchema, (input) =>
     workspaceManager.createNotes(input as NoteCreateManyRequest)
+  )
+  handle(IPC_CHANNELS.noteStructure, getWindow, kbStructureSchema, (input) =>
+    performKbStructure(input as KbStructureRequest)
   )
   handle(IPC_CHANNELS.noteRename, getWindow, noteRenameSchema, (input) =>
     workspaceManager.renameNote(input as NoteRenameRequest)

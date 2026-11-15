@@ -70,7 +70,7 @@ export function cursorPrompt(input: CursorTurnInput): string {
   const toolNames =
     input.mode === 'ask'
       ? 'list_notes、search_notes、read_note'
-      : 'list_notes、search_notes、read_note、edit_note、create_note'
+      : 'list_notes、search_notes、read_note、edit_note、create_note、rename_note、delete_notes、move_note、set_note_done、sync_repository'
   const lines = [
     systemPrompt(input),
     '',

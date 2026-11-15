@@ -10,7 +10,9 @@ import { noteFileName, noteLabelParts, workspaceRelativePath } from './noteFileN
 import {
   createPaletteCommands,
   filterPaletteCommands,
+  groupPaletteCommands,
   isCommandMode,
+  rememberPaletteCommand,
   type PaletteCommand
 } from './paletteCommands'
 
@@ -54,18 +56,7 @@ const commands = computed(() =>
 
 const commandMode = computed(() => isCommandMode(query.value))
 const filteredCommands = computed(() => filterPaletteCommands(commands.value, query.value))
-const commandGroups = computed(() => {
-  const groups: { category: string; items: { command: PaletteCommand; index: number }[] }[] = []
-  filteredCommands.value.forEach((command, index) => {
-    const current = groups[groups.length - 1]
-    if (!current || current.category !== command.category) {
-      groups.push({ category: command.category, items: [{ command, index }] })
-      return
-    }
-    current.items.push({ command, index })
-  })
-  return groups
-})
+const commandGroups = computed(() => groupPaletteCommands(commands.value, query.value))
 
 function shownPath(knowledgeBaseId: string, noteUuid: string, relPath: string | undefined): string {
   const loaded = workspace.documents[documentKey(knowledgeBaseId, noteUuid)]?.document.relPath
@@ -280,6 +271,7 @@ async function confirm(): Promise<void> {
   if (commandMode.value) {
     const command = item as PaletteCommand
     if (!command.enabled()) return
+    rememberPaletteCommand(command.id)
     close()
     await command.run()
     return
@@ -346,8 +338,8 @@ defineExpose({ openSearch, openCommands, close })
       >
         <div class="command-palette__list">
           <template v-if="commandMode">
-            <template v-for="group in commandGroups" :key="group.category">
-              <div class="command-palette__heading">{{ group.category }}</div>
+            <template v-for="group in commandGroups" :key="group.category || 'all'">
+              <div v-if="group.category" class="command-palette__heading">{{ group.category }}</div>
               <button
                 v-for="item in group.items"
                 :key="item.command.id"

@@ -31,7 +31,9 @@ export function registerWorkspace(getWindow: GetWindow): () => void {
         kind: z.literal('note'),
         pinned: z.boolean(),
         tocPinned: z.boolean(),
-        completed: z.boolean()
+        completed: z.boolean(),
+        siteUrl: z.string().url().optional(),
+        githubUrl: z.string().url().optional()
       }),
       z.object({ kind: z.literal('group') }),
       z.object({

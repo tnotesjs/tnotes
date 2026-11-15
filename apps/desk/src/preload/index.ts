@@ -76,6 +76,8 @@ import type {
   AssetPrepareApplyEvent,
   AssetAppliedEvent,
   AssetApplySettledEvent,
+  KbStructureRequest,
+  KbStructureResult,
   NoteCreateManyRequest,
   NoteCreateManyResult,
   NoteCreateRequest,
@@ -349,6 +351,8 @@ const api: DeskApi = {
       invoke<NoteMutationDto>(IPC_CHANNELS.noteCreate, request),
     createMany: (request: NoteCreateManyRequest) =>
       invoke<NoteCreateManyResult>(IPC_CHANNELS.noteCreateMany, request),
+    structure: (request: KbStructureRequest) =>
+      invoke<KbStructureResult>(IPC_CHANNELS.noteStructure, request),
     rename: (request: NoteRenameRequest) =>
       invoke<NoteMutationDto>(IPC_CHANNELS.noteRename, request),
     reindex: (request: NoteReindexRequest) =>

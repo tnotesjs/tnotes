@@ -19,13 +19,20 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
 import { randomUUID } from 'node:crypto'
 
+import { z } from 'zod'
+
 import { activeNoteService } from '../context/activeNoteService'
+import { performKbStructure } from '../kbStructureHost'
 import { deskLog } from '../log'
 import { ensureToken, rotateToken, tokenMatches } from './token'
 
 import { MCP_PATH } from '../../shared/contracts'
 
-import type { ActiveNoteContextDto, McpServerStatusDto } from '../../shared/contracts'
+import type {
+  ActiveNoteContextDto,
+  KbStructureRequest,
+  McpServerStatusDto
+} from '../../shared/contracts'
 
 export interface McpServerOptions {
   port: number
@@ -249,9 +256,10 @@ export class McpSelectionServer {
       { name: 'tnotes-desk', version: '0.1.0' },
       {
         instructions:
-          'TNotes Desk 的只读上下文服务。用户提到"当前笔记 / 这篇笔记"时调用 get_current_note 取路径；' +
+          'TNotes Desk 的本机上下文服务。用户提到"当前笔记 / 这篇笔记"时调用 get_current_note 取路径；' +
           '没有打开笔记（status 不是 ok）就如实告知，不要臆测路径。' +
-          '按路径读到的是磁盘内容，可能不含未保存编辑。首版不提供选区。'
+          '新建、重命名、删除、调整目录、完成状态、推拉仓库都走对应工具，不要自己改 .md 或在终端里 git push / git pull。' +
+          '新建可以一次传 titles，也可以只传 count 先占位再重命名。'
       }
     )
     server.registerTool(
@@ -266,6 +274,109 @@ export class McpSelectionServer {
           isError: false
         }
       }
+    )
+    const structure = (
+      title: string,
+      description: string,
+      shape: z.ZodRawShape,
+      toRequest: (args: Record<string, unknown>) => KbStructureRequest
+    ): void => {
+      server.registerTool(title, { title, description, inputSchema: shape }, async (args) => {
+        this.lastCallAt = new Date().toISOString()
+        try {
+          const result = await performKbStructure(toRequest(args as Record<string, unknown>))
+          return {
+            content: [
+              { type: 'text' as const, text: `${result.summary}\n${result.detail}`.trim() }
+            ],
+            structuredContent: {
+              summary: result.summary,
+              detail: result.detail,
+              notes: result.notes
+            },
+            isError: false
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          return { content: [{ type: 'text' as const, text: message }], isError: true }
+        }
+      })
+    }
+    const kb = z.string().describe('知识库 id')
+    structure(
+      'create_notes',
+      '新建笔记。titles 一次传入每篇标题；或只传 count，用默认标题 new 占位后再重命名。不要自己新建 .md。',
+      { knowledgeBaseId: kb, titles: z.array(z.string()).optional(), count: z.number().optional() },
+      (args) => ({
+        op: 'create',
+        knowledgeBaseId: String(args.knowledgeBaseId),
+        titles: Array.isArray(args.titles) ? args.titles.map((item) => String(item)) : undefined,
+        count: typeof args.count === 'number' ? args.count : undefined
+      })
+    )
+    structure(
+      'rename_note',
+      '重命名笔记。note 可以是 uuid、编号或标题。',
+      { knowledgeBaseId: kb, note: z.string(), title: z.string() },
+      (args) => ({
+        op: 'rename',
+        knowledgeBaseId: String(args.knowledgeBaseId),
+        note: String(args.note),
+        title: String(args.title)
+      })
+    )
+    structure(
+      'delete_notes',
+      '删除笔记，连同目录项。notes 是 uuid、编号或标题。',
+      { knowledgeBaseId: kb, notes: z.array(z.string()) },
+      (args) => ({
+        op: 'delete',
+        knowledgeBaseId: String(args.knowledgeBaseId),
+        notes: Array.isArray(args.notes) ? args.notes.map((item) => String(item)) : []
+      })
+    )
+    structure(
+      'move_note',
+      '调整笔记在目录中的位置。target 是目标笔记，folderPath 是分组路径。placement 是 before、after 或 inside。',
+      {
+        knowledgeBaseId: kb,
+        note: z.string(),
+        target: z.string().optional(),
+        folderPath: z.array(z.string()).optional(),
+        placement: z.enum(['before', 'after', 'inside'])
+      },
+      (args) => ({
+        op: 'move',
+        knowledgeBaseId: String(args.knowledgeBaseId),
+        note: String(args.note),
+        placement:
+          args.placement === 'before' || args.placement === 'inside' ? args.placement : 'after',
+        target: args.target ? String(args.target) : undefined,
+        folderPath: Array.isArray(args.folderPath)
+          ? args.folderPath.map((item) => String(item))
+          : undefined
+      })
+    )
+    structure(
+      'set_note_done',
+      '切换笔记完成状态。',
+      { knowledgeBaseId: kb, note: z.string(), done: z.boolean() },
+      (args) => ({
+        op: 'set-done',
+        knowledgeBaseId: String(args.knowledgeBaseId),
+        note: String(args.note),
+        done: args.done === true
+      })
+    )
+    structure(
+      'sync_repository',
+      '拉取或推送知识库，走 Desk 现有 Git 流程。action 是 pull 或 push。',
+      { knowledgeBaseId: kb, action: z.enum(['pull', 'push']) },
+      (args) => ({
+        op: 'git',
+        knowledgeBaseId: String(args.knowledgeBaseId),
+        action: args.action === 'pull' ? 'pull' : 'push'
+      })
     )
     return server
   }

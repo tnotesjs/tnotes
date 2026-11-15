@@ -11,6 +11,7 @@ import { TOC_DRAG_TYPE } from '../../../shared/tocDrag'
 const PIN_DRAG_TYPE = 'application/x-tnotes-pin'
 import NoteDoneToggle from './NoteDoneToggle.vue'
 import { showNoteIndex } from './tocNoteIndex'
+import { noteGithubFileUrl, notePageUrl } from '../../../shared/noteLinks'
 import type { ContextMenuAction, EditorTab, DeskTocNode } from '../../../shared/contracts'
 import type { InjectionKey, Ref } from 'vue'
 
@@ -443,6 +444,13 @@ async function showNodeContextMenu(event: MouseEvent, node: DeskTocNode): Promis
   const knowledgeBaseId = store.selectedKnowledgeBaseId
   if (!knowledgeBaseId) return
   try {
+    const knowledgeBase = store.overview.allKnowledgeBases.find(
+      (item) => item.id === knowledgeBaseId
+    )
+    const siteUrl =
+      node.type === 'note' ? notePageUrl(knowledgeBase?.pageUrl, node.noteIndex) : null
+    const githubUrl =
+      node.type === 'note' ? noteGithubFileUrl(knowledgeBase?.repositoryUrl, node.dirName) : null
     const action = resultValue(
       await window.desk.app.showContextMenu(
         node.type === 'note'
@@ -452,7 +460,9 @@ async function showNodeContextMenu(event: MouseEvent, node: DeskTocNode): Promis
               tocPinned: Boolean(
                 store.settings?.pinnedNoteUuids?.[knowledgeBaseId]?.includes(node.uuid)
               ),
-              completed: node.completed
+              completed: node.completed,
+              ...(siteUrl ? { siteUrl } : {}),
+              ...(githubUrl ? { githubUrl } : {})
             }
           : { kind: 'group' }
       )
@@ -546,6 +556,20 @@ async function runNodeContextAction(
   if (action === 'open-ide') {
     const result = await window.desk.ide.openNote(knowledgeBaseId, node.uuid)
     if (!result.ok) store.error = result.error.message
+    return
+  }
+  if (action === 'open-deployed-site' || action === 'open-github-file') {
+    if (node.type !== 'note') return
+    const knowledgeBase = store.overview.allKnowledgeBases.find(
+      (item) => item.id === knowledgeBaseId
+    )
+    const url =
+      action === 'open-deployed-site'
+        ? notePageUrl(knowledgeBase?.pageUrl, node.noteIndex)
+        : noteGithubFileUrl(knowledgeBase?.repositoryUrl, node.dirName)
+    if (!url) return
+    const opened = await window.desk.web.openExternal(url)
+    if (!opened.ok) store.error = opened.error.message
     return
   }
   if (action !== 'toggle-pin') return
