@@ -67,6 +67,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     knowledgeBaseId: string
     noteUuid: string
     sequence: number
+    /** 用户显式「在目录中定位」：侧栏要切回笔记目录视图 */
+    forced: boolean
   } | null>(null)
   const autosaveTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const recoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -592,7 +594,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       tocFocusRequest.value = {
         knowledgeBaseId: tab.knowledgeBaseId,
         noteUuid: tab.noteUuid,
-        sequence: tocFocusSequence
+        sequence: tocFocusSequence,
+        forced: forceReveal
       }
     }
   }

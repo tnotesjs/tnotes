@@ -9,6 +9,7 @@ import { loadSettings } from '../settings'
 import type { IdeLaunchResult } from '../ide'
 import { workspaceManager } from '../workspaceManager'
 import { IPC_CHANNELS } from '../../shared/contracts'
+import { ideOpenDemoSchema } from './schemas'
 import { handle, noInputSchema, type GetWindow } from './shared'
 import { runGitTaskFor } from './commandTask'
 
@@ -176,6 +177,11 @@ export function registerGit(getWindow: GetWindow): () => void {
       if (!result.ok) throw new Error(result.error ?? '启动 IDE 失败')
     }
   )
+  handle(IPC_CHANNELS.ideOpenDemo, getWindow, ideOpenDemoSchema, async (input) => {
+    const target = await workspaceManager.demoDirectory(input.knowledgeBaseId, input.folder)
+    const result = await launchIdeTask(input.knowledgeBaseId, target)
+    if (!result.ok) throw new Error(result.error ?? '启动 IDE 失败')
+  })
 
   const offGitChanged = gitManager.onChanged((state) => {
     const window = getWindow()

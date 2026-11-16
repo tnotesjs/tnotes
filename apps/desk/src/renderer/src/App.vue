@@ -1106,6 +1106,7 @@ onUnmounted(() => {
           @request-reindex="openReindexDialog"
           @request-delete="requestDelete"
           @request-batch-delete="requestBatchDelete"
+          @open-settings="settingsOpen = true"
         />
       </div>
       <div

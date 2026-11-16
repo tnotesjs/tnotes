@@ -538,6 +538,17 @@ export const kbFilesReadSchema = z.object({
   relPath: kbRelPathSchema.min(1, '必须指定文件路径')
 })
 
+export const sidebarExtrasSchema = z.object({
+  knowledgeBaseId: z.string().min(1)
+})
+
+export const demosListSchema = sidebarExtrasSchema
+
+export const ideOpenDemoSchema = z.object({
+  knowledgeBaseId: z.string().min(1),
+  folder: z.string().max(255)
+})
+
 export const kbReadmeReadSchema = z.object({
   knowledgeBaseId: z.string().min(1),
   create: z.boolean().optional()

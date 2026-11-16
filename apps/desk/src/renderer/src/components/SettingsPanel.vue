@@ -115,7 +115,7 @@ const groupDefaults: Record<string, Partial<AppSettings>> = {
     createNotePosition: 'top'
   },
   tools: {
-    ide: 'vscode',
+    ide: null,
     gitPath: null,
     nodePath: null,
     confirmBeforeCommit: false

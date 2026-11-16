@@ -220,6 +220,7 @@ try {
 
   /* ── 非正文输入不冒充正文选区（搜索框里全选） ── */
   const beforeSearch = await readSelection(client)
+  await page.locator('.view-tab[data-view="search"]').click()
   const search = page.locator('input[type="search"][placeholder="搜索标题和正文"]').first()
   await search.click()
   await search.fill('第一段')
@@ -234,6 +235,7 @@ try {
     `before=${beforeSearch.snapshotId} during=${duringSearch.snapshotId}`
   )
   await search.fill('')
+  await page.locator('.view-tab[data-view="toc"]').click()
   await page.waitForTimeout(300)
 
   /* ── 普通代码块内部选择 ── */

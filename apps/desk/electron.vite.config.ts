@@ -56,8 +56,7 @@ export default defineConfig({
        *
        * 只放行 `apps/`（`resolve('..')`）是不够的：
        * - 兄弟包（`packages/ui` 等）在 `packages/` 下，改它们时要能直接读到源码；
-       * - 依赖装在仓库根的 pnpm store（`node_modules/.pnpm/**`）里，Monaco 的
-       *   codicon 字体等资源就来自那里，否则会被判成 "outside of Vite serving
+       * - 依赖装在仓库根的 pnpm store（`node_modules/.pnpm/**`）里，字体等资源就来自那里，否则会被判成 "outside of Vite serving
        *   allow list"（dev 下 403，表现为字体/模块加载失败）。
        */
       fs: { allow: [resolve('../..')] }

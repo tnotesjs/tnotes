@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import TocNodeList from './TocNodeList.vue'
 import UiTooltip from './UiTooltip.vue'
@@ -8,12 +8,18 @@ import { classifyChangePath } from './changeCategory'
 import { mergeRenameChanges } from './mergeRenameChanges'
 import { noteFileName } from '../commands/noteFileName'
 import { showNoteIndex, toggleShowNoteIndex } from './tocNoteIndex'
+import { navigatorView, setNavigatorView, type NavigatorView } from './navigatorView'
+import { isConfiguredIde } from './configuredIde'
 import { flatPinnedNotes, listsEqual, prunePinIds } from '../../../shared/pinList'
 import { isTocDrag, noteFromTocDrag } from '../../../shared/tocDrag'
 import { useEditorStore } from '../stores/editor'
 import { useWorkspaceStore } from '../stores/workspace'
 
-import type { DeskTocNode, NavigatorSidebarMenuAction } from '../../../shared/contracts'
+import type {
+  DeskTocNode,
+  KbDemoEntryDto,
+  NavigatorSidebarMenuAction
+} from '../../../shared/contracts'
 
 const emit = defineEmits<{
   createNote: [node?: DeskTocNode, placement?: 'before' | 'after' | 'inside']
@@ -23,12 +29,12 @@ const emit = defineEmits<{
   requestReindex: [node: Extract<DeskTocNode, { type: 'note' }>]
   requestDelete: [node: DeskTocNode]
   requestBatchDelete: [noteUuids: string[]]
+  openSettings: []
 }>()
 
 const store = useWorkspaceStore()
 const editor = useEditorStore()
 const query = ref('')
-const changesExpanded = ref(false)
 const tocExpanded = ref(true)
 const noteFileExpanded = ref(true)
 const configFileExpanded = ref(true)
@@ -41,20 +47,111 @@ const dismissedPreviewError = ref('')
 const menuBusy = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
-function filterNodes(nodes: DeskTocNode[], needle: string): DeskTocNode[] {
-  if (!needle) return nodes
-  return nodes.flatMap((node): DeskTocNode[] => {
-    const children = filterNodes(node.children, needle)
-    const matches =
-      node.title.toLocaleLowerCase().includes(needle) ||
-      (node.type === 'note' && node.noteIndex.includes(needle))
-    return matches || children.length ? [{ ...node, children }] : []
-  })
+const tocNodes = computed(() => store.knowledgeBase?.toc ?? [])
+const searchInputRef = ref<HTMLInputElement | null>(null)
+const sidebarExtras = ref({ hasAssets: false, hasDemos: false })
+const demosMode = ref<'closed' | 'need-ide' | 'list'>('closed')
+const demos = ref<KbDemoEntryDto[]>([])
+const demosError = ref('')
+let extrasSequence = 0
+
+const assetsTabActive = computed(() => {
+  const tab = editor.activeTab
+  return tab?.type === 'kb-assets' && tab.knowledgeBaseId === store.selectedKnowledgeBaseId
+})
+
+async function refreshSidebarExtras(): Promise<void> {
+  const knowledgeBaseId = store.selectedKnowledgeBaseId
+  const sequence = ++extrasSequence
+  if (!knowledgeBaseId) {
+    sidebarExtras.value = { hasAssets: false, hasDemos: false }
+    demosMode.value = 'closed'
+    return
+  }
+  const result = await window.desk.sidebar.extras({ knowledgeBaseId })
+  if (sequence !== extrasSequence) return
+  if (!result.ok) {
+    sidebarExtras.value = { hasAssets: false, hasDemos: false }
+    return
+  }
+  sidebarExtras.value = result.value
+  if (!result.value.hasDemos) demosMode.value = 'closed'
+  else if (demosMode.value === 'list') await loadDemos(knowledgeBaseId)
 }
 
-const visibleToc = computed(() =>
-  filterNodes(store.knowledgeBase?.toc ?? [], query.value.trim().toLocaleLowerCase())
+async function loadDemos(knowledgeBaseId: string): Promise<void> {
+  const result = await window.desk.demos.list({ knowledgeBaseId })
+  if (store.selectedKnowledgeBaseId !== knowledgeBaseId || demosMode.value !== 'list') return
+  if (!result.ok) {
+    demos.value = []
+    demosError.value = result.error.message
+    return
+  }
+  demos.value = result.value
+  demosError.value = ''
+}
+
+function openAssets(): void {
+  const knowledgeBase = store.knowledgeBase
+  if (knowledgeBase) editor.openKbAssets(knowledgeBase)
+}
+
+async function toggleDemos(): Promise<void> {
+  if (demosMode.value === 'list') {
+    demosMode.value = 'closed'
+    return
+  }
+  if (!isConfiguredIde(store.settings?.ide)) {
+    demosMode.value = 'need-ide'
+    return
+  }
+  exitBatchDelete()
+  demosMode.value = 'list'
+  demos.value = []
+  demosError.value = ''
+  const knowledgeBaseId = store.selectedKnowledgeBaseId
+  if (knowledgeBaseId) await loadDemos(knowledgeBaseId)
+}
+
+async function openDemo(folder: string): Promise<void> {
+  const knowledgeBaseId = store.selectedKnowledgeBaseId
+  if (!knowledgeBaseId) return
+  const result = await window.desk.ide.openDemo({ knowledgeBaseId, folder })
+  if (!result.ok) store.error = result.error.message
+}
+
+watch(
+  () => [store.selectedKnowledgeBaseId, store.knowledgeBase?.snapshotRevision] as const,
+  () => {
+    void refreshSidebarExtras()
+  },
+  { immediate: true }
 )
+
+const viewTabs: ReadonlyArray<{ view: NavigatorView; label: string; icon: string }> = [
+  {
+    view: 'toc',
+    label: '笔记目录',
+    icon: 'M2.5 3.5h1M6 3.5h7.5M2.5 8h1M6 8h7.5M2.5 12.5h1M6 12.5h7.5'
+  },
+  {
+    view: 'search',
+    label: '搜索',
+    icon: 'M7 2.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 0 1 0-9zM10.3 10.3l3.2 3.2'
+  },
+  {
+    view: 'git',
+    label: 'Git',
+    icon: 'M3 3.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M3 12.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M10 4.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M4.5 5v6M11.5 6c0 3-7 2-7 5'
+  }
+]
+
+function selectView(view: NavigatorView): void {
+  demosMode.value = 'closed'
+  if (view !== 'toc') exitBatchDelete()
+  setNavigatorView(view)
+  if (view === 'search') void nextTick(() => searchInputRef.value?.focus())
+}
 
 const batchSelectedCount = computed(() => batchSelected.value.size)
 
@@ -70,6 +167,7 @@ function toggleBatchDelete(): void {
   }
   const kb = store.knowledgeBase
   if (!kb || kb.health !== 'ready' || kb.noteCount === 0) return
+  setNavigatorView('toc')
   batchDeleting.value = true
   tocExpanded.value = true
 }
@@ -158,13 +256,6 @@ function onBatchEscape(event: KeyboardEvent): void {
 watch(
   () => store.selectedKnowledgeBaseId,
   () => exitBatchDelete()
-)
-
-watch(
-  () => query.value.trim(),
-  (value) => {
-    if (value) exitBatchDelete()
-  }
 )
 
 watch(
@@ -267,7 +358,7 @@ function overPinGroup(event: DragEvent): boolean {
 }
 
 function onNavigatorDragOver(event: DragEvent): void {
-  if (!draggingNote.value || query.value.trim()) {
+  if (!draggingNote.value) {
     pinDropHover.value = false
     return
   }
@@ -360,10 +451,11 @@ const tocFocusRequestId = computed(() => {
     : undefined
 })
 
+// 显式「在目录中定位」切回笔记目录；同步切换，目录行在滚动定位前就已可见
 watch(
   tocFocusRequestId,
   (requestId) => {
-    if (requestId && query.value) query.value = ''
+    if (requestId && store.tocFocusRequest?.forced) setNavigatorView('toc')
   },
   { flush: 'sync' }
 )
@@ -503,11 +595,78 @@ async function openHeaderMenu(): Promise<void> {
 <template>
   <aside class="navigator-sidebar">
     <div class="navigator-top">
-      <div class="search-wrap">
-        <span>⌕</span>
-        <input v-model="query" type="search" placeholder="搜索标题和正文" />
+      <div class="view-tabs" role="tablist" aria-label="侧栏视图">
+        <UiTooltip v-for="item in viewTabs" :key="item.view" :label="item.label">
+          <button
+            type="button"
+            role="tab"
+            class="view-tab"
+            :class="{ active: navigatorView === item.view }"
+            :aria-selected="navigatorView === item.view"
+            :aria-label="item.label"
+            :data-view="item.view"
+            @click="selectView(item.view)"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                :d="item.icon"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.3"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <em v-if="item.view === 'git' && gitState?.changes.length" class="view-badge">{{
+              gitState.changes.length > 99 ? '99+' : gitState.changes.length
+            }}</em>
+          </button>
+        </UiTooltip>
       </div>
       <div class="header-actions">
+        <UiTooltip v-if="sidebarExtras.hasAssets" label="资源" align="end">
+          <button
+            type="button"
+            class="menu-button"
+            :class="{ active: assetsTabActive }"
+            aria-label="资源"
+            @click="openAssets"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M22 19V9a2 2 0 0 0-2-2h-6.764a2 2 0 0 1-1.789-1.106l-.894-1.788A2 2 0 0 0 8.763 3H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+              />
+            </svg>
+          </button>
+        </UiTooltip>
+        <UiTooltip v-if="sidebarExtras.hasDemos" label="demos" align="end">
+          <button
+            type="button"
+            class="menu-button"
+            :class="{ active: demosMode !== 'closed' }"
+            aria-label="demos"
+            :aria-pressed="demosMode !== 'closed'"
+            @click="toggleDemos"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M13 15a1 1 0 1 0 0 2a1 1 0 0 0 0-2m-3 2a1 1 0 1 0 0 2a1 1 0 0 0 0-2"
+              />
+              <path
+                fill="currentColor"
+                fill-rule="evenodd"
+                d="M14.493 3.25H8.5a.75.75 0 1 0 0 1.5h.26v5.087a7.25 7.25 0 0 1-1.256 4.078l-3.093 4.548a1.855 1.855 0 0 0 1.326 2.887c4.162.468 8.364.468 12.526 0a1.855 1.855 0 0 0 1.326-2.887l-3.093-4.548a7.25 7.25 0 0 1-1.256-4.078V4.75h.26a.75.75 0 0 0 0-1.5zM5.905 19.86c4.05.455 8.14.455 12.19 0a.355.355 0 0 0 .254-.553l-3.094-4.549a9 9 0 0 1-.591-1.008H9.336a9 9 0 0 1-.591 1.008L5.65 19.307a.355.355 0 0 0 .254.553m4.015-7.61h4.16a8.8 8.8 0 0 1-.34-2.413V4.75h-3.48v5.087a8.8 8.8 0 0 1-.34 2.413"
+                clip-rule="evenodd"
+              />
+            </svg>
+          </button>
+        </UiTooltip>
         <UiTooltip label="更多笔记操作" align="end">
           <button
             type="button"
@@ -562,110 +721,258 @@ async function openHeaderMenu(): Promise<void> {
     </div>
 
     <template v-if="store.knowledgeBase">
-      <button
-        type="button"
-        class="readme-entry"
-        :class="{ active: readmeActive }"
-        aria-label="打开知识库根目录的 README.md"
-        @click="openReadme"
-      >
-        <svg viewBox="0 0 1024 1024" aria-hidden="true">
-          <path
-            fill="currentColor"
-            d="M854.6 288.6L639.4 73.4c-6-6-14.1-9.4-22.6-9.4H192c-17.7 0-32 14.3-32 32v832c0 17.7 14.3 32 32 32h640c17.7 0 32-14.3 32-32V311.3c0-8.5-3.4-16.7-9.4-22.7M790.2 326H602V137.8zm1.8 562H232V136h302v216a42 42 0 0 0 42 42h216z"
-          />
-        </svg>
-        <strong>README</strong>
-      </button>
-      <section
-        v-show="!query.trim() && (pinnedNotes.length > 0 || draggingNote)"
-        class="pin-section"
-        data-pin-group="notes"
-        @dragover.capture="onNavigatorDragOver"
-        @drop.capture="onNavigatorDrop"
-      >
-        <div
-          v-if="draggingNote && pinnedNotes.length === 0"
-          class="pin-drop-slot"
-          :class="{ 'is-drop': pinDropHover }"
-        />
-        <TocNodeList
-          v-show="pinnedNotes.length > 0"
-          class="pin-notes"
-          :nodes="pinnedNotes"
-          :selected-note-uuid="selectedTocNoteUuid"
-          :allow-reorder="false"
-          :pin-reorder="pinnedNotes.length > 1"
-          :pin-drop-active="pinDropHover"
-          :batch-deleting="batchDeleting"
-          :batch-selected="batchSelected"
-          @select="store.selectNote"
-          @select-permanent="store.selectNote($event, undefined, true)"
-          @select-split="store.selectNote($event, 'right')"
-          @toggle-done="store.toggleDone"
-          @request-create="(node, placement) => emit('createNote', node, placement)"
-          @request-rename="emit('requestRename', $event)"
-          @request-reindex="emit('requestReindex', $event)"
-          @request-delete="emit('requestDelete', $event)"
-          @toggle-batch-note="toggleBatchNote"
-          @toggle-batch-group="toggleBatchGroup"
-        />
-      </section>
       <div
-        class="navigator-body"
-        :class="{
-          'is-searching': Boolean(query.trim())
-        }"
-        @dragover.capture="onNavigatorDragOver"
-        @drop.capture="onNavigatorDrop"
-        @scroll="closeSectionMenu"
+        v-show="demosMode === 'closed' && navigatorView === 'toc'"
+        class="navigator-view toc-view"
       >
-        <section class="changes-section">
-          <div class="section-heading git-heading">
-            <button
-              type="button"
-              class="section-toggle"
-              :aria-expanded="changesExpanded"
-              :aria-label="changesExpanded ? '折叠变更列表' : '展开变更列表'"
-              @click="changesExpanded = !changesExpanded"
-            >
-              <svg
-                class="chevron"
-                :class="{ collapsed: !changesExpanded }"
-                viewBox="0 0 16 16"
-                aria-hidden="true"
+        <button
+          type="button"
+          class="readme-entry"
+          :class="{ active: readmeActive }"
+          aria-label="打开知识库根目录的 README.md"
+          @click="openReadme"
+        >
+          <svg viewBox="0 0 1024 1024" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M854.6 288.6L639.4 73.4c-6-6-14.1-9.4-22.6-9.4H192c-17.7 0-32 14.3-32 32v832c0 17.7 14.3 32 32 32h640c17.7 0 32-14.3 32-32V311.3c0-8.5-3.4-16.7-9.4-22.7M790.2 326H602V137.8zm1.8 562H232V136h302v216a42 42 0 0 0 42 42h216z"
+            />
+          </svg>
+          <strong>README</strong>
+        </button>
+        <section
+          v-show="pinnedNotes.length > 0 || draggingNote"
+          class="pin-section"
+          data-pin-group="notes"
+          @dragover.capture="onNavigatorDragOver"
+          @drop.capture="onNavigatorDrop"
+        >
+          <div
+            v-if="draggingNote && pinnedNotes.length === 0"
+            class="pin-drop-slot"
+            :class="{ 'is-drop': pinDropHover }"
+          />
+          <TocNodeList
+            v-show="pinnedNotes.length > 0"
+            class="pin-notes"
+            :nodes="pinnedNotes"
+            :selected-note-uuid="selectedTocNoteUuid"
+            :allow-reorder="false"
+            :pin-reorder="pinnedNotes.length > 1"
+            :pin-drop-active="pinDropHover"
+            :batch-deleting="batchDeleting"
+            :batch-selected="batchSelected"
+            @select="store.selectNote"
+            @select-permanent="store.selectNote($event, undefined, true)"
+            @select-split="store.selectNote($event, 'right')"
+            @toggle-done="store.toggleDone"
+            @request-create="(node, placement) => emit('createNote', node, placement)"
+            @request-rename="emit('requestRename', $event)"
+            @request-reindex="emit('requestReindex', $event)"
+            @request-delete="emit('requestDelete', $event)"
+            @toggle-batch-note="toggleBatchNote"
+            @toggle-batch-group="toggleBatchGroup"
+          />
+        </section>
+        <div
+          class="navigator-body"
+          @dragover.capture="onNavigatorDragOver"
+          @drop.capture="onNavigatorDrop"
+          @scroll="closeSectionMenu"
+        >
+          <section v-if="store.knowledgeBase.health !== 'ready'" class="diagnostics">
+            <strong>配置异常，当前知识库只读</strong>
+            <ul>
+              <li
+                v-for="diagnostic in store.knowledgeBase.diagnostics"
+                :key="`${diagnostic.code}:${diagnostic.path ?? ''}`"
               >
-                <path
-                  d="M4 6l4 4 4-4"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.6"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-              <strong>变更</strong>
-              <em>{{ gitState?.changes.length ?? 0 }}</em>
-              <span v-if="gitState?.behind" class="behind-state">↓{{ gitState.behind }}</span>
-            </button>
+                {{ diagnostic.message }}
+              </li>
+            </ul>
+            <div class="diagnostic-actions">
+              <button type="button" @click="store.refreshWorkspace">重新检查</button>
+              <button type="button" @click="revealKnowledgeBase">打开目录</button>
+              <button type="button" @click="showKnowledgeBaseMenu">用 IDE 查看</button>
+            </div>
+          </section>
+
+          <section class="toc-section">
+            <div class="section-heading toc-heading">
+              <button
+                type="button"
+                class="section-toggle"
+                :aria-expanded="tocExpanded"
+                :aria-label="tocExpanded ? '折叠目录' : '展开目录'"
+                @click="tocExpanded = !tocExpanded"
+              >
+                <svg
+                  class="chevron"
+                  :class="{ collapsed: !tocExpanded }"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M4 6l4 4 4-4"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <strong>目录</strong>
+                <em>{{ store.knowledgeBase.noteCount }}</em>
+              </button>
+              <button
+                type="button"
+                class="menu-button heading-menu-button"
+                aria-label="目录操作"
+                aria-haspopup="menu"
+                :aria-expanded="sectionMenu === 'toc'"
+                @click="toggleSectionMenu('toc', $event)"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <g fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="4" cy="12" r="1" />
+                    <circle cx="12" cy="12" r="1" />
+                    <circle cx="20" cy="12" r="1" />
+                  </g>
+                </svg>
+              </button>
+            </div>
+            <div v-show="tocExpanded" class="toc-list">
+              <TocNodeList
+                v-if="tocNodes.length"
+                ref="tocListRef"
+                :nodes="tocNodes"
+                :selected-note-uuid="selectedTocNoteUuid"
+                :focus-request-id="tocFocusRequestId"
+                :persist-collapse="true"
+                :batch-deleting="batchDeleting"
+                :batch-selected="batchSelected"
+                @select="store.selectNote"
+                @select-permanent="store.selectNote($event, undefined, true)"
+                @select-split="store.selectNote($event, 'right')"
+                @toggle-done="store.toggleDone"
+                @request-create="(node, placement) => emit('createNote', node, placement)"
+                @request-rename="emit('requestRename', $event)"
+                @request-reindex="emit('requestReindex', $event)"
+                @request-delete="emit('requestDelete', $event)"
+                @toggle-batch-note="toggleBatchNote"
+                @toggle-batch-group="toggleBatchGroup"
+                @move="store.moveTocNode"
+                @drag-note="onTocDrag"
+              />
+              <div v-else class="toc-empty">TOC.md 中没有条目</div>
+            </div>
+          </section>
+        </div>
+        <div v-if="batchDeleting" class="batch-delete-bar" data-batch-delete-bar>
+          <span>已选 {{ batchSelectedCount }} 篇</span>
+          <button type="button" @click="exitBatchDelete">取消</button>
+          <button
+            type="button"
+            class="danger"
+            data-batch-delete-confirm
+            :disabled="batchSelectedCount === 0"
+            @click="confirmBatchDelete"
+          >
+            删除
+          </button>
+        </div>
+      </div>
+
+      <div v-if="demosMode === 'need-ide'" class="navigator-view demos-view">
+        <p class="demos-notice">请先在设置的「外部工具」里选择 Cursor 或 VS Code，再打开实验。</p>
+        <button type="button" class="demos-settings" @click="emit('openSettings')">打开设置</button>
+      </div>
+
+      <div v-else-if="demosMode === 'list'" class="navigator-view demos-view">
+        <div class="tree-heading">
+          <strong>demos</strong>
+        </div>
+        <div class="navigator-body">
+          <button type="button" class="demo-row" data-demo-root @click="openDemo('')">
+            打开 demos
+          </button>
+          <p v-if="demosError" class="demos-notice is-error">{{ demosError }}</p>
+          <button
+            v-for="entry in demos"
+            :key="entry.folder"
+            type="button"
+            class="demo-row"
+            :data-demo="entry.folder"
+            @click="openDemo(entry.folder)"
+          >
+            {{ entry.folder }}
+          </button>
+        </div>
+      </div>
+
+      <div v-else-if="navigatorView === 'search'" class="navigator-view search-view">
+        <div class="search-wrap">
+          <span>⌕</span>
+          <input ref="searchInputRef" v-model="query" type="search" placeholder="搜索标题和正文" />
+        </div>
+        <div class="navigator-body">
+          <section class="search-results-section">
+            <div class="section-heading static">
+              <span>⌕</span>
+              <strong>搜索结果</strong>
+              <em>{{ store.searchResults.length }}</em>
+            </div>
+            <div v-if="!query.trim()" class="changes-empty">输入关键字，搜索笔记标题和正文</div>
+            <div v-else-if="store.searchLoading" class="changes-empty">正在查询后台索引…</div>
             <button
+              v-for="result in query.trim() ? store.searchResults : []"
+              v-else
+              :key="`${result.knowledgeBaseId}:${result.noteUuid}`"
               type="button"
-              class="menu-button heading-menu-button"
-              aria-label="变更操作"
-              aria-haspopup="menu"
-              :aria-expanded="sectionMenu === 'git'"
-              @click="toggleSectionMenu('git', $event)"
+              class="search-result"
+              @click="store.openNoteByUuid(result.knowledgeBaseId, result.noteUuid)"
             >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <g fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="4" cy="12" r="1" />
-                  <circle cx="12" cy="12" r="1" />
-                  <circle cx="20" cy="12" r="1" />
-                </g>
-              </svg>
+              <span
+                ><strong>{{ noteFileName(result) }}</strong></span
+              >
+              <small>{{ result.snippet }}</small>
             </button>
-          </div>
-          <template v-if="changesExpanded">
+            <div
+              v-if="query.trim() && !store.searchLoading && !store.searchResults.length"
+              class="toc-empty"
+            >
+              没有匹配标题或正文的笔记
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div v-else-if="navigatorView === 'git'" class="navigator-view git-view">
+        <div class="navigator-body" @scroll="closeSectionMenu">
+          <section class="changes-section">
+            <div class="section-heading git-heading">
+              <span class="section-toggle static">
+                <strong>变更</strong>
+                <em>{{ gitState?.changes.length ?? 0 }}</em>
+                <span v-if="gitState?.behind" class="behind-state">↓{{ gitState.behind }}</span>
+              </span>
+              <button
+                type="button"
+                class="menu-button heading-menu-button"
+                aria-label="变更操作"
+                aria-haspopup="menu"
+                :aria-expanded="sectionMenu === 'git'"
+                @click="toggleSectionMenu('git', $event)"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <g fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="4" cy="12" r="1" />
+                    <circle cx="12" cy="12" r="1" />
+                    <circle cx="20" cy="12" r="1" />
+                  </g>
+                </svg>
+              </button>
+            </div>
             <template v-if="noteFileChanges.length">
               <button
                 type="button"
@@ -822,137 +1129,8 @@ async function openHeaderMenu(): Promise<void> {
               当前目录不是 Git 仓库
             </div>
             <div v-else-if="!gitState.changes.length" class="changes-empty">工作区干净</div>
-          </template>
-        </section>
-
-        <section v-if="store.knowledgeBase.health !== 'ready'" class="diagnostics">
-          <strong>配置异常，当前知识库只读</strong>
-          <ul>
-            <li
-              v-for="diagnostic in store.knowledgeBase.diagnostics"
-              :key="`${diagnostic.code}:${diagnostic.path ?? ''}`"
-            >
-              {{ diagnostic.message }}
-            </li>
-          </ul>
-          <div class="diagnostic-actions">
-            <button type="button" @click="store.refreshWorkspace">重新检查</button>
-            <button type="button" @click="revealKnowledgeBase">打开目录</button>
-            <button type="button" @click="showKnowledgeBaseMenu">用 IDE 查看</button>
-          </div>
-        </section>
-
-        <section v-if="query.trim()" class="search-results-section">
-          <div class="section-heading static">
-            <span>⌕</span>
-            <strong>搜索结果</strong>
-            <em>{{ store.searchResults.length }}</em>
-          </div>
-          <div v-if="store.searchLoading" class="changes-empty">正在查询后台索引…</div>
-          <button
-            v-for="result in store.searchResults"
-            v-else
-            :key="`${result.knowledgeBaseId}:${result.noteUuid}`"
-            type="button"
-            class="search-result"
-            @click="store.openNoteByUuid(result.knowledgeBaseId, result.noteUuid)"
-          >
-            <span
-              ><strong>{{ noteFileName(result) }}</strong></span
-            >
-            <small>{{ result.snippet }}</small>
-          </button>
-          <div v-if="!store.searchLoading && !store.searchResults.length" class="toc-empty">
-            没有匹配标题或正文的笔记
-          </div>
-        </section>
-
-        <template v-else>
-          <section class="toc-section">
-            <div class="section-heading toc-heading">
-              <button
-                type="button"
-                class="section-toggle"
-                :aria-expanded="tocExpanded"
-                :aria-label="tocExpanded ? '折叠目录' : '展开目录'"
-                @click="tocExpanded = !tocExpanded"
-              >
-                <svg
-                  class="chevron"
-                  :class="{ collapsed: !tocExpanded }"
-                  viewBox="0 0 16 16"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M4 6l4 4 4-4"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.6"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-                <strong>目录</strong>
-                <em>{{ store.knowledgeBase.noteCount }}</em>
-              </button>
-              <button
-                type="button"
-                class="menu-button heading-menu-button"
-                aria-label="目录操作"
-                aria-haspopup="menu"
-                :aria-expanded="sectionMenu === 'toc'"
-                @click="toggleSectionMenu('toc', $event)"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <g fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="4" cy="12" r="1" />
-                    <circle cx="12" cy="12" r="1" />
-                    <circle cx="20" cy="12" r="1" />
-                  </g>
-                </svg>
-              </button>
-            </div>
-            <div v-show="tocExpanded" class="toc-list">
-              <TocNodeList
-                v-if="visibleToc.length"
-                ref="tocListRef"
-                :nodes="visibleToc"
-                :selected-note-uuid="selectedTocNoteUuid"
-                :focus-request-id="tocFocusRequestId"
-                :persist-collapse="true"
-                :force-expand="query.trim().length > 0"
-                :batch-deleting="batchDeleting"
-                :batch-selected="batchSelected"
-                @select="store.selectNote"
-                @select-permanent="store.selectNote($event, undefined, true)"
-                @select-split="store.selectNote($event, 'right')"
-                @toggle-done="store.toggleDone"
-                @request-create="(node, placement) => emit('createNote', node, placement)"
-                @request-rename="emit('requestRename', $event)"
-                @request-reindex="emit('requestReindex', $event)"
-                @request-delete="emit('requestDelete', $event)"
-                @toggle-batch-note="toggleBatchNote"
-                @toggle-batch-group="toggleBatchGroup"
-                @move="store.moveTocNode"
-                @drag-note="onTocDrag"
-              />
-              <div v-else class="toc-empty">{{ query ? '没有匹配项' : 'TOC.md 中没有条目' }}</div>
-            </div>
           </section>
-        </template>
-      </div>
-      <div v-if="batchDeleting" class="batch-delete-bar" data-batch-delete-bar>
-        <span>已选 {{ batchSelectedCount }} 篇</span>
-        <button type="button" @click="exitBatchDelete">取消</button>
-        <button
-          type="button"
-          class="danger"
-          data-batch-delete-confirm
-          :disabled="batchSelectedCount === 0"
-          @click="confirmBatchDelete"
-        >
-          删除
-        </button>
+        </div>
       </div>
     </template>
 
@@ -1137,12 +1315,78 @@ async function openHeaderMenu(): Promise<void> {
   margin-bottom: 7px;
 }
 
-.navigator-top .search-wrap {
-  height: auto;
+.view-tabs {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.view-tab {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
   padding: 0;
-  border-bottom: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.view-tab svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.view-tab:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.view-tab.active {
+  background: var(--selected);
+  color: var(--accent-strong);
+}
+
+.view-badge {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  min-width: 12px;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: white;
+  padding: 0 3px;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 12px;
+  text-align: center;
+}
+
+.navigator-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.search-view .search-wrap {
+  height: auto;
+  padding: 0 9px 7px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.search-view .search-wrap > span {
+  left: 18px;
+  bottom: 7px;
 }
 
 .header-actions {
@@ -1178,6 +1422,74 @@ async function openHeaderMenu(): Promise<void> {
 
 .menu-button:disabled {
   opacity: 0.4;
+}
+
+.menu-button.active {
+  background: var(--selected);
+  color: var(--accent-strong);
+}
+
+.demos-view {
+  padding-top: 4px;
+}
+
+.demos-notice {
+  margin: 8px 12px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.demos-notice.is-error {
+  color: var(--danger);
+}
+
+.demos-settings {
+  margin: 8px 12px;
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.demo-row {
+  width: 100%;
+  height: 26px;
+  display: block;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.demo-row:hover {
+  background: var(--hover);
+}
+
+.tree-heading {
+  flex: none;
+  height: 27px;
+  display: flex;
+  align-items: center;
+  margin: 0 7px;
+  padding: 0 5px;
+  color: var(--muted);
+  font-size: 10px;
+  box-shadow: 0 1px 0 var(--border);
+}
+
+.tree-heading strong {
+  font-weight: 700;
 }
 
 .heading-menu-button {
@@ -1283,8 +1595,8 @@ async function openHeaderMenu(): Promise<void> {
 }
 
 /*
- * 第二列头部固定：滚动目录树时「变更」与「目录」栏始终可见可操作。
- * 搜索栏（.navigator-top）本就在滚动容器之外，天然固定。
+ * 第二列头部固定：滚动时「变更」「目录」标题栏始终可见可操作。
+ * 视图切换栏（.navigator-top）本就在滚动容器之外，天然固定。
  *
  * `display: contents` 的关键作用：sticky 元素无法超出其父容器，而
  * `.changes-section` / `.toc-section` 在折叠时只有标题那么高，标题会跟着
@@ -1324,10 +1636,6 @@ async function openHeaderMenu(): Promise<void> {
   z-index: 4;
 }
 
-.navigator-body .toc-heading {
-  top: 27px;
-}
-
 .pin-notes {
   margin-top: 4px;
 }
@@ -1340,11 +1648,6 @@ async function openHeaderMenu(): Promise<void> {
 
 .pin-drop-slot.is-drop {
   background: color-mix(in srgb, var(--accent) 18%, var(--panel));
-}
-
-/* 搜索态没有「变更」栏，目录栏回到顶部 */
-.navigator-body.is-searching .toc-heading {
-  top: 0;
 }
 
 /* 第一篇笔记贴着吸顶标题时，选中描边的上沿会被标题盖住。 */
@@ -1398,6 +1701,10 @@ async function openHeaderMenu(): Promise<void> {
 .git-heading {
   text-transform: none;
   letter-spacing: 0;
+}
+
+.section-toggle.static {
+  cursor: default;
 }
 
 .section-toggle {

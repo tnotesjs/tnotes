@@ -1,9 +1,18 @@
 <script setup lang="ts">
-import type { AppSettings } from '../../../../shared/contracts'
+import type { AppSettings, IdeKind } from '../../../../shared/contracts'
 import ResetGroupButton from './ResetGroupButton.vue'
 
-defineProps<{ draft: AppSettings }>()
+const props = defineProps<{ draft: AppSettings }>()
 const emit = defineEmits<{ reset: [] }>()
+
+function setIde(event: Event): void {
+  const value = event.target instanceof HTMLSelectElement ? event.target.value : ''
+  props.draft.ide = value === 'vscode' || value === 'cursor' ? value : null
+}
+
+function ideOption(ide: IdeKind | null): string {
+  return ide ?? ''
+}
 </script>
 
 <template>
@@ -16,7 +25,8 @@ const emit = defineEmits<{ reset: [] }>()
     <div class="field-grid cols-3">
       <label class="field">
         <span>默认 IDE</span>
-        <select v-model="draft.ide">
+        <select :value="ideOption(draft.ide)" @change="setIde">
+          <option value="">未配置</option>
           <option value="vscode">VSCode</option>
           <option value="cursor">Cursor</option>
         </select>

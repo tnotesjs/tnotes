@@ -374,6 +374,22 @@ export const SUITES = [
     note: '笔记级资源面板：引用/编号匹配/无效/缺失分组、复制路径、定位引用、插入、删除、修复编号'
   },
   {
+    name: 'e2e-navigator-views.mjs',
+    area: 'navigator',
+    tier: 'regression',
+    globs: [
+      'apps/desk/src/renderer/src/components/NavigatorSidebar.vue',
+      'apps/desk/src/renderer/src/components/navigatorView.ts',
+      'apps/desk/src/renderer/src/components/configuredIde.ts',
+      'apps/desk/src/main/kbDemos.ts',
+      'apps/desk/src/main/ipc/kbFiles.ts',
+      'apps/desk/src/main/ipc/git.ts'
+    ],
+    serial: false,
+    smoke: false,
+    note: '左侧三视图（目录/搜索/Git）+ 头部资源入口 + demos 列表（不启动 IDE）'
+  },
+  {
     name: 'e2e-kb-files.mjs',
     area: 'kb-files',
     tier: 'regression',

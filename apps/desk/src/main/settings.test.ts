@@ -230,6 +230,29 @@ describe('已移除的笔记内目录三项', () => {
   })
 })
 
+describe('IDE 是否已配置', () => {
+  const path = () => join(environment.profile, '.tn-desk-config.json')
+
+  it('缺省和空值是未配置，文件里已经写过的 vscode / cursor 保持原样', () => {
+    expect(loadSettings().ide).toBeNull()
+
+    writeFileSync(path(), JSON.stringify({ theme: 'dark' }))
+    expect(loadSettings()).toMatchObject({ theme: 'dark', ide: null })
+
+    writeFileSync(path(), JSON.stringify({ ide: '' }))
+    expect(loadSettings().ide).toBeNull()
+
+    writeFileSync(path(), JSON.stringify({ ide: 'cursor', theme: 'dark' }))
+    expect(loadSettings()).toMatchObject({ ide: 'cursor', theme: 'dark' })
+
+    writeFileSync(path(), JSON.stringify({ ide: 'vscode' }))
+    expect(loadSettings().ide).toBe('vscode')
+
+    saveSettings({ theme: 'light' })
+    expect(loadSettings().ide).toBe('vscode')
+  })
+})
+
 describe('已移除的保存时 Prettier', () => {
   const path = () => join(environment.profile, '.tn-desk-config.json')
 

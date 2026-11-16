@@ -84,6 +84,8 @@ export const IPC_CHANNELS = {
   kbFilesRead: 'kb-files:read',
   kbReadmeRead: 'kb-readme:read',
   kbReadmeWrite: 'kb-readme:write',
+  sidebarExtras: 'sidebar:extras',
+  demosList: 'demos:list',
   gitList: 'git:list',
   gitRefresh: 'git:refresh',
   gitFocus: 'git:focus',
@@ -97,6 +99,7 @@ export const IPC_CHANNELS = {
   ideShowFileMenu: 'ide:show-file-menu',
   ideOpenKnowledgeBase: 'ide:open-knowledge-base',
   ideOpenNote: 'ide:open-note',
+  ideOpenDemo: 'ide:open-demo',
   tocMove: 'toc:move',
   tocCreateGroup: 'toc:create-group',
   tocRenameGroup: 'toc:rename-group',
@@ -787,7 +790,7 @@ export interface AppSettings {
   trimTrailingWhitespace: boolean
   createNotePosition: 'top' | 'end'
   workspaceLayout: 'kb-dir-content' | 'content-dir-kb'
-  ide: IdeKind
+  ide: IdeKind | null
   gitPath: string | null
   nodePath: string | null
   confirmBeforeCommit: boolean
@@ -2071,6 +2074,27 @@ export interface ExcalidrawSourceProbeDto {
   source: { relPath: string; ownerNoteIndex: string } | null
 }
 
+/** 侧栏头部：当前知识库有没有 assets/、demos/ */
+export interface SidebarExtrasDto {
+  hasAssets: boolean
+  hasDemos: boolean
+}
+
+/** demos/ 下合规的直属实验文件夹（`0001. 名称`） */
+export interface KbDemoEntryDto {
+  /** 四位编号 */
+  index: string
+  title: string
+  /** 文件夹名 */
+  folder: string
+}
+
+export interface IdeOpenDemoRequest {
+  knowledgeBaseId: string
+  /** 空串表示整个 demos/ 目录，否则是合规文件夹名 */
+  folder: string
+}
+
 /** 知识库文件浏览：只列一层，拒绝名单由主进程统一裁定 */
 export interface KbFilesListRequest {
   knowledgeBaseId: string
@@ -2601,6 +2625,12 @@ export interface DeskApi {
     list(request: KbFilesListRequest): Promise<DeskResult<KbFilesListResultDto>>
     read(request: KbFilesReadRequest): Promise<DeskResult<KbTextFileDto>>
   }
+  sidebar: {
+    extras(request: { knowledgeBaseId: string }): Promise<DeskResult<SidebarExtrasDto>>
+  }
+  demos: {
+    list(request: { knowledgeBaseId: string }): Promise<DeskResult<KbDemoEntryDto[]>>
+  }
   kbReadme: {
     read(request: KbReadmeReadRequest): Promise<DeskResult<KbReadmeDto>>
     write(request: KbReadmeWriteRequest): Promise<DeskResult<KbReadmeDto>>
@@ -2737,6 +2767,8 @@ export interface DeskApi {
     showFileMenu(knowledgeBaseId: string, path: string): Promise<DeskResult<void>>
     openKnowledgeBase(knowledgeBaseId: string): Promise<DeskResult<void>>
     openNote(knowledgeBaseId: string, noteUuid: string): Promise<DeskResult<void>>
+    /** 用已配置的 IDE 打开 demos/ 或其中某个合规实验文件夹 */
+    openDemo(request: IdeOpenDemoRequest): Promise<DeskResult<void>>
   }
   toc: {
     move(request: TocMoveRequest): Promise<DeskResult<KnowledgeBaseDetail>>

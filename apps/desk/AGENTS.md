@@ -1,9 +1,9 @@
 # Desk
 
-Electron + Vue 3。可视化编辑器用 Milkdown / ProseMirror（**自组装配**：`src/renderer/src/markdown/deskEditor.ts` + 从 Crepe 移植的特性 `crepePort/`，不再依赖 `@milkdown/crepe`），源码视图是独立 **Monaco**（懒加载，`src/renderer/src/monaco/monaco.ts`；可视化文档内的代码块/源码小编辑器仍是 CodeMirror 6）。知识库读写 `@tnotesjs/kb`，预览 `@tnotesjs/ssg`，共享块 `@tnotesjs/ui`。
+Electron + Vue 3。可视化编辑器用 Milkdown / ProseMirror（**自组装配**：`src/renderer/src/markdown/deskEditor.ts` + 从 Crepe 移植的特性 `crepePort/`，不再依赖 `@milkdown/crepe`），笔记页（可视化与源码）和只读文本标签都是 CodeMirror 6。知识库读写 `@tnotesjs/kb`，预览 `@tnotesjs/ssg`，共享块 `@tnotesjs/ui`。
 
-- 知识库文本文件浏览（只读）：主进程 `kb-files:list` / `kb-files:read`（`packages/kb/src/files.ts`）只列一层目录，并按拒绝名单过滤 `.git` / `node_modules` / `.tnotes/dist` / 系统垃圾；**能不能当文本看由字节判定**（采样里有 NUL 或非法 UTF-8 → 不是文本），不看扩展名。标签页类型 `text-file` 用 Monaco 只读渲染，本阶段不支持写入。
-- Monaco 不注册 worker：生产环境渲染端是 `file://` 加载（Chromium 不允许 file:// 起 Worker），CSP 又是 `script-src 'self'`（blob: 也被挡）。因此关掉了所有依赖 worker 的能力（JSON/YAML/TS 诊断、diff、基于词的建议）。要用语言服务得先把渲染端改成自定义协议加载。
+- 知识库文本文件浏览（只读）：主进程 `kb-files:list` / `kb-files:read`（`packages/kb/src/files.ts`）只列一层目录，并按拒绝名单过滤 `.git` / `node_modules` / `.tnotes/dist` / 系统垃圾；**能不能当文本看由字节判定**（采样里有 NUL 或非法 UTF-8 → 不是文本），不看扩展名。面包屑等入口打开的 `text-file` 标签用只读 CodeMirror 渲染。
+- 左侧内容区顶部三个视图：笔记目录、搜索、Git（`components/navigatorView.ts`，记住上次视图；曾经的「文件」记忆回到笔记目录）。`assets/` 存在时头部有资源入口，打开已有的知识库资源标签；`demos/` 存在时有实验入口，列出直属的 `0001. 名称` 文件夹，用已配置的 IDE 打开，不在 Desk 里编辑。
 - 标题里按一次 Backspace（光标在行首）**直接回正文**，不论几级标题 —— 覆盖 Milkdown 默认的逐级降级（`markdown/headingKeymap.ts` 用优先级 100 抢在 `DowngradeHeading` 前）。行内其它位置、Delete、空选区之外的场景都放行给默认行为。
 - 代码块收起 / 展开（Desk 与站点同一套规则，规则在 `@tnotesjs/ui/code` 的 `collapse.ts`）：**纯视图状态**，不写回 markdown、不写 localStorage，重开笔记一律展开；**折叠 = 代码区整体隐藏、只剩标题栏**（`is-collapsed`，不是「露出前几行」）；每个代码块标题左侧都有折叠 Icon（编辑器里是 `.tools` 里的 `.desk-code-collapse`，`order: -1` 固定在标题左侧），只有点它才切换；代码分组的 Icon 在 tab 行最左侧，切换 tab 自动展开新面板（`deskRawBlockView/container.ts` 的 `activateTab`）。站点侧由 `CodeBlock.vue`/`CodeGroup.vue` SSR 出 Icon，`hydrateIslands.ts` 用同一套 class 契约补行为。**代码块高度一律由内容撑开**：不设 `max-height`、不出现内部纵向滚动（`milkdownMarkdownEditor.scoped.css` 里代码块 / 代码分组面板 / raw 块源码编辑器与预览都放开）。
 - Markdown 是磁盘 canonical。自定义语法经 `rawBlockProjection.ts` 投影为 `deskRawBlock`；`sourcePreservation.ts` 保证未编辑块字节级零 diff。

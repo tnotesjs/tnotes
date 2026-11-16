@@ -4,7 +4,9 @@ import {
   kbFilesListSchema,
   kbFilesReadSchema,
   kbReadmeReadSchema,
-  kbReadmeWriteSchema
+  kbReadmeWriteSchema,
+  sidebarExtrasSchema,
+  demosListSchema
 } from './schemas'
 import { handle, type GetWindow } from './shared'
 
@@ -27,6 +29,12 @@ export function registerKbFiles(getWindow: GetWindow): () => void {
   )
   handle(IPC_CHANNELS.kbReadmeWrite, getWindow, kbReadmeWriteSchema, (input) =>
     workspaceManager.writeKbReadme(input.knowledgeBaseId, input.content, input.baseRevision)
+  )
+  handle(IPC_CHANNELS.sidebarExtras, getWindow, sidebarExtrasSchema, (input) =>
+    workspaceManager.sidebarExtras(input.knowledgeBaseId)
+  )
+  handle(IPC_CHANNELS.demosList, getWindow, demosListSchema, (input) =>
+    workspaceManager.listDemos(input.knowledgeBaseId)
   )
   return () => undefined
 }

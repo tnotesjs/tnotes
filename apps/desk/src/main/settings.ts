@@ -58,7 +58,10 @@ const settingsSchema = z.object({
   trimTrailingWhitespace: z.boolean().default(true),
   createNotePosition: z.enum(['top', 'end']).default('top'),
   workspaceLayout: z.enum(['kb-dir-content', 'content-dir-kb']).default('kb-dir-content'),
-  ide: z.enum(['vscode', 'cursor']).default('vscode'),
+  // 缺省是未配置。已有配置文件里写过 vscode / cursor 的原样保留，不把默认值当成用户选过。
+  ide: z
+    .preprocess((value) => (value === '' ? null : value), z.enum(['vscode', 'cursor']).nullable())
+    .default(null),
   gitPath: z.string().trim().min(1).nullable().default(null),
   nodePath: z.string().trim().min(1).nullable().default(null),
   confirmBeforeCommit: z.boolean().default(false),

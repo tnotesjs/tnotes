@@ -27,6 +27,8 @@ import type {
   KbFilesListResultDto,
   KbReadmeDto,
   KbTextFileDto,
+  KbDemoEntryDto,
+  SidebarExtrasDto,
   ExcalidrawDocumentDto,
   ExcalidrawDocumentRefDto,
   ExcalidrawSourceProbeDto,
@@ -232,6 +234,12 @@ const api: DeskApi = {
     list: (request) => invoke<KbFilesListResultDto>(IPC_CHANNELS.kbFilesList, request),
     read: (request) => invoke<KbTextFileDto>(IPC_CHANNELS.kbFilesRead, request)
   },
+  sidebar: {
+    extras: (request) => invoke<SidebarExtrasDto>(IPC_CHANNELS.sidebarExtras, request)
+  },
+  demos: {
+    list: (request) => invoke<KbDemoEntryDto[]>(IPC_CHANNELS.demosList, request)
+  },
   kbReadme: {
     read: (request) => invoke<KbReadmeDto>(IPC_CHANNELS.kbReadmeRead, request),
     write: (request) => invoke<KbReadmeDto>(IPC_CHANNELS.kbReadmeWrite, request)
@@ -414,7 +422,8 @@ const api: DeskApi = {
     openKnowledgeBase: (knowledgeBaseId) =>
       invoke<void>(IPC_CHANNELS.ideOpenKnowledgeBase, knowledgeBaseId),
     openNote: (knowledgeBaseId, noteUuid) =>
-      invoke<void>(IPC_CHANNELS.ideOpenNote, { knowledgeBaseId, noteUuid })
+      invoke<void>(IPC_CHANNELS.ideOpenNote, { knowledgeBaseId, noteUuid }),
+    openDemo: (request) => invoke<void>(IPC_CHANNELS.ideOpenDemo, request)
   },
   toc: {
     move: (request: TocMoveRequest) => invoke<KnowledgeBaseDetail>(IPC_CHANNELS.tocMove, request),

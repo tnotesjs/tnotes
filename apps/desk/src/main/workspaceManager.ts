@@ -21,6 +21,11 @@ import {
 } from '@tnotesjs/kb'
 
 import { deskLog } from './log'
+import {
+  listDemoFolders,
+  probeSidebarExtras,
+  resolveDemoDirectory as resolveDemoDir
+} from './kbDemos'
 import { assetWriteGate } from './assetWriteGate'
 import { gitManager } from './gitManager'
 import { loadSettings, settingsForKnowledgeBase } from './settings'
@@ -54,6 +59,8 @@ import type {
   KbFilesListResultDto,
   KbReadmeDto,
   KbTextFileDto,
+  KbDemoEntryDto,
+  SidebarExtrasDto,
   ExcalidrawDerivedRefDto,
   ExcalidrawDocumentDto,
   ExcalidrawDocumentRefDto,
@@ -403,6 +410,19 @@ export class WorkspaceManager {
     await fs.writeFile(absolute, buffer)
     this.emitChanged()
     return { exists: true, content, revision: hashBytes(buffer) }
+  }
+
+  async sidebarExtras(knowledgeBaseId: string): Promise<SidebarExtrasDto> {
+    return probeSidebarExtras(this.getHandle(knowledgeBaseId).rootPath)
+  }
+
+  async listDemos(knowledgeBaseId: string): Promise<KbDemoEntryDto[]> {
+    return listDemoFolders(this.getHandle(knowledgeBaseId).rootPath)
+  }
+
+  /** 交给 IDE 前确认目标是 demos/ 或其下一个合规子目录 */
+  async demoDirectory(knowledgeBaseId: string, folder: string): Promise<string> {
+    return resolveDemoDir(this.getHandle(knowledgeBaseId).rootPath, folder)
   }
 
   /** 「这张 .svg 能不能编辑」：同名 `.excalidraw` 在不在（探测，不抛错） */

@@ -8,6 +8,11 @@ function ideLabel(): string {
   return loadSettings().ide === 'cursor' ? 'Cursor' : 'VSCode'
 }
 
+/** 打开笔记等既有入口：没选 IDE 时仍按 VS Code 启动，不改这些入口的行为。 */
+function ideForLaunch(): 'vscode' | 'cursor' {
+  return loadSettings().ide ?? 'vscode'
+}
+
 export interface IdeLaunchSpec {
   command: string
   args: string[]
@@ -20,7 +25,7 @@ export interface IdeLaunchSpec {
  * 不统一改成 `code` / `cursor`）。
  */
 export function ideLaunchSpec(targetPath: string): IdeLaunchSpec {
-  const ide = loadSettings().ide
+  const ide = ideForLaunch()
   if (process.platform === 'darwin') {
     const application = ide === 'cursor' ? 'Cursor' : 'Visual Studio Code'
     return { command: '/usr/bin/open', args: ['-a', application, targetPath], detached: true }

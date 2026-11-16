@@ -1,6 +1,7 @@
-// 第 1 项验收：第二列头部在滚动时固定（搜索栏、「变更」栏、「目录」栏）。
+// 第二列头部在滚动时固定：顶部视图切换栏、笔记目录视图的「目录」栏。
 //
-// 覆盖：长目录滚动时头部可见可点、变更展开/收起、侧栏宽度变化、目录项可完整滚动访问。
+// 覆盖：长目录滚动时头部可见可点、侧栏宽度变化、目录项可完整滚动访问。
+// （「变更」已移到独立的 Git 视图，见 e2e-navigator-views.mjs。）
 //
 // Run: node apps/desk/scripts/e2e-sidebar-sticky.mjs
 import { createFixture, createRecorder, launchDesk, trackPageErrors, waitFor } from './e2e-lib.mjs'
@@ -52,10 +53,9 @@ const headingInfo = async (selector) =>
           const probes = []
           for (let y = Math.round(bodyRect.top) + 1; y < Math.round(rect.top); y += 2) {
             const hit = document.elementFromPoint(x, y)
-            // 命中任一吸顶行都算正常（「目录」上方就是「变更」行，两行会叠在一起）；
             // 只有命中滚动内容（目录项等）才算真的透出
             probes.push(
-              hit?.closest?.('.git-heading, .toc-heading')
+              hit?.closest?.('.toc-heading')
                 ? 'heading'
                 : String(hit?.className ?? hit?.tagName ?? '').slice(0, 40)
             )
@@ -69,7 +69,7 @@ const headingInfo = async (selector) =>
 
 const scrollBody = async (px) => {
   await page
-    .locator('.navigator-body')
+    .locator('.toc-view .navigator-body')
     .first()
     .evaluate((el, y) => {
       el.scrollTop = y
@@ -86,40 +86,34 @@ try {
   await page.getByText(fixture.kbName, { exact: true }).first().click()
   await waitFor(async () => (await page.locator('.toc-row').count()) >= 5, 20000)
 
-  // 搜索栏在滚动容器之外：滚动前后位置不变
+  // 视图切换栏在滚动容器之外：滚动前后位置不变
   const searchBefore = await page.locator('.navigator-top').first().boundingBox()
   await scrollBody(600)
   const searchAfter = await page.locator('.navigator-top').first().boundingBox()
   rec.record(
-    '搜索栏不随内容滚动',
+    '视图切换栏不随内容滚动',
     Boolean(searchBefore && searchAfter) && Math.abs(searchBefore.y - searchAfter.y) <= 1,
     `before=${Math.round(searchBefore?.y ?? -1)} after=${Math.round(searchAfter?.y ?? -1)}`
   )
 
-  // 滚动后「变更」栏与「目录」栏仍然吸顶可见
-  const gitHeading = await headingInfo('.git-heading')
+  // 滚动后「目录」栏仍然吸顶可见
   const tocHeading = await headingInfo('.toc-heading')
   rec.record(
-    '滚动后「变更」栏吸顶可见',
-    Boolean(gitHeading?.stuckToTop && gitHeading?.topElementIsHeading),
-    JSON.stringify(gitHeading)
-  )
-  rec.record(
     '滚动后「目录」栏吸顶可见',
-    Boolean(tocHeading?.inViewport && tocHeading?.topElementIsHeading),
+    Boolean(tocHeading?.stuckToTop && tocHeading?.topElementIsHeading),
     JSON.stringify(tocHeading)
   )
 
   // 吸顶的「目录」栏按钮仍可点击
-  const collapseAll = page.locator('.toc-heading button[aria-label="折叠/展开全部"]').first()
+  const collapseAll = page.locator('.toc-heading button[aria-label="目录操作"]').first()
   const clickable = await waitFor(
     async () => (await collapseAll.isEnabled()) && (await collapseAll.isVisible()),
     5000
   )
   rec.record(
     '吸顶行背景不透明（滚动内容不会透过它显示）',
-    Boolean(gitHeading?.opaque && tocHeading?.opaque),
-    `git=${gitHeading?.background} toc=${tocHeading?.background}`
+    Boolean(tocHeading?.opaque),
+    `toc=${tocHeading?.background}`
   )
 
   // 吸顶行只能吸到**内容盒**上沿：容器若留 padding-top，那条带子盖不住，
@@ -128,27 +122,22 @@ try {
   const bleed = (heading) => (heading?.bleedAbove ?? []).filter((hit) => hit !== 'heading')
   rec.record(
     '吸顶行上方没有内容透出（容器顶部不留可透视的 padding 带）',
-    bleed(gitHeading).length === 0 && bleed(tocHeading).length === 0,
-    `git gap=${gitHeading?.gapAbove} bleed=${JSON.stringify(bleed(gitHeading))} toc bleed=${JSON.stringify(bleed(tocHeading))}`
+    bleed(tocHeading).length === 0,
+    `toc gap=${tocHeading?.gapAbove} bleed=${JSON.stringify(bleed(tocHeading))}`
   )
 
   rec.record('吸顶后目录栏操作按钮仍可点', Boolean(clickable))
   if (clickable) {
     await collapseAll.click()
-    await new Promise((resolve) => setTimeout(resolve, 400))
-    rec.record('点「折叠/展开全部」有响应', true)
+    rec.record(
+      '点目录操作按钮弹出菜单',
+      Boolean(await waitFor(async () => (await page.locator('.section-menu').count()) > 0, 3000))
+    )
+    await page.keyboard.press('Escape')
   }
 
-  // 展开「变更」：不出现重复滚动条、头部不挤没目录、目录仍可滚到底
-  const changesToggle = page.locator('.git-heading button.section-toggle').first()
-  await scrollBody(0)
-  await changesToggle.click()
-  await new Promise((resolve) => setTimeout(resolve, 400))
-  const expanded = await page.locator('.changes-section .change-group-toggle').count()
-  rec.record('「变更」可展开', expanded >= 0, `groups=${expanded}`)
-
   // 只有一个滚动容器（无嵌套滚动条）
-  const scrollerCount = await page.locator('.navigator-body').evaluate((body) => {
+  const scrollerCount = await page.locator('.toc-view .navigator-body').evaluate((body) => {
     const all = Array.from(body.querySelectorAll('*'))
     return all.filter((el) => {
       const cs = getComputedStyle(el)
@@ -177,21 +166,9 @@ try {
     })
   rec.record('最后一条目录项可完整滚动访问', lastRow.visible, JSON.stringify(lastRow))
 
-  // 收起「变更」后，头部不遮挡目录项
-  await scrollBody(0)
-  await changesToggle.click()
-  await new Promise((resolve) => setTimeout(resolve, 400))
-  await scrollBody(300)
-  const tocAfterCollapse = await headingInfo('.toc-heading')
-  rec.record(
-    '收起「变更」后目录栏仍在视口内',
-    Boolean(tocAfterCollapse?.inViewport),
-    JSON.stringify(tocAfterCollapse)
-  )
-
   // 侧栏宽度变化后吸顶仍成立
   await page
-    .locator('.navigator-body')
+    .locator('.toc-view .navigator-body')
     .first()
     .evaluate((el) => {
       el.scrollTop = 400
