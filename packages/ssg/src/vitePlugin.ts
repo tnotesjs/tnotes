@@ -2,8 +2,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { Plugin } from 'vite'
 
-import { readDemoCatalog } from '@tnotesjs/kb'
-
 import { PAGE_ID_PREFIX, parsePageModuleId, type PageSourceStore } from './pageStore'
 import type { ResolvedSsgConfig, SiteData } from './types'
 
@@ -40,12 +38,7 @@ const serializeSite = (site: ResolvedSsgConfig, store: PageSourceStore) => ({
     lineBreaks: site.markdown.lineBreaks
   },
   completionStats: readCompletionStats(site.root),
-  corpus: store.corpus,
-  demos: readDemoCatalog(site.root).map(({ id, title, description }) => ({
-    id,
-    title,
-    description
-  }))
+  corpus: store.corpus
 })
 
 /**

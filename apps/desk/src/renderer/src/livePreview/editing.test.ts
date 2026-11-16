@@ -9,11 +9,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   continueMarkup,
+  collapseExtraCursors,
   headingBackspace,
   runAltModShortcut,
+  setLinePrefix,
+  shiftTabCommand,
   tabCommand,
   wrapSelection
 } from './commands'
+import { captureSelection } from './selectionCapture'
 import { taskToggleChange } from './widgets'
 import {
   codeGroupTabs,
@@ -39,6 +43,22 @@ afterEach(() => {
   for (const view of views.splice(0)) view.destroy()
   document.body.replaceChildren()
 })
+
+function mountPlain(doc: string): EditorView {
+  const parent = document.createElement('div')
+  document.body.append(parent)
+  const view = new EditorView({
+    parent,
+    state: EditorState.create({
+      doc,
+      extensions: [EditorState.allowMultipleSelections.of(true), tnotesMarkdown()]
+    })
+  })
+  views.push(view)
+  // happy-dom 的 selectionchange 会把多选区收成浏览器里的那一个。
+  ;(view as unknown as { observer: { stop: () => void } }).observer.stop()
+  return view
+}
 
 function mount(doc: string, cursor: number): EditorView {
   const parent = document.createElement('div')
@@ -122,10 +142,18 @@ describe('live preview editing', () => {
     expect(view.state.doc.toString()).toBe('标题\n')
   })
 
-  it('indents a list item with Tab', () => {
+  it('inserts two spaces for a Tab outside a list', () => {
+    const view = mount('甲\n', 0)
+    expect(tabCommand(view)).toBe(true)
+    expect(view.state.doc.toString()).toBe('  甲\n')
+  })
+
+  it('indents a list item with Tab by two spaces', () => {
     const view = mount('- 甲\n- 乙\n', 6)
     expect(tabCommand(view)).toBe(true)
-    expect(view.state.doc.toString()).toBe('- 甲\n    - 乙\n')
+    expect(view.state.doc.toString()).toBe('- 甲\n  - 乙\n')
+    expect(shiftTabCommand(view)).toBe(true)
+    expect(view.state.doc.toString()).toBe('- 甲\n- 乙\n')
   })
 
   it('wraps the selection in bold markers', () => {
@@ -133,6 +161,64 @@ describe('live preview editing', () => {
     view.dispatch({ selection: EditorSelection.range(0, 2) })
     wrapSelection(view, '**', '**')
     expect(view.state.doc.toString()).toBe('**正文**\n')
+  })
+
+  it('wraps every cursor and keeps them separate', () => {
+    const view = mountPlain('甲 乙\n')
+    view.dispatch({
+      selection: EditorSelection.create([EditorSelection.range(0, 1), EditorSelection.range(2, 3)])
+    })
+    wrapSelection(view, '**', '**')
+    expect(view.state.doc.toString()).toBe('**甲** **乙**\n')
+    expect(view.state.selection.ranges).toHaveLength(2)
+    expect(
+      view.state.sliceDoc(view.state.selection.ranges[0].from, view.state.selection.ranges[0].to)
+    ).toBe('甲')
+    expect(
+      view.state.sliceDoc(view.state.selection.ranges[1].from, view.state.selection.ranges[1].to)
+    ).toBe('乙')
+  })
+
+  it('prefixes each cursor line without collapsing to one selection', () => {
+    const view = mountPlain('甲\n乙\n')
+    view.dispatch({
+      selection: EditorSelection.create([EditorSelection.cursor(0), EditorSelection.cursor(2)])
+    })
+    setLinePrefix(view, '- ')
+    expect(view.state.doc.toString()).toBe('- 甲\n- 乙\n')
+    expect(view.state.selection.ranges).toHaveLength(2)
+  })
+
+  it('strips a heading mark at every cursor', () => {
+    const view = mountPlain('## 甲\n## 乙\n')
+    view.dispatch({
+      selection: EditorSelection.create([EditorSelection.cursor(3), EditorSelection.cursor(8)])
+    })
+    expect(headingBackspace(view)).toBe(true)
+    expect(view.state.doc.toString()).toBe('甲\n乙\n')
+    expect(view.state.selection.ranges).toHaveLength(2)
+  })
+
+  it('collapses extra cursors back to the main one', () => {
+    const view = mountPlain('甲\n乙\n')
+    view.dispatch({
+      selection: EditorSelection.create([EditorSelection.cursor(0), EditorSelection.cursor(2)], 1)
+    })
+    expect(collapseExtraCursors(view)).toBe(true)
+    expect(view.state.selection.ranges).toHaveLength(1)
+    expect(view.state.selection.main.head).toBe(2)
+  })
+
+  it('refuses a multi-range selection for the agent instead of returning one piece', () => {
+    const view = mountPlain('甲乙\n')
+    view.dispatch({
+      selection: EditorSelection.create([EditorSelection.range(0, 1), EditorSelection.range(1, 2)])
+    })
+    expect(captureSelection(view.state)).toMatchObject({
+      empty: false,
+      selectedText: '',
+      unsupportedReason: '暂不支持多个不连续选区（当前 2 处）'
+    })
   })
 
   it('keeps decorating while characters are inserted through a mixed note', () => {

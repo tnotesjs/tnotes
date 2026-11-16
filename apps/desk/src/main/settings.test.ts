@@ -86,6 +86,7 @@ describe('配置文件字段级容错', () => {
 
     expect(settings.theme).toBe('light')
     expect(settings.autosave).toEqual({ enabled: true, delayMs: 1000 })
+    expect(settings.trimTrailingWhitespace).toBe(true)
     expect(settings).not.toHaveProperty('toc')
   })
 

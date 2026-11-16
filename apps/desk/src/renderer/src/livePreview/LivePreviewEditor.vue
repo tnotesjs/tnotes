@@ -6,7 +6,14 @@
  * 切换时光标、选区、滚动、撤销历史都保留；保存的就是这份文本（所写即所存）。
  */
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { defaultKeymap, history, historyKeymap, insertNewlineAndIndent } from '@codemirror/commands'
+import {
+  addCursorAbove,
+  addCursorBelow,
+  defaultKeymap,
+  history,
+  historyKeymap,
+  insertNewlineAndIndent
+} from '@codemirror/commands'
 import {
   codeFolding,
   foldKeymap,
@@ -27,6 +34,8 @@ import {
   rectangularSelection
 } from '@codemirror/view'
 import { classHighlighter } from '@lezer/highlight'
+import { deskColorScheme, sourceHighlightExtension } from './sourceHighlight'
+import { addsCursorOnPointerDown, isColumnSelectionGesture } from './multiCursorPointer'
 
 import NoteOutline from '../markdown/NoteOutline.vue'
 import ImageInsertPopover from './ImageInsertPopover.vue'
@@ -43,6 +52,7 @@ import {
   arrowUpIntoBlock,
   keepCursorOnVisibleLine,
   clearLineStyles,
+  collapseExtraCursors,
   continueMarkup,
   deleteMarkup,
   runAltModShortcut,
@@ -83,6 +93,7 @@ import {
   beginImageUpload,
   cancelImageUpload,
   finishImageUpload,
+  finishImageUploads,
   imageUploadExtension
 } from './imageUpload'
 import { sourceChrome } from './sourceChrome'
@@ -137,7 +148,7 @@ const emit = defineEmits<{
   change: [content: string]
   openLink: [url: string]
   openNote: [noteUuid: string]
-  pasteImage: [file: File, insertAt: number]
+  pasteImage: [file: File, insertAt: number[]]
   selectionChange: [payload: EditorSelectionPayload]
   pinSelection: []
   headingLevelChange: [level: number | null]
@@ -156,6 +167,7 @@ let view: EditorView | null = null
 const modeCompartment = new Compartment()
 const readOnlyCompartment = new Compartment()
 const contextCompartment = new Compartment()
+const sourceThemeCompartment = new Compartment()
 let lastHeadingLevel: number | null | undefined
 let outlineTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -166,6 +178,12 @@ function modeExtensions(mode: NoteViewMode): Extension[] {
     EditorView.editorAttributes.of({ class: visual ? 'cm-lp-visual' : 'cm-lp-source' }),
     ...(visual ? [] : [sourceChrome()])
   ]
+}
+
+/** 可视化沿用原来的类名着色；源码视图换成当前深浅对应的 GitHub 语法色。 */
+function sourceThemeExtensions(mode: NoteViewMode): Extension {
+  if (mode !== 'source') return []
+  return sourceHighlightExtension(deskColorScheme())
 }
 
 function readOnlyExtensions(readOnly: boolean): Extension[] {
@@ -243,7 +261,7 @@ function closeImageInsert(): void {
 function insertPickedImage(file: File): void {
   const pos = imageInsert.value?.pos
   closeImageInsert()
-  if (pos != null) emit('pasteImage', file, pos)
+  if (pos != null) emit('pasteImage', file, [pos])
 }
 
 function insertImageLink(url: string): void {
@@ -366,16 +384,20 @@ function createState(doc: string): EditorState {
     doc,
     selection: EditorSelection.cursor(initialCursor(doc)),
     extensions: [
+      // 不打开这个开关时，⌘D、⌘-点击加出来的选区会立刻被收成主选区。
+      EditorState.allowMultipleSelections.of(true),
       tnotesMarkdown(),
       history(),
       drawSelection(),
       glyphSelectionLayer,
       dropCursor(),
-      rectangularSelection(),
+      EditorView.clickAddsSelectionRange.of(addsCursorOnPointerDown),
+      rectangularSelection({ eventFilter: isColumnSelectionGesture }),
       EditorView.lineWrapping,
-      indentUnit.of('    '),
-      EditorState.tabSize.of(4),
+      indentUnit.of('  '),
+      EditorState.tabSize.of(2),
       syntaxHighlighting(classHighlighter),
+      sourceThemeCompartment.of(sourceThemeExtensions(props.mode)),
       imageUploadExtension,
       codeGroupTabs,
       headingFoldService,
@@ -446,6 +468,9 @@ function createState(doc: string): EditorState {
           run: (v: EditorView) => (setLinePrefixCommand(v, `${'#'.repeat(level)} `), true)
         })),
         { key: 'Mod-\\', run: clearLineStyles },
+        { key: 'Mod-Alt-ArrowUp', run: addCursorAbove },
+        { key: 'Mod-Alt-ArrowDown', run: addCursorBelow },
+        { key: 'Escape', run: collapseExtraCursors },
         { key: 'Mod-f', run: (v) => openFind(v) },
         { key: 'Mod-Alt-f', run: (v) => openFind(v, true) },
         { win: 'Ctrl-h', linux: 'Ctrl-h', run: (v) => openFind(v, true) },
@@ -473,7 +498,11 @@ function createState(doc: string): EditorState {
           const file = imageFileFrom(event.clipboardData)
           if (!file || editorView.state.readOnly) return false
           event.preventDefault()
-          emit('pasteImage', file, editorView.state.selection.main.from)
+          emit(
+            'pasteImage',
+            file,
+            editorView.state.selection.ranges.map((range) => range.from)
+          )
           return true
         },
         drop(event, editorView) {
@@ -483,7 +512,12 @@ function createState(doc: string): EditorState {
           const pos =
             editorView.posAtCoords({ x: event.clientX, y: event.clientY }) ??
             editorView.state.selection.main.from
-          emit('pasteImage', file, pos)
+          emit('pasteImage', file, [pos])
+          return true
+        },
+        auxclick(event) {
+          if (event.button !== 1) return false
+          event.preventDefault()
           return true
         },
         mousedown(event) {
@@ -634,6 +668,8 @@ defineExpose({
     view ? beginImageUpload(view, position, label) : -1,
   finishImageUpload: (id: number, markdown: string) =>
     view ? finishImageUpload(view, id, markdown) : false,
+  finishImageUploads: (ids: number[], markdown: string) =>
+    view ? finishImageUploads(view, ids, markdown) : false,
   cancelImageUpload: (id: number) => {
     if (view) cancelImageUpload(view, id)
   },
@@ -669,10 +705,22 @@ defineExpose({
 })
 
 let untrackFindTarget: (() => void) | null = null
+let themeObserver: MutationObserver | null = null
+
+function syncSourceTheme(): void {
+  view?.dispatch({
+    effects: sourceThemeCompartment.reconfigure(sourceThemeExtensions(props.mode))
+  })
+}
 
 onMounted(() => {
   if (!host.value) return
   view = new EditorView({ state: createState(props.content), parent: host.value })
+  themeObserver = new MutationObserver(syncSourceTheme)
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme']
+  })
   if (props.documentHead) view.scrollDOM.prepend(props.documentHead)
   adoptArchivedReviews(view)
   registerLiveEditor(props.knowledgeBaseId, props.noteUuid, view)
@@ -683,6 +731,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  themeObserver?.disconnect()
+  themeObserver = null
   window.removeEventListener(DESK_SELECT_ALL_EVENT, selectAll)
   if (outlineTimer) clearTimeout(outlineTimer)
   if (view) unregisterLiveEditor(props.knowledgeBaseId, props.noteUuid, view)
@@ -700,7 +750,12 @@ watch(
 watch(
   () => props.mode,
   (mode) => {
-    view?.dispatch({ effects: modeCompartment.reconfigure(modeExtensions(mode)) })
+    view?.dispatch({
+      effects: [
+        modeCompartment.reconfigure(modeExtensions(mode)),
+        sourceThemeCompartment.reconfigure(sourceThemeExtensions(mode))
+      ]
+    })
     view?.focus()
   }
 )

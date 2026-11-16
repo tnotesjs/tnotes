@@ -55,6 +55,7 @@ const settingsSchema = z.object({
       delayMs: z.number().int().min(250).max(30_000).default(1000)
     })
     .default({ enabled: true, delayMs: 1000 }),
+  trimTrailingWhitespace: z.boolean().default(true),
   createNotePosition: z.enum(['top', 'end']).default('top'),
   workspaceLayout: z.enum(['kb-dir-content', 'content-dir-kb']).default('kb-dir-content'),
   ide: z.enum(['vscode', 'cursor']).default('vscode'),

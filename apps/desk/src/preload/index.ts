@@ -82,8 +82,6 @@ import type {
   NoteCreateManyResult,
   NoteCreateRequest,
   NoteDocumentDto,
-  DemosTableResolveRequest,
-  DemosTableResolveResult,
   NotesTableResolveRequest,
   NotesTableResolveResult,
   NoteMutationDto,
@@ -344,8 +342,6 @@ const api: DeskApi = {
       }),
     resolveTable: (request: NotesTableResolveRequest) =>
       invoke<NotesTableResolveResult>(IPC_CHANNELS.noteResolveTable, request),
-    resolveDemos: (request: DemosTableResolveRequest) =>
-      invoke<DemosTableResolveResult>(IPC_CHANNELS.noteResolveDemos, request),
     save: (request: NoteSaveRequest) => invoke<NoteMutationDto>(IPC_CHANNELS.noteSave, request),
     create: (request: NoteCreateRequest) =>
       invoke<NoteMutationDto>(IPC_CHANNELS.noteCreate, request),

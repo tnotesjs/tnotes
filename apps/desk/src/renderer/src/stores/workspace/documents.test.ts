@@ -438,6 +438,47 @@ describe('保存入口与受阻草稿（P1-1 回归）', () => {
     expect(documents.value['kb:note-1']?.dirty).toBe(true)
   })
 
+  it('默认保存时去掉行尾空格；关掉配置后保留', async () => {
+    const session = makeSession({ content: '甲  \n乙\t\n', dirty: true })
+    const { ctx, documents } = makeContext(session)
+    const notesSave = vi.fn(async (request: { content: string }) => ({
+      ok: true as const,
+      value: {
+        note: { ...session.document, content: request.content, revision: 'r2' },
+        knowledgeBase: {}
+      }
+    }))
+    Object.defineProperty(window, 'desk', {
+      configurable: true,
+      value: {
+        recovery: { delete: vi.fn(async () => ({ ok: true, value: undefined })) },
+        notes: { save: notesSave }
+      }
+    })
+    const store = createDocuments(ctx)
+
+    await store.saveDocument('kb:note-1')
+
+    expect(notesSave).toHaveBeenCalledWith(expect.objectContaining({ content: '甲\n乙\n' }))
+    expect(documents.value['kb:note-1']?.content).toBe('甲\n乙\n')
+
+    documents.value = {
+      ...documents.value,
+      'kb:note-1': {
+        ...documents.value['kb:note-1']!,
+        content: '甲  \n',
+        dirty: true,
+        saving: false
+      }
+    }
+    ctx.settings.value = {
+      autosave: { enabled: false, delayMs: 1000 },
+      trimTrailingWhitespace: false
+    } as typeof ctx.settings.value
+    await store.saveDocument('kb:note-1')
+    expect(notesSave).toHaveBeenLastCalledWith(expect.objectContaining({ content: '甲  \n' }))
+  })
+
   it('普通内容同步回到磁盘内容时，仍存在的草稿照样算未保存（P1 回归）', () => {
     // 引用位置 documents.ts:159 附近：updateDocumentContent
     const session = makeSession({ content: '# 原文\n', dirty: true, unsavedDraft: true })

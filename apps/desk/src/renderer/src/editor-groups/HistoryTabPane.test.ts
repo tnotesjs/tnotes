@@ -31,6 +31,7 @@ const settings: AppSettings = {
   showTextFormatToolbar: true,
   appZoomPercent: 100,
   autosave: { enabled: true, delayMs: 800 },
+  trimTrailingWhitespace: true,
   createNotePosition: 'top',
   workspaceLayout: 'kb-dir-content',
   ide: 'vscode',

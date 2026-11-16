@@ -33,6 +33,13 @@ const textFormatChoice = computed({
   }
 })
 
+const trimTrailingChoice = computed({
+  get: () => (props.draft.trimTrailingWhitespace ? 'on' : 'off'),
+  set: (value: string) => {
+    props.draft.trimTrailingWhitespace = value === 'on'
+  }
+})
+
 const autosaveChoice = computed({
   get: () => (props.draft.autosave.enabled ? 'on' : 'off'),
   set: (value: string) => {
@@ -135,6 +142,13 @@ async function checkNow(): Promise<void> {
           <option :value="4">4 层</option>
           <option :value="5">5 层</option>
           <option :value="6">6 层</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>保存时移除行尾空格</span>
+        <select v-model="trimTrailingChoice">
+          <option value="on">开启</option>
+          <option value="off">关闭</option>
         </select>
       </label>
       <label class="field">

@@ -1,7 +1,8 @@
 import { indentLess, indentMore } from '@codemirror/commands'
 import { deleteMarkupBackward, insertNewlineContinueMarkup } from '@codemirror/lang-markdown'
-import { foldedRanges } from '@codemirror/language'
-import { Transaction, type StateCommand } from '@codemirror/state'
+import { foldedRanges, indentUnit } from '@codemirror/language'
+import { searchPanelOpen } from '@codemirror/search'
+import { EditorSelection, Transaction, type StateCommand } from '@codemirror/state'
 import { EditorView, type Command } from '@codemirror/view'
 
 import { sourceLineStyleChangesFor } from '../markdown/clearSourceLineStyles'
@@ -29,9 +30,91 @@ export function applyTextEdit(view: EditorView, edit: TextEdit): void {
   view.focus()
 }
 
-function selectionOffsets(view: EditorView): { text: string; from: number; to: number } {
-  const range = view.state.selection.main
-  return { text: view.state.doc.toString(), from: range.from, to: range.to }
+/**
+ * 把每个选区各自的替换合成一次修改。
+ *
+ * 选区坐标按改之前的文档计算。同一段被多个光标覆盖时只改一次，光标留在改完的那一段上，
+ * 不会收成主光标一个。区间互相重叠、又不是同一段时，跳过后面那个，避免改动叠在一起。
+ */
+function dispatchTextEdits(view: EditorView, edits: TextEdit[], mainIndex: number): void {
+  const ordered = edits
+    .map((edit, index) => ({ edit, index }))
+    .sort((left, right) => left.edit.from - right.edit.from || left.edit.to - right.edit.to)
+  const accepted: Array<{ edit: TextEdit; index: number }> = []
+  for (const item of ordered) {
+    const previous = accepted[accepted.length - 1]
+    if (previous && item.edit.from === previous.edit.from && item.edit.to === previous.edit.to) {
+      if (item.index === mainIndex) previous.index = item.index
+      continue
+    }
+    if (previous && item.edit.from < previous.edit.to) continue
+    accepted.push(item)
+  }
+  if (accepted.length === 0) return
+  let delta = 0
+  let mappedMain = 0
+  const ranges = accepted.map((item, placed) => {
+    const edit = item.edit
+    const range = EditorSelection.range(edit.selectionFrom + delta, edit.selectionTo + delta)
+    if (item.index === mainIndex) mappedMain = placed
+    delta += edit.insert.length - (edit.to - edit.from)
+    return range
+  })
+  view.dispatch({
+    changes: accepted.map((item) => ({
+      from: item.edit.from,
+      to: item.edit.to,
+      insert: item.edit.insert
+    })),
+    selection: EditorSelection.create(ranges, mappedMain),
+    scrollIntoView: true,
+    userEvent: 'input'
+  })
+  queueMicrotask(() => {
+    if (view.dom.isConnected) view.focus()
+  })
+}
+
+function wrapRangeEdit(
+  text: string,
+  from: number,
+  to: number,
+  prefix: string,
+  suffix: string,
+  placeholder: string
+): TextEdit {
+  const docLength = text.length
+  const before = text.slice(Math.max(0, from - prefix.length), from)
+  const after = text.slice(to, Math.min(docLength, to + suffix.length))
+  if (from !== to && before === prefix && after === suffix) {
+    const start = from - prefix.length
+    const end = to + suffix.length
+    return {
+      text,
+      insert: text.slice(from, to),
+      from: start,
+      to: end,
+      selectionFrom: start,
+      selectionTo: to - prefix.length
+    }
+  }
+  const inner = text.slice(from, to)
+  if (
+    inner.length > prefix.length + suffix.length &&
+    inner.startsWith(prefix) &&
+    inner.endsWith(suffix)
+  ) {
+    const stripped = inner.slice(prefix.length, inner.length - suffix.length)
+    return {
+      text,
+      insert: stripped,
+      from,
+      to,
+      selectionFrom: from,
+      selectionTo: from + stripped.length
+    }
+  }
+  return wrapSelectionEdit(text, from, to, prefix, suffix, placeholder)
 }
 
 /**
@@ -44,69 +127,59 @@ export function wrapSelection(
   placeholder = '文字'
 ): void {
   if (view.state.readOnly) return
-  const { from, to } = view.state.selection.main
-  const doc = view.state.doc
-  const before = doc.sliceString(Math.max(0, from - prefix.length), from)
-  const after = doc.sliceString(to, Math.min(doc.length, to + suffix.length))
-  if (from !== to && before === prefix && after === suffix) {
-    view.dispatch({
-      changes: [
-        { from: from - prefix.length, to: from },
-        { from: to, to: to + suffix.length }
-      ],
-      selection: { anchor: from - prefix.length, head: to - prefix.length },
-      userEvent: 'input'
-    })
-    view.focus()
-    return
-  }
-  const inner = doc.sliceString(from, to)
-  if (
-    inner.length > prefix.length + suffix.length &&
-    inner.startsWith(prefix) &&
-    inner.endsWith(suffix)
-  ) {
-    view.dispatch({
-      changes: { from, to, insert: inner.slice(prefix.length, inner.length - suffix.length) },
-      selection: { anchor: from, head: to - prefix.length - suffix.length },
-      userEvent: 'input'
-    })
-    view.focus()
-    return
-  }
-  const { text } = selectionOffsets(view)
-  applyTextEdit(view, wrapSelectionEdit(text, from, to, prefix, suffix, placeholder))
+  const text = view.state.doc.toString()
+  const edits = view.state.selection.ranges.map((range) =>
+    wrapRangeEdit(text, range.from, range.to, prefix, suffix, placeholder)
+  )
+  dispatchTextEdits(view, edits, view.state.selection.mainIndex)
 }
 
 export function setLinePrefix(view: EditorView, prefix: string): void {
   if (view.state.readOnly) return
-  const { text, from, to } = selectionOffsets(view)
-  applyTextEdit(view, setLinePrefixEdit(text, from, to, prefix))
+  const text = view.state.doc.toString()
+  const edits = view.state.selection.ranges.map((range) =>
+    setLinePrefixEdit(text, range.from, range.to, prefix)
+  )
+  dispatchTextEdits(view, edits, view.state.selection.mainIndex)
   renumberAround(view)
 }
 
 export function prefixSelection(view: EditorView, prefix: string): void {
   if (view.state.readOnly) return
-  const { text, from, to } = selectionOffsets(view)
-  applyTextEdit(view, prefixLinesEdit(text, from, to, prefix))
+  const text = view.state.doc.toString()
+  const edits = view.state.selection.ranges.map((range) =>
+    prefixLinesEdit(text, range.from, range.to, prefix)
+  )
+  dispatchTextEdits(view, edits, view.state.selection.mainIndex)
 }
 
 export function insertText(view: EditorView, insert: string, position?: number): void {
   if (view.state.readOnly) return
-  const { text, from } = selectionOffsets(view)
-  const edit = insertTextEdit(text, insert, position, from)
-  // 提示块模板插入后光标落在正文第一行，接着就能写内容
+  const text = view.state.doc.toString()
   const callout = /^\n?:{3,}[ \t]*(?:tip|info|warning|danger|details)\b[^\n]*\n/.exec(insert)
-  if (callout && insert.length > callout[0].length) {
-    edit.selectionFrom = edit.selectionTo = edit.from + callout[0].length
-  }
-  applyTextEdit(view, edit)
+  const ranges = position == null ? view.state.selection.ranges : [{ from: position, to: position }]
+  const edits = ranges.map((range) => {
+    const edit = insertTextEdit(text, insert, position == null ? undefined : position, range.from)
+    if (callout && insert.length > callout[0].length) {
+      edit.selectionFrom = edit.selectionTo = edit.from + callout[0].length
+    }
+    return edit
+  })
+  dispatchTextEdits(view, edits, position == null ? view.state.selection.mainIndex : 0)
 }
 
 export function clearLineStyles(view: EditorView): boolean {
   if (view.state.readOnly) return false
-  const { text, from, to } = selectionOffsets(view)
-  const changes = sourceLineStyleChangesFor(text, from, to)
+  const text = view.state.doc.toString()
+  const seen = new Set<string>()
+  const changes = view.state.selection.ranges.flatMap((range) =>
+    sourceLineStyleChangesFor(text, range.from, range.to).filter((change) => {
+      const key = `${change.from}:${change.to}:${change.insert}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  )
   if (changes.length > 0) {
     view.dispatch({
       changes: changes.map((change) => ({
@@ -120,9 +193,22 @@ export function clearLineStyles(view: EditorView): boolean {
   return true
 }
 
+/** Esc：多个光标收成主光标。查找面板开着时不接管，让查找自己关掉。 */
+export const collapseExtraCursors: Command = (view) => {
+  if (searchPanelOpen(view.state) || view.state.selection.ranges.length < 2) return false
+  const main = view.state.selection.main
+  view.dispatch({
+    selection: EditorSelection.single(main.anchor, main.head),
+    userEvent: 'select'
+  })
+  return true
+}
+
 /** 当前选区附近的有序列表重编号（单独一次修改，跟在结构编辑后面） */
 function renumberAround(view: EditorView): void {
-  const { from, to } = view.state.selection.main
+  const ranges = view.state.selection.ranges
+  const from = Math.min(...ranges.map((range) => range.from))
+  const to = Math.max(...ranges.map((range) => range.to))
   const changes = renumberOrderedLists(view.state, from, to)
   if (changes.length > 0) {
     view.dispatch({
@@ -168,15 +254,19 @@ export const indentListMore = withRenumber(indentMore)
 export const indentListLess = withRenumber(indentLess)
 
 function inList(view: EditorView): boolean {
-  const line = view.state.doc.lineAt(view.state.selection.main.head)
-  return /^\s*(?:[-*+]|\d{1,9}[.)])\s/.test(line.text)
+  return view.state.selection.ranges.some((range) => {
+    const line = view.state.doc.lineAt(range.head)
+    return /^\s*(?:[-*+]|\d{1,9}[.)])\s/.test(line.text)
+  })
 }
 
-/** Tab：列表项缩进一级；其它地方插入 4 个空格 */
+/** Tab：列表项缩进一级；其它地方插入一个缩进单位（2 个空格）。多个光标同时处理。 */
 export const tabCommand: Command = (view) => {
   if (view.state.readOnly) return false
-  if (inList(view) || !view.state.selection.main.empty) return indentListMore(view)
-  view.dispatch(view.state.replaceSelection('    '), { userEvent: 'input' })
+  if (inList(view) || view.state.selection.ranges.some((range) => !range.empty)) {
+    return indentListMore(view)
+  }
+  view.dispatch(view.state.replaceSelection(view.state.facet(indentUnit)), { userEvent: 'input' })
   return true
 }
 
@@ -188,16 +278,32 @@ export const shiftTabCommand: Command = (view) => {
 /** 标题内容开头按退格：直接回到正文（去掉整个 `## ` 前缀），不逐级降级。 */
 export const headingBackspace: Command = (view) => {
   const { state } = view
-  const selection = state.selection.main
-  if (!selection.empty || state.readOnly) return false
-  const line = state.doc.lineAt(selection.head)
-  const match = /^( {0,3}#{1,6})([ \t]+|$)/.exec(line.text)
-  if (!match) return false
-  const contentStart = line.from + match[0].length
-  if (selection.head !== contentStart) return false
+  if (state.readOnly) return false
+  const strips: Array<{ from: number; to: number; index: number }> = []
+  for (const [index, range] of state.selection.ranges.entries()) {
+    if (!range.empty) return false
+    const line = state.doc.lineAt(range.head)
+    const match = /^( {0,3}#{1,6})([ \t]+|$)/.exec(line.text)
+    if (!match) return false
+    const contentStart = line.from + match[0].length
+    if (range.head !== contentStart) return false
+    strips.push({ from: line.from, to: contentStart, index })
+  }
+  if (strips.length === 0) return false
+  const unique = strips
+    .sort((left, right) => left.from - right.from)
+    .filter((strip, index, all) => index === 0 || strip.from !== all[index - 1]?.from)
+  let removed = 0
+  let mappedMain = 0
+  const ranges = unique.map((strip, placed) => {
+    const cursor = EditorSelection.cursor(strip.from - removed)
+    if (strip.index === state.selection.mainIndex) mappedMain = placed
+    removed += strip.to - strip.from
+    return cursor
+  })
   view.dispatch({
-    changes: { from: line.from, to: contentStart },
-    selection: { anchor: line.from },
+    changes: unique.map((strip) => ({ from: strip.from, to: strip.to, insert: '' })),
+    selection: EditorSelection.create(ranges, mappedMain),
     userEvent: 'delete.backward'
   })
   return true
@@ -253,6 +359,7 @@ function lineIsRestable(view: EditorView, lineNo: number): boolean {
 
 function arrowByScreenLine(forward: boolean): Command {
   return (view) => {
+    if (view.state.selection.ranges.length > 1) return false
     const selection = view.state.selection.main
     if (!selection.empty) return false
     const doc = view.state.doc
@@ -314,8 +421,7 @@ export const keepCursorOnVisibleLine = EditorView.updateListener.of((update) => 
     return
   }
   const doc = update.state.doc
-  const previous = update.startState.selection.main
-  const selection = update.state.selection.main
+  const previousRanges = update.startState.selection.ranges
   const clamp = (pos: number, from: number): number => {
     const lineNo = doc.lineAt(pos).number
     if (lineIsRestable(update.view, lineNo)) return pos
@@ -326,11 +432,19 @@ export const keepCursorOnVisibleLine = EditorView.updateListener.of((update) => 
     const line = doc.line(found.line)
     return found.fromAbove ? line.from : line.to
   }
-  const anchor = clamp(selection.anchor, previous.anchor)
-  const head = clamp(selection.head, previous.head)
-  if (anchor === selection.anchor && head === selection.head) return
+  const ranges = update.state.selection.ranges.map((range, index) => {
+    const previous = previousRanges[index] ?? range
+    return EditorSelection.range(
+      clamp(range.anchor, previous.anchor),
+      clamp(range.head, previous.head)
+    )
+  })
+  const unchanged = ranges.every((range, index) =>
+    range.eq(update.state.selection.ranges[index] ?? range)
+  )
+  if (unchanged) return
   update.view.dispatch({
-    selection: { anchor, head },
+    selection: EditorSelection.create(ranges, update.state.selection.mainIndex),
     scrollIntoView: true,
     userEvent: 'select.visible-clamp'
   })
@@ -351,6 +465,7 @@ export function horizontalStop(
 
 function arrowByChar(forward: boolean): Command {
   return (view) => {
+    if (view.state.selection.ranges.length > 1) return false
     const selection = view.state.selection.main
     if (!selection.empty) return false
     const steps: number[] = []

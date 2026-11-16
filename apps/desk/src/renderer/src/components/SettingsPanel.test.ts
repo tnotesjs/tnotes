@@ -24,6 +24,7 @@ const settings: AppSettings = {
   agent: structuredClone(DEFAULT_AGENT_SETTINGS),
   appZoomPercent: 100,
   autosave: { enabled: true, delayMs: 800 },
+  trimTrailingWhitespace: true,
   createNotePosition: 'top',
   workspaceLayout: 'kb-dir-content',
   ide: 'vscode',

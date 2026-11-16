@@ -26,6 +26,7 @@ import type { FormatToolbarEditor } from './NoteFormatToolbar.vue'
 interface ReadmeEditorHandle extends FormatToolbarEditor {
   beginImageUpload?(position: number, label: string): number
   finishImageUpload?(id: number, markdown: string): boolean
+  finishImageUploads?(ids: number[], markdown: string): boolean
   cancelImageUpload?(id: number): void
   flush(): void
 }
@@ -154,11 +155,11 @@ function toggleMode(): void {
   viewMode.value = viewMode.value === 'source' ? 'visual' : 'source'
 }
 
-async function pasteImage(file: File, insertAt: number): Promise<void> {
+async function pasteImage(file: File, insertAt: number[]): Promise<void> {
   const target = markdownEditor.value
   const label =
     workspace.settings?.imageUpload.defaultTarget === 'github' ? '正在上传到图床' : '正在保存图片'
-  const uploadId = target?.beginImageUpload?.(insertAt, label)
+  const uploadIds = insertAt.map((position) => target?.beginImageUpload?.(position, label) ?? -1)
   try {
     const attachment = await workspace.uploadImage(
       props.tab.knowledgeBaseId,
@@ -166,11 +167,17 @@ async function pasteImage(file: File, insertAt: number): Promise<void> {
       file
     )
     const markdown = await pastedImageMarkdown(file, attachment.markdownPath)
-    const placed =
-      uploadId != null && uploadId >= 0 && target?.finishImageUpload?.(uploadId, markdown)
-    if (!placed) target?.insertTextAt(markdown, insertAt)
+    const placed = target?.finishImageUploads?.(
+      uploadIds.filter((id) => id >= 0),
+      markdown
+    )
+    if (!placed) {
+      for (const position of [...insertAt].reverse()) target?.insertTextAt(markdown, position)
+    }
   } catch (cause) {
-    if (uploadId != null && uploadId >= 0) target?.cancelImageUpload?.(uploadId)
+    for (const id of uploadIds) {
+      if (id >= 0) target?.cancelImageUpload?.(id)
+    }
     workspace.error = cause instanceof Error ? cause.message : String(cause)
   }
 }

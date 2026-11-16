@@ -105,6 +105,32 @@ export function beginImageUpload(view: EditorView, pos: number, label: string): 
   return id
 }
 
+/** 上传结束：在每一处占位写入同一段图片 Markdown，并在每处后面留一个光标。 */
+export function finishImageUploads(view: EditorView, ids: number[], markdown: string): boolean {
+  if (ids.length === 1) return finishImageUpload(view, ids[0] ?? -1, markdown)
+  for (const id of ids) clearUploadTimer(view, id)
+  if (!editorAlive(view)) return false
+  const pending = view.state.field(pendingImageUploads, false)
+  const items = ids.map((id) => pending?.find((entry) => entry.id === id))
+  if (items.some((item) => !item)) return false
+  const places = [...new Set(items.map((item) => item?.pos ?? 0))].sort(
+    (left, right) => left - right
+  )
+  let shift = 0
+  const ranges = places.map((pos) => {
+    const cursor = EditorSelection.cursor(pos + shift + markdown.length)
+    shift += markdown.length
+    return cursor
+  })
+  view.dispatch({
+    changes: places.map((pos) => ({ from: pos, insert: markdown })),
+    effects: ids.map((id) => removeImageUpload.of(id)),
+    selection: EditorSelection.create(ranges, ranges.length - 1),
+    userEvent: 'input.paste'
+  })
+  return true
+}
+
 /** 上传结束：在占位的位置写入图片 Markdown，并撤掉占位。占位已经不在时返回 false。 */
 export function finishImageUpload(view: EditorView, id: number, markdown: string): boolean {
   clearUploadTimer(view, id)

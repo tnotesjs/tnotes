@@ -48,6 +48,7 @@ interface MarkdownEditorHandle {
   insertTextAt(text: string, position?: number): void
   beginImageUpload?(position: number, label: string): number
   finishImageUpload?(id: number, markdown: string): boolean
+  finishImageUploads?(ids: number[], markdown: string): boolean
   cancelImageUpload?(id: number): void
   /** 跳到指定行（1-based）并聚焦。 */
   revealLine?(line: number): boolean
@@ -671,11 +672,13 @@ function locateAssetReference(rawPath: string): void {
   if (!found) workspace.status = `没有在正文里找到这处引用：${rawPath}`
 }
 
-async function pasteImage(file: File, insertAt: number): Promise<void> {
+async function pasteImage(file: File, insertAt: number[]): Promise<void> {
   const targetEditor = markdownEditor.value
   const label =
     workspace.settings?.imageUpload.defaultTarget === 'github' ? '正在上传到图床' : '正在保存图片'
-  const uploadId = targetEditor?.beginImageUpload?.(insertAt, label)
+  const uploadIds = insertAt.map(
+    (position) => targetEditor?.beginImageUpload?.(position, label) ?? -1
+  )
   try {
     const attachment = await workspace.uploadImage(
       props.tab.knowledgeBaseId,
@@ -683,11 +686,17 @@ async function pasteImage(file: File, insertAt: number): Promise<void> {
       file
     )
     const markdown = await pastedImageMarkdown(file, attachment.markdownPath)
-    const placed =
-      uploadId != null && uploadId >= 0 && targetEditor?.finishImageUpload?.(uploadId, markdown)
-    if (!placed) targetEditor?.insertTextAt(markdown, insertAt)
+    const placed = targetEditor?.finishImageUploads?.(
+      uploadIds.filter((id) => id >= 0),
+      markdown
+    )
+    if (!placed) {
+      for (const position of [...insertAt].reverse()) targetEditor?.insertTextAt(markdown, position)
+    }
   } catch (cause) {
-    if (uploadId != null && uploadId >= 0) targetEditor?.cancelImageUpload?.(uploadId)
+    for (const id of uploadIds) {
+      if (id >= 0) targetEditor?.cancelImageUpload?.(id)
+    }
     workspace.error = cause instanceof Error ? cause.message : String(cause)
   }
 }

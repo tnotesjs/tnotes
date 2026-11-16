@@ -421,7 +421,6 @@
 
 .live-editor .cm-lp-source .tok-heading {
   font-weight: 700;
-  color: var(--tn-c-text);
 }
 
 /* ---------- 语法高亮（两种模式共用） ---------- */
@@ -438,14 +437,14 @@
   text-decoration: line-through;
 }
 
-.live-editor .tok-link,
-.live-editor .tok-url {
+.live-editor .cm-lp-visual .tok-link,
+.live-editor .cm-lp-visual .tok-url {
   color: var(--tn-c-brand);
 }
 
-.live-editor .tok-processingInstruction,
-.live-editor .tok-meta,
-.live-editor .tok-labelName {
+.live-editor .cm-lp-visual .tok-processingInstruction,
+.live-editor .cm-lp-visual .tok-meta,
+.live-editor .cm-lp-visual .tok-labelName {
   color: var(--tn-c-text-2);
 }
 
@@ -454,71 +453,71 @@
   font-size: 0.9em;
 }
 
-.live-editor .tok-keyword {
+.live-editor .cm-lp-visual .tok-keyword {
   color: #cf222e;
 }
-.live-editor .tok-variableName,
-.live-editor .tok-function {
+.live-editor .cm-lp-visual .tok-variableName,
+.live-editor .cm-lp-visual .tok-function {
   color: #005cc5;
 }
-.live-editor .tok-string,
-.live-editor .tok-string2 {
+.live-editor .cm-lp-visual .tok-string,
+.live-editor .cm-lp-visual .tok-string2 {
   color: #0a3069;
 }
-.live-editor .tok-number,
-.live-editor .tok-bool,
-.live-editor .tok-atom {
+.live-editor .cm-lp-visual .tok-number,
+.live-editor .cm-lp-visual .tok-bool,
+.live-editor .cm-lp-visual .tok-atom {
   color: #0550ae;
 }
-.live-editor .tok-comment {
+.live-editor .cm-lp-visual .tok-comment {
   color: #6e7781;
   font-style: italic;
 }
-.live-editor .tok-variableName2,
-.live-editor .tok-typeName,
-.live-editor .tok-className {
+.live-editor .cm-lp-visual .tok-variableName2,
+.live-editor .cm-lp-visual .tok-typeName,
+.live-editor .cm-lp-visual .tok-className {
   color: #953800;
 }
-.live-editor .tok-propertyName {
+.live-editor .cm-lp-visual .tok-propertyName {
   color: #8250df;
 }
-.live-editor .tok-operator,
-.live-editor .tok-punctuation {
+.live-editor .cm-lp-visual .tok-operator,
+.live-editor .cm-lp-visual .tok-punctuation {
   color: #57606a;
 }
-.live-editor .tok-definition {
+.live-editor .cm-lp-visual .tok-definition {
   color: #6639ba;
 }
 
-:root[data-theme='dark'] .live-editor .tok-keyword {
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-keyword {
   color: #ff7b72;
 }
-:root[data-theme='dark'] .live-editor .tok-variableName,
-:root[data-theme='dark'] .live-editor .tok-function {
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-variableName,
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-function {
   color: #79c0ff;
 }
-:root[data-theme='dark'] .live-editor .tok-string,
-:root[data-theme='dark'] .live-editor .tok-string2 {
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-string,
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-string2 {
   color: #a5d6ff;
 }
-:root[data-theme='dark'] .live-editor .tok-number,
-:root[data-theme='dark'] .live-editor .tok-bool,
-:root[data-theme='dark'] .live-editor .tok-atom {
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-number,
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-bool,
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-atom {
   color: #79c0ff;
 }
-:root[data-theme='dark'] .live-editor .tok-comment {
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-comment {
   color: #8b949e;
 }
-:root[data-theme='dark'] .live-editor .tok-variableName2,
-:root[data-theme='dark'] .live-editor .tok-typeName,
-:root[data-theme='dark'] .live-editor .tok-className {
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-variableName2,
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-typeName,
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-className {
   color: #ffa657;
 }
-:root[data-theme='dark'] .live-editor .tok-propertyName {
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-propertyName {
   color: #d2a8ff;
 }
-:root[data-theme='dark'] .live-editor .tok-operator,
-:root[data-theme='dark'] .live-editor .tok-punctuation {
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-operator,
+:root[data-theme='dark'] .live-editor .cm-lp-visual .tok-punctuation {
   color: #8b949e;
 }
 

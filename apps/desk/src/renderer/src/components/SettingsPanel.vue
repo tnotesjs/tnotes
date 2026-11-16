@@ -98,6 +98,7 @@ const groupDefaults: Record<string, Partial<AppSettings>> = {
     showNoteTitle: true,
     showTextFormatToolbar: true,
     autosave: { enabled: true, delayMs: 1000 },
+    trimTrailingWhitespace: true,
     workspaceLayout: 'kb-dir-content',
     updates: { autoCheck: true }
   },

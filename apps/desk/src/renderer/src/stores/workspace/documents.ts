@@ -12,6 +12,7 @@ import type {
   WorkspaceOverview
 } from '../../../../shared/contracts'
 
+import { contentForSave } from '../../editor/stripTrailingWhitespace'
 import { flushPendingEdits, hasPendingEdits } from '../../editor/markdown/pendingEdits'
 import { documentDirty, documentKey, resultValue, type DocumentSession } from './helpers'
 import { createPendingSaves } from './pendingSaves'
@@ -267,8 +268,11 @@ export function createDocuments(ctx: DocumentsContext) {
       }
       return
     }
-    const contentToSave = session.content
-    ctx.setDocumentSession(key, { ...session, saving: true })
+    const contentToSave = contentForSave(
+      session.content,
+      ctx.settings.value?.trimTrailingWhitespace
+    )
+    ctx.setDocumentSession(key, { ...session, content: contentToSave, saving: true })
     const recoveryTimer = ctx.recoveryTimers.get(key)
     if (recoveryTimer) clearTimeout(recoveryTimer)
     ctx.recoveryTimers.delete(key)

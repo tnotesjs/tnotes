@@ -326,7 +326,7 @@ function editable(view: EditorView): boolean {
  * - 容器后面一行行首：不把这一行接到看不见的 `:::` 后面；空行直接删掉，光标回到正文末尾。
  */
 export const calloutBackspace: Command = (view) => {
-  if (!editable(view)) return false
+  if (!editable(view) || view.state.selection.ranges.length > 1) return false
   const { state } = view
   const selection = state.selection.main
   if (!selection.empty) return false
@@ -376,7 +376,7 @@ export const calloutBackspace: Command = (view) => {
 
 /** Delete：正文末尾不吞掉结束行，容器前一行末尾不吞掉开启行（空行例外：删掉这一空行） */
 export const calloutDelete: Command = (view) => {
-  if (!editable(view)) return false
+  if (!editable(view) || view.state.selection.ranges.length > 1) return false
   const { state } = view
   const selection = state.selection.main
   if (!selection.empty) return false
@@ -411,7 +411,7 @@ function lineAfterBlock(
 
 /** 回车：正文最后一行是空行时（且不是唯一一行）离开容器，光标落到容器下面 */
 export const calloutEnter: Command = (view) => {
-  if (!editable(view)) return false
+  if (!editable(view) || view.state.selection.ranges.length > 1) return false
   const { state } = view
   const selection = state.selection.main
   if (!selection.empty) return false
@@ -441,7 +441,7 @@ export const calloutEnter: Command = (view) => {
 /** 文档最后一块是提示块时，↓ / → 走出正文末尾就在后面补一行空行 */
 function exitAtDocEnd(forward: 'down' | 'right'): Command {
   return (view) => {
-    if (!editable(view)) return false
+    if (!editable(view) || view.state.selection.ranges.length > 1) return false
     const { state } = view
     const selection = state.selection.main
     if (!selection.empty) return false
