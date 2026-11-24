@@ -6,7 +6,7 @@
  *   （`/swdt`、`/mindmap` 都是思维导图），↑↓ 选择，Enter / Tab 插入，Esc 收起；
  * - 插入时删掉 `/简写`，块落在当前行（空行）或下一行。
  */
-import { syntaxTree } from '@codemirror/language'
+import { foldedRanges, syntaxTree } from '@codemirror/language'
 import { Facet, Prec, StateEffect, StateField } from '@codemirror/state'
 import {
   Decoration,
@@ -277,10 +277,33 @@ function hintDecorations(view: EditorView): DecorationSet {
   if (!view.hasFocus || !main.empty || state.selection.ranges.length > 1) return Decoration.none
   if (state.doc.length === 0 || state.field(slashField, false)) return Decoration.none
   const line = state.doc.lineAt(main.head)
+  // 折叠标题末尾，以及被折进标题里的空行：光标看起来停在标题后面，但这里不是空行。
+  if (lineIsInsideFold(state, line.from, line.to)) return Decoration.none
   if (line.length > 0 || !canTrigger(state, line.from)) return Decoration.none
   return Decoration.set([
     Decoration.widget({ widget: new SlashHintWidget(), side: 1 }).range(line.from)
   ])
+}
+
+/**
+ * 这一行被折起来，折叠从这一行末尾开始（光标停在折叠标题上），
+ * 或这一行正好从某个折叠的终点开始（换行被折掉，空行贴在标题后面）。
+ */
+function lineIsInsideFold(state: EditorState, lineFrom: number, lineTo: number): boolean {
+  let hidden = false
+  const end = Math.max(lineTo, lineFrom + 1)
+  foldedRanges(state).between(lineFrom, end, (from, to) => {
+    if (from < end && to > lineFrom) hidden = true
+  })
+  if (hidden) return true
+  foldedRanges(state).between(lineTo, lineTo + 1, (from) => {
+    if (from === lineTo) hidden = true
+  })
+  if (hidden || lineFrom === 0) return hidden
+  foldedRanges(state).between(lineFrom - 1, lineFrom, (_from, to) => {
+    if (to === lineFrom) hidden = true
+  })
+  return hidden
 }
 
 const slashHint = ViewPlugin.fromClass(

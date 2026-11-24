@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { history, undo } from '@codemirror/commands'
 import { EditorState, type Transaction } from '@codemirror/state'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -121,5 +122,11 @@ describe('user edits over agent edits', () => {
     state = state.update({ changes: { from: 3, insert: 'x' } }).state
     expect(pendingReviewsIn(state)).toBe(1)
     expect(revertArchived(state.doc.toString(), reviewsOf(state))).toBe('前 Ax 后')
+  })
+
+  it('审阅条自己接收点击（顶部面板容器是 pointer-events: none）', () => {
+    const css = readFileSync('src/renderer/src/livePreview/livePreview.css', 'utf8')
+    const block = /\.live-editor \.cm-agent-review-panel \{[^}]*\}/.exec(css)?.[0] ?? ''
+    expect(block).toMatch(/pointer-events:\s*auto/)
   })
 })

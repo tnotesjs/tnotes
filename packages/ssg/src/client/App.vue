@@ -81,16 +81,16 @@
           v-if="showArticleTools"
           :repo-url="noteRepoUrl"
           :desk-url="deskUrl"
-          :desk-fallback="props.data.relativePath.startsWith('notes/') && !deskUrl"
-          :source="data.source ?? ''"
+          :desk-fallback="page.relativePath.startsWith('notes/') && !deskUrl"
+          :source="page.source ?? ''"
           :folded="headingsFolded"
           :can-fold="hasArticleHeadings"
           :wide="articleWide"
           @toggle-fold="headingControls?.toggleAll()"
           @toggle-width="toggleArticleWidth"
         />
-        <div class="tn-site-article" ref="article" v-html="articleHtml"></div>
-        <Discussions v-if="data.noteId" :id="data.noteId" />
+        <div class="tn-site-article" ref="article" v-html="pageHtml"></div>
+        <Discussions v-if="page.noteId" :id="page.noteId" :key="page.noteId" />
       </main>
       <aside :inert="mobileOpen" v-if="outlineHeadings.length" class="tn-site-outline">
         <strong>本页目录</strong>
@@ -170,8 +170,10 @@ import ImagePreview from '@tnotesjs/ui/image-preview'
 import site from 'virtual:tnotes-site'
 
 import { setupHeadingFolds } from './headingFolds'
+import { hydrateIslands } from './hydrateIslands'
 import { sidebarNotes, noteNumber, clampSidebarWidth } from './navigation'
 import { useModalFocus } from './useModalFocus'
+import { fetchNotePage, isPlainNoteClick, noteTarget, type NotePagePayload } from './noteNavigation'
 // The comments belong to *this* app, not to the article: the article is rendered
 // in its own app and injected as HTML, so nothing inside it ever hydrates.
 import ArticleTools from './components/ArticleTools.vue'
@@ -188,7 +190,11 @@ const props = defineProps<{
   articleHtml: string
 }>()
 
-const hasArticleHeadings = computed(() => /<h[1-6](?:\s|>)/i.test(props.articleHtml))
+const routeState = ref(props.route)
+const page = ref(props.data)
+const pageHtml = ref(props.articleHtml)
+
+const hasArticleHeadings = computed(() => /<h[1-6](?:\s|>)/i.test(pageHtml.value))
 const headingsFolded = ref(false)
 const article = ref<HTMLElement>()
 let headingControls: ReturnType<typeof setupHeadingFolds> | undefined
@@ -214,21 +220,21 @@ function isArticlePage(relativePath: string): boolean {
   return relativePath.startsWith('notes/') || relativePath === 'README.md'
 }
 
-const isHome = computed(() => props.route === '/')
+const isHome = computed(() => routeState.value === '/')
 const charCountLabel = computed(() => formatCharCount(site.corpus?.charCount ?? 0))
 const showArticleTools = computed(
-  () => !isHome.value && props.data.source !== undefined && isArticlePage(props.data.relativePath)
+  () => !isHome.value && page.value.source !== undefined && isArticlePage(page.value.relativePath)
 )
 const deskUrl = computed(() => {
-  if (!isArticlePage(props.data.relativePath) || props.data.relativePath === 'README.md') return ''
-  if (!site.kbId || !props.data.noteId) return ''
-  const params = new URLSearchParams({ kb: site.kbId, note: props.data.noteId })
+  if (!isArticlePage(page.value.relativePath) || page.value.relativePath === 'README.md') return ''
+  if (!site.kbId || !page.value.noteId) return ''
+  const params = new URLSearchParams({ kb: site.kbId, note: page.value.noteId })
   return `tnotes-desk://open?${params.toString()}`
 })
 const noteRepoUrl = computed(() => {
   const repository = site.repositoryUrl?.replace(/\/+$/, '')
-  if (!repository || !isArticlePage(props.data.relativePath)) return ''
-  return `${repository}/blob/main/${props.data.relativePath.split('/').map(encodeURIComponent).join('/')}`
+  if (!repository || !isArticlePage(page.value.relativePath)) return ''
+  return `${repository}/blob/main/${page.value.relativePath.split('/').map(encodeURIComponent).join('/')}`
 })
 
 const articleWide = ref(false)
@@ -244,13 +250,13 @@ type SearchResult = Pick<PageData, 'route' | 'title' | 'text'>
  * back to `/notes/{n}`.
  */
 const activeRoute = computed(() => {
-  if (props.route.startsWith('/notes/')) return props.route
-  const slug = props.data.relativePath.split('/').pop()?.replace(/\.md$/i, '') ?? ''
+  if (routeState.value.startsWith('/notes/')) return routeState.value
+  const slug = page.value.relativePath.split('/').pop()?.replace(/\.md$/i, '') ?? ''
   const parsed = parseNoteSlug(slug)
-  return parsed?.kind === 'index' ? canonicalNoteRoute(parsed.index) : props.route
+  return parsed?.kind === 'index' ? canonicalNoteRoute(parsed.index) : routeState.value
 })
 
-const outlineHeadings = computed<PageHeading[]>(() => props.data.headings)
+const outlineHeadings = computed<PageHeading[]>(() => page.value.headings)
 
 const searchOpen = ref(false)
 const searching = ref(false)
@@ -294,7 +300,11 @@ async function moveResult(delta: number) {
 }
 function openSelected() {
   const result = results.value[selectedResult.value]
-  if (result) window.location.assign(navHref(result.route))
+  if (!result) return
+  searchOpen.value = false
+  const href = new URL(navHref(result.route), window.location.origin).href
+  if (noteTarget(href, window.location, site.base, site.notes)) void navigateTo(href, 'push')
+  else window.location.assign(href)
 }
 useModalFocus(
   searchOpen,
@@ -327,9 +337,8 @@ function toggleSidebar() {
 const sidebarVisible = computed(() => (isMobile.value ? mobileOpen.value : !sidebarHidden.value))
 
 /**
- * Picking a note has to put the drawer away on phones. The navigation would get
- * there eventually — every link is a real document load — but the drawer would
- * sit over the page until the new document arrived, so close it on the way out.
+ * Picking a note has to put the drawer away on phones. In-page navigation keeps
+ * the shell mounted, so close the drawer on the click instead of waiting for a reload.
  */
 function closeDrawerOnPick(event: MouseEvent) {
   if (!isMobile.value) return
@@ -401,7 +410,98 @@ watch(searchOpen, async (open) => {
 // (server emits anchors, client expects a v-if comment and the walk drifts).
 const mounted = ref(false)
 
+const pageCache = new Map<string, NotePagePayload>()
+let navSeq = 0
+
+async function showLoaded(payload: NotePagePayload, hash: string): Promise<void> {
+  headingControls?.destroy()
+  headingControls = undefined
+  headingsFolded.value = false
+  routeState.value = payload.route
+  page.value = payload.data
+  pageHtml.value = payload.articleHtml
+  if (payload.title) document.title = payload.title
+  await nextTick()
+  if (article.value) {
+    headingControls = setupHeadingFolds(article.value, (value) => {
+      headingsFolded.value = value
+    })
+    await hydrateIslands(article.value, { base: site.base })
+  }
+  const id = hash.startsWith('#') ? decodeURIComponent(hash.slice(1)) : ''
+  const target = id ? document.getElementById(id) : null
+  if (target) {
+    headingControls?.reveal(target)
+    target.scrollIntoView({ block: 'start' })
+    return
+  }
+  document.querySelector<HTMLElement>('.tn-site-main')?.scrollTo(0, 0)
+  window.scrollTo(0, 0)
+}
+
+async function navigateTo(href: string, historyMode: 'push' | 'replace' | 'pop'): Promise<void> {
+  const target = noteTarget(href, window.location, site.base, site.notes)
+  if (!target) {
+    if (historyMode !== 'pop') window.location.assign(href)
+    return
+  }
+  const nextUrl = new URL(target.url, window.location.origin)
+  const sameDocument =
+    nextUrl.pathname === window.location.pathname && nextUrl.search === window.location.search
+  if (historyMode !== 'pop' && sameDocument) {
+    if (nextUrl.hash && nextUrl.hash !== window.location.hash) {
+      const id = decodeURIComponent(nextUrl.hash.slice(1))
+      document.getElementById(id)?.scrollIntoView({ block: 'start' })
+      window.history.pushState({ tnotesNav: target.route }, '', nextUrl.href)
+    }
+    return
+  }
+  const seq = ++navSeq
+  const cached = pageCache.get(target.route)
+  let loaded = cached ?? null
+  if (!loaded) {
+    try {
+      loaded = await fetchNotePage(nextUrl.href.split('#')[0])
+    } catch {
+      loaded = null
+    }
+  }
+  if (seq !== navSeq) return
+  if (!loaded) {
+    window.location.assign(nextUrl.href)
+    return
+  }
+  pageCache.set(target.route, loaded)
+  pageCache.set(loaded.route, loaded)
+  if (historyMode === 'push')
+    window.history.pushState({ tnotesNav: loaded.route }, '', nextUrl.href)
+  else if (historyMode === 'replace')
+    window.history.replaceState({ tnotesNav: loaded.route }, '', nextUrl.href)
+  await showLoaded(loaded, nextUrl.hash)
+}
+
+function onDocumentClick(event: MouseEvent): void {
+  if (!isPlainNoteClick(event)) return
+  const anchor = (event.target as Element | null)?.closest?.('a')
+  if (!anchor || anchor.target === '_blank' || anchor.hasAttribute('download')) return
+  if (!noteTarget(anchor.href, window.location, site.base, site.notes)) return
+  event.preventDefault()
+  void navigateTo(anchor.href, 'push')
+}
+
+function onPopState(): void {
+  void navigateTo(window.location.href, 'pop')
+}
+
 onMounted(() => {
+  pageCache.set(props.route, {
+    route: props.route,
+    data: props.data,
+    articleHtml: props.articleHtml,
+    title: document.title
+  })
+  window.addEventListener('click', onDocumentClick, true)
+  window.addEventListener('popstate', onPopState)
   if (article.value)
     headingControls = setupHeadingFolds(article.value, (value) => {
       headingsFolded.value = value
@@ -422,5 +522,10 @@ onMounted(() => {
   } catch {
     /* storage is optional */
   }
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('click', onDocumentClick, true)
+  window.removeEventListener('popstate', onPopState)
+  media?.removeEventListener('change', updateMedia)
 })
 </script>

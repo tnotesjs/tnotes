@@ -591,6 +591,11 @@
   transform: none;
 }
 
+/* 标题折起后只留左侧箭头，不显示「…」占位（和列表一致）。 */
+.live-editor .cm-lp-visual .cm-line.cm-lp-heading .cm-foldPlaceholder {
+  display: none;
+}
+
 .live-editor .cm-line.cm-lp-heading:hover .cm-lp-heading-toggle,
 .live-editor .cm-line.cm-lp-heading-folded .cm-lp-heading-toggle,
 .live-editor .cm-lp-heading-toggle:focus-visible {
@@ -2480,6 +2485,8 @@
   gap: 8px;
   padding: 6px 12px;
   font: 13px/20px var(--tn-font-sans);
+  /* 顶部面板容器为了让查找条不挡正文，设了 pointer-events: none。审阅条自己要能点。 */
+  pointer-events: auto;
 }
 
 .live-editor .cm-agent-review-label {

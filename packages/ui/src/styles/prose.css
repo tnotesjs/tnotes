@@ -441,3 +441,13 @@
   margin-top: -0.05em;
   transform: rotate(45deg);
 }
+
+/* 站点正文里的播放器是静态 iframe，组件 scoped 样式不会进站点 CSS。 */
+:is(.tn-prose, .vp-doc) :where(.tn-bilibili-video) {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin: 1rem 0;
+  border: 0;
+  background: var(--tn-c-divider, #e2e2e3);
+}

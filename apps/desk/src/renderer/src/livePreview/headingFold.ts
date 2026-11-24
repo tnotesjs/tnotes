@@ -64,28 +64,107 @@ export const headingFoldService = foldService.of((state, _lineStart, lineEnd) =>
   return { from: section.lineEnd, to: section.end }
 })
 
-/** 光标落进已收起的正文时，拉回这一节标题的末尾，并取消因此触发的自动展开。 */
-export const keepCursorOutOfFold = EditorState.transactionFilter.of((tr) => {
-  if (!tr.selection || !tr.newSelection.main.empty) return tr
-  if (tr.annotation(Transaction.userEvent) === 'select.fold-clamp') return tr
-  const head = tr.newSelection.main.head
-  let edge: number | null = null
+interface FoldSpan {
+  from: number
+  to: number
+}
+
+/** 这次事务之后还折着的范围。效果里的位置已经是新文档坐标，旧范围要先映射过去。 */
+function foldsAfter(tr: Transaction): FoldSpan[] {
+  const ranges: FoldSpan[] = []
   foldedRanges(tr.startState).between(0, tr.startState.doc.length, (from, to) => {
-    if (head > from && head < to) edge = from
+    const start = tr.changes.mapPos(from, 1)
+    const end = tr.changes.mapPos(to, -1)
+    if (start < end) ranges.push({ from: start, to: end })
   })
-  if (edge == null) return tr
+  for (const effect of tr.effects) {
+    if (effect.is(unfoldEffect)) {
+      const value = effect.value as FoldSpan
+      const index = ranges.findIndex((range) => range.from === value.from && range.to === value.to)
+      if (index >= 0) ranges.splice(index, 1)
+    } else if (effect.is(foldEffect)) {
+      const value = effect.value as FoldSpan
+      if (
+        value.from < value.to &&
+        !ranges.some((range) => range.from === value.from && range.to === value.to)
+      )
+        ranges.push(value)
+    }
+  }
+  return ranges
+}
+
+function headingLineEnds(tr: Transaction): Set<number> {
+  return new Set(
+    headingSections(tr.startState).map((section) => tr.changes.mapPos(section.lineEnd, 1))
+  )
+}
+
+/** 光标落在折叠正文里，或正好落在标题折叠的终点（贴在占位后面的那一空行）。 */
+function foldAround(
+  folds: FoldSpan[],
+  head: number,
+  headingFroms: Set<number> | null
+): FoldSpan | null {
+  let found: FoldSpan | null = null
+  for (const fold of folds) {
+    const inside = head > fold.from && head < fold.to
+    const glued = headingFroms?.has(fold.from) === true && head === fold.to
+    if ((inside || glued) && (!found || fold.from >= found.from)) found = fold
+  }
+  return found
+}
+
+/** 标题折叠终点的下一行。文档到这里为止时，退回标题末尾。 */
+function afterHeadingFold(doc: Transaction['newDoc'], fold: FoldSpan): number {
+  if (fold.to >= doc.length) return fold.from
+  const nextLine = doc.lineAt(fold.to).to + 1
+  return nextLine <= doc.length ? nextLine : fold.from
+}
+
+/**
+ * 光标落进已收起的正文，或落在折叠标题占位的右侧时，拉回标题末尾。
+ * 从标题末尾再往右走，则落到下一节还能看见的内容上。位置都用这次修改映射之后的坐标。
+ */
+export const keepCursorOutOfFold = EditorState.transactionFilter.of((tr) => {
+  if (tr.annotation(Transaction.userEvent) === 'select.fold-clamp') return tr
+  if (!tr.newSelection.main.empty) return tr
+  const folds = foldsAfter(tr)
+  if (folds.length === 0) return tr
+  const head = tr.newSelection.main.head
+  const onEdge = folds.some((fold) => fold.to === head)
+  const inside = folds.some((fold) => head > fold.from && head < fold.to)
+  if (!inside && !onEdge) return tr
+  const headingFroms = headingLineEnds(tr)
+  const fold = foldAround(folds, head, headingFroms)
+  if (!fold) return tr
+  const heading = headingFroms.has(fold.from)
+  const origin = tr.startState.selection.main.head
+  const prev = tr.changes.mapPos(origin, head >= origin ? 1 : -1)
+  const forward =
+    heading &&
+    tr.annotation(Transaction.userEvent) === 'select' &&
+    head > prev &&
+    prev >= fold.from &&
+    prev <= fold.to
+  const target = forward ? afterHeadingFold(tr.newDoc, fold) : fold.from
+  if (target === head) return tr
   const effects = tr.effects.filter((effect) => {
     if (!effect.is(unfoldEffect)) return true
-    const value = effect.value as { from: number; to: number }
+    const value = effect.value as FoldSpan
     return !(head > value.from && head < value.to)
   })
   const spec: TransactionSpec = {
     changes: tr.changes,
     effects,
-    selection: EditorSelection.cursor(edge),
-    scrollIntoView: false,
+    selection: EditorSelection.create([
+      EditorSelection.cursor(target, target === fold.from ? -1 : 1)
+    ]),
+    scrollIntoView: tr.scrollIntoView,
     filter: false,
-    userEvent: 'select.fold-clamp'
+    userEvent: tr.changes.empty
+      ? 'select.fold-clamp'
+      : (tr.annotation(Transaction.userEvent) ?? 'select.fold-clamp')
   }
   return spec
 })
@@ -112,28 +191,30 @@ export function applyHeadingFoldCommand(view: EditorView, command: HeadingFoldCo
     targets = current ? [current] : []
   }
   if (targets.length === 0) return false
-  const folded = foldedRanges(state)
   const effects: StateEffect<unknown>[] = []
   for (const section of targets) {
-    let isFolded = false
-    folded.between(section.lineEnd, section.lineEnd, (from, to) => {
-      if (from === section.lineEnd && to === section.end) isFolded = true
-    })
-    if (unfold && isFolded)
-      effects.push(unfoldEffect.of({ from: section.lineEnd, to: section.end }))
-    if (!unfold && !isFolded)
+    const existing = foldsStartingAt(state, section.lineEnd)
+    if (unfold) {
+      for (const range of existing) effects.push(unfoldEffect.of(range))
+    } else if (existing.length === 0) {
       effects.push(foldEffect.of({ from: section.lineEnd, to: section.end }))
+    }
   }
   if (effects.length > 0) view.dispatch({ effects })
   return true
 }
 
-export function isHeadingFolded(state: EditorState, lineEnd: number, end: number): boolean {
-  let folded = false
+/** 从这一行标题末尾开始的折叠。终点不必和重新算出的小节终点相同。 */
+function foldsStartingAt(state: EditorState, lineEnd: number): FoldSpan[] {
+  const found: FoldSpan[] = []
   foldedRanges(state).between(lineEnd, lineEnd, (from, to) => {
-    if (from === lineEnd && to === end) folded = true
+    if (from === lineEnd && to > from) found.push({ from, to })
   })
-  return folded
+  return found
+}
+
+export function isHeadingFolded(state: EditorState, lineEnd: number): boolean {
+  return foldsStartingAt(state, lineEnd).length > 0
 }
 
 /** 折叠范围签名：预览装饰在折叠变化时要重建。 */
@@ -185,11 +266,12 @@ export class HeadingFoldToggle extends WidgetType {
       const line = view.state.doc.lineAt(pos)
       const section = headingSections(view.state).find((item) => item.lineEnd === line.to)
       if (!section || section.end <= section.lineEnd) return
-      const folded = isHeadingFolded(view.state, section.lineEnd, section.end)
+      const existing = foldsStartingAt(view.state, section.lineEnd)
       view.dispatch({
-        effects: folded
-          ? unfoldEffect.of({ from: section.lineEnd, to: section.end })
-          : foldEffect.of({ from: section.lineEnd, to: section.end })
+        effects:
+          existing.length > 0
+            ? existing.map((range) => unfoldEffect.of(range))
+            : foldEffect.of({ from: section.lineEnd, to: section.end })
       })
     })
     return button

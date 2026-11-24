@@ -1137,7 +1137,7 @@ function build(state: EditorState): LivePreviewState {
         const level = Number(name.slice(-1))
         const line = doc.lineAt(from)
         const section = sections.find((item) => item.lineEnd === line.to && item.end > item.lineEnd)
-        const folded = section ? isHeadingFolded(state, section.lineEnd, section.end) : false
+        const folded = section ? isHeadingFolded(state, section.lineEnd) : false
         lineClass(from, `cm-lp-heading cm-lp-h${level}${folded ? ' cm-lp-heading-folded' : ''}`)
         if (section) {
           const label = line.text.replace(/^#{1,6}[ \t]*/, '').trim() || '章节'

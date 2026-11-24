@@ -76,6 +76,8 @@ id: 00000000-0000-4000-8000-000000000002
 
 [回首页](/)
 
+<BilibiliVideo id="BV17H4y1p7DD" />
+
 ::: tip 提示
 容器管线正常。搜索中文。
 :::
@@ -286,6 +288,20 @@ describe('static site build', () => {
   it('copies library assets and public files into dist', () => {
     expect(fs.readFileSync(dist('assets/pic.txt'), 'utf8')).toBe('asset file')
     expect(fs.readFileSync(dist('fixture.txt'), 'utf8')).toBe('public asset')
+  })
+
+  it('gives the bilibili player the full text width', () => {
+    const guide = fs.readFileSync(dist('notes/2.html'), 'utf8')
+    expect(guide).toContain('class="tn-bilibili-video')
+    expect(guide).toContain('bvid=BV17H4y1p7DD')
+    const css = fs
+      .readdirSync(dist('_chunks'))
+      .filter((name) => name.endsWith('.css'))
+      .map((name) => fs.readFileSync(path.join(dist('_chunks'), name), 'utf8'))
+      .join('\n')
+    expect(css).toContain('.tn-bilibili-video')
+    expect(css).toMatch(/\.tn-bilibili-video[^{]*\{[^}]*width:\s*100%/)
+    expect(css).toMatch(/aspect-ratio:\s*16\s*\/\s*9/)
   })
 
   it('keeps mermaid and mindmap sources on island hosts for client hydrate', () => {
