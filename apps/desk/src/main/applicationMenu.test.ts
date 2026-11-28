@@ -41,4 +41,15 @@ describe('application menu', () => {
       expect(send).toHaveBeenCalledWith({ type: 'select-all' })
     }
   )
+
+  it.each(['darwin', 'win32', 'linux'] as const)(
+    'includes toggleDevTools in the View menu on %s',
+    (platform) => {
+      const send = vi.fn()
+      const template = applicationMenuTemplate({ appName: 'Desk', platform, send })
+      const view = template.find((item) => item.label === 'View')
+      const items = (view?.submenu ?? []) as Electron.MenuItemConstructorOptions[]
+      expect(items.some((item) => item.role === 'toggleDevTools')).toBe(true)
+    }
+  )
 })

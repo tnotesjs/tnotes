@@ -14,6 +14,7 @@ const commands = computed(() =>
     openKbAssets: () => undefined,
     hasSelectedKnowledgeBase: () => true,
     toggleTerminal: () => undefined,
+    toggleDevTools: () => undefined,
     theme: store.settings?.theme ?? 'system',
     setTheme: () => undefined
   })

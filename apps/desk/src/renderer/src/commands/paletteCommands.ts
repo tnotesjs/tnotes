@@ -27,6 +27,7 @@ export interface PaletteCommandContext {
   openKbAssets: () => void
   hasSelectedKnowledgeBase: () => boolean
   toggleTerminal: () => void
+  toggleDevTools: () => void | Promise<void>
   theme: ThemeMode
   setTheme: (theme: ThemeMode) => void
 }
@@ -148,6 +149,15 @@ export function createPaletteCommands(context: PaletteCommandContext): PaletteCo
       keywords: ['settings'],
       enabled: () => true,
       run: () => context.openSettings()
+    },
+    {
+      id: 'toggle-dev-tools',
+      title: '切换开发者工具',
+      category: '应用',
+      hint: 'Toggle Developer Tools',
+      keywords: ['developer tools', 'devtools', 'console'],
+      enabled: () => true,
+      run: () => context.toggleDevTools()
     },
     ...themeCommands(context)
   ]

@@ -131,6 +131,7 @@ const api: DeskApi = {
   bootstrap: () => invoke<BootstrapPayload>(IPC_CHANNELS.bootstrap),
   app: {
     closeWindow: () => invoke<void>(IPC_CHANNELS.windowClose),
+    toggleDevTools: () => invoke<void>(IPC_CHANNELS.windowToggleDevTools),
     onBeforeClose: (callback) => {
       const listener = (): void => callback()
       ipcRenderer.on(IPC_CHANNELS.appBeforeClose, listener)

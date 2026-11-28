@@ -17,6 +17,7 @@ const commands = createPaletteCommands({
   openKbAssets: () => undefined,
   hasSelectedKnowledgeBase: () => true,
   toggleTerminal: () => {},
+  toggleDevTools: () => undefined,
   theme: 'dark',
   setTheme: () => undefined
 })
@@ -92,5 +93,15 @@ describe('palette commands', () => {
     expect(matchesQuery('全部折叠标题', '折叠')).toBe(true)
     expect(matchesQuery('fold all headings', 'fal')).toBe(true)
     expect(matchesQuery('fold all headings', 'xyz')).toBe(false)
+  })
+
+  it('includes a toggle developer tools command searchable by Chinese and English', () => {
+    for (const query of ['>开发者工具', '>Toggle Developer Tools', '>devtools']) {
+      expect(filterPaletteCommands(commands, query).map((command) => command.id)).toContain(
+        'toggle-dev-tools'
+      )
+    }
+    const toggleDevTools = commands.find((command) => command.id === 'toggle-dev-tools')
+    expect(toggleDevTools?.enabled()).toBe(true)
   })
 })

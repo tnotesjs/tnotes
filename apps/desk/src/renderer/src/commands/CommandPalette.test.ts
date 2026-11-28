@@ -14,6 +14,9 @@ beforeEach(() => {
   Object.defineProperty(window, 'desk', {
     configurable: true,
     value: {
+      app: {
+        toggleDevTools: vi.fn(async () => ({ ok: true, value: undefined }))
+      },
       search: vi.fn(async () => ({
         ok: true,
         value: [
@@ -94,6 +97,21 @@ describe('CommandPalette', () => {
     expect(wrapper.find('.command-palette__item.is-active').text()).toContain('打开设置')
     await wrapper.get('input').trigger('keydown', { key: 'Enter' })
     expect(wrapper.emitted('openSettings')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  it('runs Toggle Developer Tools from the command palette', async () => {
+    const wrapper = mount(CommandPalette, { attachTo: document.body })
+    const palette = wrapper.vm as unknown as { openCommands: () => Promise<void> }
+    await palette.openCommands()
+    await wrapper.get('input').setValue('>devtools')
+    const item = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('切换开发者工具'))
+    expect(item).toBeTruthy()
+    await item!.trigger('mousedown')
+    await item!.trigger('click')
+    expect(window.desk.app.toggleDevTools).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 })

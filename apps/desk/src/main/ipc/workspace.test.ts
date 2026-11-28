@@ -28,7 +28,10 @@ vi.mock('../log', () => ({ deskLog: vi.fn() }))
 import { IPC_CHANNELS } from '../../shared/contracts'
 import { registerWorkspace } from './workspace'
 
-const window = { webContents: { id: 1 }, isDestroyed: () => false }
+const window = {
+  webContents: { id: 1, toggleDevTools: vi.fn() },
+  isDestroyed: () => false
+}
 const getWindow = () => window as never
 const event = { sender: { id: 1 } }
 
@@ -126,5 +129,11 @@ describe('工作区 IPC 合同', () => {
     expect(result.ok).toBe(false)
     expect(result.error?.code).toBe('INVALID_REQUEST')
     expect(mocks.showContextMenu).not.toHaveBeenCalled()
+  })
+
+  it('命令面板可通过 IPC 切换主窗口开发者工具', async () => {
+    const result = await invoke(IPC_CHANNELS.windowToggleDevTools, undefined)
+    expect(result.ok).toBe(true)
+    expect(window.webContents.toggleDevTools).toHaveBeenCalledTimes(1)
   })
 })

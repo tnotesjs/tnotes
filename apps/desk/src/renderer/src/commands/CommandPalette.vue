@@ -47,6 +47,9 @@ const commands = computed(() =>
     },
     hasSelectedKnowledgeBase: () => Boolean(workspace.knowledgeBase),
     toggleTerminal: () => emit('toggleTerminal'),
+    toggleDevTools: async () => {
+      await window.desk.app.toggleDevTools()
+    },
     theme: workspace.settings?.theme ?? 'system',
     setTheme: (theme) => {
       void workspace.updateSettings({ theme })

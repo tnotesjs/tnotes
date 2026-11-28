@@ -54,7 +54,10 @@ describe('native embedded web view app zoom', () => {
 
   it('zooms the main window and existing/new web views and restores zoom after navigation', async () => {
     const manager = new WebContentsManager()
-    const mainContents = { setZoomFactor: vi.fn() }
+    const mainContents = {
+      setZoomFactor: vi.fn(),
+      setVisualZoomLevelLimits: vi.fn(async () => undefined)
+    }
     manager.attachWindow({
       on: vi.fn(),
       isDestroyed: () => false,
@@ -63,6 +66,7 @@ describe('native embedded web view app zoom', () => {
     } as unknown as Electron.BrowserWindow)
     manager.setZoomFactor(1.5)
     expect(mainContents.setZoomFactor).toHaveBeenLastCalledWith(1.5)
+    expect(mainContents.setVisualZoomLevelLimits).toHaveBeenLastCalledWith(1, 3)
     await manager.create('web-test', 'https://example.com')
     expect(mocks.createView).toHaveBeenLastCalledWith(
       expect.objectContaining({

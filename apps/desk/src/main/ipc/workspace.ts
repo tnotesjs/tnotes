@@ -138,6 +138,12 @@ export function registerWorkspace(getWindow: GetWindow): () => void {
     })
   })
 
+  handle(IPC_CHANNELS.windowToggleDevTools, getWindow, noInputSchema, () => {
+    const window = getWindow()
+    if (!window || window.isDestroyed()) return
+    window.webContents.toggleDevTools()
+  })
+
   handle(IPC_CHANNELS.workspaceChoose, getWindow, noInputSchema, async () => {
     const parent = getWindow()
     const options: Electron.OpenDialogOptions = {

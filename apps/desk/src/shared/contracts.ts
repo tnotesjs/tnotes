@@ -1,6 +1,7 @@
 export const IPC_CHANNELS = {
   bootstrap: 'desk:bootstrap',
   windowClose: 'window:close',
+  windowToggleDevTools: 'window:toggle-dev-tools',
   appBeforeClose: 'app:before-close',
   deskOpen: 'app:desk-open',
   appCloseReady: 'app:close-ready',
@@ -2555,6 +2556,7 @@ export interface DeskApi {
   bootstrap(): Promise<DeskResult<BootstrapPayload>>
   app: {
     closeWindow(): Promise<DeskResult<void>>
+    toggleDevTools(): Promise<DeskResult<void>>
     /** 主进程在关窗 / 退出前请求渲染端 flush 未保存内容 */
     onBeforeClose(callback: () => void): () => void
     onDeskOpen(

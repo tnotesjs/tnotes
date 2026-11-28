@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, Menu, shell } from 'electron'
+import { app, BrowserWindow, dialog, Menu, powerMonitor, screen, shell } from 'electron'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 
 import icon from '../../resources/icon.png?asset'
@@ -28,6 +28,7 @@ import { searchManager } from './searchManager'
 import type { WorkspaceChangeHint } from './workspace/types'
 import { applicationMenuTemplate } from './applicationMenu'
 import { TabShortcutResolver } from './tabShortcuts'
+import { attachVisualZoomGuard } from './visualZoom'
 import { webContentsManager } from './webContentsManager'
 import { workspaceManager } from './workspaceManager'
 
@@ -159,10 +160,10 @@ function createWindow(): BrowserWindow {
   webContentsManager.attachWindow(window)
   webContentsManager.setZoomFactor(loadSettings().appZoomPercent / 100)
   // 触控板捏合走 Chromium 原生可视缩放：不重排、选区不偏移，只放大不缩小。
-  void window.webContents.setVisualZoomLevelLimits(1, 3)
+  // 系统休眠、解锁、外接屏切换或重设 zoomFactor 后可能被重置回 1–1，需持续兜底重设。
+  attachVisualZoomGuard(window, { powerMonitor, screen })
   window.webContents.on('did-finish-load', () => {
     webContentsManager.setZoomFactor(loadSettings().appZoomPercent / 100)
-    void window.webContents.setVisualZoomLevelLimits(1, 3)
   })
   webContentsManager.onTabShortcut((command) => sendTabShortcut(window, command))
   // 红叉 / ⌘W：先让渲染端 flush 并处理未保存内容，再真正关闭

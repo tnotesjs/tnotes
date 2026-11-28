@@ -2,6 +2,7 @@ import { BrowserWindow, session, shell, WebContentsView } from 'electron'
 
 import { deskLog } from './log'
 import { TabShortcutResolver } from './tabShortcuts'
+import { applyVisualZoomLimits } from './visualZoom'
 
 import type {
   TabShortcutCommand,
@@ -76,6 +77,7 @@ export class WebContentsManager {
     this.zoomFactor = factor
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.setZoomFactor(factor)
+      applyVisualZoomLimits(this.mainWindow)
     }
     for (const handle of this.handles.values()) {
       if (!handle.view.webContents.isDestroyed()) handle.view.webContents.setZoomFactor(factor)
